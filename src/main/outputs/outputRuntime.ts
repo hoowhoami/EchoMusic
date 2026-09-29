@@ -264,7 +264,6 @@ function scheduleDlnaDescriptionLoad(device: SsdpDeviceEntry): void {
     pending: undefined as Promise<void> | undefined,
   };
   dlnaDescriptionCache.set(device.usn, record);
-  log.info(`DLNA 加载设备描述: id=${device.usn}, location=${device.location}`);
   record.pending = upnpNative
     .loadDevice(device.location)
     .then((loaded) => {
@@ -282,9 +281,6 @@ function scheduleDlnaDescriptionLoad(device: SsdpDeviceEntry): void {
       record.presentationUrl = loaded.presentationUrl;
       record.services = loaded.services.map(
         (service) => `${service.serviceId}:${service.serviceType}`,
-      );
-      log.info(
-        `DLNA 设备描述完成: id=${device.usn}, name=${loaded.friendlyName || '-'}, manufacturer=${loaded.manufacturer || '-'}, model=${loaded.modelName || '-'}, modelNumber=${loaded.modelNumber || '-'}, serial=${loaded.serialNumber || '-'}, udn=${loaded.udn || '-'}, type=${loaded.deviceType || '-'}, services=${loaded.services.length}`,
       );
       pushDlnaDevices();
     })

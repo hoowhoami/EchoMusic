@@ -103,6 +103,7 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
 
   const devices = new Map<string, SsdpDeviceEntry>();
   let socket: dgram.Socket | null = null;
+  let notifySocket: dgram.Socket | null = null;
   let staleTimer: NodeJS.Timeout | null = null;
   let started = false;
 
@@ -174,7 +175,6 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
       expiresAt,
     };
     devices.set(usn, entry);
-    log('info', `[SSDP] found ${usn} @ ${location}`);
     options.onDevice?.(entry);
   }
 
@@ -197,7 +197,6 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
     } else if (nts === 'ssdp:byebye') {
       const removed = devices.delete(usn);
       if (removed) {
-        log('info', `[SSDP] byebye ${usn}`);
         notifyRemoved(usn, headers['nt'] ?? '', rinfo.address);
       }
     }
@@ -207,7 +206,6 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
     for (const [key, entry] of devices.entries()) {
       if (entry.expiresAt <= nowMs) {
         devices.delete(key);
-        log('info', `[SSDP] expire ${key}`);
         notifyRemoved(key, entry.st, entry.interface);
       }
     }
@@ -255,6 +253,22 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
     });
   }
 
+  function attachSocketHandlers(sock: dgram.Socket, label: string): void {
+    sock.on('message', handleMessage);
+    sock.on('error', (err) => {
+      log('error', `[SSDP] ${label} socket error: ${err.message}`);
+    });
+    const interfaces = listIpv4s();
+    const joined = interfaces.length ? interfaces : [undefined];
+    for (const iface of joined) {
+      try {
+        sock.addMembership(SSDP_ADDR, iface);
+      } catch (err) {
+        log('warn', `[SSDP] ${label} join multicast${iface ? ` ${iface}` : ''}: ${String(err)}`);
+      }
+    }
+  }
+
   async function openSocket(): Promise<dgram.Socket> {
     if (socket) return socket;
     const sock = makeSocket();
@@ -264,19 +278,21 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
       throw bindError;
     }
     socket = sock;
-    socket.on('message', handleMessage);
-    socket.on('error', (err) => {
-      log('error', `[SSDP] socket error: ${err.message}`);
-    });
-    const address = socket.address();
-    const boundPort = typeof address === 'object' ? address.port : 0;
-    log('info', `[SSDP] socket ready: port=${boundPort}`);
-    try {
-      socket.addMembership(SSDP_ADDR);
-    } catch (err) {
-      log('warn', `[SSDP] join multicast: ${String(err)}`);
-    }
+    attachSocketHandlers(socket, 'search');
     return socket;
+  }
+
+  async function openNotifySocket(): Promise<void> {
+    if (notifySocket) return;
+    const sock = makeSocket();
+    const bindError = await bindSocket(sock, SSDP_PORT);
+    if (bindError) {
+      await closeSocket(sock);
+      log('warn', `[SSDP] 1900 listener unavailable: ${bindError.message}`);
+      return;
+    }
+    notifySocket = sock;
+    attachSocketHandlers(notifySocket, 'notify');
   }
 
   async function sendSearch(st: string): Promise<void> {
@@ -290,19 +306,26 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
       `USER-AGENT: EchoMusic/1.0 UPnP/1.1\r\n` +
       `\r\n`;
     const data = Buffer.from(request, 'utf8');
-    // 使用临时源端口发送到 SSDP 标准目标端口 1900；设备会回到该临时端口。
-    sock.send(data, 0, data.length, SSDP_PORT, SSDP_ADDR);
-    for (const iface of listIpv4s()) {
+    try {
+      sock.setMulticastTTL?.(2);
+    } catch {
+      // 使用系统默认 TTL。
+    }
+    // 使用临时源端口向 SSDP 组播地址发送；设备按规范回到该源端口。
+    const interfaces = listIpv4s();
+    const sendInterfaces = interfaces.length ? interfaces : [undefined];
+    for (const iface of sendInterfaces) {
       try {
-        sock.send(data, 0, data.length, SSDP_PORT, iface);
+        if (iface) sock.setMulticastInterface?.(iface);
+        sock.send(data, 0, data.length, SSDP_PORT, SSDP_ADDR);
       } catch {
-        // 部分系统不允许对单播地址 send M-SEARCH；忽略。
+        // 部分系统不允许选择特定组播网卡；忽略该网卡，其他网卡继续。
       }
     }
   }
 
   async function searchOnce(): Promise<void> {
-    log('info', `[SSDP] M-SEARCH ${SEARCH_TARGETS.length} targets`);
+    await openNotifySocket();
     for (const target of SEARCH_TARGETS) {
       try {
         // MX=2；连续发送亦属规范内的“staggered”重试。
@@ -331,6 +354,7 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
       if (started) return;
       started = true;
       await openSocket();
+      await openNotifySocket();
       startStaleTimer();
     },
     async stop() {
@@ -343,6 +367,18 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
         await new Promise<void>((resolve) => {
           const s = socket!;
           socket = null;
+          try {
+            s.removeAllListeners('message');
+            s.close(() => resolve());
+          } catch {
+            resolve();
+          }
+        });
+      }
+      if (notifySocket) {
+        await new Promise<void>((resolve) => {
+          const s = notifySocket!;
+          notifySocket = null;
           try {
             s.removeAllListeners('message');
             s.close(() => resolve());

@@ -48,6 +48,7 @@ const targetMeta = (target: OutputTargetView) => (target.note ? target.note : ''
 const deviceName = (target: OutputTargetView) => target.displayName || protocolLabel(target);
 const isConnectingTarget = (target: OutputTargetView) =>
   output.connectingTargetId === target.targetId;
+const isTargetAvailable = (target: OutputTargetView) => target.connection?.available !== false;
 
 const isActiveTarget = (target: OutputTargetView) =>
   output.snapshot?.protocol === target.protocol &&
@@ -56,6 +57,7 @@ const isActiveTarget = (target: OutputTargetView) =>
     : output.snapshot.displayName === target.displayName);
 
 async function choose(target: OutputTargetView): Promise<void> {
+  if (!isTargetAvailable(target)) return;
   const currentPinTarget = pinTarget.value === target.targetId;
   if (!currentPinTarget) {
     pinTarget.value = '';
@@ -139,19 +141,22 @@ onUnmounted(() => {
     </div>
 
     <div v-if="remoteActive" class="cast-current">
-      <span>
-        {{ output.snapshot?.protocol === 'dlna' ? 'DLNA 原曲投放' : 'AirPlay 投放' }}
-      </span>
-      <Button
+      <span>{{ output.snapshot?.protocol === 'dlna' ? 'DLNA 投放' : 'AirPlay 投放' }}</span>
+      <button
+        type="button"
         class="cast-stop-button"
-        variant="secondary"
-        size="none"
-        :loading="output.switchingLocal"
         :disabled="output.busy"
         @click="output.useLocal()"
       >
-        停止投放
-      </Button>
+        <Icon
+          v-if="output.switchingLocal"
+          :icon="iconLoader2"
+          width="14"
+          height="14"
+          class="animate-spin"
+        />
+        <span>{{ output.switchingLocal ? '停止中' : '停止投放' }}</span>
+      </button>
     </div>
 
     <div class="cast-device-list" :class="{ disabled: !settingStore.networkPlaybackEnabled }">
@@ -167,7 +172,9 @@ onUnmounted(() => {
             type="button"
             class="cast-device-row app-focus-ring-soft"
             :class="{ active: isActiveTarget(target), connecting: isConnectingTarget(target) }"
-            :disabled="output.busy || !settingStore.networkPlaybackEnabled"
+            :disabled="
+              output.busy || !settingStore.networkPlaybackEnabled || !isTargetAvailable(target)
+            "
             @click="choose(target)"
           >
             <span class="cast-device-name">{{ deviceName(target) }}</span>
@@ -228,7 +235,9 @@ onUnmounted(() => {
               type="button"
               class="cast-device-row app-focus-ring-soft"
               :class="{ active: isActiveTarget(target), connecting: isConnectingTarget(target) }"
-              :disabled="output.busy || !settingStore.networkPlaybackEnabled"
+              :disabled="
+                output.busy || !settingStore.networkPlaybackEnabled || !isTargetAvailable(target)
+              "
               @click="choose(target)"
             >
               <span class="cast-device-name">{{ deviceName(target) }}</span>
@@ -376,12 +385,39 @@ onUnmounted(() => {
 }
 
 .cast-stop-button {
+  flex: 0 0 86px;
+  width: 86px;
   height: 30px;
-  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
   border-radius: 8px;
+  background: var(--control-muted-bg);
+  color: var(--color-text-main);
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.cast-stop-button:hover:not(:disabled) {
+  background: var(--control-hover-bg);
+}
+
+.cast-stop-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.cast-stop-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .cast-device-list {

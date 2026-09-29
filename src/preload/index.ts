@@ -108,6 +108,7 @@ import type {
   PluginMarketplaceSourceListResult,
   PluginMarketplaceSourceMutationResult,
   PluginMarketplaceSourcePatch,
+  PluginNetworkIpcResult,
   PluginNetworkRequestOptions,
   PluginNetworkResponse,
   PluginOpenDialogOptions,
@@ -1383,17 +1384,32 @@ contextBridge.exposeInMainWorld('electron', {
         end: (pluginId, connectionId) =>
           ipcRenderer.invoke('plugins:tcp:end', pluginId, connectionId),
       } satisfies PluginTcpNativeApi,
-      request: (pluginId: string, requestId: string, options: PluginNetworkRequestOptions) => {
+      request: async (
+        pluginId: string,
+        requestId: string,
+        options: PluginNetworkRequestOptions,
+      ) => {
         const { body, ...requestOptions } = options;
         const requestBody =
           body instanceof ArrayBuffer || ArrayBuffer.isView(body) ? body : toPlainIpcPayload(body);
-        return ipcRenderer.invoke(
+        const result = (await ipcRenderer.invoke(
           'plugins:net:request',
           pluginId,
           requestId,
           toPlainIpcPayload(requestOptions),
           requestBody,
-        ) as Promise<PluginNetworkResponse>;
+        )) as PluginNetworkIpcResult;
+        if (result.ok) return result.response as PluginNetworkResponse;
+        const error = new Error(result.error.message);
+        error.name = result.error.name || 'PluginNetworkRequestError';
+        if (result.error.code) {
+          Object.defineProperty(error, 'code', {
+            value: result.error.code,
+            enumerable: true,
+            configurable: true,
+          });
+        }
+        throw error;
       },
       cancel: (pluginId: string, requestId: string) =>
         ipcRenderer.invoke('plugins:net:cancel', pluginId, requestId) as Promise<boolean>,

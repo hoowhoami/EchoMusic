@@ -23,9 +23,9 @@ import type {
   PluginMarketplaceSourceListResult,
   PluginMarketplaceSourceMutationResult,
   PluginMarketplaceSourcePatch,
+  PluginNetworkIpcResult,
   PluginNetworkRequestBody,
   PluginNetworkRequestOptions,
-  PluginNetworkResponse,
   PluginOpenDialogOptions,
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
@@ -138,6 +138,7 @@ import {
 import { refreshTray } from '../tray';
 import log from '../logger';
 import { isPluginNetworkRequestError } from '../plugins/network';
+import { sanitizePluginNetworkLogUrl } from '../plugins/networkLog';
 import type { IpcContext } from './types';
 
 interface ActivePluginNetworkRequest {
@@ -422,7 +423,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
       requestId: string,
       options: Omit<PluginNetworkRequestOptions, 'body'>,
       body?: PluginNetworkRequestBody,
-    ): Promise<PluginNetworkResponse> => {
+    ): Promise<PluginNetworkIpcResult> => {
       const normalizedRequestId = String(requestId || '').trim();
       if (!normalizedRequestId || normalizedRequestId.length > 256) {
         throw new Error('网络请求 ID 无效');
@@ -445,16 +446,34 @@ export const registerPluginHandlers = (context: IpcContext) => {
       activePluginNetworkRequestCounts.set(normalizedPluginId, activeRequestCount + 1);
       trackPluginNetworkOwner(event.sender);
       try {
-        return await requestPluginNetworkForPlugin(
+        const response = await requestPluginNetworkForPlugin(
           normalizedPluginId,
           { ...options, body },
           controller.signal,
         );
+        return { ok: true, response };
+      } catch (error) {
+        if (!isPluginNetworkRequestError(error)) throw error;
+        log.warn('[PluginNetwork] request failed', {
+          pluginId: normalizedPluginId,
+          requestId: normalizedRequestId,
+          method: String(options?.method || 'GET').toUpperCase(),
+          url: sanitizePluginNetworkLogUrl(options?.url),
+          code: error.code,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return {
+          ok: false,
+          error: {
+            name: error.name,
+            message: error.message,
+            ...(error.code ? { code: error.code } : {}),
+          },
+        };
       } finally {
         releasePluginNetworkRequest(key, activeRequest);
       }
     },
-    { isExpectedError: isPluginNetworkRequestError },
   );
   ipcRegistry.registerHandler(
     'plugins:net:cancel',

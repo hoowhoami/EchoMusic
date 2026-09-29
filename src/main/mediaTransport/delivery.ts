@@ -60,7 +60,7 @@ export function inferMime(url: string, explicit?: string | null): string | null 
 }
 
 function incompatible(mime: string | null): string {
-  return `设备不支持当前格式（${mime ?? '未知格式'}），本次不会转码或转封装`;
+  return `设备不支持当前格式（${mime ?? '未知格式'}）`;
 }
 
 function isLoopback(hostname: string): boolean {
@@ -120,10 +120,10 @@ export function decideMediaDelivery(input: DeliveryRequest): DeliveryPlan {
   try {
     parsed = new URL(url);
   } catch {
-    return { ok: false, reason: '无法把该音源原样交给设备，本次不会转码' };
+    return { ok: false, reason: '无法把该音源交给设备' };
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return { ok: false, reason: '无法把该音源原样交给设备，本次不会转码' };
+    return { ok: false, reason: '无法把该音源交给设备' };
   }
 
   const relay =

@@ -29,6 +29,8 @@ pub struct AirplayFound {
     pub model: String,
     pub addresses: Vec<String>,
     pub needs_pin: bool,
+    pub supports_airplay2: bool,
+    pub supports_raop: bool,
 }
 
 #[napi(object)]
@@ -80,6 +82,8 @@ fn found_of(device: session::FoundDevice) -> AirplayFound {
         model: device.model,
         addresses: device.addresses,
         needs_pin: device.needs_pin,
+        supports_airplay2: device.supports_airplay2,
+        supports_raop: device.supports_raop,
     }
 }
 

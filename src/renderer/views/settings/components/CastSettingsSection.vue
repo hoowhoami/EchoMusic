@@ -57,6 +57,10 @@ function isConnectingTarget(target: OutputTargetView): boolean {
   return output.connectingTargetId === target.targetId;
 }
 
+function isTargetAvailable(target: OutputTargetView): boolean {
+  return target.connection?.available !== false;
+}
+
 function isActiveTarget(target: OutputTargetView): boolean {
   return (
     output.snapshot?.protocol === target.protocol &&
@@ -67,6 +71,7 @@ function isActiveTarget(target: OutputTargetView): boolean {
 }
 
 async function choose(target: OutputTargetView): Promise<void> {
+  if (!isTargetAvailable(target)) return;
   if (
     target.protocol === 'airplay' &&
     target.paired === false &&
@@ -177,7 +182,9 @@ function submitPin(): void {
             type="button"
             class="cast-device"
             :class="{ active: isActiveTarget(target), connecting: isConnectingTarget(target) }"
-            :disabled="output.busy || !settingStore.networkPlaybackEnabled"
+            :disabled="
+              output.busy || !settingStore.networkPlaybackEnabled || !isTargetAvailable(target)
+            "
             @click="choose(target)"
           >
             <span class="cast-device-name">{{ target.displayName }}</span>
@@ -207,7 +214,9 @@ function submitPin(): void {
             type="button"
             class="cast-device"
             :class="{ active: isActiveTarget(target), connecting: isConnectingTarget(target) }"
-            :disabled="output.busy || !settingStore.networkPlaybackEnabled"
+            :disabled="
+              output.busy || !settingStore.networkPlaybackEnabled || !isTargetAvailable(target)
+            "
             @click="choose(target)"
           >
             <span class="cast-device-name">{{ target.displayName }}</span>

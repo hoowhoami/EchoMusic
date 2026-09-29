@@ -181,6 +181,7 @@ export class DlnaBackend implements OutputBackendLike {
       CurrentURI: url,
       CurrentURIMetaData: meta,
     });
+    await this.setNormalPlayMode();
     this.gate = advanceGate(this.gate, true);
     this.recordLoadedSource(url);
     return { seq: this.gate.trackGeneration, duration: this.durationSec ?? 0 };
@@ -193,9 +194,21 @@ export class DlnaBackend implements OutputBackendLike {
       CurrentURI: url,
       CurrentURIMetaData: meta,
     });
+    await this.setNormalPlayMode();
     this.gate = advanceGate(this.gate, true);
     this.recordLoadedSource(url);
     return { seq: this.gate.trackGeneration, duration: this.durationSec ?? 0 };
+  }
+
+  private async setNormalPlayMode(): Promise<void> {
+    try {
+      await this.soap(this.avTransportId, 'SetPlayMode', {
+        InstanceID: '0',
+        NewPlayMode: 'NORMAL',
+      });
+    } catch {
+      // SetPlayMode 是可选能力；失败不应阻断投放。
+    }
   }
 
   private recordLoadedSource(url: string): void {

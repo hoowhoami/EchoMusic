@@ -64,6 +64,7 @@ function harness(options = {}) {
   const local = {
     plays: 0,
     loads: 0,
+    pauses: 0,
     beginSourceChange() {
       return 1;
     },
@@ -72,7 +73,9 @@ function harness(options = {}) {
       local.loaded = url;
       return { seq: 7, duration: 120 };
     },
-    async pause() {},
+    async pause() {
+      local.pauses += 1;
+    },
     async play() {
       local.plays += 1;
     },
@@ -81,8 +84,22 @@ function harness(options = {}) {
       local.seeked = time;
     },
     async setVolume() {},
+    async setAirplayTap(port, enabled) {
+      local.airplayTap = { port, enabled };
+    },
+    async setAirplayEpoch(epoch) {
+      local.airplayEpoch = epoch;
+    },
     getState() {
-      return { playing: false, volume: options.localVolume ?? 80, timePos: 0, duration: 0 };
+      return {
+        playing: options.localPlaying ?? false,
+        paused: !(options.localPlaying ?? false),
+        volume: options.localVolume ?? 80,
+        timePos: options.localTimePos ?? 0,
+        duration: options.localDuration ?? 0,
+        path: options.localPath ?? '',
+        trackSeq: options.localTrackSeq ?? 0,
+      };
     },
   };
   const transport = {
@@ -170,7 +187,7 @@ test('delivery keeps direct URLs direct and relays private, signed, or local sou
     sinkProtocolInfo: 'http-get:*:audio/mpeg:*',
   });
   assert.equal(rejected.ok, false);
-  assert.match(rejected.reason, /不会转码/);
+  assert.match(rejected.reason, /不支持当前格式/);
   assert.equal(
     decideMediaDelivery({ url: 'https://cdn.example/song.bin', sinkProtocolInfo: 'audio/mpeg' }).ok,
     true,
@@ -231,8 +248,73 @@ test('DLNA direct delivery keeps the original URL and rejects an unsupported typ
     assert.equal(direct.args.CurrentURI, 'https://cdn.example/song.mp3');
     assert.equal(direct.serviceId, 'urn:upnp-org:serviceId:AVTransport');
     const next = host.beginSourceChange();
-    await assert.rejects(host.load('https://cdn.example/song.flac', next), /不会转码/);
+    await assert.rejects(host.load('https://cdn.example/song.flac', next), /不支持当前格式/);
     assert.equal(calls.filter((call) => call.name === 'SetAVTransportURI').length, 1);
+  } finally {
+    await media.stop();
+  }
+});
+
+test('DLNA connect hands off the current local track', async () => {
+  const { host, calls, local, player, transport, media } = harness({
+    localPath: 'https://cdn.example/song.mp3',
+    localPlaying: true,
+    localTimePos: 12,
+    localDuration: 120,
+    localTrackSeq: 9,
+  });
+  try {
+    assert.deepEqual(await host.connect('uuid:renderer-1'), { ok: true });
+    const actions = calls.map((call) => call.name);
+    assert.ok(actions.includes('SetAVTransportURI'));
+    assert.ok(actions.includes('SetPlayMode'));
+    assert.ok(actions.includes('Seek'));
+    assert.ok(actions.includes('Play'));
+    assert.ok(actions.indexOf('SetAVTransportURI') < actions.indexOf('Play'));
+    assert.equal(
+      calls.find((call) => call.name === 'SetAVTransportURI').args.CurrentURI,
+      'https://cdn.example/song.mp3',
+    );
+    assert.equal(calls.find((call) => call.name === 'SetPlayMode').args.NewPlayMode, 'NORMAL');
+    assert.equal(calls.find((call) => call.name === 'Seek').args.Target, '00:00:12');
+    const timeUpdate = player.find((event) => event[0] === 'time-update');
+    assert.equal(timeUpdate[1].trackSeq, 9);
+    transport.rel = '00:00:42';
+    await host.pollOnce();
+    const latestTimeUpdate = player.filter((event) => event[0] === 'time-update').at(-1);
+    assert.equal(latestTimeUpdate[1].time, 42);
+    assert.equal(latestTimeUpdate[1].trackSeq, 9);
+    assert.equal(local.pauses, 1);
+    assert.equal(local.plays, 0);
+  } finally {
+    await media.stop();
+  }
+});
+
+test('DLNA connect restores local playback when the current track is unsupported', async () => {
+  const { host, calls, local, player, media } = harness({
+    localPath: 'https://cdn.example/song.flac',
+    localPlaying: true,
+    localTimePos: 12,
+    localDuration: 120,
+  });
+  try {
+    const result = await host.connect('uuid:renderer-1');
+    assert.equal(result.ok, false);
+    assert.match(result.error, /不支持当前格式/);
+    assert.equal(host.snapshot().protocol, 'local');
+    assert.equal(host.ownsTransport, false);
+    assert.equal(local.pauses, 1);
+    assert.equal(local.seeked, 12);
+    assert.equal(local.plays, 1);
+    assert.equal(
+      calls.some((call) => call.name === 'SetAVTransportURI'),
+      false,
+    );
+    assert.equal(
+      player.some(([event]) => event === 'error'),
+      false,
+    );
   } finally {
     await media.stop();
   }
@@ -520,6 +602,60 @@ test('AirPlay target note distinguishes same-name devices', async () => {
   }
 });
 
+test('RAOP-only AirPlay targets are visible and connectable', async () => {
+  let connectCalls = 0;
+  const box = harness({
+    localNetworkIdentity: () => ({ addresses: [], macs: [] }),
+    airplay: {
+      available: true,
+      async discover() {
+        return [];
+      },
+      async connect() {
+        connectCalls += 1;
+        return { ok: true, pcmPort: 49152, format: 'ALAC 44100 Hz 16-bit stereo' };
+      },
+      async disconnect() {},
+      async pause() {},
+      async resume() {},
+      async seek() {
+        return 1;
+      },
+      async stop() {},
+      async setVolume() {},
+      async flushTrack() {
+        return 1;
+      },
+      status() {
+        return { connected: false, delaySec: 0, format: '', inputBits: 16 };
+      },
+    },
+  });
+  try {
+    box.host.noteAirplayDevices([
+      {
+        id: '33:44:55:66:77:88',
+        name: 'XiaoAi Speaker',
+        model: 'RAOP',
+        addresses: ['192.0.2.88'],
+        needsPin: false,
+        supportsAirplay2: false,
+        supportsRaop: true,
+      },
+    ]);
+    const target = box.host
+      .targets()
+      .find((item) => item.protocol === 'airplay' && item.targetId === '33:44:55:66:77:88');
+    assert.equal(target?.connection.available, true);
+    assert.match(target?.note ?? '', /AirPlay 1/);
+    const result = await box.host.connect('33:44:55:66:77:88');
+    assert.equal(result.ok, true);
+    assert.equal(connectCalls, 1);
+  } finally {
+    await box.media.stop();
+  }
+});
+
 test('explicit DLNA removal clears the last visible remote target', async () => {
   const box = harness();
   try {
@@ -636,7 +772,9 @@ test('DLNA auth failures show a concise authorization hint', async () => {
   const box = harness({
     native: {
       async loadDevice() {
-        throw new Error('device description failed: The control point responded with status code 401');
+        throw new Error(
+          'device description failed: The control point responded with status code 401',
+        );
       },
       async action() {
         return {};

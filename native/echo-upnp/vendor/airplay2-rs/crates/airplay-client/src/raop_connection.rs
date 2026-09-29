@@ -10,18 +10,18 @@
 //! - SDP-based codec declaration via ANNOUNCE
 //! - AES-128-CBC audio encryption (not ChaCha20-Poly1305)
 
+use crate::PlaybackState;
+use airplay_audio::cipher::AesCbcPacketCipher;
+use airplay_audio::{AudioDecoder, AudioStreamer, LiveAudioDecoder, RtpReceiver, RtpSender};
 use airplay_core::error::{Error as CoreError, Result, RtspError};
 use airplay_core::{Device, StreamConfig};
-use airplay_audio::cipher::AesCbcPacketCipher;
-use airplay_audio::{AudioDecoder, AudioStreamer, RtpReceiver, RtpSender};
 use airplay_crypto::rsa::encrypt_aes_key;
-use airplay_rtsp::{RaopSession, RtspConnection, RtspRequest};
 use airplay_rtsp::raop_session::RaopSessionState;
 use airplay_rtsp::sdp::SdpBuilder;
+use airplay_rtsp::{RaopSession, RtspConnection, RtspRequest};
 use airplay_timing::NtpTimingServer;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use base64::Engine;
-use crate::PlaybackState;
 use std::net::{IpAddr, SocketAddr};
 use tracing::{debug, info, warn};
 
@@ -47,14 +47,12 @@ fn select_best_address(addresses: &[IpAddr]) -> Option<&IpAddr> {
         return Some(addr);
     }
     // Then global IPv6 (not link-local)
-    if let Some(addr) = addresses.iter().find(|a| {
-        match a {
-            IpAddr::V6(v6) => {
-                let segments = v6.segments();
-                !v6.is_loopback() && (segments[0] & 0xffc0) != 0xfe80
-            }
-            _ => false,
+    if let Some(addr) = addresses.iter().find(|a| match a {
+        IpAddr::V6(v6) => {
+            let segments = v6.segments();
+            !v6.is_loopback() && (segments[0] & 0xffc0) != 0xfe80
         }
+        _ => false,
     }) {
         return Some(addr);
     }
@@ -102,8 +100,8 @@ impl RaopConnection {
         let client_device_id = generate_device_id();
 
         // TCP connect to RAOP port
-        let ip_addr = select_best_address(&device.addresses)
-            .ok_or_else(|| RtspError::ConnectionRefused)?;
+        let ip_addr =
+            select_best_address(&device.addresses).ok_or_else(|| RtspError::ConnectionRefused)?;
         let port = device.raop_connection_port();
         let addr = SocketAddr::new(*ip_addr, port);
         info!("RAOP connecting to {} at {}", device.name, addr);
@@ -137,10 +135,7 @@ impl RaopConnection {
                 if let Some(www_auth) = options_resp.header("WWW-Authenticate") {
                     if let Some(auth_header) = airplay_crypto::digest::compute_digest_response(
                         "", // RAOP typically uses empty username
-                        pw,
-                        "OPTIONS",
-                        "*",
-                        www_auth,
+                        pw, "OPTIONS", "*", www_auth,
                     ) {
                         let retry_req = RtspRequest::options_with_challenge(&challenge)
                             .header("Authorization", auth_header);
@@ -155,10 +150,10 @@ impl RaopConnection {
                     }
                 }
             } else {
-                return Err(
-                    RtspError::SetupFailed("Device requires password (401 Unauthorized)".into())
-                        .into(),
-                );
+                return Err(RtspError::SetupFailed(
+                    "Device requires password (401 Unauthorized)".into(),
+                )
+                .into());
             }
         }
 
@@ -186,10 +181,8 @@ impl RaopConnection {
         info!("RAOP setup start");
 
         // Start NTP timing server (RAOP always uses NTP)
-        let timing_server = NtpTimingServer::start(
-            self.stream_config.audio_format.sample_rate.as_hz(),
-        )
-        .await?;
+        let timing_server =
+            NtpTimingServer::start(self.stream_config.audio_format.sample_rate.as_hz()).await?;
         let timing_port = timing_server.port();
         info!("Started NTP timing server on port {}", timing_port);
         self.session.set_local_timing_port(timing_port);
@@ -321,8 +314,7 @@ impl RaopConnection {
 
         // 3. SETUP with Transport header
         let transport_header = self.session.build_transport_header();
-        let setup_req =
-            RtspRequest::setup_raop(self.session.request_uri(), &transport_header);
+        let setup_req = RtspRequest::setup_raop(self.session.request_uri(), &transport_header);
         let setup_resp = self.rtsp.send(setup_req).await?;
 
         if setup_resp.status_code != 200 {
@@ -376,9 +368,10 @@ impl RaopConnection {
             self.setup().await?;
         }
 
-        let ports = self.session.ports().ok_or_else(|| {
-            RtspError::SetupFailed("Missing ports from SETUP".into())
-        })?;
+        let ports = self
+            .session
+            .ports()
+            .ok_or_else(|| RtspError::SetupFailed("Missing ports from SETUP".into()))?;
 
         let dest_addr = select_best_address(&self.device.addresses)
             .ok_or_else(|| RtspError::ConnectionRefused)?;
@@ -395,10 +388,7 @@ impl RaopConnection {
 
         // Enable AES-CBC encryption if RSA key exchange was used
         if self.device.supports_rsa_encryption() {
-            let cipher = AesCbcPacketCipher::new(
-                *self.session.aes_key(),
-                *self.session.aes_iv(),
-            );
+            let cipher = AesCbcPacketCipher::new(*self.session.aes_key(), *self.session.aes_iv());
             sender.set_cipher(Box::new(cipher));
             info!("DIAG: AES-CBC audio encryption ENABLED");
         } else {
@@ -420,6 +410,53 @@ impl RaopConnection {
         self.session.start_playing()?;
 
         // Send initial volume
+        if let Err(e) = self.set_volume(self.volume).await {
+            warn!("Failed to set volume: {}", e);
+        }
+
+        self.streamer = Some(streamer);
+        self.playback_state = PlaybackState::Playing;
+
+        Ok(())
+    }
+
+    /// Start live audio streaming from a PCM frame source.
+    pub async fn start_streaming_live(&mut self, decoder: LiveAudioDecoder) -> Result<()> {
+        if self.session.state() != RaopSessionState::SetupComplete {
+            self.setup().await?;
+        }
+
+        let ports = self
+            .session
+            .ports()
+            .ok_or_else(|| RtspError::SetupFailed("Missing ports from SETUP".into()))?;
+
+        let dest_addr = select_best_address(&self.device.addresses)
+            .ok_or_else(|| RtspError::ConnectionRefused)?;
+        let dest = SocketAddr::new(*dest_addr, ports.server_port);
+        let control_dest = SocketAddr::new(*dest_addr, ports.control_port);
+
+        let mut sender = RtpSender::new(dest, rand::random());
+        sender.set_control_dest(control_dest);
+        sender.bind(0)?;
+
+        if self.device.supports_rsa_encryption() {
+            let cipher = AesCbcPacketCipher::new(*self.session.aes_key(), *self.session.aes_iv());
+            sender.set_cipher(Box::new(cipher));
+        }
+
+        let mut streamer = AudioStreamer::new(self.stream_config.clone());
+        streamer.set_rtp_sender(sender).await;
+        if self.render_delay_ms > 0 {
+            streamer.set_render_delay_ms(self.render_delay_ms).await;
+        }
+        streamer
+            .set_timing_offset(airplay_timing::ClockOffset::default())
+            .await;
+        streamer.start_live(decoder).await?;
+
+        self.session.start_playing()?;
+
         if let Err(e) = self.set_volume(self.volume).await {
             warn!("Failed to set volume: {}", e);
         }
@@ -458,6 +495,18 @@ impl RaopConnection {
         self.rtsp.send(record_req).await?;
         self.session.start_playing()?;
         self.playback_state = PlaybackState::Playing;
+        Ok(())
+    }
+
+    /// Flush queued receiver audio without changing the local playback state.
+    pub async fn flush(&mut self) -> Result<()> {
+        let flush_req = RtspRequest::flush(self.session.request_uri());
+        self.rtsp.send(flush_req).await?;
+
+        if let Some(ref mut streamer) = self.streamer {
+            streamer.reset_after_flush().await;
+        }
+
         Ok(())
     }
 

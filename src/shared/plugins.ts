@@ -410,6 +410,20 @@ export interface PluginNetworkResponse<T = PluginNetworkResponseData> {
   data: T;
 }
 
+export type PluginNetworkIpcResult =
+  | {
+      ok: true;
+      response: PluginNetworkResponse;
+    }
+  | {
+      ok: false;
+      error: {
+        name: string;
+        message: string;
+        code?: string;
+      };
+    };
+
 // --- 服务请求拦截器（ctx.server.intercept） ---
 
 /**

@@ -412,6 +412,7 @@ export interface PlayerState {
   audioDevice?: string;
   exclusiveOutput?: boolean;
   audioTrackId?: number;
+  trackSeq?: number;
 }
 
 export interface PlayerPlaybackContext {
@@ -457,7 +458,7 @@ export class PlayerController extends EventEmitter {
   }
 
   get currentState(): PlayerState {
-    return { ...this.state };
+    return { ...this.state, trackSeq: this.activeTrackSeq || undefined };
   }
 
   getState(): PlayerState {

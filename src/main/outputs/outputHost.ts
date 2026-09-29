@@ -44,6 +44,7 @@ export interface LocalTransport {
     duration?: number;
     volume?: number;
     path?: string;
+    trackSeq?: number;
   } | null;
   setAudioOutput?(deviceName: string, exclusive: boolean): Promise<void>;
   getAudioDevices?(): Promise<Array<{ name: string; description: string; isDefault?: boolean }>>;
@@ -67,6 +68,8 @@ export interface AirplayDeviceInfo {
   model?: string;
   addresses?: string[];
   needsPin: boolean;
+  supportsAirplay2?: boolean;
+  supportsRaop?: boolean;
 }
 
 export interface AirplayStatus {
@@ -186,12 +189,15 @@ interface AirplayTarget {
   model?: string;
   addresses?: string[];
   needsPin: boolean;
+  supportsAirplay2?: boolean;
+  supportsRaop?: boolean;
 }
 
 type RouteMode = 'local' | 'dlna' | 'airplay';
 
 const OFFLINE_LIMIT = 3;
 const VOLUME_GUARD_MS = 1000;
+const DLNA_POLL_LOG_INTERVAL_MS = 30_000;
 
 function normalizeAddress(value: string): string {
   return (
@@ -256,6 +262,16 @@ function hostLabelFromLocation(location: string): string {
   }
 }
 
+function describeUrlForLog(value: string): string {
+  try {
+    const parsed = new URL(value);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    const queryIndex = value.indexOf('?');
+    return queryIndex >= 0 ? value.slice(0, queryIndex) : value;
+  }
+}
+
 function compactJoin(parts: Array<string | undefined | null>): string {
   return parts
     .map((part) => String(part ?? '').trim())
@@ -286,6 +302,7 @@ function primaryNetworkAddress(addresses?: string[]): string | undefined {
 function airplayTargetNote(target: AirplayTarget): string | undefined {
   return (
     compactJoin([
+      target.supportsRaop && target.supportsAirplay2 === false ? 'AirPlay 1' : undefined,
       target.needsPin ? '需要 PIN' : undefined,
       target.model,
       primaryNetworkAddress(target.addresses),
@@ -298,6 +315,8 @@ function formatAirplayTarget(target: AirplayTarget): string {
   if (target.model) parts.push(`model=${target.model}`);
   if (target.addresses?.length) parts.push(`addresses=${target.addresses.join('/')}`);
   if (target.needsPin) parts.push('pin=required');
+  if (target.supportsAirplay2 === false) parts.push('airplay2=unsupported');
+  if (target.supportsRaop) parts.push('raop=supported');
   return parts.join(', ');
 }
 
@@ -369,6 +388,7 @@ export class OutputHost {
   private position = 0;
   private duration = 0;
   private trackSeq = 0;
+  private playerTrackSeq = 0;
   private deviceVolume: number | null = null;
   private savedLocalVolume: number | null = null;
   private volumeGuardUntil = 0;
@@ -385,6 +405,8 @@ export class OutputHost {
   private airplayScanFlight: Promise<void> | null = null;
   private loggedAirplayDiscoveryBackend = '';
   private loggedLocalAirplayIds = new Set<string>();
+  private lastDlnaPollLogAt = 0;
+  private lastDlnaPollLogKey = '';
 
   constructor(private readonly deps: OutputHostDeps) {
     this.now = deps.now ?? (() => Date.now());
@@ -522,6 +544,8 @@ export class OutputHost {
         model: device.model,
         addresses: device.addresses,
         needsPin: device.needsPin,
+        supportsAirplay2: device.supportsAirplay2,
+        supportsRaop: device.supportsRaop,
       });
     }
     if (pruneMissing && devices.length > 0) {
@@ -754,7 +778,6 @@ export class OutputHost {
     if (!allowed) return { ok: false, error: '设备地址无效' };
     let loaded: UpnpDeviceSnapshot;
     try {
-      this.log('info', `DLNA 连接读取设备描述: ${formatDlnaTarget(target)}`);
       loaded = await this.deps.native.loadDevice(target.location);
       this.log(
         'info',
@@ -804,7 +827,14 @@ export class OutputHost {
       }
     }
     await this.stopRemote(false);
-    this.savedLocalVolume = this.deps.local.getState()?.volume ?? this.savedLocalVolume;
+    const localState = this.deps.local.getState();
+    const handoffUrl = String(localState?.path ?? '').trim();
+    const handoffPosition =
+      Number.isFinite(localState?.timePos) && (localState?.timePos ?? 0) > 0
+        ? Number(localState?.timePos)
+        : 0;
+    const handoffWasPlaying = Boolean(localState?.playing) && !localState?.paused;
+    this.savedLocalVolume = localState?.volume ?? this.savedLocalVolume;
     try {
       await this.deps.local.pause();
     } catch (error) {
@@ -846,7 +876,7 @@ export class OutputHost {
       this.playing = false;
       this.emitPlayer('state-change', this.statePayload());
       this.emitPlayer('playback-end', 'eof', {
-        trackSeq: payload?.trackGeneration ?? this.trackSeq,
+        trackSeq: this.playerEventTrackSeq(payload?.trackGeneration),
         generation: this.routeEpoch,
       });
     });
@@ -873,6 +903,52 @@ export class OutputHost {
     this.diagnostics =
       volume == null ? '已连接，未能读取设备音量' : '已连接。本机音效不会作用在 DLNA 原曲上';
     await this.startObserve(loaded, av.eventSubUrl, allowed, token);
+    if (handoffUrl) {
+      const generation = this.commands.bump();
+      const handoffTrackSeq =
+        Number.isFinite(localState?.trackSeq) && (localState?.trackSeq ?? 0) > 0
+          ? Number(localState?.trackSeq)
+          : null;
+      try {
+        const handoff = await this.loadBody(
+          handoffUrl,
+          generation,
+          generation,
+          undefined,
+          handoffTrackSeq,
+        );
+        if (handoff && handoffPosition > 0) await this.seekBody(handoffPosition, generation);
+        if (handoff && handoffWasPlaying && !this.takenOver) await this.playBody(generation);
+        this.diagnostics = handoffWasPlaying
+          ? '已连接并开始投放当前歌曲'
+          : '已连接，当前歌曲已发送到设备';
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.log(
+          'warn',
+          `DLNA 接管当前音源失败: target=${this.targetName || this.targetId || '-'}, error=${message}`,
+        );
+        await this.stopRemote(false);
+        this.mode = 'local';
+        this.link = 'up';
+        this.targetId = null;
+        this.targetName = '';
+        this.sinkInfo = null;
+        this.deviceVolume = localState?.volume ?? this.deviceVolume;
+        this.diagnostics = `投放失败：${message}，已继续本机播放`;
+        try {
+          if (handoffPosition > 0) await this.deps.local.seek(handoffPosition);
+          if (handoffWasPlaying) await this.deps.local.play();
+        } catch (restoreError) {
+          this.log('warn', `恢复本机播放失败: ${String(restoreError)}`);
+        }
+        this.publish();
+        this.emitPlayer('state-change', this.statePayload());
+        return { ok: false, error: message };
+      }
+    } else {
+      this.log('info', `DLNA 已连接，但本机没有当前音源可接管: target=${this.targetName || '-'}`);
+    }
     this.publish();
     this.emitPlayer('state-change', this.statePayload());
     return { ok: true };
@@ -1130,7 +1206,7 @@ export class OutputHost {
       if (this.trackSeq > 0) {
         this.emitPlayer('time-update', {
           time: this.position,
-          trackSeq: this.trackSeq,
+          trackSeq: this.playerEventTrackSeq(),
           generation: this.routeEpoch,
         });
       }
@@ -1193,10 +1269,16 @@ export class OutputHost {
       this.duration = state.durationSec ?? this.duration;
       this.trackSeq = state.trackGeneration;
       this.playing = state.state === 'playing';
+      this.logDlnaPollState(
+        transport.CurrentTransportState,
+        position.RelTime,
+        position.TrackDuration,
+        position.TrackURI,
+      );
       if (this.trackSeq > 0) {
         this.emitPlayer('time-update', {
           time: this.position,
-          trackSeq: this.trackSeq,
+          trackSeq: this.playerEventTrackSeq(),
           generation: this.routeEpoch,
         });
       }
@@ -1213,6 +1295,7 @@ export class OutputHost {
     generation: number,
     requestId?: number,
     trackId?: number | null,
+    playerTrackSeqOverride?: number | null,
   ): Promise<{ seq: number; duration: number } | null> {
     if (this.link !== 'up' || !this.backend) {
       throw new Error('设备已断开，已暂停。请重连或切回本机');
@@ -1242,6 +1325,10 @@ export class OutputHost {
     this.position = 0;
     this.duration = loaded.duration;
     this.trackSeq = loaded.seq;
+    this.playerTrackSeq =
+      playerTrackSeqOverride != null && playerTrackSeqOverride > 0
+        ? playerTrackSeqOverride
+        : loaded.seq;
     this.playing = false;
     this.sourceStale = false;
     return loaded;
@@ -1276,7 +1363,23 @@ export class OutputHost {
     if (this.link !== 'up' || !this.backend)
       throw new Error('设备已断开，已暂停。请重连或切回本机');
     if (this.takenOver) throw new Error('播放已被其他控制端接管');
-    await this.backend.play();
+    if (!this.originalUrl && this.trackSeq <= 0) {
+      const message = '设备尚未加载音源，无法播放';
+      this.log(
+        'warn',
+        `DLNA 播放失败: target=${this.targetName || this.targetId || '-'}, ${message}`,
+      );
+      throw new Error(message);
+    }
+    try {
+      await this.backend.play();
+    } catch (error) {
+      this.log(
+        'warn',
+        `DLNA Play 失败: target=${this.targetName || this.targetId || '-'}, error=${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
+    }
     if (generation !== this.commands.current) return;
     this.playing = true;
     this.offlineStreak = 0;
@@ -1303,11 +1406,23 @@ export class OutputHost {
   private async seekBody(time: number, generation: number): Promise<void> {
     if (this.link !== 'up' || !this.backend)
       throw new Error('设备已断开，已暂停。请重连或切回本机');
-    await this.backend.seek(time);
+    try {
+      await this.backend.seek(time);
+    } catch (error) {
+      this.log(
+        'warn',
+        `DLNA Seek 失败: target=${this.targetName || this.targetId || '-'}, time=${time}, error=${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
+    }
     if (generation !== this.commands.current) return;
     this.position = time;
     this.emitPlayer('seeked', time);
-    this.emitPlayer('time-update', { time, trackSeq: this.trackSeq, generation: this.routeEpoch });
+    this.emitPlayer('time-update', {
+      time,
+      trackSeq: this.playerEventTrackSeq(),
+      generation: this.routeEpoch,
+    });
   }
 
   private async volumeBody(volume: number, generation: number): Promise<void> {
@@ -1452,6 +1567,9 @@ export class OutputHost {
     this.device = null;
     this.activeToken = null;
     this.playing = false;
+    this.playerTrackSeq = 0;
+    this.lastDlnaPollLogAt = 0;
+    this.lastDlnaPollLogKey = '';
     if (clearUrl) this.originalUrl = '';
   }
 
@@ -1478,6 +1596,24 @@ export class OutputHost {
     return (this.deps.schedule ?? defaultSchedule)(fn, ms);
   }
 
+  private logDlnaPollState(
+    transportState?: string,
+    relTime?: string,
+    duration?: string,
+    trackUri?: string,
+  ): void {
+    const now = this.now();
+    const key = `${transportState || '-'}|${duration || '-'}|${trackUri || '-'}`;
+    if (key === this.lastDlnaPollLogKey && now - this.lastDlnaPollLogAt < DLNA_POLL_LOG_INTERVAL_MS)
+      return;
+    this.lastDlnaPollLogAt = now;
+    this.lastDlnaPollLogKey = key;
+    this.log(
+      'info',
+      `DLNA 状态: target=${this.targetName || this.targetId || '-'}, state=${transportState || '-'}, position=${relTime || '-'}, duration=${duration || '-'}, uri=${trackUri ? describeUrlForLog(trackUri) : '-'}`,
+    );
+  }
+
   private requireAirplay(): AirplayControl {
     const airplay = this.deps.airplay;
     if (!airplay?.available || !this.airplayActive) {
@@ -1497,9 +1633,13 @@ export class OutputHost {
       idle: this.mode === 'local',
       path: this.originalUrl,
       audioDevice: this.targetName,
-      trackSeq: this.trackSeq,
+      trackSeq: this.playerEventTrackSeq(),
       generation: this.routeEpoch,
     };
+  }
+
+  private playerEventTrackSeq(fallback = this.trackSeq): number {
+    return this.playerTrackSeq > 0 ? this.playerTrackSeq : fallback;
   }
 
   private emitPlayer(event: string, ...args: unknown[]): void {
@@ -1524,7 +1664,7 @@ export class OutputHost {
   notifySourceStale(status: number): void {
     if (this.sourceStale) return;
     this.sourceStale = true;
-    this.diagnostics = `音源返回 ${status}，需要按原来的解析流程重新获取。不会转码`;
+    this.diagnostics = `音源返回 ${status}，需要按原来的解析流程重新获取`;
     this.emitPlayer('error', { code: 'output-source-stale', message: this.diagnostics });
     this.publish();
   }

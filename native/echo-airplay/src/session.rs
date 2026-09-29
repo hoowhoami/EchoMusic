@@ -3,7 +3,10 @@
 
 use crate::bonjour;
 use crate::pcm::{self, PcmFrame, TRANSPORT_FORMAT};
-use airplay_client::{ClientBuilder, Device, LiveFrameSender, LivePcmFrame};
+use airplay_client::{
+    ClientBuilder, Device, LiveAudioDecoder, LiveFrameSender, LivePcmFrame, RaopConnection,
+    StreamConfig,
+};
 use std::io::{ErrorKind, Read};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -34,6 +37,8 @@ pub struct FoundDevice {
     pub model: String,
     pub addresses: Vec<String>,
     pub needs_pin: bool,
+    pub supports_airplay2: bool,
+    pub supports_raop: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -289,6 +294,7 @@ struct FeedStats {
 struct Worker {
     devices: Vec<Device>,
     feed: Option<Feed>,
+    raop: Option<RaopConnection>,
     epoch: u32,
     last_error: Option<String>,
     connected: bool,
@@ -318,20 +324,20 @@ impl Worker {
                 let _ = reply.send(());
             }
             Command::Pause { reply } => {
-                let _ = reply.send(self.transport(client.pause().await));
+                let _ = reply.send(self.pause(client).await);
             }
             Command::Resume { reply } => {
-                let _ = reply.send(self.transport(client.resume().await));
+                let _ = reply.send(self.resume(client).await);
             }
             Command::Seek { seconds, reply } => {
                 let _ = reply.send(self.seek(client, seconds).await);
             }
             Command::Stop { reply } => {
-                let _ = reply.send(self.transport(client.stop().await));
+                let _ = reply.send(self.stop(client).await);
             }
             Command::Volume { volume, reply } => {
                 let level = (volume / 100.0).clamp(0.0, 1.0) as f32;
-                let _ = reply.send(self.transport(client.set_volume(level).await));
+                let _ = reply.send(self.volume(client, level).await);
             }
             Command::Flush { reply } => {
                 let _ = reply.send(self.seek(client, 0.0).await);
@@ -357,6 +363,9 @@ impl Worker {
         let Some(device) = self.lookup(id).cloned() else {
             return fail("设备不在当前发现结果里");
         };
+        if device.supports_raop() && !device.supports_airplay2() {
+            return self.connect_raop(device, pin).await;
+        }
         if device.requires_password && pin.trim().is_empty() {
             let _ = client.start_pin_pairing(&device).await;
             return fail("pin-required");
@@ -392,18 +401,97 @@ impl Worker {
                 );
             }
         };
+        let port = match self.attach_feeder(sender) {
+            Ok(port) => port,
+            Err(message) => {
+                let _ = client.stop().await;
+                let _ = client.disconnect().await;
+                return fail(&message);
+            }
+        };
+        Link {
+            ok: true,
+            error: None,
+            format: Some(TRANSPORT_FORMAT.to_string()),
+            pcm_port: Some(u32::from(port)),
+        }
+    }
+
+    async fn connect_raop(&mut self, device: Device, pin: &str) -> Link {
+        if device.requires_password && pin.trim().is_empty() {
+            return fail("pin-required");
+        }
+
+        let config = StreamConfig::airplay1_realtime();
+        let mut connection = if pin.trim().is_empty() {
+            match RaopConnection::connect(device, config).await {
+                Ok(connection) => connection,
+                Err(err) => {
+                    let error = normalize_connect_error(&err.to_string());
+                    self.last_error = Some(error);
+                    return fail(
+                        &self
+                            .last_error
+                            .clone()
+                            .unwrap_or_else(|| "连接失败".to_string()),
+                    );
+                }
+            }
+        } else {
+            match RaopConnection::connect_with_password(device, config, pin.trim()).await {
+                Ok(connection) => connection,
+                Err(err) => {
+                    let error = normalize_connect_error(&err.to_string());
+                    self.last_error = Some(error);
+                    return fail(
+                        &self
+                            .last_error
+                            .clone()
+                            .unwrap_or_else(|| "连接失败".to_string()),
+                    );
+                }
+            }
+        };
+
+        let (sender, decoder) = LiveAudioDecoder::create_pair(TRANSPORT_RATE, 2, 16);
+        if let Err(err) = connection.start_streaming_live(decoder).await {
+            self.last_error = Some(err.to_string());
+            let _ = connection.disconnect().await;
+            return fail(
+                &self
+                    .last_error
+                    .clone()
+                    .unwrap_or_else(|| "无法开始发送".to_string()),
+            );
+        }
+
+        let port = match self.attach_feeder(sender) {
+            Ok(port) => port,
+            Err(message) => {
+                let _ = connection.disconnect().await;
+                return fail(&message);
+            }
+        };
+        self.raop = Some(connection);
+        Link {
+            ok: true,
+            error: None,
+            format: Some(format!("{TRANSPORT_FORMAT}; AirPlay 1/RAOP")),
+            pcm_port: Some(u32::from(port)),
+        }
+    }
+
+    fn attach_feeder(&mut self, sender: LiveFrameSender) -> Result<u16, String> {
         let listener = match TcpListener::bind("127.0.0.1:0") {
             Ok(listener) => listener,
             Err(err) => {
                 self.last_error = Some(err.to_string());
-                let _ = client.stop().await;
-                let _ = client.disconnect().await;
-                return fail("无法打开本机音频出口");
+                return Err("无法打开本机音频出口".to_string());
             }
         };
         let port = listener.local_addr().map(|addr| addr.port()).unwrap_or(0);
         if port == 0 {
-            return fail("无法打开本机音频出口");
+            return Err("无法打开本机音频出口".to_string());
         }
         let epoch = Arc::new(AtomicU64::new(1));
         let stats = Arc::new(FeedStats::default());
@@ -428,7 +516,7 @@ impl Worker {
             Ok(handle) => handle,
             Err(err) => {
                 self.last_error = Some(err.to_string());
-                return fail("无法启动音频发送");
+                return Err("无法启动音频发送".to_string());
             }
         };
         self.feed = Some(Feed {
@@ -440,12 +528,7 @@ impl Worker {
         });
         self.connected = true;
         self.last_error = None;
-        Link {
-            ok: true,
-            error: None,
-            format: Some(TRANSPORT_FORMAT.to_string()),
-            pcm_port: Some(u32::from(port)),
-        }
+        Ok(port)
     }
 
     async fn discover_devices(
@@ -488,7 +571,12 @@ impl Worker {
             let position = (seconds.max(0.0) * f64::from(TRANSPORT_RATE)) as u64;
             feed.sender.signal_seek(position);
         }
-        if self.connected {
+        if let Some(raop) = &mut self.raop {
+            raop.flush().await.map_err(|err| {
+                self.last_error = Some(err.to_string());
+                err.to_string()
+            })?;
+        } else if self.connected {
             client.seek(seconds.max(0.0)).await.map_err(|err| {
                 self.last_error = Some(err.to_string());
                 err.to_string()
@@ -497,10 +585,75 @@ impl Worker {
         Ok(self.epoch)
     }
 
-    fn transport<T>(&mut self, result: Result<T, airplay_client::Error>) -> Result<(), String> {
+    async fn pause(&mut self, client: &mut airplay_client::AirPlayClient) -> Result<(), String> {
+        let result = if let Some(raop) = &mut self.raop {
+            raop.pause()
+                .await
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        } else {
+            client
+                .pause()
+                .await
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        };
+        self.transport(result)
+    }
+
+    async fn resume(&mut self, client: &mut airplay_client::AirPlayClient) -> Result<(), String> {
+        let result = if let Some(raop) = &mut self.raop {
+            raop.resume()
+                .await
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        } else {
+            client
+                .resume()
+                .await
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        };
+        self.transport(result)
+    }
+
+    async fn stop(&mut self, client: &mut airplay_client::AirPlayClient) -> Result<(), String> {
+        let result = if let Some(raop) = &mut self.raop {
+            raop.stop().await.map(|_| ()).map_err(|err| err.to_string())
+        } else {
+            client
+                .stop()
+                .await
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        };
+        self.transport(result)
+    }
+
+    async fn volume(
+        &mut self,
+        client: &mut airplay_client::AirPlayClient,
+        level: f32,
+    ) -> Result<(), String> {
+        let result = if let Some(raop) = &mut self.raop {
+            raop.set_volume(level)
+                .await
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        } else {
+            client
+                .set_volume(level)
+                .await
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        };
+        self.transport(result)
+    }
+
+    fn transport(&mut self, result: Result<(), String>) -> Result<(), String> {
         result.map(|_| ()).map_err(|err| {
-            self.last_error = Some(err.to_string());
-            err.to_string()
+            self.last_error = Some(err.clone());
+            err
         })
     }
 
@@ -532,8 +685,13 @@ impl Worker {
             let _ = feed.handle.join();
         }
         if self.connected {
-            let _ = client.stop().await;
-            let _ = client.disconnect().await;
+            if let Some(mut raop) = self.raop.take() {
+                let _ = raop.stop().await;
+                let _ = raop.disconnect().await;
+            } else {
+                let _ = client.stop().await;
+                let _ = client.disconnect().await;
+            }
         }
         self.connected = false;
     }
@@ -583,6 +741,8 @@ fn found_device(device: &Device) -> FoundDevice {
             .map(|address| address.to_string())
             .collect(),
         needs_pin: device.requires_password,
+        supports_airplay2: device.supports_airplay2(),
+        supports_raop: device.supports_raop(),
     }
 }
 

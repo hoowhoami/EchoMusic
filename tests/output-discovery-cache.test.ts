@@ -200,9 +200,11 @@ test('无 USN 仅有 ST 时报文被忽略', async () => {
   await discovery.stop();
 });
 
-test('SSDP 主动搜索使用临时源端口并发送到标准 1900 目标端口', async () => {
+test('SSDP 主动搜索使用临时源端口并额外监听 1900', async () => {
   const logs: Array<{ level: string; message: string }> = [];
   const sends: Array<{ port: number; address: string }> = [];
+  const multicastInterfaces: string[] = [];
+  const multicastTtls: number[] = [];
   const binds: number[] = [];
   class FakeSocket extends EventEmitter {
     bind(port: number) {
@@ -215,6 +217,12 @@ test('SSDP 主动搜索使用临时源端口并发送到标准 1900 目标端口
       return { address: '0.0.0.0', family: 'IPv4', port: 49152 };
     }
     addMembership() {}
+    setMulticastInterface(address: string) {
+      multicastInterfaces.push(address);
+    }
+    setMulticastTTL(ttl: number) {
+      multicastTtls.push(ttl);
+    }
     send(_data: Buffer, _offset: number, _length: number, port: number, address: string) {
       sends.push({ port, address });
     }
@@ -230,11 +238,11 @@ test('SSDP 主动搜索使用临时源端口并发送到标准 1900 目标端口
   await discovery.search(true);
   await discovery.stop();
 
-  assert.deepEqual(binds, [0]);
-  assert.equal(
-    logs.some((entry) => entry.level === 'info' && entry.message.includes('socket ready')),
-    true,
-  );
+  assert.deepEqual(new Set(binds), new Set([0, SSDP_PORT]));
+  assert.equal(logs.some((entry) => entry.level === 'info'), false);
   assert.ok(sends.length >= SEARCH_TARGETS.length);
   assert.equal(sends.every((send) => send.port === SSDP_PORT), true);
+  assert.equal(sends.every((send) => send.address === '239.255.255.250'), true);
+  assert.ok(multicastTtls.every((ttl) => ttl === 2));
+  assert.ok(multicastInterfaces.every((address) => /^\d+\.\d+\.\d+\.\d+$/.test(address)));
 });

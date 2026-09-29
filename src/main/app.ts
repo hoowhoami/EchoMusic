@@ -16,6 +16,7 @@ import {
 } from './desktopLyric';
 import { initPlayer, destroyPlayer } from './player';
 import { initOutputRuntime } from './outputs/outputRuntime';
+import { getOutputHost } from './outputs/outputHost';
 import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpectrum';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { destroyAudioCapture } from './audioCapture';
@@ -285,9 +286,14 @@ if (!gotTheLock) {
     });
 
     // 第二步：让主线程完成一轮消息循环（渲染窗口隐藏），再执行阻塞清理
-    setImmediate(() => {
+    setImmediate(async () => {
       log.info('[Main] before-quit: cleaning up native resources');
       try {
+        try {
+          await getOutputHost()?.shutdown();
+        } catch (err) {
+          log.warn('[Main] Failed to stop remote output during shutdown:', err);
+        }
         globalShortcut.unregisterAll();
         clearPluginRuntimeSession();
         unregisterAudioSpectrumIpc();
