@@ -9,14 +9,16 @@ mod session;
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi::Status as NapiStatus;
 use napi_derive::napi;
 use std::sync::mpsc;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
 use session::{Link, Session, Status};
 
 static SESSION: OnceLock<Session> = OnceLock::new();
+static LOG_CALLBACK: Mutex<Option<Arc<ThreadsafeFunction<AirplayNativeLog>>>> = Mutex::new(None);
 
 fn session() -> &'static Session {
     SESSION.get_or_init(Session::start)
@@ -51,6 +53,31 @@ pub struct AirplayState {
     pub feeder_received_frames: u32,
     pub feeder_sent_frames: u32,
     pub feeder_send_errors: u32,
+}
+
+#[napi(object)]
+pub struct AirplayNativeLog {
+    pub level: String,
+    pub message: String,
+}
+
+pub(crate) fn emit_native_log(level: &str, message: impl Into<String>) {
+    let callback = LOG_CALLBACK
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().cloned());
+    if let Some(callback) = callback {
+        let status = callback.call(
+            Ok(AirplayNativeLog {
+                level: level.to_string(),
+                message: message.into(),
+            }),
+            ThreadsafeFunctionCallMode::NonBlocking,
+        );
+        if status != NapiStatus::Ok {
+            eprintln!("[echo-airplay] log callback failed: {status:?}");
+        }
+    }
 }
 
 fn link_of(link: Link) -> AirplayLink {
@@ -90,6 +117,15 @@ fn found_of(device: session::FoundDevice) -> AirplayFound {
 #[napi]
 pub fn discovery_backend() -> String {
     session::discovery_backend().to_string()
+}
+
+#[napi]
+pub fn register_log_handler(callback: ThreadsafeFunction<AirplayNativeLog>) -> Result<()> {
+    let mut guard = LOG_CALLBACK
+        .lock()
+        .map_err(|err| Error::from_reason(format!("AirPlay 日志回调锁定失败: {err}")))?;
+    *guard = Some(Arc::new(callback));
+    Ok(())
 }
 
 #[napi]

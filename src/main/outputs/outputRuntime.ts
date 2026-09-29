@@ -174,6 +174,19 @@ function unavailableAirplay(): AirplayControl {
 function loadAirplay(): AirplayControl {
   const addon = loadAddon('echo-airplay');
   if (!addon?.discover || !addon?.connect) return unavailableAirplay();
+  if (addon.registerLogHandler) {
+    try {
+      addon.registerLogHandler((entry: { level?: string; message?: string }) => {
+        const level =
+          entry?.level === 'warn' || entry?.level === 'error' || entry?.level === 'info'
+            ? entry.level
+            : 'info';
+        outputLog(level, `[AirPlayNative] ${entry?.message || '-'}`);
+      });
+    } catch (error) {
+      log.warn(`[Output] AirPlay native 日志回调注册失败: ${String(error)}`);
+    }
+  }
   return {
     available: true,
     discoveryBackend: addon.discoveryBackend ? () => String(addon.discoveryBackend()) : undefined,

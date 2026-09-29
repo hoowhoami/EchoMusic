@@ -423,8 +423,22 @@ impl Worker {
         }
 
         let device_name = device.name.clone();
+        let device_id = device_id(&device);
+        let addresses = device
+            .addresses
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("/");
         let password = pin.trim().to_string();
         let config = StreamConfig::airplay1_realtime();
+        crate::emit_native_log(
+            "info",
+            format!(
+                "AirPlay 1 native CONNECT 开始: name={device_name}, id={device_id}, addresses={addresses}, pin={}",
+                if password.is_empty() { "no" } else { "yes" }
+            ),
+        );
         let mut connection = match tokio::time::timeout(Duration::from_secs(12), async move {
             if password.is_empty() {
                 RaopConnection::connect(device, config).await
@@ -434,7 +448,13 @@ impl Worker {
         })
         .await
         {
-            Ok(Ok(connection)) => connection,
+            Ok(Ok(connection)) => {
+                crate::emit_native_log(
+                    "info",
+                    format!("AirPlay 1 native CONNECT 完成: name={device_name}, id={device_id}"),
+                );
+                connection
+            }
             Ok(Err(err)) => {
                 let error = normalize_connect_error(&err.to_string());
                 self.last_error = Some(match error.as_str() {
@@ -444,6 +464,15 @@ impl Worker {
                     | "airplay-mfi-required" => error,
                     _ => format!("AirPlay 1 连接失败: {error}"),
                 });
+                crate::emit_native_log(
+                    "warn",
+                    format!(
+                        "AirPlay 1 native CONNECT 失败: name={device_name}, id={device_id}, error={}",
+                        self.last_error
+                            .as_deref()
+                            .unwrap_or("连接失败")
+                    ),
+                );
                 return fail(
                     &self
                         .last_error
@@ -453,6 +482,10 @@ impl Worker {
             }
             Err(_) => {
                 self.last_error = Some(format!("AirPlay 1 连接超时: {device_name}"));
+                crate::emit_native_log(
+                    "warn",
+                    format!("AirPlay 1 native CONNECT 超时: name={device_name}, id={device_id}"),
+                );
                 return fail(
                     &self
                         .last_error
@@ -462,16 +495,25 @@ impl Worker {
             }
         };
 
-        let (sender, decoder) = LiveAudioDecoder::create_pair(TRANSPORT_RATE, 2, 16);
-        match tokio::time::timeout(
-            Duration::from_secs(18),
-            connection.start_streaming_live(decoder),
-        )
-        .await
-        {
-            Ok(Ok(())) => {}
+        crate::emit_native_log(
+            "info",
+            format!("AirPlay 1 native SETUP 开始: name={device_name}, id={device_id}"),
+        );
+        match tokio::time::timeout(Duration::from_secs(14), connection.setup()).await {
+            Ok(Ok(())) => {
+                crate::emit_native_log(
+                    "info",
+                    format!("AirPlay 1 native SETUP 完成: name={device_name}, id={device_id}"),
+                );
+            }
             Ok(Err(err)) => {
                 self.last_error = Some(format!("AirPlay 1 SETUP 失败: {err}"));
+                crate::emit_native_log(
+                    "warn",
+                    format!(
+                        "AirPlay 1 native SETUP 失败: name={device_name}, id={device_id}, error={err}"
+                    ),
+                );
                 let _ = connection.disconnect().await;
                 return fail(
                     &self
@@ -482,12 +524,65 @@ impl Worker {
             }
             Err(_) => {
                 self.last_error = Some(format!("AirPlay 1 SETUP 超时: {device_name}"));
+                crate::emit_native_log(
+                    "warn",
+                    format!("AirPlay 1 native SETUP 超时: name={device_name}, id={device_id}"),
+                );
                 let _ = connection.disconnect().await;
                 return fail(
                     &self
                         .last_error
                         .clone()
                         .unwrap_or_else(|| "AirPlay 1 SETUP 超时".to_string()),
+                );
+            }
+        }
+
+        let (sender, decoder) = LiveAudioDecoder::create_pair(TRANSPORT_RATE, 2, 16);
+        crate::emit_native_log(
+            "info",
+            format!("AirPlay 1 native START_LIVE 开始: name={device_name}, id={device_id}"),
+        );
+        match tokio::time::timeout(
+            Duration::from_secs(4),
+            connection.start_streaming_live(decoder),
+        )
+        .await
+        {
+            Ok(Ok(())) => {
+                crate::emit_native_log(
+                    "info",
+                    format!("AirPlay 1 native START_LIVE 完成: name={device_name}, id={device_id}"),
+                );
+            }
+            Ok(Err(err)) => {
+                self.last_error = Some(format!("AirPlay 1 START_LIVE 失败: {err}"));
+                crate::emit_native_log(
+                    "warn",
+                    format!(
+                        "AirPlay 1 native START_LIVE 失败: name={device_name}, id={device_id}, error={err}"
+                    ),
+                );
+                let _ = connection.disconnect().await;
+                return fail(
+                    &self
+                        .last_error
+                        .clone()
+                        .unwrap_or_else(|| "无法开始发送".to_string()),
+                );
+            }
+            Err(_) => {
+                self.last_error = Some(format!("AirPlay 1 START_LIVE 超时: {device_name}"));
+                crate::emit_native_log(
+                    "warn",
+                    format!("AirPlay 1 native START_LIVE 超时: name={device_name}, id={device_id}"),
+                );
+                let _ = connection.disconnect().await;
+                return fail(
+                    &self
+                        .last_error
+                        .clone()
+                        .unwrap_or_else(|| "AirPlay 1 START_LIVE 超时".to_string()),
                 );
             }
         }
@@ -499,6 +594,12 @@ impl Worker {
                 return fail(&message);
             }
         };
+        crate::emit_native_log(
+            "info",
+            format!(
+                "AirPlay 1 native FEEDER 就绪: name={device_name}, id={device_id}, pcmPort={port}"
+            ),
+        );
         self.raop = Some(connection);
         Link {
             ok: true,

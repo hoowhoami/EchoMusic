@@ -964,10 +964,51 @@ export class OutputHost {
     }
     if (target.needsPin && !pin) return { ok: false, error: 'pin-required' };
     await this.stopRemote(false);
-    const result = await airplay.connect(target.targetId, pin);
+    const startedAt = this.now();
+    const protocol =
+      target.supportsRaop && target.supportsAirplay2 === false ? 'AirPlay 1/RAOP' : 'AirPlay 2';
+    const backend = airplay.discoveryBackend?.() || 'unknown';
+    this.log(
+      'info',
+      `AirPlay 连接开始: ${formatAirplayTarget(target)}, protocol=${protocol}, backend=${backend}, pin=${pin ? 'yes' : 'no'}`,
+    );
+    let elapsedTimer: NodeJS.Timeout | null = null;
+    elapsedTimer = setInterval(() => {
+      const elapsedMs = Math.max(0, this.now() - startedAt);
+      let status = '';
+      try {
+        const current = airplay.status();
+        status = `, nativeConnected=${current.connected}, nativeError=${current.error || '-'}`;
+      } catch (error) {
+        status = `, statusError=${error instanceof Error ? error.message : String(error)}`;
+      }
+      this.log(
+        'info',
+        `AirPlay 连接仍在进行: ${target.displayName} (${target.targetId}), elapsed=${Math.round(elapsedMs / 1000)}s${status}`,
+      );
+    }, 5000);
+    elapsedTimer.unref?.();
+    let result: { ok: boolean; error?: string; format?: string; pcmPort?: number };
+    try {
+      result = await airplay.connect(target.targetId, pin);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const elapsedMs = Math.max(0, this.now() - startedAt);
+      this.log(
+        'warn',
+        `AirPlay 连接异常: ${formatAirplayTarget(target)}, elapsed=${Math.round(elapsedMs / 1000)}s, error=${message}`,
+      );
+      return { ok: false, error: message };
+    } finally {
+      if (elapsedTimer) clearInterval(elapsedTimer);
+    }
     if (!result.ok) {
       const message = airplayConnectErrorMessage(result.error);
-      this.log('warn', `AirPlay 连接失败: ${target.displayName} (${target.targetId}) ${message}`);
+      const elapsedMs = Math.max(0, this.now() - startedAt);
+      this.log(
+        'warn',
+        `AirPlay 连接失败: ${formatAirplayTarget(target)}, elapsed=${Math.round(elapsedMs / 1000)}s, error=${message}`,
+      );
       return result;
     }
     const port = result.pcmPort ?? 0;
@@ -988,7 +1029,7 @@ export class OutputHost {
     }
     this.log(
       'info',
-      `AirPlay 连接成功: ${target.displayName} (${target.targetId}), pcmPort=${port}, format=${result.format || 'unknown'}`,
+      `AirPlay 连接成功: ${formatAirplayTarget(target)}, pcmPort=${port}, format=${result.format || 'unknown'}, elapsed=${Math.round((this.now() - startedAt) / 1000)}s`,
     );
     this.routeEpoch += 1;
     this.mode = 'airplay';
