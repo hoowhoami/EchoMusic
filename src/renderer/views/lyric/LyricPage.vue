@@ -305,13 +305,13 @@ const handleOffsetAdjust = (direction: 1 | -1) => {
   const deltaMs = direction * Math.round(lyricOffsetStep.value * 1000);
   const newOffset = lyricStore.adjustTimeOffset(deltaMs);
   const sign = newOffset >= 0 ? '+' : '';
-  toastStore.success(`歌词偏移: ${sign}${(newOffset / 1000).toFixed(1)}s`);
+  toastStore.success(`单曲歌词偏移: ${sign}${(newOffset / 1000).toFixed(1)}s`);
   lyricStore.updateCurrentIndex(playerStore.currentTime);
 };
 
 const handleOffsetReset = () => {
   lyricStore.resetTimeOffset();
-  toastStore.success('歌词偏移已重置');
+  toastStore.success('单曲歌词偏移已重置，全局设置保留');
   lyricStore.updateCurrentIndex(playerStore.currentTime);
 };
 
@@ -524,12 +524,14 @@ onUnmounted(() => {
             </button>
           </template>
         </Tooltip>
-        <Tooltip v-if="hasLyrics" content="重置偏移">
+        <Tooltip v-if="hasLyrics" content="重置单曲偏移（保留全局设置）">
           <template #trigger>
             <button
               class="lyric-page-tool-btn"
-              :style="{ visibility: lyricStore.currentTimeOffset !== 0 ? 'visible' : 'hidden' }"
-              aria-label="重置偏移"
+              :style="{
+                visibility: lyricStore.currentTrackTimeOffset !== 0 ? 'visible' : 'hidden',
+              }"
+              aria-label="重置单曲偏移"
               @click="handleOffsetReset"
             >
               <Icon :icon="iconRefreshCw" width="14" height="14" />
@@ -746,12 +748,14 @@ onUnmounted(() => {
               </button>
             </template>
           </Tooltip>
-          <Tooltip v-if="hasLyrics" content="重置偏移">
+          <Tooltip v-if="hasLyrics" content="重置单曲偏移（保留全局设置）">
             <template #trigger>
               <button
                 class="lyric-page-tool-btn"
-                :style="{ visibility: lyricStore.currentTimeOffset !== 0 ? 'visible' : 'hidden' }"
-                aria-label="重置偏移"
+                :style="{
+                  visibility: lyricStore.currentTrackTimeOffset !== 0 ? 'visible' : 'hidden',
+                }"
+                aria-label="重置单曲偏移"
                 @click="handleOffsetReset"
               >
                 <Icon :icon="iconRefreshCw" width="14" height="14" />

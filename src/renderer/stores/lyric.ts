@@ -5,6 +5,7 @@ import { DEFAULT_ACCENT, getNormalizedAccent } from '@/utils/color';
 import type { Song } from '@/models/song';
 import { resolvePluginLyric } from '@/plugins/lyrics';
 import { useThemeStore } from './theme';
+import { normalizeLyricOffsetMs } from '../../shared/lyricOffset';
 
 export interface LyricCharacter {
   text: string;
@@ -245,6 +246,49 @@ const buildFallbackCharacters = (
   });
 };
 
+/** LRC 增强模式（A2 扩展）的行内逐字时间戳 `<mm:ss.xx>`，值为其后文字的开始时间 */
+const ENHANCED_LRC_TAG = /<(\d+):(\d+(?:\.\d+)?)>/g;
+
+const parseEnhancedLrcTagTime = (minutes: string, seconds: string): number =>
+  Math.round((Number.parseInt(minutes, 10) * 60 + Number.parseFloat(seconds)) * 1000);
+
+/**
+ * 解析 LRC 增强模式：`[00:47.38]<00:47.38>鎖<00:47.65>著<00:47.97>她…`
+ * 每个时间戳标出其后文字的开始时间；行尾若还有一个后面没跟文字的时间戳，
+ * 则用它作为最后一个片段的结束时间。没有行内时间戳时返回空数组，交给普通 LRC 分支处理。
+ */
+const buildEnhancedLrcCharacters = (body: string, lineStart: number): LyricCharacter[] => {
+  const tags: Array<{ time: number; start: number; end: number }> = [];
+  ENHANCED_LRC_TAG.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = ENHANCED_LRC_TAG.exec(body)) !== null) {
+    tags.push({
+      time: parseEnhancedLrcTagTime(match[1] ?? '0', match[2] ?? '0'),
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+  const first = tags[0];
+  if (!first) return [];
+
+  // 首个时间戳之前如果还有文字，按行时间戳作为它的开始时间
+  if (body.slice(0, first.start).trim()) {
+    tags.unshift({ time: lineStart, start: 0, end: 0 });
+  }
+
+  const characters: LyricCharacter[] = [];
+  for (let index = 0; index < tags.length; index += 1) {
+    const tag = tags[index];
+    const next = tags[index + 1];
+    const text = body.slice(tag.end, next ? next.start : body.length);
+    if (!text) continue;
+    // 末尾没有后续时间戳时给个兜底时长，保证逐字高亮不会瞬间结束
+    const endTime = Math.max(next ? next.time : tag.time + 3000, tag.time + 1);
+    characters.push({ text, startTime: tag.time, endTime, highlighted: false });
+  }
+  return characters;
+};
+
 const compactLyricText = (text: string): string => text.replace(/\s+/g, '');
 
 const stripEmbeddedSecondaryText = (characters: LyricCharacter[], textToStrip: string): boolean => {
@@ -467,9 +511,21 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
     if (lrcMatch) {
       const minutes = Number.parseInt(lrcMatch[1], 10);
       const seconds = Number.parseFloat(lrcMatch[2]);
-      const text = (lrcMatch[3] ?? '').trim();
       const startTime = Math.round((minutes * 60 + seconds) * 1000);
+      const body = lrcMatch[3] ?? '';
 
+      // 增强模式带行内逐字时间戳，按逐字解析；否则整行作为一个字符
+      const enhancedCharacters = buildEnhancedLrcCharacters(body, startTime);
+      if (enhancedCharacters.length > 0) {
+        parsedLines.push({
+          time: enhancedCharacters[0].startTime / 1000,
+          text: enhancedCharacters.map((c) => c.text).join(''),
+          characters: enhancedCharacters,
+        });
+        continue;
+      }
+
+      const text = body.trim();
       if (text) {
         parsedLines.push({
           time: startTime / 1000,
@@ -683,16 +739,21 @@ export const useLyricStore = defineStore('lyric', {
     manualLyricMap: {} as Record<string, ManualLyricSelection>,
     // 每首歌的歌词时间偏移（毫秒），key 为歌曲 hash/id
     timeOffsetMap: {} as Record<string, number>,
+    // 所有歌曲共用的时间校准；与单曲微调叠加，切歌和重置单曲时保留。
+    globalTimeOffsetMs: 0,
   }),
   getters: {
     manualCandidateForCurrentHash: (state): ManualLyricSelection | null => {
       if (!state.loadedHash) return null;
       return state.manualLyricMap[state.loadedHash] ?? null;
     },
-    // 当前歌曲的歌词时间偏移（毫秒）
-    currentTimeOffset: (state): number => {
+    currentTrackTimeOffset: (state): number => {
       if (!state.loadedHash) return 0;
-      return state.timeOffsetMap[state.loadedHash] ?? 0;
+      return normalizeLyricOffsetMs(state.timeOffsetMap[state.loadedHash]);
+    },
+    // 各歌词视图、快照和行索引共用的有效偏移，只叠加一次。
+    currentTimeOffset(): number {
+      return normalizeLyricOffsetMs(this.globalTimeOffsetMs) + this.currentTrackTimeOffset;
     },
     effectivePlayedColor: (state) =>
       resolveLyricColor(state.playedColor, DEFAULT_LYRIC_PLAYED_COLOR),
@@ -789,11 +850,16 @@ export const useLyricStore = defineStore('lyric', {
     updateFontWeight(index: number) {
       this.fontWeightIndex = clamp(Math.round(index), 0, 8);
     },
+    // 调整全局校准（毫秒），不会覆盖任何单曲微调。
+    setGlobalTimeOffset(value: number) {
+      this.globalTimeOffsetMs = normalizeLyricOffsetMs(value);
+    },
     // 调整当前歌曲的歌词时间偏移（毫秒）
     adjustTimeOffset(deltaMs: number): number {
       if (!this.loadedHash) return 0;
-      const current = this.timeOffsetMap[this.loadedHash] ?? 0;
-      const next = clamp(current + deltaMs, -10000, 10000);
+      const current = this.currentTrackTimeOffset;
+      if (!Number.isFinite(deltaMs)) return current;
+      const next = normalizeLyricOffsetMs(current + deltaMs);
       this.timeOffsetMap[this.loadedHash] = next;
       return next;
     },
@@ -1023,8 +1089,8 @@ export const useLyricStore = defineStore('lyric', {
         return;
       }
 
-      // 加上当前歌曲的时间偏移
-      const offsetMs = this.timeOffsetMap[this.loadedHash] || 0;
+      // 与所有歌词窗口保持一致：全局校准 + 单曲微调。
+      const offsetMs = this.currentTimeOffset;
       const currentTimeMs = Math.round(currentTime * 1000) + offsetMs;
       const nextIndex = this.findIndexAtTimeMs(currentTimeMs);
 
@@ -1219,6 +1285,7 @@ export const useLyricStore = defineStore('lyric', {
       'playedColor',
       'unplayedColor',
       'timeOffsetMap',
+      'globalTimeOffsetMs',
       'manualLyricMap',
     ],
   },
