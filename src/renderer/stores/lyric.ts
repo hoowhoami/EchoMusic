@@ -5,6 +5,7 @@ import { DEFAULT_ACCENT, getNormalizedAccent } from '@/utils/color';
 import type { Song } from '@/models/song';
 import { resolvePluginLyric } from '@/plugins/lyrics';
 import { useThemeStore } from './theme';
+import { normalizeLyricOffsetMs } from '../../shared/lyricOffset';
 
 export interface LyricCharacter {
   text: string;
@@ -683,16 +684,21 @@ export const useLyricStore = defineStore('lyric', {
     manualLyricMap: {} as Record<string, ManualLyricSelection>,
     // 每首歌的歌词时间偏移（毫秒），key 为歌曲 hash/id
     timeOffsetMap: {} as Record<string, number>,
+    // 所有歌曲共用的时间校准；与单曲微调叠加，切歌和重置单曲时保留。
+    globalTimeOffsetMs: 0,
   }),
   getters: {
     manualCandidateForCurrentHash: (state): ManualLyricSelection | null => {
       if (!state.loadedHash) return null;
       return state.manualLyricMap[state.loadedHash] ?? null;
     },
-    // 当前歌曲的歌词时间偏移（毫秒）
-    currentTimeOffset: (state): number => {
+    currentTrackTimeOffset: (state): number => {
       if (!state.loadedHash) return 0;
-      return state.timeOffsetMap[state.loadedHash] ?? 0;
+      return normalizeLyricOffsetMs(state.timeOffsetMap[state.loadedHash]);
+    },
+    // 各歌词视图、快照和行索引共用的有效偏移，只叠加一次。
+    currentTimeOffset(): number {
+      return normalizeLyricOffsetMs(this.globalTimeOffsetMs) + this.currentTrackTimeOffset;
     },
     effectivePlayedColor: (state) =>
       resolveLyricColor(state.playedColor, DEFAULT_LYRIC_PLAYED_COLOR),
@@ -789,11 +795,16 @@ export const useLyricStore = defineStore('lyric', {
     updateFontWeight(index: number) {
       this.fontWeightIndex = clamp(Math.round(index), 0, 8);
     },
+    // 调整全局校准（毫秒），不会覆盖任何单曲微调。
+    setGlobalTimeOffset(value: number) {
+      this.globalTimeOffsetMs = normalizeLyricOffsetMs(value);
+    },
     // 调整当前歌曲的歌词时间偏移（毫秒）
     adjustTimeOffset(deltaMs: number): number {
       if (!this.loadedHash) return 0;
-      const current = this.timeOffsetMap[this.loadedHash] ?? 0;
-      const next = clamp(current + deltaMs, -10000, 10000);
+      const current = this.currentTrackTimeOffset;
+      if (!Number.isFinite(deltaMs)) return current;
+      const next = normalizeLyricOffsetMs(current + deltaMs);
       this.timeOffsetMap[this.loadedHash] = next;
       return next;
     },
@@ -1023,8 +1034,8 @@ export const useLyricStore = defineStore('lyric', {
         return;
       }
 
-      // 加上当前歌曲的时间偏移
-      const offsetMs = this.timeOffsetMap[this.loadedHash] || 0;
+      // 与所有歌词窗口保持一致：全局校准 + 单曲微调。
+      const offsetMs = this.currentTimeOffset;
       const currentTimeMs = Math.round(currentTime * 1000) + offsetMs;
       const nextIndex = this.findIndexAtTimeMs(currentTimeMs);
 
@@ -1219,6 +1230,7 @@ export const useLyricStore = defineStore('lyric', {
       'playedColor',
       'unplayedColor',
       'timeOffsetMap',
+      'globalTimeOffsetMs',
       'manualLyricMap',
     ],
   },

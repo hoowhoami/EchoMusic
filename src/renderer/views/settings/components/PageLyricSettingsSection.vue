@@ -7,9 +7,18 @@ import Select from '@/components/ui/Select.vue';
 import PageLyricIcon from '@/components/ui/PageLyricIcon.vue';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { sectionTitles } from '../constants';
+import { normalizeLyricOffsetMs } from '../../../../shared/lyricOffset';
 
 const settingStore = useSettingStore();
 const lyricStore = useLyricStore();
+const globalOffsetSeconds = computed(
+  () => normalizeLyricOffsetMs(lyricStore.globalTimeOffsetMs) / 1000,
+);
+const updateGlobalOffset = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  lyricStore.setGlobalTimeOffset(input.valueAsNumber * 1000);
+  input.value = String(globalOffsetSeconds.value);
+};
 
 type RomanizationStyle = 'separate-line' | 'ruby';
 const romanizationStyleOptions = [
@@ -85,6 +94,38 @@ const offsetStepOptions = [0.1, 0.25, 0.5, 1, 2].map((value) => ({
         v-model="settingStore.lyricPageBackgroundRhythm"
         :disabled="!settingStore.lyricPageBackgroundBlur"
       />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">全局歌词时间偏移</h3>
+        <p id="global-lyric-offset-help" class="text-sm text-text-secondary">
+          对所有歌曲生效，切歌和重启后保留；适用于页面、桌面、Mini 和任务栏等歌词视图。
+          正数让歌词提前，负数让歌词延后；与单曲微调叠加，不改变音频播放进度。
+        </p>
+      </div>
+      <div class="flex shrink-0 items-center gap-2">
+        <input
+          type="number"
+          class="settings-input w-24"
+          aria-label="全局歌词时间偏移（秒）"
+          aria-describedby="global-lyric-offset-help"
+          min="-10"
+          max="10"
+          step="0.1"
+          :value="globalOffsetSeconds"
+          @change="updateGlobalOffset"
+        />
+        <span class="text-sm text-text-secondary">秒</span>
+        <button
+          type="button"
+          class="settings-action"
+          :disabled="globalOffsetSeconds === 0"
+          @click="lyricStore.setGlobalTimeOffset(0)"
+        >
+          重置全局
+        </button>
+      </div>
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
