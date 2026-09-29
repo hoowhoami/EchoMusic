@@ -2,7 +2,7 @@
 /**
  * 歌词页换肤 Drawer（右侧抽屉）
  * 强制深色毛玻璃风格，与歌词页沉浸式环境协调。
- * 皮肤设置统一由「全局设置 → 页面歌词」承接，这里只负责挑选皮肤。
+ * 皮肤设置统一由「全局设置 → 歌词设置 → 播放页」承接，这里只负责挑选皮肤。
  */
 import { computed } from 'vue';
 import { useSettingStore } from '@/stores/setting';
@@ -242,7 +242,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
           <div v-else class="skin-settings-empty">
             当前皮肤没有可用的自定义设置。
             <br />
-            可前往「全局设置 → 页面歌词」调整外观选项。
+            可前往「全局设置 → 歌词设置 → 播放页」调整外观选项。
           </div>
         </template>
       </div>

@@ -10,7 +10,7 @@ import {
   type LyricTextStyleConfig,
 } from './config';
 import { LYRIC_COLOR_PRESETS, getLyricCoverDynamicOption } from '@/composables/useLyricColorPicker';
-import { DEFAULT_LYRIC_PLAYED_COLOR, DEFAULT_LYRIC_UNPLAYED_COLOR } from '@/stores/lyric';
+import { useLyricStore } from '@/stores/lyric';
 
 /**
  * 单个皮肤内置的歌词文本样式设置（字号 / 字重 / 已播未播颜色）。
@@ -22,21 +22,28 @@ const { settings, patch } = useLyricSkin<LyricTextStyleConfig>(
   props.skinKey,
   LYRIC_TEXT_STYLE_DEFAULTS,
 );
+const lyricStore = useLyricStore();
 
 const fontScaleLabel = computed(() => `${Math.round(settings.value.fontScale * 100)}%`);
 const fontWeightLabel = computed(() => `W${LYRIC_FONT_WEIGHTS[settings.value.fontWeightIndex]}`);
 const effectivePlayedColor = computed(() =>
-  resolveLyricSkinColor(settings.value.playedColor, DEFAULT_LYRIC_PLAYED_COLOR),
+  resolveLyricSkinColor(settings.value.playedColor, lyricStore.effectivePlayedColor),
 );
 const effectiveUnplayedColor = computed(() =>
-  resolveLyricSkinColor(settings.value.unplayedColor, DEFAULT_LYRIC_UNPLAYED_COLOR),
+  resolveLyricSkinColor(settings.value.unplayedColor, lyricStore.effectiveUnplayedColor),
 );
 
 type ColorField = 'playedColor' | 'unplayedColor';
 const activeField = ref<ColorField | null>(null);
-const activeValue = computed(
-  () => settings.value[activeField.value || 'playedColor'] || DEFAULT_LYRIC_PLAYED_COLOR,
-);
+const activeValue = computed(() => {
+  const field = activeField.value || 'playedColor';
+  return (
+    settings.value[field] ||
+    (field === 'unplayedColor'
+      ? lyricStore.effectiveUnplayedColor
+      : lyricStore.effectivePlayedColor)
+  );
+});
 const activeTitle = computed(() =>
   activeField.value === 'unplayedColor' ? '选择未播字色' : '选择已播字色',
 );

@@ -76,8 +76,8 @@ onMounted(() => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">页面歌词字体</h3>
-        <p class="text-sm text-text-secondary">歌词页面使用的字体，跟随全局或单独指定</p>
+        <h3 class="font-semibold">播放页歌词字体</h3>
+        <p class="text-sm text-text-secondary">播放页歌词使用的字体，跟随全局或单独指定</p>
       </div>
       <div class="flex items-center gap-2">
         <button

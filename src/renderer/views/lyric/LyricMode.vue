@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { DEFAULT_LYRIC_PLAYED_COLOR, DEFAULT_LYRIC_UNPLAYED_COLOR } from '@/stores/lyric';
+import { useLyricStore } from '@/stores/lyric';
 import LyricScroller from './LyricScroller.vue';
 import { useLyricSkin } from './composables/useLyricSkin';
 import { HOST_SKIN_KEYS, LYRIC_SKIN_LYRIC_DEFAULTS, resolveLyricSkinColor } from './skins/config';
 
+const lyricStore = useLyricStore();
 const { settings } = useLyricSkin(HOST_SKIN_KEYS.lyric, LYRIC_SKIN_LYRIC_DEFAULTS);
 </script>
 
@@ -14,9 +15,9 @@ const { settings } = useLyricSkin(HOST_SKIN_KEYS.lyric, LYRIC_SKIN_LYRIC_DEFAULT
       <LyricScroller
         :font-scale="settings.fontScale"
         :font-weight-index="settings.fontWeightIndex"
-        :played-color="resolveLyricSkinColor(settings.playedColor, DEFAULT_LYRIC_PLAYED_COLOR)"
+        :played-color="resolveLyricSkinColor(settings.playedColor, lyricStore.effectivePlayedColor)"
         :unplayed-color="
-          resolveLyricSkinColor(settings.unplayedColor, DEFAULT_LYRIC_UNPLAYED_COLOR)
+          resolveLyricSkinColor(settings.unplayedColor, lyricStore.effectiveUnplayedColor)
         "
       />
     </div>

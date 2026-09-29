@@ -2,13 +2,14 @@
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import DynamicAlbumCover from '@/components/music/DynamicAlbumCover.vue';
 import { usePlayerStore } from '@/stores/player';
-import { DEFAULT_LYRIC_PLAYED_COLOR, DEFAULT_LYRIC_UNPLAYED_COLOR } from '@/stores/lyric';
+import { useLyricStore } from '@/stores/lyric';
 import LyricScroller from './LyricScroller.vue';
 import { useLyricSkin } from './composables/useLyricSkin';
 import { HOST_SKIN_KEYS, LYRIC_SKIN_COVER_DEFAULTS, resolveLyricSkinColor } from './skins/config';
 
 const { currentTrack } = usePlayerControls();
 const playerStore = usePlayerStore();
+const lyricStore = useLyricStore();
 const { settings } = useLyricSkin(HOST_SKIN_KEYS.cover, LYRIC_SKIN_COVER_DEFAULTS);
 </script>
 
@@ -40,9 +41,9 @@ const { settings } = useLyricSkin(HOST_SKIN_KEYS.cover, LYRIC_SKIN_COVER_DEFAULT
       <LyricScroller
         :font-scale="settings.fontScale"
         :font-weight-index="settings.fontWeightIndex"
-        :played-color="resolveLyricSkinColor(settings.playedColor, DEFAULT_LYRIC_PLAYED_COLOR)"
+        :played-color="resolveLyricSkinColor(settings.playedColor, lyricStore.effectivePlayedColor)"
         :unplayed-color="
-          resolveLyricSkinColor(settings.unplayedColor, DEFAULT_LYRIC_UNPLAYED_COLOR)
+          resolveLyricSkinColor(settings.unplayedColor, lyricStore.effectiveUnplayedColor)
         "
       />
     </section>

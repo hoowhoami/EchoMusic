@@ -82,20 +82,50 @@ test('settings input applies seconds, clamps invalid values and resets only glob
           vue.h('section', slots.default?.()),
     },
   };
-  const file = '../src/renderer/views/settings/components/PageLyricSettingsSection.vue';
+  const inputNumberStub = {
+    __esModule: true,
+    default: {
+      props: ['modelValue', 'suffix'],
+      emits: ['update:modelValue'],
+      setup:
+        (props, { emit }) =>
+        () =>
+          vue.h('div', [
+            vue.h('input', {
+              type: 'text',
+              value: props.modelValue,
+              onChange: (event) => emit('update:modelValue', event.target.value),
+            }),
+            props.suffix ? vue.h('span', props.suffix) : null,
+          ]),
+    },
+  };
+  const file = '../src/renderer/views/settings/components/LyricCommonSettingsSection.vue';
   const { descriptor } = parse(readFileSync(new URL(file, import.meta.url), 'utf8'));
   const script = compileScript(descriptor, { id: 'offset-settings-test', inlineTemplate: true });
   const component = compile(
     file,
     {
       vue,
-      '@/stores/setting': { useSettingStore: () => vue.reactive({ lyricOffsetStep: 0.1 }) },
-      '@/stores/lyric': { useLyricStore: () => lyric },
+      '@/stores/lyric': {
+        DEFAULT_LYRIC_FILTER_PATTERN: 'default-filter',
+        useLyricStore: () => lyric,
+      },
+      '@/stores/setting': {
+        useSettingStore: () =>
+          vue.reactive({
+            lyricOffsetStep: 0.5,
+            lyricFilterEnabled: false,
+            lyricFilterPattern: '',
+          }),
+      },
       '@/components/ui/Switch.vue': stub,
       '@/components/ui/Select.vue': stub,
-      '@/components/ui/PageLyricIcon.vue': stub,
+      '@/components/ui/InputNumber.vue': inputNumberStub,
+      '@iconify/vue': { Icon: stub.default },
+      '@/icons': { iconMusicShare: {} },
       './SettingsSectionShell.vue': stub,
-      '../constants': { sectionTitles: { pageLyric: { label: '页面歌词' } } },
+      '../constants': { sectionTitles: { lyric: { label: '歌词设置' } } },
       '../../../../shared/lyricOffset': offset,
     },
     {},
@@ -106,25 +136,27 @@ test('settings input applies seconds, clamps invalid values and resets only glob
   app.mount(container);
   t.after(() => app.unmount());
   const flatten = (el) => [el, ...el.children.flatMap(flatten)];
-  const input = flatten(container).find((el) => el.type === 'input' && el.props.type === 'number');
-  const reset = flatten(container).find(
-    (el) => el.type === 'button' && el.text.includes('重置全局'),
-  );
-  assert.equal(input.props['aria-label'], '全局歌词时间偏移（秒）');
+  const nodes = flatten(container);
+  const input = nodes.find((el) => el.type === 'input' && el.props.type === 'text');
+  const reset = nodes.find((el) => el.type === 'button' && el.text.includes('重置'));
+  const suffix = nodes.find((el) => el.type === 'span' && el.text === '秒');
+  assert.ok(nodes.indexOf(reset) < nodes.indexOf(input));
+  assert.ok(suffix);
+  assert.equal(reset.text.trim(), '重置');
   assert.equal(reset.props.disabled, true);
   for (const [value, expected] of [
     [0.4, 400],
-    [35, 10000],
-    [-35, -10000],
-    [NaN, 0],
+    [35, 20000],
+    [-35, -20000],
+    ['NaN', 0],
   ]) {
-    const target = { valueAsNumber: value, value: String(value) };
+    const target = { value: String(value) };
     input.props.onChange({ target });
     await vue.nextTick();
     assert.equal(lyric.globalTimeOffsetMs, expected);
-    assert.equal(target.value, String(expected / 1000));
+    assert.equal(input.props.value, String(expected / 1000));
   }
-  input.props.onChange({ target: { valueAsNumber: 0.5, value: '0.5' } });
+  input.props.onChange({ target: { value: '0.5' } });
   await vue.nextTick();
   assert.equal(reset.props.disabled, false);
   reset.props.onClick();
@@ -214,28 +246,27 @@ test('paused global calibration reaches now-playing/taskbar, Mini and desktop sn
     const dispose = await api[init]();
     t.after(dispose);
   }
-  const verify = (expected) => {
+  const verify = (expected, expectedTrackOffset) => {
     assert.equal(patches.nowPlaying.filter((p) => p.lyric).at(-1).lyric.timeOffset, expected);
     assert.equal(patches.miniPlayer.filter((p) => p.lyric).at(-1).lyric.timeOffset, expected);
-    assert.equal(
-      patches.desktopLyric.filter((p) => 'lyricTimeOffset' in p).at(-1).lyricTimeOffset,
-      expected,
-    );
+    const desktopPatch = patches.desktopLyric.filter((p) => 'lyricTimeOffset' in p).at(-1);
+    assert.equal(desktopPatch.lyricTimeOffset, expected);
+    assert.equal(desktopPatch.currentTrackTimeOffset, expectedTrackOffset);
     assert.equal(player.currentTime, 1);
     assert.equal(seeks, 0);
   };
   lyric.setGlobalTimeOffset(400);
   await vue.nextTick();
   await new Promise((resolve) => setTimeout(resolve, 120));
-  verify(500);
+  verify(500, 100);
   commands.nowPlaying('lyricOffsetReset');
   await vue.nextTick();
   await new Promise((resolve) => setTimeout(resolve, 120));
-  verify(400);
+  verify(400, 0);
   lyric.setGlobalTimeOffset(-300);
   await vue.nextTick();
   await new Promise((resolve) => setTimeout(resolve, 120));
-  verify(-300);
+  verify(-300, 0);
 });
 
 test('old profiles default to zero; global calibration persists across track changes and lyric clearing', () => {
@@ -278,8 +309,10 @@ test('offsets normalize invalid persisted values, clamp each scope and do not cl
   }
   lyric.setGlobalTimeOffset(20000);
   lyric.adjustTimeOffset(20000);
-  assert.equal(lyric.currentTimeOffset, 20000);
-  assert.equal(lyric.adjustTimeOffset(NaN), 10000);
+  assert.equal(lyric.globalTimeOffsetMs, 20000);
+  assert.equal(lyric.currentTrackTimeOffset, 20000);
+  assert.equal(lyric.currentTimeOffset, 40000);
+  assert.equal(lyric.adjustTimeOffset(NaN), 20000);
   lyric.setGlobalTimeOffset(-20000);
   assert.equal(lyric.currentTimeOffset, 0);
   lyric.setGlobalTimeOffset(400.4);

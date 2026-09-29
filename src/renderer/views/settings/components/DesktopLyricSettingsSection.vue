@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
-import { useSettingStore } from '@/stores/setting';
-import { DEFAULT_LYRIC_FILTER_PATTERN } from '@/stores/lyric';
 import type { DesktopLyricSettings } from '../../../../shared/desktopLyric';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../../../shared/desktopLyric';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
-import InputNumber from '@/components/ui/InputNumber.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import { Icon } from '@iconify/vue';
@@ -20,19 +17,10 @@ import {
   sectionTitles,
 } from '../constants';
 
-const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
 const isLinux = computed(() => window.electron?.platform === 'linux');
 const isWayland = computed(() => window.electron?.isWayland ?? false);
 const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
-type RomanizationStyle = 'separate-line' | 'ruby';
-const romanizationStyleOptions = [
-  { label: '独立一行', value: 'separate-line' },
-  { label: '注音', value: 'ruby' },
-];
-const desktopRomanizationStyle = computed<RomanizationStyle>(() =>
-  desktopLyricStore.settings.showRomanizationAsRuby ? 'ruby' : 'separate-line',
-);
 
 const hasCustomDesktopLyricColors = computed(
   () =>
@@ -63,10 +51,6 @@ const applyDesktopLyricColor = async (value: string) => {
     [activeDesktopLyricColorField.value]: value,
   });
   closeDesktopLyricColorPicker();
-};
-
-const updateDesktopRomanizationStyle = (value: string | number | (string | number)[]) => {
-  void commitDesktopLyricSettings({ showRomanizationAsRuby: value === 'ruby' });
 };
 </script>
 
@@ -136,41 +120,6 @@ const updateDesktopRomanizationStyle = (value: string | number | (string | numbe
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">显示翻译</h3>
-        <p class="text-sm text-text-secondary">当前歌词有翻译时显示翻译内容</p>
-      </div>
-      <Switch
-        :model-value="desktopLyricStore.settings.wantTranslation"
-        @update:model-value="commitDesktopLyricSettings({ wantTranslation: Boolean($event) })"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">显示音译</h3>
-        <p class="text-sm text-text-secondary">当前歌词有音译时显示音译内容</p>
-      </div>
-      <Switch
-        :model-value="desktopLyricStore.settings.wantRomanization"
-        @update:model-value="commitDesktopLyricSettings({ wantRomanization: Boolean($event) })"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">音译样式</h3>
-        <p class="text-sm text-text-secondary">选择桌面歌词中音译的显示方式</p>
-      </div>
-      <Select
-        class="w-45 shrink-0"
-        :model-value="desktopRomanizationStyle"
-        :options="romanizationStyleOptions"
-        @update:model-value="updateDesktopRomanizationStyle"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
         <h3 class="font-semibold">下一行预览</h3>
         <p class="text-sm text-text-secondary">没有显示翻译或音译时，显示下一行歌词</p>
       </div>
@@ -190,27 +139,6 @@ const updateDesktopRomanizationStyle = (value: string | number | (string | numbe
         :model-value="desktopLyricStore.settings.alignment"
         :options="desktopLyricAlignOptions"
         @update:model-value="commitDesktopLyricSettings({ alignment: $event as any })"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">对齐微调步长</h3>
-        <p class="text-sm text-text-secondary">桌面歌词前进 / 后退按钮每次调整的时间量</p>
-      </div>
-      <InputNumber
-        class="w-45"
-        :model-value="String(desktopLyricStore.settings.offsetStep ?? 0.5)"
-        :min="0.1"
-        :max="5"
-        :step="0.1"
-        placeholder="0.5"
-        suffix="秒"
-        @update:model-value="
-          commitDesktopLyricSettings({
-            offsetStep: Math.max(0.1, Math.min(5, Number($event) || 0.5)),
-          })
-        "
       />
     </div>
     <div class="settings-divider"></div>
@@ -285,39 +213,6 @@ const updateDesktopRomanizationStyle = (value: string | number | (string | numbe
         </div>
       </div>
     </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">歌词过滤</h3>
-        <p class="text-sm text-text-secondary">过滤非歌词内容（如制作人信息、版权声明等）</p>
-      </div>
-      <Switch v-model="settingStore.desktopLyricFilterEnabled" />
-    </div>
-    <template v-if="settingStore.desktopLyricFilterEnabled">
-      <div class="settings-divider"></div>
-      <div class="settings-item items-start">
-        <div class="space-y-1">
-          <h3 class="font-semibold">过滤表达式</h3>
-          <p class="text-sm text-text-secondary">正则表达式，匹配的行将被替换</p>
-        </div>
-        <div class="flex items-center gap-2">
-          <button
-            class="settings-action"
-            v-if="settingStore.desktopLyricFilterPattern"
-            type="button"
-            @click="settingStore.desktopLyricFilterPattern = ''"
-          >
-            恢复默认
-          </button>
-          <input
-            v-model="settingStore.desktopLyricFilterPattern"
-            type="text"
-            class="settings-input w-64"
-            :placeholder="DEFAULT_LYRIC_FILTER_PATTERN"
-          />
-        </div>
-      </div>
-    </template>
 
     <ColorPickerDialog
       :open="activeDesktopLyricColorField !== null"

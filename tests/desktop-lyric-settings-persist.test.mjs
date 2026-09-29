@@ -68,8 +68,8 @@ test('desktop lyric ruby romanization style survives a restart', () => {
   assert.equal(getDesktopLyricSettings().showRomanizationAsRuby, true);
 });
 
-// filterEnabled/filterPattern are owned by the renderer settingStore and synced in, not persisted here.
-const RENDERER_OWNED = new Set(['filterEnabled', 'filterPattern']);
+// These are owned by the renderer settingStore and synced in, not persisted here.
+const RENDERER_OWNED = new Set(['filterEnabled', 'filterPattern', 'offsetStep']);
 
 test('every boolean desktop lyric setting round-trips through persistence', () => {
   for (const [key, value] of Object.entries(DEFAULT_DESKTOP_LYRIC_SETTINGS)) {

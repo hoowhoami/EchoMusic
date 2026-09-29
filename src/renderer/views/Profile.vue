@@ -8,8 +8,10 @@ import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useLoginDeviceStore, type LoginDeviceSession } from '@/stores/loginDevices';
 import Button from '@/components/ui/Button.vue';
+import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import DatePicker from '@/components/ui/DatePicker.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import Drawer from '@/components/ui/Drawer.vue';
 import Input from '@/components/ui/Input.vue';
 import Popover from '@/components/ui/Popover.vue';
 import Select from '@/components/ui/Select.vue';
@@ -22,19 +24,31 @@ import Tag from '@/components/ui/Tag.vue';
 
 import logger from '@/utils/logger';
 import { useToastStore } from '@/stores/toast';
-import type { UpdateUserProfileParams } from '@/api/user';
+import {
+  getUserFans,
+  getUserFollow,
+  getUserFriends,
+  getUserFollowMessages,
+  getUserVisitors,
+  sendUserFollowChat,
+  type UpdateUserProfileParams,
+} from '@/api/user';
+import { normalizeCoverUrl } from '@/utils/cover';
 import {
   iconCheck,
+  iconChevronLeft,
   iconGift,
   iconHeadphones,
   iconHome,
   iconInfo,
   iconLogOut,
+  iconMessageCircle,
   iconPencil,
   iconRefreshCw,
   iconScan,
   iconSmartphone,
   iconUser,
+  iconX,
 } from '@/icons';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { formatBirthdayForInput } from '../../shared/birthday';
@@ -110,6 +124,40 @@ const genderOptions = [
   { label: '保密', value: 2 },
 ];
 
+type SocialTabKey = 'follow' | 'friends' | 'fans' | 'visitors';
+type RawRecord = Record<string, unknown>;
+
+interface SocialUser {
+  key: string;
+  userId: string;
+  canMessage: boolean;
+  nickname: string;
+  avatar: string;
+  description: string;
+  meta: string;
+  friendAction: 'follow' | 'unfollow' | '';
+  raw: RawRecord;
+}
+
+interface ChatMessage {
+  id: string;
+  text: string;
+  imageUrl: string;
+  time: string;
+  isSelf: boolean;
+  nickname: string;
+  avatar: string;
+  type: number;
+  raw: RawRecord;
+}
+
+const socialTabs: Array<{ key: SocialTabKey; label: string; empty: string }> = [
+  { key: 'friends', label: '好友', empty: '暂无好友记录' },
+  { key: 'follow', label: '关注', empty: '暂无关注记录' },
+  { key: 'fans', label: '粉丝', empty: '暂无粉丝记录' },
+  { key: 'visitors', label: '访客', empty: '暂无访客记录' },
+];
+
 const today = new Date();
 const birthdayMax = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
   today.getDate(),
@@ -128,6 +176,58 @@ const visitorCount = computed(() => {
   const count = Number(value);
   return Number.isFinite(count) ? count : 0;
 });
+const rawFollowCount = computed(() => {
+  const value = detail.value.follows ?? detail.value.follow_count ?? 0;
+  const count = Number(value);
+  return Number.isFinite(count) ? count : 0;
+});
+const friendCount = computed(() => {
+  const value = detail.value.friends ?? detail.value.friend_count ?? 0;
+  const count = Number(value);
+  return Number.isFinite(count) ? count : 0;
+});
+
+const socialDrawerOpen = ref(false);
+const activeSocialTab = ref<SocialTabKey>('friends');
+const socialUsers = reactive<Record<SocialTabKey, SocialUser[]>>({
+  follow: [],
+  friends: [],
+  fans: [],
+  visitors: [],
+});
+const socialLoading = reactive<Record<SocialTabKey, boolean>>({
+  follow: false,
+  friends: false,
+  fans: false,
+  visitors: false,
+});
+const socialLoaded = reactive<Record<SocialTabKey, boolean>>({
+  follow: false,
+  friends: false,
+  fans: false,
+  visitors: false,
+});
+const followCount = computed(() =>
+  socialLoaded.follow ? socialUsers.follow.length : rawFollowCount.value,
+);
+const socialError = reactive<Record<SocialTabKey, string>>({
+  follow: '',
+  friends: '',
+  fans: '',
+  visitors: '',
+});
+const socialChatTarget = ref<SocialUser | null>(null);
+const socialChatMessages = ref<ChatMessage[]>([]);
+const socialChatLoading = ref(false);
+const socialChatSending = ref(false);
+const socialChatDraft = ref('');
+const socialChatTag = ref('');
+const SOCIAL_CHAT_TEXT_LIMIT = 200;
+const socialChatDraftLength = computed(() => socialChatDraft.value.length);
+const socialChatDraftOverLimit = computed(
+  () => socialChatDraftLength.value > SOCIAL_CHAT_TEXT_LIMIT,
+);
+const sentChatMessageIds = reactive<Set<string>>(new Set());
 
 const tvip = computed(() => busiVip.value.find((v) => v.product_type === 'tvip' && v.is_vip === 1));
 const svip = computed(() => busiVip.value.find((v) => v.product_type === 'svip' && v.is_vip === 1));
@@ -391,6 +491,536 @@ const loginDeviceSummary = computed(() => {
   return `当前账号已登录 ${loginDevices.value.length} 台设备`;
 });
 
+const activeSocialTabMeta = computed(
+  () => socialTabs.find((item) => item.key === activeSocialTab.value) ?? socialTabs[0],
+);
+const activeSocialUsers = computed(() => socialUsers[activeSocialTab.value]);
+const isSocialBusy = computed(() => socialLoading[activeSocialTab.value]);
+const socialTabLabels = computed(() => socialTabs.map((item) => item.label));
+const activeSocialTabIndex = computed({
+  get: () =>
+    Math.max(
+      0,
+      socialTabs.findIndex((item) => item.key === activeSocialTab.value),
+    ),
+  set: (index: number) => {
+    const tab = socialTabs[index]?.key;
+    if (tab) selectSocialTab(tab);
+  },
+});
+
+const isPlainRecord = (value: unknown): value is RawRecord =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const readSocialText = (...values: unknown[]) => {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return '';
+};
+
+const readSocialNumber = (...values: unknown[]) => {
+  for (const value of values) {
+    if (value === undefined || value === null || value === '') continue;
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return 0;
+};
+
+const firstRecord = (...values: unknown[]) => values.find(isPlainRecord) as RawRecord | undefined;
+
+const pickFromRecords = (records: RawRecord[], keys: string[]) => {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = record[key];
+      if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+    }
+  }
+  return undefined;
+};
+
+const unwrapPayload = (payload: unknown): unknown => {
+  if (!isPlainRecord(payload)) return payload;
+  const data = payload.data;
+  return data !== undefined && data !== null ? data : payload;
+};
+
+const findFirstArray = (value: unknown, keys: string[], depth = 0): unknown[] => {
+  if (Array.isArray(value)) return value;
+  if (!isPlainRecord(value) || depth > 3) return [];
+
+  for (const key of keys) {
+    const candidate = value[key];
+    if (Array.isArray(candidate)) return candidate;
+    if (isPlainRecord(candidate)) {
+      const nested = findFirstArray(candidate, keys, depth + 1);
+      if (nested.length) return nested;
+    }
+  }
+
+  return [];
+};
+
+const socialListKeys: Record<SocialTabKey, string[]> = {
+  follow: ['lists', 'follow', 'follows', 'follow_list', 'list', 'users', 'items', 'data'],
+  friends: ['friends', 'friend_list', 'list', 'lists', 'users', 'items', 'data'],
+  fans: ['fans', 'fans_list', 'list', 'lists', 'users', 'items', 'data'],
+  visitors: ['visitors', 'visitor_list', 'visit_list', 'list', 'lists', 'users', 'items', 'data'],
+};
+
+const formatSocialTime = (value: unknown) => {
+  const text = readSocialText(value);
+  if (!text) return '';
+
+  const numeric = Number(text);
+  const date =
+    Number.isFinite(numeric) && /^\d+$/.test(text)
+      ? new Date(text.length <= 10 ? numeric * 1000 : numeric)
+      : new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const now = new Date();
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return sameYear
+    ? `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(
+        date.getMinutes(),
+      )}`
+    : `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+const readSocialLabel = (...values: unknown[]) => {
+  for (const value of values) {
+    const text = readSocialText(value);
+    if (!text || /^\d+$/.test(text)) continue;
+    return text;
+  }
+  return '';
+};
+
+const resolveFollowMeta = (records: RawRecord[]) => {
+  return readSocialLabel(
+    pickFromRecords(records, [
+      'source_desc',
+      'identity_desc',
+      'identity_name',
+      'iden_desc',
+      'auth_desc',
+      'tag_name',
+      'tag',
+      'label',
+      'category',
+    ]),
+  );
+};
+
+const resolveSocialMeta = (records: RawRecord[], tab: SocialTabKey, timeText: string) => {
+  if (tab === 'follow') return resolveFollowMeta(records);
+  if (tab === 'friends') return '互相关注';
+  if (tab === 'fans') {
+    return readSocialLabel(
+      pickFromRecords(records, ['source_desc', 'identity_desc', 'identity_name', 'auth_desc']),
+    );
+  }
+  return timeText ? `最近访问 ${timeText}` : '主页访客';
+};
+
+const socialTabFetcher: Record<SocialTabKey, () => Promise<unknown>> = {
+  follow: () => getUserFollow(),
+  friends: () => getUserFriends(),
+  fans: () => getUserFans(),
+  visitors: () => getUserVisitors(1),
+};
+
+const mapSocialUser = (item: unknown, index: number, tab: SocialTabKey): SocialUser | null => {
+  if (!isPlainRecord(item)) return null;
+  const nested = [
+    item,
+    firstRecord(item.user),
+    firstRecord(item.profile),
+    firstRecord(item.info),
+    firstRecord(item.visitor),
+    firstRecord(item.friend),
+    firstRecord(item.fans),
+    firstRecord(item.singer),
+    firstRecord(item.artist),
+  ].filter((record): record is RawRecord => Boolean(record));
+
+  const userId = readSocialText(
+    pickFromRecords(nested, [
+      'userid',
+      'user_id',
+      'userId',
+      'uid',
+      'id',
+      't_userid',
+      'visit_userid',
+      'friend_userid',
+      'fan_userid',
+      'singerid',
+      'singer_id',
+      'author_id',
+    ]),
+  );
+  if (tab === 'follow' && userId === '0') return null;
+  const nickname =
+    readSocialText(
+      pickFromRecords(nested, [
+        'nickname',
+        'nick_name',
+        'nick',
+        'username',
+        'user_name',
+        'singername',
+        'singer_name',
+        'author_name',
+        'name',
+      ]),
+    ) || `用户 ${userId || index + 1}`;
+  const avatar = normalizeCoverUrl(
+    readSocialText(
+      pickFromRecords(nested, [
+        'sizable_avatar',
+        'avatar',
+        'user_pic',
+        'headimg',
+        'head_img',
+        'img',
+        'pic',
+        'sizable_cover',
+        'cover',
+      ]),
+    ),
+    160,
+  );
+  const description = readSocialText(
+    pickFromRecords(nested, ['signature', 'descri', 'description', 'intro', 'mood', 'memo']),
+  );
+  const timeText = formatSocialTime(
+    pickFromRecords(nested, [
+      'visit_time',
+      'visitor_time',
+      'time',
+      'ctime',
+      'add_time',
+      'update_time',
+      'lasttime',
+    ]),
+  );
+  const relationText = resolveSocialMeta(nested, tab, timeText);
+  const isFriend = readSocialText(pickFromRecords(nested, ['is_friend', 'isFriend']));
+  const friendAction =
+    tab === 'fans' && isFriend === '0'
+      ? 'follow'
+      : tab === 'fans' && isFriend === '1'
+        ? 'unfollow'
+        : '';
+  const rawId = userId || `row-${tab}-${index}`;
+
+  return {
+    key: rawId,
+    userId,
+    canMessage: Boolean(userId && String(userStore.info?.userid ?? '') !== userId),
+    nickname,
+    avatar,
+    description,
+    meta: relationText,
+    friendAction,
+    raw: item,
+  };
+};
+
+const getSocialErrorMessage = (error: unknown, fallback: string) => {
+  const response = (error as { response?: { body?: unknown } } | null)?.response;
+  const body =
+    response?.body && typeof response.body === 'object'
+      ? (response.body as Record<string, unknown>)
+      : undefined;
+  const message = readSocialText(
+    body?.msg,
+    body?.error,
+    error instanceof Error ? error.message : '',
+  );
+  return message && !message.startsWith('API Error:') ? message : fallback;
+};
+
+const loadSocialList = async (tab = activeSocialTab.value, force = false) => {
+  if (!userStore.isLoggedIn || socialLoading[tab]) return;
+  if (socialLoaded[tab] && !force) return;
+
+  socialLoading[tab] = true;
+  socialError[tab] = '';
+  try {
+    const payload = await socialTabFetcher[tab]();
+    const records = findFirstArray(unwrapPayload(payload), socialListKeys[tab]);
+    socialUsers[tab] = records
+      .map((item, index) => mapSocialUser(item, index, tab))
+      .filter((item): item is SocialUser => Boolean(item));
+    socialLoaded[tab] = true;
+  } catch (error) {
+    logger.error('Profile', `Load ${tab} failed:`, error);
+    socialError[tab] = getSocialErrorMessage(error, '列表加载失败，请稍后重试');
+  } finally {
+    socialLoading[tab] = false;
+  }
+};
+
+const openSocialDrawer = (tab: SocialTabKey) => {
+  activeSocialTab.value = tab;
+  socialChatTarget.value = null;
+  socialDrawerOpen.value = true;
+  void loadSocialList(tab);
+};
+
+const selectSocialTab = (tab: SocialTabKey) => {
+  activeSocialTab.value = tab;
+  socialChatTarget.value = null;
+  void loadSocialList(tab);
+};
+
+const refreshSocialList = () => {
+  void loadSocialList(activeSocialTab.value, true);
+};
+
+const getMessageRecords = (payload: unknown) =>
+  findFirstArray(unwrapPayload(payload), ['messages', 'msgs', 'list', 'lists', 'items', 'data']);
+
+const resolveMessageBody = (record: RawRecord) => {
+  const message = firstRecord(record.message, record.msg, record.content);
+  const source = message ?? record;
+  const type = readSocialNumber(source.msgtype, source.type, record.msgtype, record.type);
+  const text = readSocialText(
+    source.alert,
+    source.text,
+    source.content,
+    source.msg,
+    record.alert,
+    record.text,
+  );
+  const imageUrl = normalizeCoverUrl(
+    readSocialText(source.url, source.pic, source.img, source.image, record.url),
+    320,
+  );
+  return { source, type, text, imageUrl };
+};
+
+const readChatMessageId = (record: RawRecord, source: RawRecord) =>
+  readSocialText(record.msgid, record.msg_id, record.id, source.msgid, source.msg_id, source.id);
+
+const readChatPartyId = (record: RawRecord, source: RawRecord, keys: string[]) =>
+  readSocialText(...keys.flatMap((key) => [record[key], source[key]]));
+
+const readChatDirection = (record: RawRecord, source: RawRecord) =>
+  readSocialText(
+    record.is_self,
+    record.isSelf,
+    record.is_me,
+    record.isMe,
+    record.self,
+    record.mine,
+    record.is_send,
+    record.isSend,
+    record.from_me,
+    record.fromMe,
+    record.direction,
+    record.flow,
+    source.is_self,
+    source.isSelf,
+    source.is_me,
+    source.isMe,
+    source.self,
+    source.mine,
+    source.is_send,
+    source.isSend,
+    source.from_me,
+    source.fromMe,
+    source.direction,
+    source.flow,
+  ).toLowerCase();
+
+const isSelfDirection = (value: string) =>
+  ['1', 'true', 'self', 'me', 'mine', 'send', 'sent', 'out', 'outgoing', 'right'].includes(value);
+
+const mapChatMessage = (item: unknown, index: number): ChatMessage | null => {
+  if (!isPlainRecord(item)) return null;
+  const currentUserId = String(userStore.info?.userid ?? '');
+  const { source, type, text, imageUrl } = resolveMessageBody(item);
+  const messageId = readChatMessageId(item, source);
+  const senderId = readChatPartyId(item, source, [
+    'fromuid',
+    'from_uid',
+    'from_userid',
+    'from_user_id',
+    'senderid',
+    'sender_id',
+    'send_uid',
+    'send_userid',
+    'uid',
+    'userid',
+    'user_id',
+  ]);
+  const receiverId = readChatPartyId(item, source, [
+    'touid',
+    'to_uid',
+    'to_userid',
+    'to_user_id',
+    'receiverid',
+    'receiver_id',
+    'targetid',
+    'target_id',
+    'tuid',
+  ]);
+  const targetUserId = socialChatTarget.value?.userId || '';
+  const direction = readChatDirection(item, source);
+  const isSelf =
+    Boolean(messageId && sentChatMessageIds.has(messageId)) ||
+    isSelfDirection(direction) ||
+    Boolean(currentUserId && senderId && senderId === currentUserId) ||
+    Boolean(receiverId && targetUserId && receiverId === targetUserId);
+
+  return {
+    id: messageId || `message-${index}`,
+    text: text || (type === 202 ? '[图片]' : type === 205 ? '[表情]' : '[消息]'),
+    imageUrl,
+    time: formatSocialTime(
+      item.time ?? item.timestamp ?? item.ctime ?? item.addtime ?? source.time ?? source.ctime,
+    ),
+    isSelf,
+    nickname: isSelf
+      ? userInfo.value?.nickname || '我'
+      : socialChatTarget.value?.nickname || '对方',
+    avatar: isSelf ? userInfo.value?.pic || '' : socialChatTarget.value?.avatar || '',
+    type,
+    raw: item,
+  };
+};
+
+const loadChatMessages = async (
+  target = socialChatTarget.value,
+  options: { silent?: boolean } = {},
+) => {
+  if (!target?.userId || socialChatLoading.value) return;
+  if (!options.silent) socialChatLoading.value = true;
+  try {
+    const payload = await getUserFollowMessages({ id: target.userId, pagesize: 30 });
+    const records = getMessageRecords(payload);
+    const firstRecordWithTag = records.find(
+      (record): record is RawRecord => isPlainRecord(record) && Boolean(readSocialText(record.tag)),
+    );
+    const tag = readSocialText(
+      isPlainRecord(payload) ? payload.tag : '',
+      isPlainRecord(payload) && isPlainRecord(payload.data) ? payload.data.tag : '',
+      firstRecordWithTag?.tag,
+    );
+    if (tag) socialChatTag.value = tag;
+    socialChatMessages.value = records
+      .map(mapChatMessage)
+      .filter((item): item is ChatMessage => Boolean(item))
+      .reverse();
+  } catch (error) {
+    logger.error('Profile', 'Load chat messages failed:', error);
+    toastStore.warning(getSocialErrorMessage(error, '私信记录加载失败'));
+    if (!options.silent) socialChatMessages.value = [];
+  } finally {
+    if (!options.silent) socialChatLoading.value = false;
+  }
+};
+
+const openSocialChat = (target: SocialUser) => {
+  if (!target.canMessage) return;
+  socialChatTarget.value = target;
+  socialChatDraft.value = '';
+  socialChatMessages.value = [];
+  socialChatTag.value = '';
+  void loadChatMessages(target);
+};
+
+const closeSocialChat = () => {
+  socialChatTarget.value = null;
+  socialChatDraft.value = '';
+  socialChatMessages.value = [];
+  socialChatTag.value = '';
+};
+
+const rememberSocialChatTag = (payload: unknown) => {
+  const responseRecord = isPlainRecord(payload) ? payload : {};
+  const dataRecord = firstRecord(responseRecord.data) ?? {};
+  const tag = readSocialText(
+    responseRecord.tag,
+    responseRecord.chat_tag,
+    responseRecord.chatTag,
+    dataRecord.tag,
+    dataRecord.chat_tag,
+    dataRecord.chatTag,
+  );
+  if (tag) socialChatTag.value = tag;
+};
+
+const readSentChatMessageId = (payload: unknown) => {
+  const responseRecord = isPlainRecord(payload) ? payload : {};
+  const dataRecord = firstRecord(responseRecord.data) ?? {};
+  return readSocialText(
+    responseRecord.msgid,
+    responseRecord.msg_id,
+    responseRecord.id,
+    dataRecord.msgid,
+    dataRecord.msg_id,
+    dataRecord.id,
+  );
+};
+
+const rememberSentChatMessage = (messageId = '') => {
+  if (messageId) sentChatMessageIds.add(messageId);
+};
+
+const sendSocialChat = async () => {
+  const target = socialChatTarget.value;
+  const text = socialChatDraft.value.trim();
+  if (!target?.userId || !text || socialChatSending.value) return;
+  if (text.length > SOCIAL_CHAT_TEXT_LIMIT) {
+    toastStore.warning(`私信最多 ${SOCIAL_CHAT_TEXT_LIMIT} 字`);
+    return;
+  }
+
+  socialChatSending.value = true;
+  try {
+    const chatTarget = socialChatTag.value ? { tag: socialChatTag.value } : { tuid: target.userId };
+    const payload = await sendUserFollowChat({
+      ...chatTarget,
+      alert: text,
+      nickname: userInfo.value?.nickname,
+    });
+    rememberSocialChatTag(payload);
+    const messageId = readSentChatMessageId(payload);
+    rememberSentChatMessage(messageId);
+    socialChatMessages.value = [
+      ...socialChatMessages.value.filter((message) => message.id !== messageId),
+      {
+        id: messageId || `local-${Date.now()}`,
+        text,
+        imageUrl: '',
+        time: formatSocialTime(Date.now()),
+        isSelf: true,
+        nickname: userInfo.value?.nickname || '我',
+        avatar: userInfo.value?.pic || '',
+        type: 201,
+        raw: {},
+      },
+    ];
+    socialChatDraft.value = '';
+    toastStore.success('私信已发送');
+    window.setTimeout(() => void loadChatMessages(target, { silent: true }), 350);
+  } catch (error) {
+    logger.error('Profile', 'Send chat failed:', error);
+    toastStore.warning(getSocialErrorMessage(error, '私信发送失败'));
+  } finally {
+    socialChatSending.value = false;
+  }
+};
+
 const loadData = async () => {
   if (!userStore.isLoggedIn) return;
   isLoading.value = true;
@@ -399,6 +1029,7 @@ const loadData = async () => {
     // 并行刷新听歌等级信息（等级/积分），不阻塞主流程
     void userStore.fetchGradeInfo();
     void loginDeviceStore.fetchDevices();
+    void loadSocialList('follow');
   } catch (e) {
     logger.error('Profile', 'Load Data Error:', e);
   } finally {
@@ -574,24 +1205,55 @@ onMounted(() => loadData());
                         >
                         <span class="profile-stat-label">升级进度</span>
                       </button>
-                      <div class="profile-stat">
+                      <button
+                        type="button"
+                        class="profile-stat profile-social-stat text-left"
+                        aria-label="查看好友列表"
+                        @click="openSocialDrawer('friends')"
+                      >
                         <span class="profile-stat-value">
-                          <RollingNumber :value="String(detail.follows || 0)" />
+                          <RollingNumber :value="friendCount" />
+                          <span class="text-primary-text">›</span>
+                        </span>
+                        <span class="profile-stat-label">好友</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="profile-stat profile-social-stat text-left"
+                        aria-label="查看关注列表"
+                        @click="openSocialDrawer('follow')"
+                      >
+                        <span class="profile-stat-value">
+                          <RollingNumber :value="followCount" />
+                          <span class="text-primary-text">›</span>
                         </span>
                         <span class="profile-stat-label">关注</span>
-                      </div>
-                      <div class="profile-stat">
+                      </button>
+                      <button
+                        type="button"
+                        class="profile-stat profile-social-stat text-left"
+                        aria-label="查看粉丝列表"
+                        @click="openSocialDrawer('fans')"
+                      >
                         <span class="profile-stat-value">
                           <RollingNumber :value="String(detail.fans || 0)" />
+                          <span class="text-primary-text">›</span>
                         </span>
                         <span class="profile-stat-label">粉丝</span>
-                      </div>
-                      <div class="profile-stat">
+                      </button>
+                      <button
+                        type="button"
+                        class="profile-stat profile-social-stat text-left"
+                        aria-label="查看访客列表"
+                        @click="openSocialDrawer('visitors')"
+                      >
                         <span class="profile-stat-value"
-                          ><RollingNumber :value="visitorCount"
-                        /></span>
+                          ><RollingNumber :value="visitorCount" /><span class="text-primary-text"
+                            >›</span
+                          ></span
+                        >
                         <span class="profile-stat-label">访客</span>
-                      </div>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -879,6 +1541,179 @@ onMounted(() => loadData());
       v-model:open="showListeningPreferences"
       @blacklist="showContentBlacklist = true"
     />
+
+    <Drawer
+      v-model:open="socialDrawerOpen"
+      overlayClass="profile-social-drawer-overlay"
+      panelClass="profile-social-drawer"
+    >
+      <div class="profile-social-shell">
+        <header class="profile-social-header">
+          <Button
+            v-if="socialChatTarget"
+            variant="unstyled"
+            size="none"
+            class="profile-social-icon-btn"
+            tooltip="返回列表"
+            aria-label="返回列表"
+            @click="closeSocialChat"
+          >
+            <Icon :icon="iconChevronLeft" width="18" height="18" />
+          </Button>
+          <div class="profile-social-title">
+            <span class="profile-social-kicker">{{
+              socialChatTarget ? '私信会话' : '个人互动'
+            }}</span>
+            <h2>{{ socialChatTarget?.nickname || activeSocialTabMeta.label }}</h2>
+          </div>
+          <div class="profile-social-header-actions">
+            <Button
+              v-if="!socialChatTarget"
+              variant="unstyled"
+              size="none"
+              class="profile-social-icon-btn"
+              tooltip="刷新列表"
+              aria-label="刷新列表"
+              :disabled="isSocialBusy"
+              @click="refreshSocialList"
+            >
+              <Icon
+                :icon="iconRefreshCw"
+                width="16"
+                height="16"
+                :class="isSocialBusy ? 'animate-spin' : ''"
+              />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              class="profile-social-icon-btn"
+              tooltip="关闭"
+              aria-label="关闭"
+              @click="socialDrawerOpen = false"
+            >
+              <Icon :icon="iconX" width="17" height="17" />
+            </Button>
+          </div>
+        </header>
+
+        <template v-if="!socialChatTarget">
+          <CustomTabBar
+            v-model="activeSocialTabIndex"
+            class="profile-social-tabs"
+            :tabs="socialTabLabels"
+            aria-label="个人互动分类"
+          />
+
+          <div class="profile-social-list" :aria-busy="isSocialBusy">
+            <div v-if="isSocialBusy && activeSocialUsers.length === 0" class="profile-social-state">
+              正在加载{{ activeSocialTabMeta.label }}
+            </div>
+            <div v-else-if="socialError[activeSocialTab]" class="profile-social-state">
+              <p>{{ socialError[activeSocialTab] }}</p>
+              <Button variant="outline" size="xs" @click="refreshSocialList">重试</Button>
+            </div>
+            <div v-else-if="activeSocialUsers.length === 0" class="profile-social-state">
+              {{ activeSocialTabMeta.empty }}
+            </div>
+            <div v-else class="profile-social-users">
+              <div v-for="item in activeSocialUsers" :key="item.key" class="profile-social-user">
+                <Avatar :src="item.avatar" class="profile-social-avatar" />
+                <div class="profile-social-user-main">
+                  <div class="profile-social-user-line">
+                    <strong>{{ item.nickname }}</strong>
+                    <span v-if="item.meta">{{ item.meta }}</span>
+                  </div>
+                  <p>{{ item.description || `ID ${item.userId || '-'}` }}</p>
+                </div>
+                <Button
+                  v-if="item.friendAction"
+                  type="button"
+                  :variant="item.friendAction === 'follow' ? 'primary' : 'outline'"
+                  size="xs"
+                  class="profile-social-follow-btn"
+                  @click.stop.prevent
+                >
+                  {{ item.friendAction === 'follow' ? '关注' : '取消关注' }}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  class="profile-social-message-btn"
+                  :disabled="!item.canMessage"
+                  @click="openSocialChat(item)"
+                >
+                  <Icon :icon="iconMessageCircle" width="14" height="14" />
+                  <span>私信</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <template v-else>
+          <section class="profile-chat-panel">
+            <div v-if="socialChatLoading" class="profile-social-state">正在获取私信记录</div>
+            <div v-else-if="socialChatMessages.length === 0" class="profile-social-state">
+              暂无私信记录
+            </div>
+            <div v-else class="profile-chat-list">
+              <div
+                v-for="message in socialChatMessages"
+                :key="message.id"
+                class="profile-chat-message"
+                :class="{ 'is-self': message.isSelf }"
+              >
+                <Avatar :src="message.avatar" class="profile-chat-avatar" />
+                <div class="profile-chat-bubble-wrap">
+                  <div class="profile-chat-meta">
+                    <strong>{{ message.nickname }}</strong>
+                    <time v-if="message.time">{{ message.time }}</time>
+                  </div>
+                  <div class="profile-chat-bubble">
+                    <img
+                      v-if="message.imageUrl && message.type === 202"
+                      :src="message.imageUrl"
+                      alt=""
+                    />
+                    <span v-else>{{ message.text }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <form class="profile-chat-composer" @submit.prevent="sendSocialChat">
+            <textarea
+              v-model="socialChatDraft"
+              class="profile-chat-textarea"
+              rows="1"
+              :disabled="socialChatSending"
+              :maxlength="SOCIAL_CHAT_TEXT_LIMIT"
+              :aria-invalid="socialChatDraftOverLimit"
+              placeholder="发送一条私信"
+              aria-label="发送私信"
+              @keydown.enter.exact.prevent="sendSocialChat"
+            />
+            <span class="profile-chat-count" :class="{ 'is-over-limit': socialChatDraftOverLimit }">
+              {{ socialChatDraftLength }} / {{ SOCIAL_CHAT_TEXT_LIMIT }}
+            </span>
+            <Button
+              type="submit"
+              variant="primary"
+              size="xs"
+              class="profile-chat-send"
+              :loading="socialChatSending"
+              :disabled="socialChatDraftOverLimit || !socialChatDraft.trim() || socialChatSending"
+              aria-label="发送私信"
+            >
+              {{ socialChatSending ? '发送中…' : '发送' }}
+            </Button>
+          </form>
+        </template>
+      </div>
+    </Drawer>
+
     <Dialog
       v-model:open="showGradeDetail"
       title="我的等级"
@@ -1099,6 +1934,7 @@ onMounted(() => loadData());
 .profile-stats {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   gap: 24px;
 }
 .profile-stat {
@@ -1150,6 +1986,312 @@ onMounted(() => loadData());
 .grade-entry:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 5px;
+}
+.profile-social-stat {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    color 160ms,
+    opacity 160ms;
+}
+.profile-social-stat:hover {
+  color: var(--color-primary-text);
+}
+.profile-social-stat:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 5px;
+}
+:global(.profile-social-drawer-overlay) {
+  background: var(--surface-scrim-bg);
+}
+:global(.drawer-panel.profile-social-drawer) {
+  top: var(--drawer-safe-top);
+  right: 12px;
+  bottom: var(--drawer-safe-bottom);
+  width: min(460px, calc(100vw - 24px));
+  border-radius: 12px;
+  box-shadow: var(--shadow-dialog);
+  overflow: hidden;
+}
+@media (max-width: 420px) {
+  :global(.drawer-panel.profile-social-drawer) {
+    --drawer-top-gap: 16px;
+    --drawer-bottom-gap: -4px;
+    right: 8px;
+    width: min(460px, calc(100vw - 16px));
+  }
+}
+.profile-social-shell {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+}
+.profile-social-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.profile-social-title {
+  min-width: 0;
+  flex: 1;
+}
+.profile-social-kicker {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+.profile-social-title h2 {
+  overflow: hidden;
+  color: var(--color-text-main);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-social-header-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+.profile-social-icon-btn {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: var(--color-text-secondary);
+  transition:
+    background-color 160ms,
+    color 160ms;
+}
+.profile-social-icon-btn:hover {
+  background: var(--control-hover-bg);
+  color: var(--color-text-main);
+}
+.profile-social-tabs {
+  flex-shrink: 0;
+  width: calc(100% - 28px);
+  margin: 12px 14px;
+}
+.profile-social-list,
+.profile-chat-panel {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 4px 12px 12px;
+}
+.profile-social-state {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  gap: 10px;
+  padding: 24px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+.profile-social-state p {
+  max-width: 280px;
+}
+.profile-social-users {
+  display: grid;
+  gap: 8px;
+}
+.profile-social-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--control-muted-bg);
+}
+.profile-social-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+}
+.profile-social-user-main {
+  min-width: 0;
+  flex: 1;
+}
+.profile-social-user-line {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+.profile-social-user-line strong {
+  overflow: hidden;
+  color: var(--color-text-main);
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-social-user-line span {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+}
+.profile-social-user-main p {
+  overflow: hidden;
+  margin-top: 3px;
+  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-social-follow-btn {
+  flex-shrink: 0;
+  min-width: 64px;
+}
+.profile-social-message-btn {
+  flex-shrink: 0;
+  gap: 5px;
+}
+.profile-chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px 12px;
+}
+.profile-chat-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.profile-chat-message.is-self {
+  flex-direction: row-reverse;
+}
+.profile-chat-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+}
+.profile-chat-bubble-wrap {
+  min-width: 0;
+  max-width: 76%;
+}
+.profile-chat-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+.profile-chat-message.is-self .profile-chat-meta {
+  justify-content: flex-end;
+}
+.profile-chat-meta strong {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--color-text-main) 64%, transparent);
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-chat-meta time {
+  color: color-mix(in srgb, var(--color-text-main) 34%, transparent);
+  font-size: 9px;
+  font-weight: 700;
+}
+.profile-chat-bubble {
+  overflow: hidden;
+  padding: 9px 11px;
+  border-radius: 6px 14px 14px;
+  background: var(--control-muted-bg);
+  color: var(--color-text-main);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.profile-chat-message.is-self .profile-chat-bubble {
+  border-radius: 14px 6px 14px 14px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.profile-chat-bubble img {
+  display: block;
+  max-width: 180px;
+  max-height: 220px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+.profile-chat-composer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 10px 12px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 14px;
+  background: var(--color-bg-elevated);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.045);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.profile-chat-composer:focus-within {
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--control-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+.profile-chat-textarea {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: 32px;
+  max-height: 112px;
+  padding: 6px 4px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  field-sizing: content;
+  user-select: text;
+}
+.profile-chat-textarea::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.75;
+}
+.profile-chat-count {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.profile-chat-count.is-over-limit {
+  color: var(--color-danger);
+}
+.profile-chat-send {
+  display: inline-flex;
+  min-width: 60px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
 }
 .grade-card {
   min-height: 176px;

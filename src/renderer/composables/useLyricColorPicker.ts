@@ -8,7 +8,7 @@ import {
 import { useThemeStore } from '@/stores/theme';
 import { DEFAULT_ACCENT, getNormalizedAccent } from '@/utils/color';
 
-// 歌词颜色预设（用于页面歌词的颜色选择器）
+// 歌词颜色预设（用于播放页歌词的颜色选择器）
 export const LYRIC_COLOR_PRESETS = [
   '#31cfa1',
   '#0071e3',
@@ -43,7 +43,7 @@ export const getLyricCoverDynamicOption = (): {
   };
 };
 
-// 页面歌词颜色选择器的公共状态与操作
+// 播放页歌词颜色选择器的公共状态与操作
 export const useLyricColorPicker = () => {
   const lyricStore = useLyricStore();
   const themeStore = useThemeStore();

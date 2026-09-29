@@ -117,6 +117,7 @@ let snapshot: DesktopLyricSnapshot = {
   lyrics: [],
   currentIndex: -1,
   lyricTimeOffset: 0,
+  currentTrackTimeOffset: 0,
   settings: getDesktopLyricSettings(),
   lockPhase: 'idle',
 };
@@ -843,6 +844,7 @@ export const registerDesktopLyricHandlers = () => {
                 lyrics: [],
                 currentIndex: -1,
                 lyricTimeOffset: 0,
+                currentTrackTimeOffset: 0,
               }
             : {}),
         };
@@ -856,6 +858,7 @@ export const registerDesktopLyricHandlers = () => {
                 lyrics: snapshot.lyrics,
                 currentIndex: snapshot.currentIndex,
                 lyricTimeOffset: snapshot.lyricTimeOffset,
+                currentTrackTimeOffset: snapshot.currentTrackTimeOffset,
               }
             : {}),
         };
@@ -894,6 +897,16 @@ export const registerDesktopLyricHandlers = () => {
       if (payload.lyricTimeOffset !== undefined) {
         snapshot = { ...snapshot, lyricTimeOffset: Number(payload.lyricTimeOffset) || 0 };
         desktopPatch = { ...desktopPatch, lyricTimeOffset: snapshot.lyricTimeOffset };
+      }
+      if (payload.currentTrackTimeOffset !== undefined) {
+        snapshot = {
+          ...snapshot,
+          currentTrackTimeOffset: Number(payload.currentTrackTimeOffset) || 0,
+        };
+        desktopPatch = {
+          ...desktopPatch,
+          currentTrackTimeOffset: snapshot.currentTrackTimeOffset,
+        };
       }
       if (payload.lyricSyncWarning !== undefined) {
         snapshot = { ...snapshot, lyricSyncWarning: payload.lyricSyncWarning };
@@ -1033,6 +1046,19 @@ export const registerDesktopLyricHandlers = () => {
       setTimeout(() => {
         if (!mainWin.isDestroyed()) {
           mainWin.webContents.send('shortcut-trigger', command);
+        }
+      }, 300);
+      return;
+    }
+    if (command === 'openSettings') {
+      if (getActiveWindowMode() === 'mini') {
+        closeMiniPlayerWindow();
+      }
+      showMainWindow();
+      if (!mainWin || mainWin.isDestroyed()) return;
+      setTimeout(() => {
+        if (!mainWin.isDestroyed()) {
+          mainWin.webContents.send('app:open-settings', 'lyric');
         }
       }, 300);
       return;

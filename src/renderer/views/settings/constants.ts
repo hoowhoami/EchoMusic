@@ -9,7 +9,7 @@ import {
   iconKeyboard,
   iconCloud,
   iconEye,
-  iconMusic,
+  iconMusicShare,
   iconPalette,
   iconPictureInPicture,
   iconPlayerPlay,
@@ -29,7 +29,8 @@ export const sectionTitles = {
   playback: { label: '播放体验', icon: iconPlayerPlay },
   spatialAudio: { label: '音效管理', icon: iconPulse },
   player: { label: '播放器设置', icon: iconSlidersHorizontal },
-  pageLyric: { label: '页面歌词', icon: iconMusic },
+  lyric: { label: '歌词设置', icon: iconMusicShare },
+  pageLyric: { label: '播放页', icon: iconPlayerPlay },
   desktopLyric: { label: '桌面歌词', icon: iconPictureInPicture },
   shortcuts: { label: '快捷键', icon: iconKeyboard },
   audioDevice: { label: '音频设备', icon: iconDeviceSpeaker },
@@ -72,7 +73,7 @@ export const shortcutItems: ShortcutItem[] = [
   { command: 'toggleMiniPlayer', title: 'Mini 模式切换', desc: '在主窗口和 Mini 模式之间切换' },
   { command: 'toggleWindow', title: '显示 / 隐藏窗口', desc: '切换主窗口的显示和隐藏状态' },
   { command: 'toggleSidebar', title: '侧边栏开关', desc: '展开或收起侧边栏' },
-  { command: 'toggleMainLyric', title: '页面歌词开关', desc: '打开或关闭页面歌词' },
+  { command: 'toggleMainLyric', title: '播放页歌词开关', desc: '打开或关闭播放页歌词' },
   { command: 'toggleDesktopLyric', title: '桌面歌词开关', desc: '打开或关闭桌面歌词窗口' },
 ];
 

@@ -363,8 +363,9 @@ contextBridge.exposeInMainWorld('electron', {
     get: () => ipcRenderer.invoke('app:get-info') as Promise<AppInfoResult>,
     getChangelog: () => ipcRenderer.invoke('app:get-changelog') as Promise<string>,
     relaunch: () => ipcRenderer.invoke('app:relaunch') as Promise<boolean>,
-    onOpenSettings: (func: () => void) => {
-      const listener = () => func();
+    onOpenSettings: (func: (section?: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, section?: unknown) =>
+        func(typeof section === 'string' ? section : undefined);
       ipcRenderer.on('app:open-settings', listener);
       return () => ipcRenderer.removeListener('app:open-settings', listener);
     },

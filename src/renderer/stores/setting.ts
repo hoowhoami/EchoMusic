@@ -167,8 +167,6 @@ export const useSettingStore = defineStore('setting', {
     lyricPageBackgroundRhythm: false,
     lyricFilterEnabled: false,
     lyricFilterPattern: '',
-    desktopLyricFilterEnabled: false,
-    desktopLyricFilterPattern: '',
     autoNext: false,
     autoNextDelaySeconds: 3,
     autoNextMaxAttempts: 10,
@@ -272,7 +270,7 @@ export const useSettingStore = defineStore('setting', {
     // 快进 / 快退步长（秒）
     seekForwardOffset: 5,
     seekBackwardOffset: 5,
-    // 歌词对齐微调步长（秒）
+    // 单曲歌词微调步长（秒）
     lyricOffsetStep: 0.1,
     // DevTools 开关
     devToolsEnabled: false,

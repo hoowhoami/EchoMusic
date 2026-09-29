@@ -298,7 +298,7 @@ export const initNowPlayingSync = async () => {
     }
     if (command === 'lyricOffsetReset') {
       lyricStore.resetTimeOffset();
-      toastStore.success('单曲歌词偏移已重置，全局设置保留');
+      toastStore.success('单曲歌词偏移已重置');
       lyricStore.updateCurrentIndex(playerStore.currentTime);
       syncPlaybackSnapshot();
     }

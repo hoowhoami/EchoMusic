@@ -216,7 +216,7 @@ const openPanel = async (panel: LyricsPagePanel) => {
       'settings',
     ].includes(panel)
   ) {
-    throw new Error('未知的歌词页面板');
+    throw new Error('未知的播放页歌词面板');
   }
   if (['lyrics-picker', 'comments', 'add-to-playlist'].includes(panel) && !currentTrack.value) {
     throw new Error('当前没有歌曲');
@@ -294,7 +294,7 @@ const isCollapsed = computed(
 // 歌词工具按钮
 const hasLyrics = computed(() => lyricStore.lines.length > 0);
 
-// 歌词对齐微调步长（秒），来自设置，兜底 0.5s
+// 单曲歌词微调步长（秒），来自通用歌词设置，兜底 0.5s
 const lyricOffsetStep = computed(() => {
   const step = Number(settingStore.lyricOffsetStep);
   return Number.isFinite(step) && step > 0 ? step : 0.5;
@@ -311,7 +311,7 @@ const handleOffsetAdjust = (direction: 1 | -1) => {
 
 const handleOffsetReset = () => {
   lyricStore.resetTimeOffset();
-  toastStore.success('单曲歌词偏移已重置，全局设置保留');
+  toastStore.success('单曲歌词偏移已重置');
   lyricStore.updateCurrentIndex(playerStore.currentTime);
 };
 
@@ -524,7 +524,7 @@ onUnmounted(() => {
             </button>
           </template>
         </Tooltip>
-        <Tooltip v-if="hasLyrics" content="重置单曲偏移（保留全局设置）">
+        <Tooltip v-if="hasLyrics" content="重置单曲偏移">
           <template #trigger>
             <button
               class="lyric-page-tool-btn"
@@ -748,7 +748,7 @@ onUnmounted(() => {
               </button>
             </template>
           </Tooltip>
-          <Tooltip v-if="hasLyrics" content="重置单曲偏移（保留全局设置）">
+          <Tooltip v-if="hasLyrics" content="重置单曲偏移">
             <template #trigger>
               <button
                 class="lyric-page-tool-btn"
@@ -814,7 +814,7 @@ onUnmounted(() => {
       @update:view="settingsView = $event"
       @open-global-settings="
         isSettingsOpen = false;
-        openSettingsDialog('pageLyric');
+        openSettingsDialog('lyric');
       "
     />
 

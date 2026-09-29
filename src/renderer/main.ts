@@ -11,6 +11,7 @@ import { useSettingStore } from '@/stores/setting';
 import { installPluginRuntime } from '@/plugins/runtime';
 import { installInputBehaviorGuard } from '@/utils/inputBehaviorGuard';
 import { startRendererMemoryDiagnostics } from '@/utils/rendererMemoryDiagnostics';
+import { openSettingsDialog } from '@/composables/useSettingsDialog';
 import './style.css';
 import { finishStartup, markStartup } from '@/utils/startupTiming';
 
@@ -229,10 +230,8 @@ router.onError((error) => {
   void navigateToErrorPage(error, 'Route Error');
 });
 
-window.electron?.appInfo?.onOpenSettings?.(() => {
-  router.push('/main/settings').catch((error: unknown) => {
-    logger.error('App', 'Failed to open settings from application menu', error);
-  });
+window.electron?.appInfo?.onOpenSettings?.((section) => {
+  openSettingsDialog(section || 'appearance');
 });
 
 app.use(pinia);

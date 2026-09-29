@@ -5,7 +5,7 @@ import { DEFAULT_ACCENT, getNormalizedAccent } from '@/utils/color';
 import type { Song } from '@/models/song';
 import { resolvePluginLyric } from '@/plugins/lyrics';
 import { useThemeStore } from './theme';
-import { normalizeLyricOffsetMs } from '../../shared/lyricOffset';
+import { normalizeGlobalLyricOffsetMs, normalizeLyricOffsetMs } from '../../shared/lyricOffset';
 
 export interface LyricCharacter {
   text: string;
@@ -426,7 +426,7 @@ const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
 //   return 'none';
 // };
 
-// 页面歌词默认颜色
+// 播放页歌词默认颜色
 export const DEFAULT_LYRIC_PLAYED_COLOR = '#31cfa1';
 export const DEFAULT_LYRIC_UNPLAYED_COLOR = '#ffffff';
 export const LYRIC_COVER_COLOR_VALUE = '__cover__';
@@ -715,11 +715,6 @@ export const useLyricStore = defineStore('lyric', {
     wantRomanization: false,
     // 音译是否用"逐字标注在原词上方"的注音模式渲染（默认关闭，关闭时音译作为独立副行显示）
     showRomanizationAsRuby: false,
-    // 迷你歌词独立的音译显示样式，不跟随页面歌词设置
-    miniPlayerShowRomanizationAsRuby: false,
-    // 迷你歌词独立的翻译/音译显示偏好
-    miniPlayerWantTranslation: false,
-    miniPlayerWantRomanization: false,
     // 当前歌曲数据可用性（每首歌重新检测）
     hasTranslation: false,
     hasRomanization: false,
@@ -753,7 +748,7 @@ export const useLyricStore = defineStore('lyric', {
     },
     // 各歌词视图、快照和行索引共用的有效偏移，只叠加一次。
     currentTimeOffset(): number {
-      return normalizeLyricOffsetMs(this.globalTimeOffsetMs) + this.currentTrackTimeOffset;
+      return normalizeGlobalLyricOffsetMs(this.globalTimeOffsetMs) + this.currentTrackTimeOffset;
     },
     effectivePlayedColor: (state) =>
       resolveLyricColor(state.playedColor, DEFAULT_LYRIC_PLAYED_COLOR),
@@ -852,7 +847,7 @@ export const useLyricStore = defineStore('lyric', {
     },
     // 调整全局校准（毫秒），不会覆盖任何单曲微调。
     setGlobalTimeOffset(value: number) {
-      this.globalTimeOffsetMs = normalizeLyricOffsetMs(value);
+      this.globalTimeOffsetMs = normalizeGlobalLyricOffsetMs(value);
     },
     // 调整当前歌曲的歌词时间偏移（毫秒）
     adjustTimeOffset(deltaMs: number): number {
@@ -1277,9 +1272,6 @@ export const useLyricStore = defineStore('lyric', {
       'wantTranslation',
       'wantRomanization',
       'showRomanizationAsRuby',
-      'miniPlayerShowRomanizationAsRuby',
-      'miniPlayerWantTranslation',
-      'miniPlayerWantRomanization',
       'fontScale',
       'fontWeightIndex',
       'playedColor',

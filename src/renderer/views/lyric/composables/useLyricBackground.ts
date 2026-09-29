@@ -4,7 +4,7 @@ import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverColorUrls } from '@/utils/cover';
 
 /**
- * 歌词页面背景主题色取色
+ * 歌词播放页背景主题色取色
  * 从封面提取主色，归一化后压暗作为纯色背景
  * 确保白色文字在背景上有足够对比度
  */

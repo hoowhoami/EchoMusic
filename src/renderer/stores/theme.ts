@@ -50,7 +50,7 @@ export const useThemeStore = defineStore('theme', {
     accentGradientStrength: DEFAULT_ACCENT_GRADIENT_STRENGTH,
     // 当前生效的主题色源（未归一化，用于重算）
     sourceColor: DEFAULT_ACCENT,
-    // 当前歌曲封面提取色（供歌词页面“跟随封面取色”使用）
+    // 当前歌曲封面提取色（供歌词播放页“跟随封面取色”使用）
     coverColor: DEFAULT_ACCENT,
     // 主窗口实际生效的深浅色状态，由 App.vue 的主题流程同步
     isDark: isDarkMode(),

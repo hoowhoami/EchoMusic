@@ -70,7 +70,7 @@ export type DesktopLyricSettings = {
   layout: DesktopLyricLayout;
   filterEnabled: boolean;
   filterPattern: string;
-  /** 歌词对齐微调步长（秒） */
+  /** 单曲歌词微调步长（秒）；由渲染进程的通用歌词设置同步。 */
   offsetStep: number;
 };
 
@@ -114,6 +114,7 @@ export type DesktopLyricSnapshot = {
   lyrics: LyricLinePayload[];
   currentIndex: number;
   lyricTimeOffset: number;
+  currentTrackTimeOffset: number;
   settings: DesktopLyricSettings;
   lockPhase: DesktopLyricLockPhase;
   /** 歌词同步警告（实际播放时长与歌词时长差异过大） */
@@ -129,6 +130,7 @@ export type DesktopLyricSnapshotPatch = Partial<
     | 'lyrics'
     | 'currentIndex'
     | 'lyricTimeOffset'
+    | 'currentTrackTimeOffset'
     | 'lockPhase'
     | 'lyricSyncWarning'
   >
@@ -150,6 +152,7 @@ export const isDesktopLyricFullSnapshot = (
     'lyrics' in value &&
     'currentIndex' in value &&
     'lyricTimeOffset' in value &&
+    'currentTrackTimeOffset' in value &&
     'settings' in value &&
     'lockPhase' in value,
   );
@@ -171,6 +174,9 @@ export const mergeDesktopLyricSnapshotMessage = (
     ...(message.lyricTimeOffset !== undefined
       ? { lyricTimeOffset: Number(message.lyricTimeOffset) || 0 }
       : {}),
+    ...(message.currentTrackTimeOffset !== undefined
+      ? { currentTrackTimeOffset: Number(message.currentTrackTimeOffset) || 0 }
+      : {}),
     ...(message.lockPhase !== undefined ? { lockPhase: message.lockPhase } : {}),
     ...(message.lyricSyncWarning !== undefined
       ? { lyricSyncWarning: message.lyricSyncWarning }
@@ -190,4 +196,5 @@ export type DesktopLyricCommand =
   | 'toggleRomanization'
   | 'lyricOffsetBackward'
   | 'lyricOffsetForward'
-  | 'lyricOffsetReset';
+  | 'lyricOffsetReset'
+  | 'openSettings';

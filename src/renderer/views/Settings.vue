@@ -22,8 +22,7 @@ import PlaybackSettingsSection from './settings/components/PlaybackSettingsSecti
 import SpatialAudioSettingsSection from './settings/components/SpatialAudioSettingsSection.vue';
 import PlayerSettingsSection from './settings/components/PlayerSettingsSection.vue';
 import NetworkSettingsSection from './settings/components/NetworkSettingsSection.vue';
-import PageLyricSettingsSection from './settings/components/PageLyricSettingsSection.vue';
-import DesktopLyricSettingsSection from './settings/components/DesktopLyricSettingsSection.vue';
+import LyricSettingsSection from './settings/components/LyricSettingsSection.vue';
 import ShortcutSettingsSection from './settings/components/ShortcutSettingsSection.vue';
 import AudioDeviceSettingsSection from './settings/components/AudioDeviceSettingsSection.vue';
 import CastSettingsSection from './settings/components/CastSettingsSection.vue';
@@ -56,9 +55,17 @@ const isSettingsSearchCollapsing = ref(false);
 let settingsSearchCollapseTimer: number | null = null;
 
 const normalizeSearchText = (value: string) => value.toLocaleLowerCase().replace(/\s+/g, '');
+const normalizeSettingsSectionId = (section: string) =>
+  section === 'pageLyric' || section === 'desktopLyric' ? 'lyric' : section;
 
 // 当前激活的锚点
-const activeSection = ref(props.initialSection);
+const activeSection = ref(normalizeSettingsSectionId(props.initialSection));
+watch(
+  () => props.initialSection,
+  (section) => {
+    activeSection.value = normalizeSettingsSectionId(section);
+  },
+);
 
 // 点击锚点时：滚动到对应 section
 const scrollToSection = (id: string) => {
@@ -168,7 +175,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     label: '字体设置',
     order: 200,
     component: FontSettingsSection,
-    searchKeywords: ['全局字体', '页面歌词字体', '桌面歌词字体', '系统默认', '跟随全局'],
+    searchKeywords: ['全局字体', '播放页歌词字体', '桌面歌词字体', '系统默认', '跟随全局'],
   },
   {
     id: 'playback',
@@ -286,16 +293,22 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     ],
   },
   {
-    id: 'pageLyric',
-    label: '页面歌词',
+    id: 'lyric',
+    label: '歌词设置',
     order: 500,
-    component: PageLyricSettingsSection,
+    component: LyricSettingsSection,
     searchKeywords: [
       '显示翻译',
       '显示音译',
       '音译样式',
       '独立一行',
       '注音',
+      '全局歌词时间偏移',
+      '歌词校准',
+      '歌词提前',
+      '歌词延后',
+      '播放页',
+      '播放页歌词',
       '字体大小',
       '字体字重',
       '歌词颜色',
@@ -303,6 +316,8 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '未播字色',
       '封面模糊背景',
       '背景律动',
+      '单曲微调步长',
+      '微调步长',
       '歌词过滤',
       '过滤表达式',
       '正则表达式',
@@ -312,26 +327,13 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '歌词自动收起',
       '收起延迟',
       '收起时隐藏底部控件',
-    ],
-  },
-  {
-    id: 'desktopLyric',
-    label: '桌面歌词',
-    order: 600,
-    component: DesktopLyricSettingsSection,
-    searchKeywords: [
+      '桌面歌词',
       '置顶显示',
-      '显示翻译',
-      '显示音译',
-      '音译样式',
-      '独立一行',
-      '注音',
       '文字对齐',
       '左对齐',
       '居中',
       '右对齐',
       '交替',
-      '对齐微调步长',
       '歌词对齐',
       '文字阴影',
       '柔和',
@@ -345,6 +347,8 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '鼠标穿透',
       'Wayland',
       'XWayland',
+      'Mini 歌词',
+      'Mini歌词',
     ],
   },
   {

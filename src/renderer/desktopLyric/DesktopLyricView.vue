@@ -23,6 +23,7 @@ import {
   iconRefreshCw,
   iconRotateCcw,
   iconRotateCw,
+  iconSettings,
   iconX,
 } from '@/icons';
 import {
@@ -194,7 +195,7 @@ const updateYrcDomManual = (timelineMs: number) => {
     cachedYrcLineKey = '';
   }
 
-  // 当前行副歌词逐字填充（翻译/音译，与页面歌词一致）——不依赖主行是否有逐字数据
+  // 当前行副歌词逐字填充（翻译/音译，与播放页歌词一致）——不依赖主行是否有逐字数据
   const secondaryLines = renderLines.filter((line) => line.kind === 'secondary' && line.karaoke);
   for (const secondaryLine of secondaryLines) {
     const secondaryContainer = lineRefs.get(secondaryLine.key);
@@ -293,6 +294,7 @@ const showUnlockButton = computed(() => settings.value?.showUnlockButton ?? true
 const canShowUnlockButton = computed(() => showUnlockButton.value && !isWayland);
 const hasLyrics = computed(() => lyrics.value.length > 0);
 const lyricTimeOffset = computed(() => snapshot.value?.lyricTimeOffset ?? 0);
+const currentTrackTimeOffset = computed(() => snapshot.value?.currentTrackTimeOffset ?? 0);
 const offsetStepLabel = computed(() => {
   const step = Number(settings.value?.offsetStep);
   const safeStep =
@@ -398,7 +400,7 @@ const handleMouseMove = (event: MouseEvent) => {
     return;
   }
 
-  // 桌面歌词页面本身就是窗口内容；窗口内任意位置移动都应显示背景和工具栏。
+  // 桌面歌词播放页本身就是窗口内容；窗口内任意位置移动都应显示背景和工具栏。
   // pointer capture 等情况下事件可能带着窗外坐标抵达，保留 rect 语义兜底。
   isHovered.value =
     event.clientX >= 0 &&
@@ -568,7 +570,7 @@ const renderLyricLines = computed<RenderLine[]>(() => {
       },
     ];
 
-    // 译+音：音译与翻译各占一行（与页面歌词一致），均支持逐字卡拉OK
+    // 译+音：音译与翻译各占一行（与播放页歌词一致），均支持逐字卡拉OK
     if (mode === 'both' && !romanShownAsRuby && roman && tran) {
       result.push(
         makeSecondary(`${renderScopeKey.value}:${idx}-roman`, roman, current.romanizedCharacters),
@@ -590,7 +592,7 @@ const renderLyricLines = computed<RenderLine[]>(() => {
       secondaryText = roman || tran;
     }
     if (secondaryText) {
-      // 纯翻译 / 纯音译副歌词支持逐字卡拉OK（与页面歌词一致）；
+      // 纯翻译 / 纯音译副歌词支持逐字卡拉OK（与播放页歌词一致）；
       // 「音译/翻译」混排时无法在单行内同时逐字，退回整行着色
       const isPureTranslation =
         Boolean(tran) && (mode === 'translation' || !roman || romanShownAsRuby);
@@ -1073,6 +1075,10 @@ const resetLyricOffset = () => {
   window.electron?.desktopLyric?.command('lyricOffsetReset');
 };
 
+const openDesktopLyricSettings = () => {
+  window.electron?.desktopLyric?.command('openSettings');
+};
+
 const toggleTranslation = () => {
   if (!hasTranslation.value) return;
   window.electron?.desktopLyric?.command('toggleTranslation');
@@ -1302,7 +1308,7 @@ onBeforeUnmount(() => {
               </button>
             </template>
           </Tooltip>
-          <Tooltip v-if="hasLyrics" content="重置单曲偏移（保留全局设置）">
+          <Tooltip v-if="hasLyrics && currentTrackTimeOffset !== 0" content="重置单曲偏移">
             <template #trigger>
               <button class="menu-btn" aria-label="重置单曲偏移" @click.stop="resetLyricOffset">
                 <Icon :icon="iconRefreshCw" width="17" height="17" />
@@ -1372,6 +1378,17 @@ onBeforeUnmount(() => {
             </template>
           </Tooltip>
         </div>
+        <Tooltip content="桌面歌词设置">
+          <template #trigger>
+            <button
+              class="menu-btn"
+              aria-label="桌面歌词设置"
+              @click.stop="openDesktopLyricSettings"
+            >
+              <Icon :icon="iconSettings" width="19" height="19" />
+            </button>
+          </template>
+        </Tooltip>
         <button
           v-if="!isLocked || canShowUnlockButton"
           ref="lockButtonRef"
