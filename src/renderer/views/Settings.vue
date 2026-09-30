@@ -656,74 +656,76 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   <div class="settings-page-shell" :class="{ 'is-embedded': props.embedded }">
     <div class="settings-page h-full flex flex-col min-h-0">
       <!-- 页面头部 -->
-      <header class="settings-header shrink-0 px-5 pt-3 pb-0">
+      <header class="settings-header shrink-0">
         <div class="flex w-full items-center justify-between">
           <div class="settings-heading">
             <h1 class="text-lg font-bold text-text-main">偏好设置</h1>
             <span v-if="props.embedded" class="settings-heading-hint">全局设置</span>
           </div>
-          <div
-            ref="settingsSearchContainerRef"
-            class="settings-search-shell"
-            :class="{ 'is-expanded': isSettingsSearchExpanded || isSettingsSearchCollapsing }"
-          >
-            <Tooltip
-              v-if="!isSettingsSearchExpanded && !isSettingsSearchCollapsing"
-              content="搜索设置"
-            >
-              <template #trigger>
-                <button
-                  type="button"
-                  class="settings-search-icon-button"
-                  aria-label="搜索设置"
-                  @click="expandSettingsSearch"
-                >
-                  <Icon
-                    :icon="iconSearch"
-                    width="17"
-                    height="17"
-                    class="settings-search-trigger-icon"
-                  />
-                </button>
-              </template>
-            </Tooltip>
+          <div class="settings-header-actions">
             <div
-              v-if="isSettingsSearchExpanded || isSettingsSearchCollapsing"
-              class="settings-search"
-              :class="{ 'is-collapsing': isSettingsSearchCollapsing }"
+              ref="settingsSearchContainerRef"
+              class="settings-search-shell"
+              :class="{ 'is-expanded': isSettingsSearchExpanded || isSettingsSearchCollapsing }"
             >
-              <Icon :icon="iconSearch" width="15" height="15" class="settings-search-icon" />
-              <input
-                ref="settingsSearchInputRef"
-                v-model="settingsSearchKeyword"
-                type="search"
-                class="settings-search-input"
-                placeholder="搜索设置"
-                aria-label="搜索设置"
-                @keydown="handleSettingsSearchKeydown"
-                @blur="handleSettingsSearchBlur"
-              />
-              <button
-                v-if="settingsSearchKeyword"
-                type="button"
-                class="settings-search-clear"
-                aria-label="清空搜索"
-                @mousedown.prevent
-                @click="clearSettingsSearch"
+              <Tooltip
+                v-if="!isSettingsSearchExpanded && !isSettingsSearchCollapsing"
+                content="搜索设置"
               >
-                <Icon :icon="iconX" width="14" height="14" />
-              </button>
+                <template #trigger>
+                  <button
+                    type="button"
+                    class="settings-search-icon-button"
+                    aria-label="搜索设置"
+                    @click="expandSettingsSearch"
+                  >
+                    <Icon
+                      :icon="iconSearch"
+                      width="17"
+                      height="17"
+                      class="settings-search-trigger-icon"
+                    />
+                  </button>
+                </template>
+              </Tooltip>
+              <div
+                v-if="isSettingsSearchExpanded || isSettingsSearchCollapsing"
+                class="settings-search"
+                :class="{ 'is-collapsing': isSettingsSearchCollapsing }"
+              >
+                <Icon :icon="iconSearch" width="15" height="15" class="settings-search-icon" />
+                <input
+                  ref="settingsSearchInputRef"
+                  v-model="settingsSearchKeyword"
+                  type="search"
+                  class="settings-search-input"
+                  placeholder="搜索设置"
+                  aria-label="搜索设置"
+                  @keydown="handleSettingsSearchKeydown"
+                  @blur="handleSettingsSearchBlur"
+                />
+                <button
+                  v-if="settingsSearchKeyword"
+                  type="button"
+                  class="settings-search-clear"
+                  aria-label="清空搜索"
+                  @mousedown.prevent
+                  @click="clearSettingsSearch"
+                >
+                  <Icon :icon="iconX" width="14" height="14" />
+                </button>
+              </div>
             </div>
+            <button
+              v-if="props.embedded"
+              type="button"
+              class="settings-modal-close"
+              aria-label="关闭设置"
+              @click="closeSettings"
+            >
+              <Icon :icon="iconX" width="18" height="18" />
+            </button>
           </div>
-          <button
-            v-if="props.embedded"
-            type="button"
-            class="settings-modal-close"
-            aria-label="关闭设置"
-            @click="closeSettings"
-          >
-            <Icon :icon="iconX" width="18" height="18" />
-          </button>
         </div>
       </header>
 
@@ -853,20 +855,35 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 .settings-heading {
   flex: 1;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
+  min-width: 0;
+  height: 30px;
+}
+
+.settings-heading h1 {
+  line-height: 30px;
 }
 
 .settings-heading-hint {
   font-size: 11px;
+  line-height: 30px;
   color: var(--color-text-secondary);
 }
 
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  line-height: 0;
+}
+
 .settings-modal-close {
-  margin-left: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   width: 30px;
   height: 30px;
   border-radius: 50%;
@@ -874,6 +891,12 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   transition:
     background 0.2s,
     color 0.2s;
+}
+
+.settings-modal-close svg,
+.settings-search-icon-button svg,
+.settings-search-clear svg {
+  display: block;
 }
 
 .settings-modal-close:hover {
@@ -939,7 +962,10 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 }
 
 .settings-header {
-  @apply flex items-center;
+  display: flex;
+  align-items: center;
+  height: 54px;
+  padding: 0 20px;
 }
 
 @media (max-width: 640px) {
@@ -961,7 +987,13 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 }
 
 .settings-search-shell {
-  @apply relative flex h-7 w-7 items-center justify-end transition-[width] duration-200 ease-out;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 30px;
+  height: 30px;
+  transition: width 0.2s ease-out;
 }
 
 .settings-search-shell.is-expanded {
@@ -969,7 +1001,15 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 }
 
 .settings-search-icon-button {
-  @apply flex h-7 w-7 items-center justify-center rounded-full text-text-main transition-colors cursor-pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--color-text-main);
+  cursor: pointer;
+  transition: color 0.2s;
   background: transparent;
 }
 
@@ -986,10 +1026,14 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 }
 
 .settings-search {
-  @apply relative flex h-7 items-center rounded-full border;
+  position: relative;
+  display: flex;
+  align-items: center;
   width: 200px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: var(--control-muted-bg);
-  border-color: transparent;
   padding: 0 4px 0 9px;
   animation: settings-search-expand 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   transform-origin: right center;
