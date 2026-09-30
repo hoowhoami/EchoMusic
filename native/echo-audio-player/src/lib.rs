@@ -60,6 +60,7 @@ use crate::events::{
 use crate::shared::{MixFormat, PlaybackSession, PlaybackSignal, SharedAudio, TrackSwitchInfo};
 use audio_graph::AudioGraphSnapshot;
 use napi::bindgen_prelude::AsyncTask;
+use napi::threadsafe_function::ThreadsafeFunction;
 use napi::{Env, Task};
 use napi_derive::napi;
 use std::sync::atomic::AtomicU64;
@@ -552,7 +553,16 @@ pub(crate) fn emit_event(event: PlayerEvent) {
             let _ = sink.send(event.clone());
         }
     }
+    if emit_native_log_event(&event) {
+        return;
+    }
     if event.event == "error" {
+        echo_native_log::error(format!(
+            "player error: code={}, reason={}, message={}",
+            event.error_code.as_deref().unwrap_or("-"),
+            event.reason.as_deref().unwrap_or("-"),
+            event.message.as_deref().unwrap_or("-")
+        ));
         let core_state = match event.error_code.as_deref() {
             Some("output-device-unavailable") | Some("output-runtime") => {
                 PlaybackCoreState::DeviceLost
@@ -570,7 +580,29 @@ pub(crate) fn emit_event(event: PlayerEvent) {
 }
 
 fn emit_events(events: Vec<PlayerEvent>) {
-    send_events(events);
+    let mut forwarded = Vec::with_capacity(events.len());
+    for event in events {
+        if !emit_native_log_event(&event) {
+            forwarded.push(event);
+        }
+    }
+    if !forwarded.is_empty() {
+        send_events(forwarded);
+    }
+}
+
+fn emit_native_log_event(event: &PlayerEvent) -> bool {
+    if event.event != "log" {
+        return false;
+    }
+    let message = event.message.as_deref().unwrap_or("-");
+    match event.level.as_deref() {
+        Some("error") => echo_native_log::error(message),
+        Some("warn") => echo_native_log::warn(message),
+        Some("debug") => echo_native_log::debug(message),
+        _ => echo_native_log::info(message),
+    }
+    true
 }
 
 fn contextualize_runtime_event(runtime: &PlayerRuntime, mut event: PlayerEvent) -> PlayerEvent {
@@ -1181,6 +1213,12 @@ fn replace_source_async(
     let mut prepared = match prepared {
         Ok(prepared) => Some(prepared),
         Err(err) => {
+            echo_native_log::warn(format!(
+                "audio source load failed: seq={seq}, stream={}, error={err}",
+                audio_stream_ordinal
+                    .map(|stream| stream.to_string())
+                    .unwrap_or_else(|| "-".to_string())
+            ));
             let interrupt_for_command = interrupt.clone();
             let current = call_core_command("finish-source-open-error", move |runtime| {
                 if !runtime.clear_source_open_if_current(open_request_seq, &interrupt_for_command) {
@@ -1424,6 +1462,7 @@ pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
         RUNTIME_READY.store(true, Ordering::Release);
     }
     start_core_dispatcher()?;
+    echo_native_log::info("audio player initialized");
     Ok(())
 }
 
@@ -1453,6 +1492,7 @@ fn shutdown_runtime(clear_callback: bool) -> napi::Result<()> {
     };
     if let Some(mut runtime) = runtime {
         runtime.stop_session();
+        echo_native_log::info("audio player runtime shut down");
     }
     // stop_session already clears this, but clear again in case shutdown raced a
     // runtime that was never fully initialized.
@@ -1465,6 +1505,13 @@ fn shutdown_runtime(clear_callback: bool) -> napi::Result<()> {
 pub fn register_event_handler(callback: EventCallback) -> napi::Result<()> {
     start_event_dispatcher()?;
     set_event_callback(callback)
+}
+
+#[napi]
+pub fn register_log_handler(
+    callback: ThreadsafeFunction<echo_native_log::NativeLogEntry>,
+) -> napi::Result<()> {
+    echo_native_log::set_log_handler(callback)
 }
 
 pub struct LoadFileTask {
@@ -1893,6 +1940,9 @@ impl Task for LoadFileTask {
                         ) {
                             Ok(settings) => settings,
                             Err(err) => {
+                                echo_native_log::warn(format!(
+                                    "audio source DSP preparation failed: seq={seq}, error={err}"
+                                ));
                                 let interrupt_for_command = interrupt.clone();
                                 let was_playing = plan.was_playing;
                                 let _ =
@@ -2022,6 +2072,12 @@ impl Task for LoadFileTask {
                         Ok(())
                     }
                     Err(err) => {
+                        echo_native_log::warn(format!(
+                            "audio source open failed: seq={seq}, stream={}, error={err}",
+                            audio_stream
+                                .map(|stream| stream.to_string())
+                                .unwrap_or_else(|| "-".to_string())
+                        ));
                         let interrupt_for_error = interrupt.clone();
                         let current =
                             call_core_command("finish-load-open-error", move |runtime| {

@@ -48,6 +48,10 @@ pub fn info(message: impl Into<String>) {
     emit("info", message);
 }
 
+pub fn debug(message: impl Into<String>) {
+    emit("debug", message);
+}
+
 pub fn warn(message: impl Into<String>) {
     emit("warn", message);
 }

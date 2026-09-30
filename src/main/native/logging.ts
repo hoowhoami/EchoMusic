@@ -1,6 +1,6 @@
 import log from '../logger';
 
-type NativeLogLevel = 'info' | 'warn' | 'error';
+type NativeLogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface NativeLogEntry {
   level?: string;
@@ -14,7 +14,9 @@ export interface NativeLogCapableAddon {
 }
 
 function normalizeNativeLogLevel(level: unknown): NativeLogLevel {
-  return level === 'warn' || level === 'error' || level === 'info' ? level : 'info';
+  return level === 'debug' || level === 'warn' || level === 'error' || level === 'info'
+    ? level
+    : 'info';
 }
 
 export function registerNativeLogHandler(
@@ -36,6 +38,8 @@ export function registerNativeLogHandler(
         log.error(formatted);
       } else if (level === 'warn') {
         log.warn(formatted);
+      } else if (level === 'debug') {
+        log.debug(formatted);
       } else {
         log.info(formatted);
       }

@@ -425,6 +425,7 @@ dependencies = [
  "alsa",
  "coreaudio-sys",
  "cpal",
+ "echo-native-log",
  "ffmpeg_audio",
  "fundsp",
  "libc",
@@ -440,6 +441,14 @@ dependencies = [
  "soundtouch-rs",
  "windows 0.58.0",
  "windows-core 0.58.0",
+]
+
+[[package]]
+name = "echo-native-log"
+version = "0.1.0"
+dependencies = [
+ "napi",
+ "napi-derive",
 ]
 
 [[package]]
