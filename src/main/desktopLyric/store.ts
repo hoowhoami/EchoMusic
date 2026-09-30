@@ -10,6 +10,7 @@ import {
   patchDesktopLyricPersistedSettings,
   type DesktopLyricWindowState,
 } from '../storage/settings';
+import { normalizeLyricTextConversionMode } from '../../shared/opencc';
 
 export type { DesktopLyricWindowState } from '../storage/settings';
 
@@ -45,6 +46,7 @@ export function getDesktopLyricSettings(): DesktopLyricSettings {
     wantTranslation: Boolean(raw.wantTranslation),
     wantRomanization: Boolean(raw.wantRomanization),
     showRomanizationAsRuby: Boolean(raw.showRomanizationAsRuby),
+    textConversionMode: normalizeLyricTextConversionMode(raw.textConversionMode),
     theme: raw.theme ?? 'system',
     opacity: clamp(
       Number(raw.opacity) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.opacity,
@@ -124,6 +126,7 @@ export function sanitizeDesktopLyricSettings(
     wantTranslation: Boolean(mergedBase.wantTranslation),
     wantRomanization: Boolean(mergedBase.wantRomanization),
     showRomanizationAsRuby: Boolean(mergedBase.showRomanizationAsRuby),
+    textConversionMode: normalizeLyricTextConversionMode(mergedBase.textConversionMode),
     theme: mergedBase.theme ?? current.theme,
     opacity: clamp(Number(mergedBase.opacity) || current.opacity, 0.25, 1),
     scale: clamp(Number(mergedBase.scale) || current.scale, 0.75, 1.5),
@@ -171,6 +174,7 @@ export function persistDesktopLyricSettings(nextSettings: DesktopLyricSettings) 
     wantTranslation: nextSettings.wantTranslation,
     wantRomanization: nextSettings.wantRomanization,
     showRomanizationAsRuby: nextSettings.showRomanizationAsRuby,
+    textConversionMode: normalizeLyricTextConversionMode(nextSettings.textConversionMode),
     theme: nextSettings.theme,
     opacity: nextSettings.opacity,
     scale: nextSettings.scale,

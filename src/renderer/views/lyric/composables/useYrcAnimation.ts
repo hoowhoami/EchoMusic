@@ -131,7 +131,7 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
   // 每帧更新逐字歌词样式（直接操作已注册的 DOM 元素）
   const updateYrcDom = () => {
     const lineIndex = readActiveLineIndex();
-    const line = lyricStore.lines[lineIndex];
+    const line = lyricStore.displayLines[lineIndex];
     if (!line?.characters?.length) {
       resetYrcLineDom(lastActiveLineIndex);
       lastActiveLineIndex = -1;
@@ -158,7 +158,7 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
   // 副歌词逐字更新：按 kind 直接定位元素，不再依赖 DOM 顺序
   const updateSubYrcDom = (
     lineIndex: number,
-    line: (typeof lyricStore.lines)[number],
+    line: (typeof lyricStore.displayLines)[number],
     seekMs: number,
   ) => {
     const mode = lyricStore.lyricsMode;

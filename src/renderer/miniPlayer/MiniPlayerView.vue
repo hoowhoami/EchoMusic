@@ -323,6 +323,7 @@ const shouldApplyLyricSnapshot = (
   if (nextLyric.wantTranslation !== currentLyric.wantTranslation) return true;
   if (nextLyric.wantRomanization !== currentLyric.wantRomanization) return true;
   if (nextLyric.showRomanizationAsRuby !== currentLyric.showRomanizationAsRuby) return true;
+  if (nextLyric.textConversionMode !== currentLyric.textConversionMode) return true;
   if (nextLyric.hasTranslation !== currentLyric.hasTranslation) return true;
   if (nextLyric.hasRomanization !== currentLyric.hasRomanization) return true;
   if (nextLyric.isLoading !== currentLyric.isLoading) return true;

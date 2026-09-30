@@ -64,10 +64,11 @@ export interface AudioSpectrumSubscriptionState {
 }
 
 /**
- * subscribe() 的返回值：本身可调用以退订，同时提供 setPaused 供渲染进程在
- * 页面不可见时暂停投递（订阅保留、参数合并不受其影响），重新可见时恢复。
+ * preload 暴露给渲染进程的订阅句柄。不要使用“函数附加属性”的形态：
+ * Electron contextBridge 会代理函数，自定义属性无法稳定穿透到 renderer。
  */
-export type AudioSpectrumSubscriptionHandle = (() => void) & {
+export type AudioSpectrumSubscriptionHandle = {
+  dispose: () => void;
   setPaused: (paused: boolean) => void;
 };
 

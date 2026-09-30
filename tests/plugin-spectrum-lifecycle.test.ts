@@ -45,15 +45,15 @@ function setupBridge() {
             delivered: 0,
           };
           records.push(record);
-          const dispose = () => {
-            record.disposed = true;
-            record.disposedWhilePaused = record.paused;
-          };
-          return Object.assign(dispose, {
+          return {
+            dispose: () => {
+              record.disposed = true;
+              record.disposedWhilePaused = record.paused;
+            },
             setPaused: (paused: boolean) => {
               record.paused = paused;
             },
-          });
+          };
         },
       },
     },

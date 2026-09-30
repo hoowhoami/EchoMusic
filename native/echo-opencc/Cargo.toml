@@ -1,0 +1,18 @@
+[package]
+name = "echo-opencc"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3", features = ["napi9"] }
+napi-derive = "3"
+once_cell = "1"
+opencc-fmmseg = "0.12"
+
+[build-dependencies]
+napi-build = "2"
+

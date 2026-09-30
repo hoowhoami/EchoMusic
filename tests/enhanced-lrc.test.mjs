@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import * as pinia from 'pinia';
 import * as offset from '../src/shared/lyricOffset.ts';
+import * as opencc from '../src/shared/opencc.ts';
 
 function compile(file, mocks, window = {}) {
   const module = { exports: {} };
@@ -29,8 +30,10 @@ const { useLyricStore } = compile('../src/renderer/stores/lyric.ts', {
   '@/utils/logger': {},
   '@/utils/color': { DEFAULT_ACCENT: '#0071e3' },
   '@/plugins/lyrics': {},
+  '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
   './theme': {},
   '../../shared/lyricOffset': offset,
+  '../../shared/opencc': opencc,
 });
 
 const createStore = () => useLyricStore(pinia.createPinia());

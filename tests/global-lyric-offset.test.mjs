@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild';
 import * as pinia from 'pinia';
 import * as vue from 'vue';
 import * as offset from '../src/shared/lyricOffset.ts';
+import * as opencc from '../src/shared/opencc.ts';
 import * as persistence from '../src/shared/storePersistence.ts';
 import * as lyrics from '../src/shared/lyrics.ts';
 import * as desktopLyric from '../src/shared/desktopLyric.ts';
@@ -36,8 +37,10 @@ const { useLyricStore } = compile('../src/renderer/stores/lyric.ts', {
   '@/utils/logger': {},
   '@/utils/color': { DEFAULT_ACCENT: '#0071e3' },
   '@/plugins/lyrics': {},
+  '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
   './theme': {},
   '../../shared/lyricOffset': offset,
+  '../../shared/opencc': opencc,
 });
 const store = () => useLyricStore(pinia.createPinia());
 

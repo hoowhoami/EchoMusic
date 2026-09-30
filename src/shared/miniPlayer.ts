@@ -1,4 +1,5 @@
 import type { LyricLinePayload } from './lyrics';
+import type { LyricTextConversionMode } from './opencc';
 import type { PlaybackClockSnapshot, PlaybackProgressBusyReason } from './playback';
 
 export type MiniPlayerExpandDirection = 'down' | 'up';
@@ -105,6 +106,7 @@ export interface MiniPlayerLyricPayload {
   wantRomanization: boolean;
   /** 音译是否使用"逐字标注在原词上方"的注音模式渲染 */
   showRomanizationAsRuby: boolean;
+  textConversionMode: LyricTextConversionMode;
   hasTranslation: boolean;
   hasRomanization: boolean;
   desktopLyricEnabled: boolean;

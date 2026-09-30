@@ -20,6 +20,7 @@ import { updateThumbarPlayback } from './thumbar';
 import { setTaskbarCardPlayback } from './taskbarThumbnail';
 import { setMainAppSetting } from './storage/settings';
 import { buildPlaybackClockSnapshot } from '../shared/playback';
+import { normalizeLyricTextConversionMode } from '../shared/opencc';
 
 let snapshot: NowPlayingSnapshot = {
   playback: null,
@@ -192,6 +193,10 @@ const sanitizeLyric = (
       payload.wantRomanization === undefined
         ? snapshot.lyric.wantRomanization
         : Boolean(payload.wantRomanization),
+    textConversionMode:
+      payload.textConversionMode === undefined
+        ? snapshot.lyric.textConversionMode
+        : normalizeLyricTextConversionMode(payload.textConversionMode),
     hasTranslation:
       payload.hasTranslation === undefined
         ? snapshot.lyric.hasTranslation

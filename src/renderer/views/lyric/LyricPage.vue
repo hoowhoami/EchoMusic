@@ -292,7 +292,7 @@ const isCollapsed = computed(
 );
 
 // 歌词工具按钮
-const hasLyrics = computed(() => lyricStore.lines.length > 0);
+const hasLyrics = computed(() => lyricStore.displayLines.length > 0);
 
 // 单曲歌词微调步长（秒），来自通用歌词设置，兜底 0.5s
 const lyricOffsetStep = computed(() => {

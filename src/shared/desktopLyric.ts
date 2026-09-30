@@ -1,5 +1,6 @@
 import type { LyricLinePayload } from './lyrics';
 import type { PlaybackClockSnapshot } from './playback';
+import type { LyricTextConversionMode } from './opencc';
 
 export type { LyricCharacterPayload, LyricLinePayload } from './lyrics';
 
@@ -50,6 +51,7 @@ export type DesktopLyricSettings = {
   wantRomanization: boolean;
   /** 桌面歌词是否使用"逐字标注在原词上方"的注音模式 */
   showRomanizationAsRuby: boolean;
+  textConversionMode: LyricTextConversionMode;
   theme: DesktopLyricThemeMode;
   opacity: number;
   scale: number;
@@ -83,6 +85,7 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   wantTranslation: false,
   wantRomanization: false,
   showRomanizationAsRuby: false,
+  textConversionMode: 'none',
   theme: 'system',
   opacity: 0.92,
   scale: 1,

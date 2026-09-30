@@ -1,9 +1,9 @@
 import { getCurrentInstance, onActivated, onDeactivated, onUnmounted } from 'vue';
-import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../../../shared/audioSpectrum';
-
-type SpectrumSubscriptionHandle = (() => void) & {
-  setPaused: (paused: boolean) => void;
-};
+import type {
+  AudioSpectrumFrame,
+  AudioSpectrumOptions,
+  AudioSpectrumSubscriptionHandle,
+} from '../../../shared/audioSpectrum';
 
 type PluginSpectrumRuntimeDeps = {
   runPluginCallback: (
@@ -16,7 +16,7 @@ type PluginSpectrumRuntimeDeps = {
 };
 
 type ManagedSubscription = {
-  handle: SpectrumSubscriptionHandle | null;
+  handle: AudioSpectrumSubscriptionHandle | null;
   /** 宿主文档不可见（窗口最小化/隐藏）。 */
   documentHidden: boolean;
   /** 宿主组件被 KeepAlive 缓存或卸载，处于非激活状态。 */
@@ -98,7 +98,7 @@ export const createPluginSpectrumSubscription = (
     if (subscription.disposed) return;
     subscription.disposed = true;
     managedSubscriptions.delete(subscription);
-    handle?.();
+    handle?.dispose();
   };
 
   // 组件级生命周期：仅在确实处于组件上下文中注册，避免污染模块级订阅。

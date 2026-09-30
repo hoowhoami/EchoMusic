@@ -21,6 +21,14 @@ const romanizationStyleOptions = [
   { label: '注音', value: 'ruby' },
 ];
 
+const textConversionOptions = [
+  { label: '原文', value: 'none' },
+  { label: '转简体', value: 'simplified' },
+  { label: '转繁体', value: 'traditional' },
+  { label: '转台湾正体', value: 'traditional-tw' },
+  { label: '转香港繁体', value: 'traditional-hk' },
+];
+
 const globalOffsetSeconds = computed(
   () => normalizeGlobalLyricOffsetMs(lyricStore.globalTimeOffsetMs) / 1000,
 );
@@ -30,6 +38,7 @@ const wantsRomanization = computed(() => lyricStore.wantRomanization);
 const romanizationStyle = computed<RomanizationStyle>(() =>
   lyricStore.showRomanizationAsRuby ? 'ruby' : 'separate-line',
 );
+const textConversionMode = computed(() => lyricStore.textConversionMode);
 
 const setTranslationEnabled = (enabled: boolean) => {
   lyricStore.wantTranslation = enabled;
@@ -41,6 +50,10 @@ const setRomanizationEnabled = (enabled: boolean) => {
 
 const updateRomanizationStyle = (value: string | number | (string | number)[]) => {
   lyricStore.showRomanizationAsRuby = value === 'ruby';
+};
+
+const updateTextConversionMode = (value: string | number | (string | number)[]) => {
+  lyricStore.setTextConversionMode(value);
 };
 
 const updateGlobalOffset = (value: string) => {
@@ -95,6 +108,21 @@ const updateLyricOffsetStep = (value: string) => {
         :model-value="romanizationStyle"
         :options="romanizationStyleOptions"
         @update:model-value="updateRomanizationStyle"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">歌词文字转换</h3>
+        <p class="text-sm text-text-secondary">
+          对播放页、桌面歌词和 Mini 歌词的歌词文本进行简繁转换
+        </p>
+      </div>
+      <Select
+        class="w-45 shrink-0"
+        :model-value="textConversionMode"
+        :options="textConversionOptions"
+        @update:model-value="updateTextConversionMode"
       />
     </div>
     <div class="settings-divider"></div>

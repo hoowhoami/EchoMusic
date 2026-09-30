@@ -797,6 +797,7 @@ export const registerMiniPlayerHandlers = () => {
           wantTranslation: false,
           wantRomanization: false,
           showRomanizationAsRuby: false,
+          textConversionMode: 'none' as const,
           hasTranslation: false,
           hasRomanization: false,
           desktopLyricEnabled: false,

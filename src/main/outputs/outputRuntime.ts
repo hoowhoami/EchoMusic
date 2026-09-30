@@ -186,7 +186,7 @@ function loadAirplay(): AirplayControl {
             if (!error && device) onDevice(device);
           }) as Promise<AirplayDeviceInfo[]>
       : undefined,
-    connect: (id, pin) => addon.connect(id, pin ?? ''),
+    connect: (id, pin, initialVolume) => addon.connect(id, pin ?? '', initialVolume),
     disconnect: () => addon.disconnect(),
     pause: () => addon.pause(),
     resume: () => addon.resume(),

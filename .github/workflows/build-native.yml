@@ -167,6 +167,7 @@ jobs:
             native/echo-platform-adaptor
             native/echo-audio-player
             native/echo-sqlite-store
+            native/echo-opencc
             native/echo-upnp
             native/echo-airplay
 
@@ -203,6 +204,7 @@ jobs:
           fi
           build_addon echo-audio-player & pids+=("$!")
           build_addon echo-sqlite-store & pids+=("$!")
+          build_addon echo-opencc & pids+=("$!")
           build_addon echo-upnp & pids+=("$!")
           build_addon echo-airplay & pids+=("$!")
 
@@ -248,7 +250,7 @@ jobs:
           rm -rf "$staging"
           mkdir -p "$staging/native"
 
-          addons=(echo-audio-capture echo-media-controls echo-audio-player echo-sqlite-store echo-upnp echo-airplay)
+          addons=(echo-audio-capture echo-media-controls echo-audio-player echo-sqlite-store echo-opencc echo-upnp echo-airplay)
           if [[ "$INCLUDE_PLATFORM_ADAPTOR" == "true" ]]; then
             addons+=(echo-platform-adaptor)
           fi

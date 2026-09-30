@@ -133,8 +133,8 @@ pub async fn discover_each(
 }
 
 #[napi]
-pub async fn connect(id: String, pin: String) -> Result<AirplayLink> {
-    let link = tokio::task::spawn_blocking(move || session().connect(id, pin))
+pub async fn connect(id: String, pin: String, initial_volume: Option<f64>) -> Result<AirplayLink> {
+    let link = tokio::task::spawn_blocking(move || session().connect(id, pin, initial_volume))
         .await
         .map_err(|err| Error::from_reason(err.to_string()))?
         .map_err(Error::from_reason)?;

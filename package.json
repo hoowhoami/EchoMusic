@@ -142,6 +142,13 @@
         ]
       },
       {
+        "from": "native/echo-opencc/echo-opencc.node",
+        "to": "native/echo-opencc.node",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "build/icons",
         "to": "icons",
         "filter": [

@@ -78,6 +78,7 @@ import type {
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type { DiagnosticsMemorySnapshot } from '../shared/diagnostics';
 import type { CloudPickMode, CloudReadUploadFileDataResult } from '../shared/cloud';
+import type { OpenccProfile } from '../shared/opencc';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -277,6 +278,9 @@ export interface IElectronAPI {
   };
   fonts: {
     getAll: () => Promise<string[]>;
+  };
+  opencc: {
+    convertBatch: (texts: string[], profile: OpenccProfile) => Promise<string[]>;
   };
   audioEffects: {
     importImpulseResponse: () => Promise<ImportImpulseResponseResult>;

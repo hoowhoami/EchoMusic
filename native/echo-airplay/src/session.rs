@@ -72,6 +72,7 @@ enum Command {
     Connect {
         id: String,
         pin: String,
+        initial_volume: f32,
         accepted: Sender<()>,
         reply: Sender<Link>,
     },
@@ -200,7 +201,13 @@ impl Session {
         discover_devices(timeout, progress, &self.devices)
     }
 
-    pub fn connect(&self, id: String, pin: String) -> Result<Link, String> {
+    pub fn connect(
+        &self,
+        id: String,
+        pin: String,
+        initial_volume: Option<f64>,
+    ) -> Result<Link, String> {
+        let initial_volume = clamp_volume(initial_volume.unwrap_or(50.0));
         update_status(&self.status, |status| {
             status.connected = false;
             status.delay_sec = 0.0;
@@ -208,10 +215,11 @@ impl Session {
             status.feed_stats = None;
         });
         echo_native_log::info(format!(
-            "AirPlay native CONNECT 已提交: id={id}, pin={}",
-            if pin.trim().is_empty() { "no" } else { "yes" }
+            "AirPlay native CONNECT 已提交: id={id}, pin={}, initialVolume={:.0}%",
+            if pin.trim().is_empty() { "no" } else { "yes" },
+            initial_volume * 100.0
         ));
-        let result = self.connect_roundtrip(id, pin);
+        let result = self.connect_roundtrip(id, pin, initial_volume);
         if let Err(error) = &result {
             update_status(&self.status, |status| {
                 status.connected = false;
@@ -223,7 +231,12 @@ impl Session {
         result
     }
 
-    fn connect_roundtrip(&self, id: String, pin: String) -> Result<Link, String> {
+    fn connect_roundtrip(
+        &self,
+        id: String,
+        pin: String,
+        initial_volume: f32,
+    ) -> Result<Link, String> {
         let mut last_error = "AirPlay 命令超时".to_string();
         for attempt in 1..=2 {
             let (reply_tx, reply_rx) = mpsc::channel();
@@ -232,6 +245,7 @@ impl Session {
                 .blocking_send(Command::Connect {
                     id: id.clone(),
                     pin: pin.clone(),
+                    initial_volume,
                     accepted: accepted_tx,
                     reply: reply_tx,
                 })
@@ -530,16 +544,18 @@ impl Worker {
             Command::Connect {
                 id,
                 pin,
+                initial_volume,
                 accepted,
                 reply,
             } => {
                 let _ = accepted.send(());
                 self.set_phase(format!("AirPlay CONNECT 已接收: {id}"));
                 echo_native_log::info(format!(
-                    "AirPlay native CONNECT 已接收: id={id}, pin={}",
-                    if pin.trim().is_empty() { "no" } else { "yes" }
+                    "AirPlay native CONNECT 已接收: id={id}, pin={}, initialVolume={:.0}%",
+                    if pin.trim().is_empty() { "no" } else { "yes" },
+                    initial_volume * 100.0
                 ));
-                let _ = reply.send(self.connect(client, &id, &pin).await);
+                let _ = reply.send(self.connect(client, &id, &pin, initial_volume).await);
             }
             Command::Disconnect { reply } => {
                 self.shutdown(client).await;
@@ -580,13 +596,14 @@ impl Worker {
         client: &mut airplay_client::AirPlayClient,
         id: &str,
         pin: &str,
+        initial_volume: f32,
     ) -> Link {
         self.shutdown(client).await;
         let Some(device) = self.lookup(id) else {
             return fail("设备不在当前发现结果里");
         };
         if device.supports_raop() && !device.supports_airplay2() {
-            return self.connect_raop(device, pin).await;
+            return self.connect_raop(device, pin, initial_volume).await;
         }
         self.set_phase(format!("AirPlay 2 CONNECT 中: {}", device.name));
         if device.requires_password && pin.trim().is_empty() {
@@ -619,6 +636,9 @@ impl Worker {
                     .clone()
                     .unwrap_or_else(|| "连接失败".to_string()),
             );
+        }
+        if let Err(err) = client.set_volume(initial_volume).await {
+            echo_native_log::warn(format!("AirPlay 2 初始音量设置失败: {err}"));
         }
         let sender = match client.start_live_streaming(TRANSPORT_RATE, 2).await {
             Ok(sender) => sender,
@@ -655,7 +675,7 @@ impl Worker {
         }
     }
 
-    async fn connect_raop(&mut self, device: Device, pin: &str) -> Link {
+    async fn connect_raop(&mut self, device: Device, pin: &str, initial_volume: f32) -> Link {
         if device.requires_password && pin.trim().is_empty() {
             return fail("pin-required");
         }
@@ -759,6 +779,11 @@ impl Worker {
             }
         };
 
+        if let Err(err) = connection.set_volume(initial_volume).await {
+            echo_native_log::warn(format!(
+                "AirPlay 1 初始音量设置失败: name={device_name}, id={device_id}, error={err}"
+            ));
+        }
         let (sender, decoder) = LiveAudioDecoder::create_pair(TRANSPORT_RATE, 2, LIVE_PCM_CAPACITY);
         self.set_phase(format!("AirPlay 1 START_LIVE 中: {device_name}"));
         echo_native_log::info(format!(
@@ -1197,6 +1222,14 @@ fn normalize_id(id: &str) -> String {
         .filter(|ch| ch.is_ascii_hexdigit())
         .map(|ch| ch.to_ascii_lowercase())
         .collect()
+}
+
+fn clamp_volume(volume: f64) -> f32 {
+    if volume.is_finite() {
+        (volume / 100.0).clamp(0.0, 1.0) as f32
+    } else {
+        0.5
+    }
 }
 
 const FEED_BACKOFF_CAP: Duration = Duration::from_millis(8);
