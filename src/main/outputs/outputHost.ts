@@ -10,6 +10,7 @@ import type {
   OutputTargetEntry,
   OutputTrackMeta,
 } from '../../shared/playbackOutput';
+import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
 import { CommandGate } from './commandGate';
 import { decideMediaDelivery, type RelaySource } from '../mediaTransport/delivery';
 import {
@@ -95,6 +96,7 @@ export interface AirplayControl {
   connect(
     id: string,
     pin?: string,
+    initialVolume?: number,
   ): Promise<{ ok: boolean; error?: string; format?: string; pcmPort?: number }>;
   disconnect(): Promise<void>;
   pause(): Promise<void>;
@@ -974,6 +976,12 @@ export class OutputHost {
       return { ok: false, error: 'AirPlay 发送模块尚未构建，不能把发现或 SETUP 当成正在播放' };
     }
     if (target.needsPin && !pin) return { ok: false, error: 'pin-required' };
+    const localVolume = this.deps.local.getState()?.volume;
+    const initialVolume = clampVolume(
+      typeof localVolume === 'number' && Number.isFinite(localVolume)
+        ? localVolume
+        : (this.savedLocalVolume ?? DEFAULT_PLAYER_VOLUME),
+    );
     await this.stopRemote(false);
     const startedAt = this.now();
     const protocol =
@@ -1004,7 +1012,7 @@ export class OutputHost {
     elapsedTimer.unref?.();
     let result: { ok: boolean; error?: string; format?: string; pcmPort?: number };
     try {
-      result = await airplay.connect(target.targetId, pin);
+      result = await airplay.connect(target.targetId, pin, initialVolume);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const elapsedMs = Math.max(0, this.now() - startedAt);
@@ -1054,7 +1062,8 @@ export class OutputHost {
     this.airplayFormat = result.format || 'ALAC 44100Hz 16-bit stereo; input i16';
     this.airplayPaused = false;
     this.savedLocalVolume = this.deps.local.getState()?.volume ?? this.savedLocalVolume;
-    this.deviceVolume = this.volumes.get(target.targetId) ?? null;
+    this.volumes.set(target.targetId, initialVolume);
+    this.deviceVolume = initialVolume;
     this.diagnostics =
       'AirPlay 发送已连接。传输是 16-bit，不会保留 24-bit 源；歌词延迟只按发送缓冲估算';
     this.scheduleAirplayTapStats('连接后 2s', 2000);

@@ -432,7 +432,7 @@ const buildContext = (
         sync();
         return addDisposable(() => {
           document.removeEventListener('visibilitychange', sync);
-          handle();
+          handle.dispose();
         });
       },
     },

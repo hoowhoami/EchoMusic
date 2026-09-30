@@ -178,12 +178,13 @@ const buildLyricPayload = (): MiniPlayerLyricPayload => {
   const desktopLyricStore = useDesktopLyricStore();
   return {
     trackId: playerStore.currentTrackId ? String(playerStore.currentTrackId) : null,
-    lines: lyricStore.lines.map(normalizeLyricLinePayload),
+    lines: lyricStore.displayLines.map(normalizeLyricLinePayload),
     currentIndex: lyricStore.currentIndex,
     timeOffset: lyricStore.currentTimeOffset,
     wantTranslation: lyricStore.wantTranslation,
     wantRomanization: lyricStore.wantRomanization,
     showRomanizationAsRuby: lyricStore.showRomanizationAsRuby,
+    textConversionMode: lyricStore.textConversionMode,
     hasTranslation: lyricStore.hasTranslation,
     hasRomanization: lyricStore.hasRomanization,
     desktopLyricEnabled: desktopLyricStore.settings.enabled,
@@ -208,6 +209,7 @@ const lyricLinesPayloadKey = (payload: MiniPlayerLyricPayload): string =>
     wantTranslation: payload.wantTranslation,
     wantRomanization: payload.wantRomanization,
     showRomanizationAsRuby: payload.showRomanizationAsRuby,
+    textConversionMode: payload.textConversionMode,
     hasTranslation: payload.hasTranslation,
     hasRomanization: payload.hasRomanization,
     isLoading: payload.isLoading,
@@ -327,9 +329,11 @@ export const initMiniPlayerSync = async () => {
   const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
   const {
     lines,
+    displayLines,
     wantTranslation,
     wantRomanization,
     showRomanizationAsRuby,
+    textConversionMode,
     hasTranslation,
     hasRomanization,
     tips,
@@ -469,9 +473,11 @@ export const initMiniPlayerSync = async () => {
     watch(
       [
         lines,
+        displayLines,
         wantTranslation,
         wantRomanization,
         showRomanizationAsRuby,
+        textConversionMode,
         hasTranslation,
         hasRomanization,
         currentTimeOffset,

@@ -22,9 +22,13 @@ const { currentTrack } = usePlayerControls();
 const { settings } = useLyricSkin(HOST_SKIN_KEYS.amll, LYRIC_SKIN_AMLL_DEFAULTS);
 
 // AMLL 要求传入数组内部信息不得修改：computed 每次重新构建全新数组，
-// 依赖 store.lines 引用、当前歌词模式与「注音」偏好，切歌 / 译音切换时才会重建。
+// 依赖 displayLines 引用、当前歌词模式与「注音」偏好，切歌 / 译音 / 简繁切换时才会重建。
 const lyricLines = computed(() =>
-  buildAmllLyricLines(lyricStore.lines, lyricStore.lyricsMode, lyricStore.showRomanizationAsRuby),
+  buildAmllLyricLines(
+    lyricStore.displayLines,
+    lyricStore.lyricsMode,
+    lyricStore.showRomanizationAsRuby,
+  ),
 );
 
 // 直接使用 AMLL core 实例：手动管理生命周期，命令式驱动时间轴，

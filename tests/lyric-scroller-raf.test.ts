@@ -78,6 +78,7 @@ const fixture = {
   }),
   lyric: reactive({
     lines: [] as unknown[],
+    displayLines: [] as unknown[],
     currentIndex: 0,
     currentTimeOffset: 0,
     loadedHash: '',

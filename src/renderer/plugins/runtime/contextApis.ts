@@ -169,6 +169,7 @@ const createFallbackLyricSnapshot = (): NowPlayingLyricPayload => ({
   timeOffset: 0,
   wantTranslation: false,
   wantRomanization: false,
+  textConversionMode: 'none',
   hasTranslation: false,
   hasRomanization: false,
   mode: 'none',

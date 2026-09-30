@@ -178,6 +178,7 @@ import type {
   StorageSetQueueCurrentTrackPayload,
   StorageUpdateQueueMetaPayload,
 } from '../shared/storage';
+import type { OpenccProfile } from '../shared/opencc';
 
 const ipcListenerMap = new Map<
   string,
@@ -384,6 +385,10 @@ contextBridge.exposeInMainWorld('electron', {
   },
   fonts: {
     getAll: () => ipcRenderer.invoke('get-all-fonts') as Promise<string[]>,
+  },
+  opencc: {
+    convertBatch: (texts: string[], profile: OpenccProfile) =>
+      invokeWithPlainPayload<string[]>('opencc:convert-batch', { texts, profile }),
   },
   audioEffects: {
     importImpulseResponse: () =>
@@ -1055,7 +1060,7 @@ contextBridge.exposeInMainWorld('electron', {
         }).catch(() => {});
       };
 
-      return Object.assign(dispose, { setPaused });
+      return { dispose, setPaused };
     },
   },
   recognize: {

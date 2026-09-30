@@ -50,7 +50,10 @@ native/
 ├── echo-audio-capture/echo-audio-capture.node
 ├── echo-media-controls/echo-media-controls.node
 ├── echo-audio-player/echo-audio-player.node
-└── echo-sqlite-store/echo-sqlite-store.node
+├── echo-sqlite-store/echo-sqlite-store.node
+├── echo-opencc/echo-opencc.node
+├── echo-upnp/echo-upnp.node
+└── echo-airplay/echo-airplay.node
 ```
 
 Windows 和 macOS 还会包含 `native/echo-platform-adaptor/echo-platform-adaptor.node`；Linux 不构建也不包含该模块。下载对应架构的 artifact 后，将 GitHub Actions 自动生成的压缩包解压到仓库根目录即可恢复本地 Native 构建产物路径。x64 与 arm64 的 `.node` 文件不能互换。

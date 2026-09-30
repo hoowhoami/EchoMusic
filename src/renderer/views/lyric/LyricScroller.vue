@@ -75,7 +75,7 @@ const lyricFilterConfig = computed(() => ({
 }));
 
 const resolveVisibleIndex = (idx: number) =>
-  resolveVisibleLyricIndex(lyricStore.lines, idx, lyricFilterConfig.value);
+  resolveVisibleLyricIndex(lyricStore.displayLines, idx, lyricFilterConfig.value);
 
 const rawCurrentIndex = ref(-1);
 const currentIndex = ref(rawCurrentIndex.value);
@@ -102,7 +102,7 @@ const {
 type CharRefEl = Element | ComponentPublicInstance | null;
 const toHtmlEl = (el: CharRefEl): HTMLElement | null => (el instanceof HTMLElement ? el : null);
 
-const hasLyrics = computed(() => lyricStore.lines.length > 0);
+const hasLyrics = computed(() => lyricStore.displayLines.length > 0);
 const staticLyricLines = computed(() =>
   lyricStore.rawLyric
     .split(/\r?\n/)
@@ -167,7 +167,7 @@ const handleLyricWheel = () => {
 };
 
 const lyricEntries = computed(() =>
-  buildFilteredLyricEntries(lyricStore.lines, lyricFilterConfig.value).map((entry) => {
+  buildFilteredLyricEntries(lyricStore.displayLines, lyricFilterConfig.value).map((entry) => {
     const { line, index, filtered } = entry;
     const distance = currentIndex.value >= 0 ? index - currentIndex.value : 0;
     const scrollDistance = scrollIndex.value >= 0 ? index - scrollIndex.value : distance;
@@ -185,7 +185,7 @@ const lyricEntries = computed(() =>
 const lyricEffectClassName = computed(() => getPluginLyricEffectClassNames('page').join(' '));
 const lyricEffectSummary = computed(() => getPluginLyricEffectSummary('page'));
 
-const getLineStartMs = (line: (typeof lyricStore.lines)[number]) =>
+const getLineStartMs = (line: (typeof lyricStore.displayLines)[number]) =>
   line.characters?.[0]?.startTime ?? Math.round((Number(line.time) || 0) * 1000);
 
 const stableLyricIndex = createStableLyricIndex();
@@ -210,10 +210,10 @@ const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
 
   return {
     scope: 'page',
-    lines: lyricStore.lines,
+    lines: lyricStore.displayLines,
     currentIndex: index,
     scrollIndex: scrollIndex.value,
-    currentLine: index >= 0 ? (lyricStore.lines[index] ?? null) : null,
+    currentLine: index >= 0 ? (lyricStore.displayLines[index] ?? null) : null,
     currentTime: time,
     duration: playerStore.duration,
     playbackRate: playerStore.playbackRate,
@@ -469,7 +469,7 @@ watch(
 );
 
 watch(
-  () => [lyricStore.loadedHash, lyricStore.lines],
+  () => [lyricStore.loadedHash, lyricStore.lines, lyricStore.displayLines],
   async () => {
     resetCharRegistry();
     refreshLyricIndexes({ resetStable: true });
@@ -841,10 +841,10 @@ watch(
     <button
       v-if="scrollHighlightIndex >= 0 && hasLyrics"
       class="lyric-time-tag-fixed"
-      @click.stop="handleLineClick(lyricStore.lines[scrollHighlightIndex]?.time ?? 0)"
+      @click.stop="handleLineClick(lyricStore.displayLines[scrollHighlightIndex]?.time ?? 0)"
     >
       <Icon :icon="iconPlay" width="9" height="9" class="lyric-time-tag-icon" />
-      <span>{{ formatDuration(lyricStore.lines[scrollHighlightIndex]?.time ?? 0) }}</span>
+      <span>{{ formatDuration(lyricStore.displayLines[scrollHighlightIndex]?.time ?? 0) }}</span>
     </button>
   </div>
 </template>

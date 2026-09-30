@@ -1,4 +1,5 @@
 import type { LyricLinePayload } from './lyrics';
+import type { LyricTextConversionMode } from './opencc';
 import type { PlaybackClockSnapshot } from './playback';
 import type { ShortcutCommand } from './shortcuts';
 
@@ -101,6 +102,7 @@ export interface NowPlayingLyricPayload {
   timeOffset: number;
   wantTranslation: boolean;
   wantRomanization: boolean;
+  textConversionMode: LyricTextConversionMode;
   hasTranslation: boolean;
   hasRomanization: boolean;
   mode: NowPlayingLyricsMode;
@@ -136,6 +138,7 @@ export const DEFAULT_NOW_PLAYING_LYRIC: NowPlayingLyricPayload = {
   timeOffset: 0,
   wantTranslation: false,
   wantRomanization: false,
+  textConversionMode: 'none',
   hasTranslation: false,
   hasRomanization: false,
   mode: 'none',

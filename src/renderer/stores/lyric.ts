@@ -4,8 +4,13 @@ import logger from '@/utils/logger';
 import { DEFAULT_ACCENT, getNormalizedAccent } from '@/utils/color';
 import type { Song } from '@/models/song';
 import { resolvePluginLyric } from '@/plugins/lyrics';
+import { convertLyricLinesForDisplay } from '@/services/opencc';
 import { useThemeStore } from './theme';
 import { normalizeGlobalLyricOffsetMs, normalizeLyricOffsetMs } from '../../shared/lyricOffset';
+import {
+  normalizeLyricTextConversionMode,
+  type LyricTextConversionMode,
+} from '../../shared/opencc';
 
 export interface LyricCharacter {
   text: string;
@@ -703,6 +708,7 @@ const shouldPreferPluginLyric = (track?: Song): boolean => {
 export const useLyricStore = defineStore('lyric', {
   state: () => ({
     lines: [] as LyricLine[],
+    displayLines: [] as LyricLine[],
     currentIndex: -1,
     rawLyric: '',
     loadedHash: '',
@@ -715,6 +721,7 @@ export const useLyricStore = defineStore('lyric', {
     wantRomanization: false,
     // 音译是否用"逐字标注在原词上方"的注音模式渲染（默认关闭，关闭时音译作为独立副行显示）
     showRomanizationAsRuby: false,
+    textConversionMode: 'none' as LyricTextConversionMode,
     // 当前歌曲数据可用性（每首歌重新检测）
     hasTranslation: false,
     hasRomanization: false,
@@ -736,6 +743,7 @@ export const useLyricStore = defineStore('lyric', {
     timeOffsetMap: {} as Record<string, number>,
     // 所有歌曲共用的时间校准；与单曲微调叠加，切歌和重置单曲时保留。
     globalTimeOffsetMs: 0,
+    displayConversionSerial: 0,
   }),
   getters: {
     manualCandidateForCurrentHash: (state): ManualLyricSelection | null => {
@@ -783,7 +791,7 @@ export const useLyricStore = defineStore('lyric', {
     currentLine: (state) =>
       state.currentIndex >= 0 ? (state.lines[state.currentIndex] ?? null) : null,
     activeSecondaryText(): string {
-      const line = this.currentIndex >= 0 ? (this.lines[this.currentIndex] ?? null) : null;
+      const line = this.currentIndex >= 0 ? (this.displayLines[this.currentIndex] ?? null) : null;
       if (!line || this.lyricsMode === 'none') return '';
       return getSecondaryText(line, this.lyricsMode);
     },
@@ -799,7 +807,7 @@ export const useLyricStore = defineStore('lyric', {
     },
     copyableText(): string {
       const mode = this.lyricsMode;
-      return this.lines
+      return this.displayLines
         .map((line: LyricLine) => {
           const primary = line.text.trim();
           if (mode === 'none') return primary;
@@ -819,6 +827,7 @@ export const useLyricStore = defineStore('lyric', {
   actions: {
     resetLyricsState(payload?: { hash?: string; tips?: string }) {
       this.lines = [];
+      this.displayLines = [];
       this.currentIndex = -1;
       this.rawLyric = '';
       this.loadedHash = payload?.hash ?? '';
@@ -848,6 +857,22 @@ export const useLyricStore = defineStore('lyric', {
     // 调整全局校准（毫秒），不会覆盖任何单曲微调。
     setGlobalTimeOffset(value: number) {
       this.globalTimeOffsetMs = normalizeGlobalLyricOffsetMs(value);
+    },
+    setTextConversionMode(value: unknown) {
+      const next = normalizeLyricTextConversionMode(value);
+      if (this.textConversionMode === next) return;
+      this.textConversionMode = next;
+      void this.refreshDisplayLines();
+    },
+    async refreshDisplayLines() {
+      const serial = (this.displayConversionSerial += 1);
+      const sourceLines = this.lines;
+      const mode = normalizeLyricTextConversionMode(this.textConversionMode);
+      this.textConversionMode = mode;
+
+      const converted = await convertLyricLinesForDisplay(sourceLines, mode);
+      if (serial !== this.displayConversionSerial || sourceLines !== this.lines) return;
+      this.displayLines = converted;
     },
     // 调整当前歌曲的歌词时间偏移（毫秒）
     adjustTimeOffset(deltaMs: number): number {
@@ -896,6 +921,8 @@ export const useLyricStore = defineStore('lyric', {
       this.resetLyricsState({ hash, tips: '暂无歌词' });
       const parsed = parseLyricDetailPayload(payload);
       this.lines = parsed.lines;
+      this.displayLines = parsed.lines;
+      void this.refreshDisplayLines();
       this.rawLyric = parsed.rawLyric;
       this.loadedHash = hash;
       this.detailResolved = Boolean(options?.detailResolved);
@@ -1272,6 +1299,7 @@ export const useLyricStore = defineStore('lyric', {
       'wantTranslation',
       'wantRomanization',
       'showRomanizationAsRuby',
+      'textConversionMode',
       'fontScale',
       'fontWeightIndex',
       'playedColor',

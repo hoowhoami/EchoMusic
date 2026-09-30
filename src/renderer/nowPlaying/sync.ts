@@ -162,11 +162,13 @@ export const initNowPlayingSync = async () => {
   const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
   const {
     lines,
+    displayLines,
     currentIndex,
     loadedHash,
     currentTimeOffset,
     wantTranslation,
     wantRomanization,
+    textConversionMode,
     hasTranslation,
     hasRomanization,
     isLoading,
@@ -189,7 +191,7 @@ export const initNowPlayingSync = async () => {
     const trackId = playback?.lyricHash || playback?.trackId || null;
     const activeLines =
       includeLines && trackId && loadedHash.value === trackId
-        ? lines.value.map(normalizeLinePayload)
+        ? displayLines.value.map(normalizeLinePayload)
         : [];
     return {
       trackId,
@@ -199,6 +201,7 @@ export const initNowPlayingSync = async () => {
       timeOffset: currentTimeOffset.value,
       wantTranslation: wantTranslation.value,
       wantRomanization: wantRomanization.value,
+      textConversionMode: textConversionMode.value,
       hasTranslation: hasTranslation.value,
       hasRomanization: hasRomanization.value,
       mode: lyricStore.lyricsMode,
@@ -330,9 +333,11 @@ export const initNowPlayingSync = async () => {
     watch(
       [
         lines,
+        displayLines,
         loadedHash,
         wantTranslation,
         wantRomanization,
+        textConversionMode,
         hasTranslation,
         hasRomanization,
         isLoading,

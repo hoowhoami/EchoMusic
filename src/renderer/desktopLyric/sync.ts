@@ -63,6 +63,7 @@ const buildSettingsSignature = (settings: DesktopLyricSettings) =>
     boolKey(settings.wantTranslation),
     boolKey(settings.wantRomanization),
     boolKey(settings.showRomanizationAsRuby),
+    settings.textConversionMode,
     settings.theme,
     stableNumberKey(settings.opacity, 1000),
     stableNumberKey(settings.scale, 1000),
@@ -247,6 +248,7 @@ export const initDesktopLyricSync = async () => {
   } = storeToRefs(playerStore);
   const {
     lines,
+    displayLines,
     currentIndex,
     loadedHash,
     currentTimeOffset,
@@ -254,6 +256,7 @@ export const initDesktopLyricSync = async () => {
     wantTranslation,
     wantRomanization,
     showRomanizationAsRuby,
+    textConversionMode,
   } = storeToRefs(lyricStore);
   const settingStore = useSettingStore();
 
@@ -265,6 +268,7 @@ export const initDesktopLyricSync = async () => {
       wantTranslation: lyricStore.wantTranslation,
       wantRomanization: lyricStore.wantRomanization,
       showRomanizationAsRuby: lyricStore.showRomanizationAsRuby,
+      textConversionMode: lyricStore.textConversionMode,
       filterEnabled: settingStore.lyricFilterEnabled,
       filterPattern: settingStore.lyricFilterPattern,
       offsetStep: settingStore.lyricOffsetStep,
@@ -279,6 +283,7 @@ export const initDesktopLyricSync = async () => {
     wantTranslation: lyricStore.wantTranslation,
     wantRomanization: lyricStore.wantRomanization,
     showRomanizationAsRuby: lyricStore.showRomanizationAsRuby,
+    textConversionMode: lyricStore.textConversionMode,
     filterEnabled: settingStore.lyricFilterEnabled,
     filterPattern: settingStore.lyricFilterPattern,
     offsetStep: settingStore.lyricOffsetStep,
@@ -304,7 +309,7 @@ export const initDesktopLyricSync = async () => {
   let progressSyncQueued = false;
 
   const buildLyricsPayload = () => {
-    return lines.value.map(normalizeLinePayload);
+    return displayLines.value.map(normalizeLinePayload);
   };
 
   const syncPlaybackSnapshot = async () => {
@@ -331,7 +336,7 @@ export const initDesktopLyricSync = async () => {
   const syncLyricsSnapshot = async () => {
     const playback = buildPlaybackPayload();
     const lyricsTrackId = playback?.lyricHash || playback?.trackId || null;
-    const sourceLines = lyricStore.loadedHash === (lyricsTrackId ?? '') ? lines.value : [];
+    const sourceLines = lyricStore.loadedHash === (lyricsTrackId ?? '') ? displayLines.value : [];
     const nextLyricsKey = buildLyricsSignature(lyricsTrackId, sourceLines);
     if (nextLyricsKey === lastSyncedLyricsKey) return;
     const lyrics = sourceLines.length > 0 ? buildLyricsPayload() : [];
@@ -475,7 +480,7 @@ export const initDesktopLyricSync = async () => {
 
   stops.push(
     watch(
-      [lines, loadedHash, currentTrackId, currentTrackSnapshot, nativeTrackSeq],
+      [lines, displayLines, loadedHash, currentTrackId, currentTrackSnapshot, nativeTrackSeq],
       () => {
         void syncLyricsSnapshot();
       },
@@ -501,6 +506,7 @@ export const initDesktopLyricSync = async () => {
         wantTranslation,
         wantRomanization,
         showRomanizationAsRuby,
+        textConversionMode,
         () => settingStore.lyricFilterEnabled,
         () => settingStore.lyricFilterPattern,
         () => settingStore.lyricOffsetStep,
