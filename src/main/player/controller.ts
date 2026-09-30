@@ -11,6 +11,7 @@ import type { TrackTransitionPlaybackInfo } from '../../shared/trackTransition';
 import { resolveNativeProxyUrls } from '../networkPolicy';
 import type { AudioEffectPlaybackOptions } from '../../shared/audio';
 import { normalizeConvolutionMix } from '../../shared/audioEffectSupport';
+import { registerNativeLogHandler } from '../native/logging';
 import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/playerError';
 import type {
   PlayerAudioGraphParameterPatch,
@@ -236,7 +237,6 @@ interface PlayerAddonEvent {
   reason?: string;
   message?: string;
   errorCode?: PlayerErrorCode;
-  level?: string;
   devices?: Array<{ name: string; description: string; isDefault?: boolean }>;
   deviceChangeKind?: string;
   disconnectedDevices?: Array<{ name: string; description: string; isDefault?: boolean }>;
@@ -310,6 +310,12 @@ interface PlayerAddon {
     httpProxy?: string;
   }): void;
   destroy(): void;
+  registerLogHandler?: (
+    callback: (
+      errorOrEntry: Error | { level?: string; message?: string } | null,
+      entry?: { level?: string; message?: string },
+    ) => void,
+  ) => void;
   registerEventHandler(callback: (err: Error | null, event: PlayerAddonEvent) => void): void;
   loadFile(url: string, seq?: number): Promise<void>;
   beginSourceChange(): void;
@@ -477,6 +483,7 @@ export class PlayerController extends EventEmitter {
     if (!this.available) return false;
     this.destroy();
     this.addon = this.loadAddon();
+    registerNativeLogHandler(this.addon, 'AudioPlayerNative');
     const networkSettings = refreshNetworkSettingsFromStorage();
     const audioConfig = getPersistedNativeAudioConfig();
     this.addon.registerEventHandler((_err, event) => this.handleAddonEvent(event));
@@ -1106,17 +1113,6 @@ export class PlayerController extends EventEmitter {
           trackSeq: event.trackSeq,
           generation: event.generation,
         } satisfies PlayerErrorPayload);
-        break;
-      case 'log':
-        log[
-          event.level === 'error'
-            ? 'error'
-            : event.level === 'warn'
-              ? 'warn'
-              : event.level === 'debug'
-                ? 'debug'
-                : 'info'
-        ]('[PlayerController]', event.message || '');
         break;
     }
   }

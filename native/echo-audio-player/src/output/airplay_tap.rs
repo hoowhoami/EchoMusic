@@ -2,8 +2,8 @@
 //! A feeder thread writes the local socket and may block; the callback never does.
 //! Byte layout matches native/echo-airplay/src/pcm.rs.
 
-use std::io::Write;
 use napi_derive::napi;
+use std::io::Write;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
@@ -129,13 +129,21 @@ fn encode(epoch: u64, sample_rate: u32, samples: &[i16]) -> Vec<u8> {
 
 fn stop_feeder() {
     let state = tap();
-    state.enabled.store(false, Ordering::Release);
+    let was_enabled = state.enabled.swap(false, Ordering::AcqRel);
     {
         let mut sender = state.sender.lock().unwrap_or_else(|err| err.into_inner());
         sender.take();
     }
-    if let Some(handle) = state.feeder.lock().unwrap_or_else(|err| err.into_inner()).take() {
+    if let Some(handle) = state
+        .feeder
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .take()
+    {
         let _ = handle.join();
+    }
+    if was_enabled {
+        echo_native_log::info("AirPlay tap stopped");
     }
 }
 
@@ -145,13 +153,19 @@ pub fn set_airplay_tap(port: u32, enabled: bool) -> napi::Result<()> {
     if !enabled || port == 0 {
         return Ok(());
     }
+    echo_native_log::info(format!("AirPlay tap connecting: port={port}"));
     let stream = TcpStream::connect_timeout(
-        &format!("127.0.0.1:{port}").parse().map_err(|err| {
-            napi::Error::from_reason(format!("AirPlay 音频端口无效: {err}"))
-        })?,
+        &format!("127.0.0.1:{port}")
+            .parse()
+            .map_err(|err| napi::Error::from_reason(format!("AirPlay 音频端口无效: {err}")))?,
         Duration::from_secs(2),
     )
-    .map_err(|err| napi::Error::from_reason(format!("连接 AirPlay 音频出口失败: {err}")))?;
+    .map_err(|err| {
+        echo_native_log::warn(format!(
+            "AirPlay tap connect failed: port={port}, error={err}"
+        ));
+        napi::Error::from_reason(format!("连接 AirPlay 音频出口失败: {err}"))
+    })?;
     stream.set_nodelay(true).ok();
     let (sender, receiver) = sync_channel(QUEUE_FRAMES);
     *tap().sender.lock().unwrap_or_else(|err| err.into_inner()) = Some(sender);
@@ -166,8 +180,12 @@ pub fn set_airplay_tap(port: u32, enabled: bool) -> napi::Result<()> {
     let handle = thread::Builder::new()
         .name("airplay-tap".to_string())
         .spawn(move || write_loop(stream, receiver))
-        .map_err(|err| napi::Error::from_reason(format!("启动 AirPlay 音频出口失败: {err}")))?;
+        .map_err(|err| {
+            echo_native_log::warn(format!("AirPlay tap thread start failed: {err}"));
+            napi::Error::from_reason(format!("启动 AirPlay 音频出口失败: {err}"))
+        })?;
     *tap().feeder.lock().unwrap_or_else(|err| err.into_inner()) = Some(handle);
+    echo_native_log::info(format!("AirPlay tap started: port={port}"));
     Ok(())
 }
 

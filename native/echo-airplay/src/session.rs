@@ -3,10 +3,12 @@
 
 use crate::bonjour;
 use crate::pcm::{self, PcmFrame, TRANSPORT_FORMAT};
+use airplay_audio::AlacEncoder;
 use airplay_client::{
     ClientBuilder, Device, LiveAudioDecoder, LiveFrameSender, LivePcmFrame, RaopConnection,
-    StreamConfig,
 };
+use airplay_core::{AudioFormat, PtpMode, StreamConfig, StreamType, TimingProtocol};
+use airplay_discovery::TxtRecordParser;
 use std::io::{ErrorKind, Read};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -20,6 +22,9 @@ const MAX_SAMPLES: usize = 65_536;
 const TRANSPORT_RATE: u32 = 44_100;
 const DISCOVER_MIN_TIMEOUT_MS: u32 = 200;
 const DISCOVER_MAX_TIMEOUT_MS: u32 = 8_000;
+const LIVE_PCM_CAPACITY: usize = 16;
+const CONNECT_ACCEPT_TIMEOUT: Duration = Duration::from_secs(3);
+const CONNECT_RESULT_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub fn discovery_backend() -> &'static str {
     #[cfg(target_os = "macos")]
@@ -67,6 +72,7 @@ enum Command {
     Connect {
         id: String,
         pin: String,
+        accepted: Sender<()>,
         reply: Sender<Link>,
     },
     Disconnect {
@@ -96,62 +102,89 @@ enum Command {
 }
 
 pub struct Session {
-    tx: async_mpsc::Sender<Command>,
+    tx: Mutex<async_mpsc::Sender<Command>>,
     status: SharedStatus,
-    devices: SharedDevices,
+    devices: DeviceCache,
 }
 
 impl Session {
     pub fn start() -> Self {
-        let (tx, mut rx) = async_mpsc::channel(8);
-        let command_tx = tx.clone();
         let status = new_status_mirror();
         let devices = new_device_cache();
-        let worker_status = Arc::clone(&status);
-        let worker_devices = Arc::clone(&devices);
-        thread::Builder::new()
-            .name("airplay-session".to_string())
-            .spawn(move || {
-                let runtime = match tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()
-                {
-                    Ok(runtime) => runtime,
-                    Err(err) => {
-                        echo_native_log::error(format!("AirPlay runtime 启动失败: {err}"));
-                        return;
-                    }
-                };
-                runtime.block_on(async move {
-                    let mut client = match ClientBuilder::new().render_delay_ms(200).build() {
-                        Ok(client) => client,
-                        Err(err) => {
-                            update_status(&worker_status, |status| {
-                                status.connected = false;
-                                status.error = Some(err.to_string());
-                                status.feed_stats = None;
-                            });
-                            refuse_until_closed(&mut rx, err.to_string()).await;
-                            return;
-                        }
-                    };
-                    let mut state = Worker::new(worker_status, worker_devices);
-                    while let Some(command) = rx.recv().await {
-                        if !state.handle(&mut client, command).await {
-                            break;
-                        }
-                    }
-                    state.shutdown(&mut client).await;
-                });
-            })
-            .ok();
+        let tx = spawn_worker(Arc::clone(&status), Arc::clone(&devices));
         Self {
-            tx: command_tx,
+            tx: Mutex::new(tx),
             status,
             devices,
         }
     }
 
+    fn restart_worker(&self, reason: &str) {
+        echo_native_log::warn(format!("AirPlay native worker 重启: reason={reason}"));
+        update_status(&self.status, |status| {
+            status.connected = false;
+            status.error = Some(format!("AirPlay native worker 已重启: {reason}"));
+            status.feed_stats = None;
+        });
+        let tx = spawn_worker(Arc::clone(&self.status), Arc::clone(&self.devices));
+        if let Ok(mut guard) = self.tx.lock() {
+            *guard = tx;
+        }
+    }
+
+    fn command_tx(&self) -> Result<async_mpsc::Sender<Command>, String> {
+        self.tx
+            .lock()
+            .map(|guard| guard.clone())
+            .map_err(|err| format!("AirPlay worker 锁定失败: {err}"))
+    }
+}
+
+fn spawn_worker(status: SharedStatus, devices: DeviceCache) -> async_mpsc::Sender<Command> {
+    let (tx, mut rx) = async_mpsc::channel(8);
+    let command_tx = tx.clone();
+    let worker_status = Arc::clone(&status);
+    let worker_devices = Arc::clone(&devices);
+    thread::Builder::new()
+        .name("airplay-session".to_string())
+        .spawn(move || {
+            let runtime = match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(err) => {
+                    echo_native_log::error(format!("AirPlay runtime 启动失败: {err}"));
+                    return;
+                }
+            };
+            runtime.block_on(async move {
+                let mut client = match ClientBuilder::new().render_delay_ms(200).build() {
+                    Ok(client) => client,
+                    Err(err) => {
+                        update_status(&worker_status, |status| {
+                            status.connected = false;
+                            status.error = Some(err.to_string());
+                            status.feed_stats = None;
+                        });
+                        refuse_until_closed(&mut rx, err.to_string()).await;
+                        return;
+                    }
+                };
+                let mut state = Worker::new(worker_status, worker_devices);
+                while let Some(command) = rx.recv().await {
+                    if !state.handle(&mut client, command).await {
+                        break;
+                    }
+                }
+                state.shutdown(&mut client).await;
+            });
+        })
+        .ok();
+    command_tx
+}
+
+impl Session {
     pub fn discover(&self, timeout_ms: u32) -> Result<Vec<FoundDevice>, String> {
         self.discover_with_progress(timeout_ms, None)
     }
@@ -161,14 +194,10 @@ impl Session {
         timeout_ms: u32,
         progress: Option<Sender<FoundDevice>>,
     ) -> Result<Vec<FoundDevice>, String> {
-        let timeout_ms = timeout_ms.clamp(DISCOVER_MIN_TIMEOUT_MS, DISCOVER_MAX_TIMEOUT_MS);
-        let timeout = Duration::from_millis(u64::from(timeout_ms));
-        let devices = discover_airplay_devices(timeout, progress)?;
-        let listed = devices.iter().map(found_device).collect();
-        if let Ok(mut cache) = self.devices.lock() {
-            *cache = devices;
-        }
-        Ok(listed)
+        let timeout = Duration::from_millis(
+            timeout_ms.clamp(DISCOVER_MIN_TIMEOUT_MS, DISCOVER_MAX_TIMEOUT_MS) as u64,
+        );
+        discover_devices(timeout, progress, &self.devices)
     }
 
     pub fn connect(&self, id: String, pin: String) -> Result<Link, String> {
@@ -182,10 +211,7 @@ impl Session {
             "AirPlay native CONNECT 已提交: id={id}, pin={}",
             if pin.trim().is_empty() { "no" } else { "yes" }
         ));
-        let result = self.roundtrip(
-            |reply| Command::Connect { id, pin, reply },
-            Duration::from_secs(60),
-        );
+        let result = self.connect_roundtrip(id, pin);
         if let Err(error) = &result {
             update_status(&self.status, |status| {
                 status.connected = false;
@@ -195,6 +221,40 @@ impl Session {
             echo_native_log::warn(format!("AirPlay native CONNECT 等待结果失败: {error}"));
         }
         result
+    }
+
+    fn connect_roundtrip(&self, id: String, pin: String) -> Result<Link, String> {
+        let mut last_error = "AirPlay 命令超时".to_string();
+        for attempt in 1..=2 {
+            let (reply_tx, reply_rx) = mpsc::channel();
+            let (accepted_tx, accepted_rx) = mpsc::channel();
+            self.command_tx()?
+                .blocking_send(Command::Connect {
+                    id: id.clone(),
+                    pin: pin.clone(),
+                    accepted: accepted_tx,
+                    reply: reply_tx,
+                })
+                .map_err(|_| "AirPlay 发送线程已退出".to_string())?;
+
+            if accepted_rx.recv_timeout(CONNECT_ACCEPT_TIMEOUT).is_err() {
+                last_error = "AirPlay CONNECT 未被 native worker 接收".to_string();
+                echo_native_log::warn(format!(
+                    "AirPlay native CONNECT 未被 worker 接收，准备重启: id={id}, attempt={attempt}"
+                ));
+                self.restart_worker("connect-not-accepted");
+                continue;
+            }
+
+            return match reply_rx.recv_timeout(CONNECT_RESULT_TIMEOUT) {
+                Ok(reply) => Ok(reply),
+                Err(_) => {
+                    self.restart_worker("connect-timeout");
+                    Err("AirPlay 命令超时".to_string())
+                }
+            };
+        }
+        Err(last_error)
     }
 
     pub fn disconnect(&self) -> Result<(), String> {
@@ -239,7 +299,7 @@ impl Session {
     }
 
     pub fn clear(&self) -> Result<(), String> {
-        self.tx
+        self.command_tx()?
             .blocking_send(Command::Clear)
             .map_err(|_| "AirPlay 发送线程已退出".to_string())
     }
@@ -250,12 +310,16 @@ impl Session {
         timeout: Duration,
     ) -> Result<T, String> {
         let (reply_tx, reply_rx) = mpsc::channel();
-        self.tx
+        self.command_tx()?
             .blocking_send(command(reply_tx))
             .map_err(|_| "AirPlay 发送线程已退出".to_string())?;
-        reply_rx
-            .recv_timeout(timeout)
-            .map_err(|_| "AirPlay 命令超时".to_string())
+        match reply_rx.recv_timeout(timeout) {
+            Ok(reply) => Ok(reply),
+            Err(_) => {
+                self.restart_worker("command-timeout");
+                Err("AirPlay 命令超时".to_string())
+            }
+        }
     }
 }
 
@@ -290,6 +354,7 @@ async fn refuse_until_closed(rx: &mut async_mpsc::Receiver<Command>, error: Stri
 
 struct Feed {
     stop: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     epoch: Arc<AtomicU64>,
     sender: Arc<LiveFrameSender>,
     handle: JoinHandle<()>,
@@ -303,7 +368,7 @@ struct FeedStats {
 }
 
 type SharedStatus = Arc<Mutex<StatusMirror>>;
-type SharedDevices = Arc<Mutex<Vec<Device>>>;
+type DeviceCache = Arc<Mutex<Vec<Device>>>;
 
 #[derive(Clone)]
 struct StatusMirror {
@@ -330,10 +395,6 @@ impl Default for StatusMirror {
 
 fn new_status_mirror() -> SharedStatus {
     Arc::new(Mutex::new(StatusMirror::default()))
-}
-
-fn new_device_cache() -> SharedDevices {
-    Arc::new(Mutex::new(Vec::new()))
 }
 
 fn update_status(status: &SharedStatus, update: impl FnOnce(&mut StatusMirror)) {
@@ -373,8 +434,58 @@ fn snapshot_status(status: &SharedStatus) -> Status {
     }
 }
 
+fn new_device_cache() -> DeviceCache {
+    Arc::new(Mutex::new(Vec::new()))
+}
+
+fn replace_device_cache(cache: &DeviceCache, devices: Vec<Device>) {
+    if let Ok(mut guard) = cache.lock() {
+        *guard = devices;
+    }
+}
+
+fn upsert_device_cache(cache: &DeviceCache, device: Device) {
+    if let Ok(mut guard) = cache.lock() {
+        let id = device_id(&device);
+        if let Some(existing) = guard.iter_mut().find(|entry| device_id(entry) == id) {
+            *existing = merge_device(existing, &device);
+        } else {
+            guard.push(device);
+        }
+    }
+}
+
+fn cached_devices(cache: &DeviceCache) -> Vec<Device> {
+    cache.lock().map(|guard| guard.clone()).unwrap_or_default()
+}
+
+fn merge_device(existing: &Device, incoming: &Device) -> Device {
+    if incoming.raop_port.is_some() && existing.raop_port.is_none() {
+        return TxtRecordParser::merge_device_info(existing, incoming);
+    }
+    if existing.raop_port.is_some() && incoming.raop_port.is_none() {
+        return TxtRecordParser::merge_device_info(incoming, existing);
+    }
+    let mut merged = existing.clone();
+    for address in &incoming.addresses {
+        if !merged.addresses.contains(address) {
+            merged.addresses.push(*address);
+        }
+    }
+    if merged.model.is_empty() {
+        merged.model = incoming.model.clone();
+    }
+    if merged.public_key.is_none() {
+        merged.public_key = incoming.public_key;
+    }
+    if merged.raop_port.is_none() {
+        merged.raop_port = incoming.raop_port;
+    }
+    merged
+}
+
 struct Worker {
-    devices: SharedDevices,
+    devices: DeviceCache,
     feed: Option<Feed>,
     raop: Option<RaopConnection>,
     epoch: u32,
@@ -384,7 +495,7 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(status: SharedStatus, devices: SharedDevices) -> Self {
+    fn new(status: SharedStatus, devices: DeviceCache) -> Self {
         Self {
             devices,
             feed: None,
@@ -416,7 +527,18 @@ impl Worker {
         command: Command,
     ) -> bool {
         match command {
-            Command::Connect { id, pin, reply } => {
+            Command::Connect {
+                id,
+                pin,
+                accepted,
+                reply,
+            } => {
+                let _ = accepted.send(());
+                self.set_phase(format!("AirPlay CONNECT 已接收: {id}"));
+                echo_native_log::info(format!(
+                    "AirPlay native CONNECT 已接收: id={id}, pin={}",
+                    if pin.trim().is_empty() { "no" } else { "yes" }
+                ));
                 let _ = reply.send(self.connect(client, &id, &pin).await);
             }
             Command::Disconnect { reply } => {
@@ -443,9 +565,7 @@ impl Worker {
                 let _ = reply.send(self.seek(client, 0.0).await);
             }
             Command::Clear => {
-                if let Ok(mut devices) = self.devices.lock() {
-                    devices.clear();
-                }
+                replace_device_cache(&self.devices, Vec::new());
                 self.last_error = None;
                 self.update_status(|status| {
                     status.error = None;
@@ -548,8 +668,31 @@ impl Worker {
             .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join("/");
+        let audio_format = AudioFormat::default();
+        let asc = match AlacEncoder::new(audio_format.clone()) {
+            Ok(encoder) => Some(encoder.magic_cookie()),
+            Err(err) => {
+                self.last_error = Some(err.to_string());
+                let last_error = self.last_error.clone();
+                self.update_status(|status| {
+                    status.connected = false;
+                    status.error = last_error;
+                    status.feed_stats = None;
+                });
+                return fail("无法构造 ALAC 配置");
+            }
+        };
+        let config = StreamConfig {
+            stream_type: StreamType::Realtime,
+            audio_format,
+            timing_protocol: TimingProtocol::Ntp,
+            ptp_mode: PtpMode::Master,
+            latency_min: 22_050,
+            latency_max: 88_200,
+            supports_dynamic_stream_id: true,
+            asc,
+        };
         let password = pin.trim().to_string();
-        let config = StreamConfig::airplay1_realtime();
         let pin_state = if password.is_empty() { "no" } else { "yes" };
         self.set_phase(format!("AirPlay 1 CONNECT 中: {device_name}"));
         echo_native_log::info(format!(
@@ -616,57 +759,7 @@ impl Worker {
             }
         };
 
-        self.set_phase(format!("AirPlay 1 SETUP 中: {device_name}"));
-        echo_native_log::info(format!(
-            "AirPlay 1 native SETUP 开始: name={device_name}, id={device_id}"
-        ));
-        match tokio::time::timeout(Duration::from_secs(14), connection.setup()).await {
-            Ok(Ok(())) => {
-                echo_native_log::info(format!(
-                    "AirPlay 1 native SETUP 完成: name={device_name}, id={device_id}"
-                ));
-            }
-            Ok(Err(err)) => {
-                self.last_error = Some(format!("AirPlay 1 SETUP 失败: {err}"));
-                let last_error = self.last_error.clone();
-                self.update_status(|status| {
-                    status.connected = false;
-                    status.error = last_error;
-                    status.feed_stats = None;
-                });
-                echo_native_log::warn(format!(
-                    "AirPlay 1 native SETUP 失败: name={device_name}, id={device_id}, error={err}"
-                ));
-                let _ = connection.disconnect().await;
-                return fail(
-                    &self
-                        .last_error
-                        .clone()
-                        .unwrap_or_else(|| "无法开始发送".to_string()),
-                );
-            }
-            Err(_) => {
-                self.last_error = Some(format!("AirPlay 1 SETUP 超时: {device_name}"));
-                let last_error = self.last_error.clone();
-                self.update_status(|status| {
-                    status.connected = false;
-                    status.error = last_error;
-                    status.feed_stats = None;
-                });
-                echo_native_log::warn(format!(
-                    "AirPlay 1 native SETUP 超时: name={device_name}, id={device_id}"
-                ));
-                let _ = connection.disconnect().await;
-                return fail(
-                    &self
-                        .last_error
-                        .clone()
-                        .unwrap_or_else(|| "AirPlay 1 SETUP 超时".to_string()),
-                );
-            }
-        }
-
-        let (sender, decoder) = LiveAudioDecoder::create_pair(TRANSPORT_RATE, 2, 16);
+        let (sender, decoder) = LiveAudioDecoder::create_pair(TRANSPORT_RATE, 2, LIVE_PCM_CAPACITY);
         self.set_phase(format!("AirPlay 1 START_LIVE 中: {device_name}"));
         echo_native_log::info(format!(
             "AirPlay 1 native START_LIVE 开始: name={device_name}, id={device_id}"
@@ -759,10 +852,12 @@ impl Worker {
         let stats = Arc::new(FeedStats::default());
         self.epoch = 1;
         let stop = Arc::new(AtomicBool::new(false));
+        let paused = Arc::new(AtomicBool::new(false));
         let shared_sender = Arc::new(sender);
         let feeder_sender = Arc::clone(&shared_sender);
         let feeder_epoch = Arc::clone(&epoch);
         let feeder_stop = Arc::clone(&stop);
+        let feeder_paused = Arc::clone(&paused);
         let feeder_stats = Arc::clone(&stats);
         let handle = match thread::Builder::new()
             .name("airplay-feeder".to_string())
@@ -772,6 +867,7 @@ impl Worker {
                     feeder_sender,
                     feeder_epoch,
                     feeder_stop,
+                    feeder_paused,
                     feeder_stats,
                 );
             }) {
@@ -790,6 +886,7 @@ impl Worker {
         let feed_stats = Arc::clone(&stats);
         self.feed = Some(Feed {
             stop,
+            paused,
             epoch,
             sender: shared_sender,
             handle,
@@ -816,21 +913,33 @@ impl Worker {
             let position = (seconds.max(0.0) * f64::from(TRANSPORT_RATE)) as u64;
             feed.sender.signal_seek(position);
         }
+        let user_paused = self.is_feed_paused();
+        let mut resume_feed = false;
         if let Some(raop) = &mut self.raop {
-            raop.flush().await.map_err(|err| {
-                self.last_error = Some(err.to_string());
-                err.to_string()
-            })?;
+            if let Err(err) = raop.flush().await {
+                echo_native_log::warn(format!("AirPlay 1 FLUSH 失败: {err}"));
+            } else if !user_paused {
+                match raop.record().await {
+                    Ok(true) => resume_feed = true,
+                    Ok(false) => {}
+                    Err(err) => {
+                        echo_native_log::warn(format!("AirPlay 1 RECORD 失败: {err}"));
+                    }
+                }
+            }
+            if resume_feed {
+                self.set_feed_paused(false);
+            }
         } else if self.connected {
-            client.seek(seconds.max(0.0)).await.map_err(|err| {
-                self.last_error = Some(err.to_string());
-                err.to_string()
-            })?;
+            if let Err(err) = client.seek(seconds.max(0.0)).await {
+                echo_native_log::warn(format!("AirPlay 2 SEEK 失败: {err}"));
+            }
         }
         Ok(self.epoch)
     }
 
     async fn pause(&mut self, client: &mut airplay_client::AirPlayClient) -> Result<(), String> {
+        self.set_feed_paused(true);
         let result = if let Some(raop) = &mut self.raop {
             raop.pause()
                 .await
@@ -847,6 +956,7 @@ impl Worker {
     }
 
     async fn resume(&mut self, client: &mut airplay_client::AirPlayClient) -> Result<(), String> {
+        self.set_feed_paused(false);
         let result = if let Some(raop) = &mut self.raop {
             raop.resume()
                 .await
@@ -863,6 +973,7 @@ impl Worker {
     }
 
     async fn stop(&mut self, client: &mut airplay_client::AirPlayClient) -> Result<(), String> {
+        self.set_feed_paused(true);
         let result = if let Some(raop) = &mut self.raop {
             raop.stop().await.map(|_| ()).map_err(|err| err.to_string())
         } else {
@@ -911,13 +1022,24 @@ impl Worker {
             })
     }
 
+    fn set_feed_paused(&mut self, paused: bool) {
+        if let Some(feed) = &self.feed {
+            feed.paused.store(paused, Ordering::Release);
+        }
+    }
+
+    fn is_feed_paused(&self) -> bool {
+        self.feed
+            .as_ref()
+            .map(|feed| feed.paused.load(Ordering::Acquire))
+            .unwrap_or(false)
+    }
+
     fn lookup(&self, id: &str) -> Option<Device> {
         let wanted = normalize_id(id);
-        let devices = self.devices.lock().ok()?;
-        devices
-            .iter()
+        cached_devices(&self.devices)
+            .into_iter()
             .find(|device| device_id(device) == id || normalize_id(&device_id(device)) == wanted)
-            .cloned()
     }
 
     async fn shutdown(&mut self, client: &mut airplay_client::AirPlayClient) {
@@ -966,6 +1088,7 @@ fn normalize_connect_error(error: &str) -> String {
         || lower.contains("401")
         || lower.contains("unauthorized")
         || lower.contains("pair-pin")
+        || lower.contains("digest")
     {
         return "pin-required".to_string();
     }
@@ -976,33 +1099,6 @@ fn normalize_connect_error(error: &str) -> String {
         return "airplay-mfi-required".to_string();
     }
     error.to_string()
-}
-
-fn discover_airplay_devices(
-    timeout: Duration,
-    progress: Option<Sender<FoundDevice>>,
-) -> Result<Vec<Device>, String> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|err| err.to_string())?;
-    runtime.block_on(async move {
-        #[cfg(target_os = "macos")]
-        {
-            let progress_tx = progress.clone();
-            Ok(bonjour::discover_with_progress(timeout, move |device| {
-                if let Some(tx) = &progress_tx {
-                    let _ = tx.send(found_device(&device));
-                }
-            })
-            .await)
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            browse_devices(timeout, progress).await
-        }
-    })
 }
 
 fn found_device(device: &Device) -> FoundDevice {
@@ -1025,10 +1121,39 @@ fn device_id(device: &Device) -> String {
     device.id.to_mac_string()
 }
 
+fn discover_devices(
+    timeout: Duration,
+    progress: Option<Sender<FoundDevice>>,
+    cache: &DeviceCache,
+) -> Result<Vec<FoundDevice>, String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|err| err.to_string())?;
+    let cache_for_progress = Arc::clone(cache);
+    let progress_for_callback = progress.clone();
+    #[cfg(target_os = "macos")]
+    let devices = runtime.block_on(bonjour::discover_with_progress(timeout, move |device| {
+        upsert_device_cache(&cache_for_progress, device.clone());
+        if let Some(tx) = &progress_for_callback {
+            let _ = tx.send(found_device(&device));
+        }
+    }));
+    #[cfg(not(target_os = "macos"))]
+    let devices = runtime.block_on(browse_devices(
+        timeout,
+        progress_for_callback,
+        cache_for_progress,
+    ))?;
+    replace_device_cache(cache, devices.clone());
+    Ok(devices.iter().map(found_device).collect())
+}
+
 #[cfg(not(target_os = "macos"))]
 async fn browse_devices(
     timeout: Duration,
     progress: Option<Sender<FoundDevice>>,
+    cache: DeviceCache,
 ) -> Result<Vec<Device>, String> {
     use airplay_client::Discovery;
     use airplay_discovery::{BrowseEvent, ServiceBrowser};
@@ -1051,6 +1176,7 @@ async fn browse_devices(
                 match event {
                     BrowseEvent::Added(device) | BrowseEvent::Updated(device) => {
                         devices.insert(device.id.clone(), device.clone());
+                        upsert_device_cache(&cache, device.clone());
                         if let Some(tx) = &progress {
                             let _ = tx.send(found_device(&device));
                         }
@@ -1073,17 +1199,36 @@ fn normalize_id(id: &str) -> String {
         .collect()
 }
 
+const FEED_BACKOFF_CAP: Duration = Duration::from_millis(8);
+
+fn seed_feed_backoff(current: Duration) -> Duration {
+    if current < Duration::from_millis(1) {
+        Duration::from_millis(1)
+    } else {
+        current
+    }
+}
+
+fn next_feed_backoff(current: Duration) -> Duration {
+    match current.checked_mul(2) {
+        Some(next) if next < FEED_BACKOFF_CAP => next,
+        _ => FEED_BACKOFF_CAP,
+    }
+}
+
 fn feed_loop(
     listener: TcpListener,
     sender: Arc<LiveFrameSender>,
     epoch: Arc<AtomicU64>,
     stop: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     stats: Arc<FeedStats>,
 ) {
     listener.set_nonblocking(true).ok();
     let mut stream: Option<TcpStream> = None;
     let mut buffer = Vec::new();
     let mut pending: Option<PcmFrame> = None;
+    let mut backoff = Duration::ZERO;
     while !stop.load(Ordering::Acquire) {
         if stream.is_none() {
             match listener.accept() {
@@ -1104,6 +1249,16 @@ fn feed_loop(
                 Err(_) => thread::sleep(Duration::from_millis(20)),
             }
             continue;
+        }
+        if paused.load(Ordering::Acquire) {
+            pending = None;
+            backoff = Duration::ZERO;
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+        if !backoff.is_zero() {
+            thread::sleep(backoff);
+            backoff = next_feed_backoff(backoff);
         }
         if pending.is_none() {
             match read_frame(stream.as_mut().unwrap(), &mut buffer) {
@@ -1135,12 +1290,17 @@ fn feed_loop(
             Ok(()) => {
                 stats.sent_frames.fetch_add(1, Ordering::Relaxed);
                 pending = None;
+                backoff = Duration::ZERO;
             }
             Err(err) => {
                 stats.send_errors.fetch_add(1, Ordering::Relaxed);
                 let disconnected = format!("{err:?}").contains("Disconnected");
                 if disconnected || stop.load(Ordering::Acquire) {
                     break;
+                }
+                backoff = next_feed_backoff(seed_feed_backoff(backoff));
+                if frame.epoch != epoch.load(Ordering::Acquire) {
+                    pending = None;
                 }
             }
         }

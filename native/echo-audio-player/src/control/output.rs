@@ -15,11 +15,24 @@ impl Task for SetAudioOutputTask {
     fn compute(&mut self) -> napi::Result<Self::Output> {
         let device_name = self.device_name.clone();
         let exclusive = self.exclusive;
+        echo_native_log::info(format!(
+            "audio output switch requested: device='{}', exclusive={exclusive}",
+            if device_name.trim().is_empty() {
+                "auto"
+            } else {
+                device_name.as_str()
+            }
+        ));
         call_core_command_blocking("set-audio-output", move |runtime| {
             let mut config = runtime.config.clone();
             config.set_audio_device(&device_name);
             config.exclusive_output = exclusive;
-            restart_output_for_runtime(runtime, config, true)
+            let result = restart_output_for_runtime(runtime, config, true);
+            match &result {
+                Ok(()) => echo_native_log::info("audio output switch completed"),
+                Err(err) => echo_native_log::warn(format!("audio output switch failed: {err}")),
+            }
+            result
         })
     }
 

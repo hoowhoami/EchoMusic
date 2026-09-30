@@ -519,6 +519,7 @@ version = "0.1.0"
 dependencies = [
  "airplay-audio",
  "airplay-client",
+ "airplay-core",
  "airplay-discovery",
  "echo-native-log",
  "napi",
