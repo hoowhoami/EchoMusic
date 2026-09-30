@@ -9,6 +9,7 @@ import {
   resolveInitialBounds,
 } from './store';
 import { registerNetworkSession } from '../networkPolicy';
+import { syncMacDockVisibility } from '../macBackgroundMode';
 import {
   bindWindowBoundsPersistenceEvents,
   shouldFlushWindowBounds,
@@ -104,7 +105,7 @@ const scheduleDockRestore = () => {
   clearDockRestoreTimers();
   desktopLyricDockTimers = DESKTOP_LYRIC_DOCK_RESTORE_DELAYS_MS.map((delay) =>
     setTimeout(() => {
-      app.dock?.show();
+      void syncMacDockVisibility();
     }, delay),
   );
 };

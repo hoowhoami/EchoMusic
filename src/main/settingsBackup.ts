@@ -17,6 +17,7 @@ import {
 import { normalizeLogSettings, type AppLogLevel } from '../shared/logging';
 import { getStorePersistenceKey } from '../shared/storePersistence';
 import { isBlockedObjectKey } from '../shared/objectSafety';
+import { normalizeCloseBehavior } from '../shared/app';
 import {
   SETTINGS_BACKUP_EXTENSION,
   SETTINGS_BACKUP_FORMAT,
@@ -774,13 +775,22 @@ const importSettingsBackupForOwner = async (
     if (importSettings) {
       const key = getStorePersistenceKey('setting');
       const current = getKvStorage().get<Record<string, unknown>>(key);
+      const importedSettings = sanitizePortableAppSettings(freshArchive.settings);
+      if (Object.hasOwn(importedSettings, 'closeBehavior')) {
+        importedSettings.closeBehavior = normalizeCloseBehavior(
+          importedSettings.closeBehavior,
+          process.platform,
+        );
+      }
       getKvStorage().set(key, {
         ...(isPlainObject(current) ? current : {}),
-        ...sanitizePortableAppSettings(freshArchive.settings),
+        ...importedSettings,
       });
-      const importedSettings = sanitizePortableAppSettings(freshArchive.settings);
-      if (['tray', 'exit'].includes(String(importedSettings.closeBehavior))) {
-        setMainAppSetting('closeBehavior', importedSettings.closeBehavior as 'tray' | 'exit');
+      if (Object.hasOwn(importedSettings, 'closeBehavior')) {
+        setMainAppSetting(
+          'closeBehavior',
+          normalizeCloseBehavior(importedSettings.closeBehavior, process.platform),
+        );
       }
       if (['system', 'light', 'dark'].includes(String(importedSettings.theme))) {
         setMainAppSetting('theme', importedSettings.theme as 'system' | 'light' | 'dark');

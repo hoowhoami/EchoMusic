@@ -1,6 +1,15 @@
 export type ThemeMode = 'light' | 'dark' | 'system';
 
-export type CloseBehavior = 'tray' | 'exit';
+export type CloseBehavior = 'tray' | 'background' | 'exit';
+
+export const normalizeCloseBehavior = (
+  value: unknown,
+  platform: string | undefined,
+): CloseBehavior => {
+  if (value === 'exit') return 'exit';
+  if (value === 'background' && platform === 'darwin') return 'background';
+  return 'tray';
+};
 
 export type UpdateCheckStatus = 'available' | 'latest' | 'error';
 

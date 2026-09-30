@@ -12,6 +12,10 @@ import { closeBehaviorOptions, sectionTitles } from '../constants';
 
 const settingStore = useSettingStore();
 const platform = window.electron?.platform;
+const isMac = computed(() => platform === 'darwin');
+const availableCloseBehaviorOptions = computed(() =>
+  closeBehaviorOptions.filter((option) => option.value !== 'background' || isMac.value),
+);
 const isWindows = computed(() => platform === 'win32');
 const supportsCustomWindowControls = computed(() => platform === 'win32' || platform === 'linux');
 const barEnabled = ref(false);
@@ -161,15 +165,24 @@ const setBar = async (value: boolean) => {
         <p class="text-sm text-text-secondary">点击窗口关闭按钮时的应用行为</p>
       </div>
       <Select
-        class="w-45 shrink-0"
+        class="shrink-0"
+        :class="isMac ? 'w-60' : 'w-45'"
+        aria-label="关闭行为"
         :model-value="settingStore.closeBehavior"
-        :options="closeBehaviorOptions"
+        :options="availableCloseBehaviorOptions"
         @update:model-value="
           settingStore.closeBehavior = $event as CloseBehavior;
           settingStore.syncCloseBehavior();
         "
       />
     </div>
+    <p
+      v-if="isMac && settingStore.closeBehavior === 'background'"
+      class="text-sm text-text-secondary"
+    >
+      关闭窗口后继续播放，并隐藏 Dock 和菜单栏图标。通过 Finder 或 Spotlight 再次打开 EchoMusic
+      可恢复窗口和图标；恢复后按 ⌘Q 可彻底退出。
+    </p>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

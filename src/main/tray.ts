@@ -6,6 +6,7 @@ import type { DesktopLyricSnapshot } from '../shared/desktopLyric';
 import type { TrayCommand, TrayPlaybackPayload } from '../shared/tray';
 import log from './logger';
 import { resolveTrayIconPath } from './appIcons';
+import { registerMacTrayVisibility } from './macBackgroundMode';
 
 interface TrayContext {
   getMainWindow: () => Electron.BrowserWindow | null;
@@ -18,6 +19,7 @@ type TrayPlaybackState = Required<TrayPlaybackPayload>;
 
 let appTray: Tray | null = null;
 let trayContext: TrayContext | null = null;
+let trayVisible = true;
 let cachedTrayImage: { key: string; image: Electron.NativeImage } | null = null;
 let appliedTrayImageKey: string | null = null;
 let playbackState: TrayPlaybackState = {
@@ -209,6 +211,7 @@ export const refreshTrayMenus = () => {
 
 export const initTray = (context: TrayContext) => {
   trayContext = context;
+  if (!trayVisible) return null;
   if (appTray) {
     rebuildTrayMenu();
     return appTray;
@@ -249,6 +252,18 @@ export const destroyTray = () => {
   appTray = null;
   clearTrayImageCache();
 };
+
+registerMacTrayVisibility((visible) => {
+  trayVisible = visible;
+  if (!visible) destroyTray();
+  else if (trayContext) {
+    try {
+      initTray(trayContext);
+    } catch (error) {
+      log.error('[Tray] Failed to restore tray:', error);
+    }
+  }
+});
 
 export const updateTrayPlaybackState = (nextState: Partial<TrayPlaybackState>) => {
   playbackState = {

@@ -9,7 +9,7 @@ import {
 } from '../../shared/windowBackground';
 import { applyWindowBackground } from '@/utils/windowBackground';
 import { defineStore } from 'pinia';
-import type { CloseBehavior, ThemeMode } from '../../shared/app';
+import { normalizeCloseBehavior, type CloseBehavior, type ThemeMode } from '../../shared/app';
 import type { RecognizeAudioSource } from '../../shared/recognize';
 import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../shared/logging';
 import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
@@ -462,6 +462,7 @@ export const useSettingStore = defineStore('setting', {
       }
     },
     syncCloseBehavior() {
+      this.closeBehavior = normalizeCloseBehavior(this.closeBehavior, window.electron?.platform);
       if (window.electron?.ipcRenderer) {
         window.electron.ipcRenderer.send('update-close-behavior', this.closeBehavior);
       }

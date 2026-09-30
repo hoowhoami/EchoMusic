@@ -1,6 +1,6 @@
 import { MAIN_WINDOW_DEFAULT_SIZE } from '../windowSizing';
 import { DEFAULT_WINDOW_BACKGROUND, type WindowBackground } from '../../shared/windowBackground';
-import type { CloseBehavior, ThemeMode } from '../../shared/app';
+import { normalizeCloseBehavior, type CloseBehavior, type ThemeMode } from '../../shared/app';
 import type { DesktopLyricSettings } from '../../shared/desktopLyric';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../shared/desktopLyric';
 import type { LogSettings } from '../../shared/logging';
@@ -104,6 +104,7 @@ export const getMainAppSettings = (): MainAppSettings => {
   const merged = mergeObject(DEFAULT_MAIN_APP_SETTINGS, saved);
   return {
     ...merged,
+    closeBehavior: normalizeCloseBehavior(merged.closeBehavior, process.platform),
     windowState: {
       ...DEFAULT_MAIN_APP_SETTINGS.windowState,
       ...(saved?.windowState ?? {}),
@@ -123,6 +124,7 @@ export const setMainAppSetting = <K extends keyof MainAppSettings>(
     ...getMainAppSettings(),
     [key]: value,
   };
+  next.closeBehavior = normalizeCloseBehavior(next.closeBehavior, process.platform);
   getKvStorage().set(MAIN_SETTINGS_KEY, next);
 };
 

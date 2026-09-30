@@ -166,6 +166,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '彻底退出程序',
       '开机自启动',
       '启动时最小化到托盘',
+      ...(currentPlatform === 'darwin' ? ['后台运行', '隐藏图标', 'Dock', '菜单栏'] : []),
       ...(currentPlatform === 'win32' || currentPlatform === 'linux' ? ['全屏按钮'] : []),
       ...(currentPlatform === 'win32' ? ['任务栏封面预览', '任务栏播放进度条'] : []),
     ],
