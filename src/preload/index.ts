@@ -775,11 +775,17 @@ contextBridge.exposeInMainWorld('electron', {
     getTransitionSettings: () => ipcRenderer.invoke('player:get-transition-settings'),
     getTransitionDiagnostics: () => ipcRenderer.invoke('player:get-transition-diagnostics'),
     onTimeUpdate: (
-      func: (payload: number | { time?: number; trackSeq?: number; generation?: number }) => void,
+      func: (
+        payload:
+          | number
+          | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
+      ) => void,
     ) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        payload: number | { time?: number; trackSeq?: number; generation?: number },
+        payload:
+          | number
+          | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
       ) => func(payload);
       ipcRenderer.on('player:time-update', listener);
       return () => ipcRenderer.removeListener('player:time-update', listener);
@@ -848,6 +854,7 @@ contextBridge.exposeInMainWorld('electron', {
         timePos?: number;
         trackSeq?: number;
         generation?: number;
+        sampledAt?: number;
       }) => void,
     ) => {
       const listener = (
@@ -858,6 +865,7 @@ contextBridge.exposeInMainWorld('electron', {
           timePos?: number;
           trackSeq?: number;
           generation?: number;
+          sampledAt?: number;
         },
       ) => func(state);
       ipcRenderer.on('player:state-change', listener);

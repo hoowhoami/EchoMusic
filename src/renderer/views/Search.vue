@@ -113,7 +113,7 @@ let scrollTarget: HTMLElement | null = null;
 
 const searchHistory = computed(() => settingStore.searchHistory ?? []);
 const activeSearchType = computed(() => TAB_SEARCH_TYPES[activeTabIndex.value] ?? 'song');
-const currentSearchSubtitle = computed(() => currentSearchKeyword.value.trim() || '歌曲搜索');
+const currentSearchSubtitle = computed(() => currentSearchKeyword.value.trim());
 const activePagination = computed(() => paginationState[activeSearchType.value]);
 const searchSkeletonMode = computed<'song' | 'grid' | 'video'>(() => {
   if (activeSearchType.value === 'song' || activeSearchType.value === 'lyric') return 'song';

@@ -271,7 +271,7 @@ const styleQueueOptions = computed<SetPlaybackQueueOptions>(() => {
   return {
     queueId: `queue:home:style-recommend:${tagKey}`,
     title: '风格推荐',
-    subtitle: styleSummary.value,
+    subtitle: selectedStyleLabels.value.join(' / '),
     coverUrl: styleSongs.value[0]?.coverUrl,
     type: 'style-recommend',
     dynamic: false,

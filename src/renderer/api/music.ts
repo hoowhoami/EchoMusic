@@ -135,6 +135,16 @@ export function getAudioMetadata(hashes: string[]) {
   });
 }
 
+/** 按专辑歌曲 ID 批量获取歌曲、歌手和专辑信息。 */
+export function getSongMetadata(albumAudioIds: string[]) {
+  return request.get('/krm/audio', {
+    params: {
+      album_audio_id: [...new Set(albumAudioIds)].join(','),
+      fields: 'album_info,base,authors.base',
+    },
+  });
+}
+
 /**
  * 获取云盘歌曲播放地址
  */
@@ -246,13 +256,17 @@ export function getPersonalFm(params: PersonalFmParams = {}) {
 /**
  * 首页刷歌推荐流。上游仅验证 only_song 可稳定返回歌曲内容。
  */
+let discoverRequestTimestamp = 0;
+
 export function getHomeDiscover(params: HomeDiscoverParams = {}) {
-  return request.post('/home/discover', {
-    support: params.support ?? 'only_song',
-    recall_type: params.recallType ?? 'song',
-    today_play_num: params.todayPlayNum ?? 0,
-    pagesize: params.pagesize ?? 4,
-    ...(params.goKyExtra ? { go_ky_extra: params.goKyExtra } : {}),
+  discoverRequestTimestamp = Math.max(Date.now(), discoverRequestTimestamp + 1);
+  return request.get('/home/discover', {
+    params: {
+      support: params.support ?? 'only_song',
+      recall_type: params.recallType ?? 'song',
+      timestamp: discoverRequestTimestamp,
+    },
+    headers: { 'X-Skip-Auth': '1' },
   });
 }
 

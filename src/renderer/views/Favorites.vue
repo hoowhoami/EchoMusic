@@ -142,7 +142,7 @@ const handlePlayAll = async () => {
   const queueOpts = {
     queueId: 'queue:favorites',
     title: '我最喜爱',
-    subtitle: '收藏歌曲',
+    subtitle: '',
     type: 'playlist' as const,
   };
   // 先用已加载的歌曲开始播放
@@ -168,7 +168,7 @@ const handleSongDoubleTapPlay = async (song: Song) => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: 'queue:favorites',
     title: '我最喜爱',
-    subtitle: '收藏歌曲',
+    subtitle: '',
     type: 'playlist',
   });
 };
@@ -706,7 +706,7 @@ watch(
                 :queueOptions="{
                   queueId: 'queue:favorites',
                   title: '我最喜爱',
-                  subtitle: '收藏歌曲',
+                  subtitle: '',
                   type: 'playlist',
                 }"
                 :enableDefaultDoubleTapPlay="true"

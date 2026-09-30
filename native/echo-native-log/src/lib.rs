@@ -59,3 +59,70 @@ pub fn warn(message: impl Into<String>) {
 pub fn error(message: impl Into<String>) {
     emit("error", message);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    // These tests share the process-wide callback slot, just like native callers do.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    struct CountedMessage(Arc<AtomicUsize>);
+
+    impl From<CountedMessage> for String {
+        fn from(message: CountedMessage) -> Self {
+            message.0.fetch_add(1, Ordering::SeqCst);
+            "native message".to_string()
+        }
+    }
+
+    #[test]
+    fn no_handler_drops_every_level_without_converting_the_message() {
+        let _test = TEST_LOCK.lock().unwrap();
+        assert!(callback_slot().lock().unwrap().is_none());
+        let conversions = Arc::new(AtomicUsize::new(0));
+        emit("custom", CountedMessage(conversions.clone()));
+        debug(CountedMessage(conversions.clone()));
+        info(CountedMessage(conversions.clone()));
+        warn(CountedMessage(conversions.clone()));
+        error(CountedMessage(conversions.clone()));
+        assert_eq!(conversions.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn contended_callback_slot_drops_logs_without_waiting_for_the_lock() {
+        let _test = TEST_LOCK.lock().unwrap();
+        let guard = callback_slot().lock().unwrap();
+        let conversions = Arc::new(AtomicUsize::new(0));
+        let message = CountedMessage(conversions.clone());
+        let (sender, receiver) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            info(message);
+            sender.send(()).unwrap();
+        });
+        let result = receiver.recv_timeout(Duration::from_secs(2));
+        // Release before asserting, so a blocking regression cannot strand the worker.
+        drop(guard);
+        worker.join().unwrap();
+        assert!(result.is_ok(), "logging waited for the callback lock");
+        assert_eq!(conversions.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn poisoned_callback_slot_drops_logs_without_panicking() {
+        let _test = TEST_LOCK.lock().unwrap();
+        let poisoned = std::thread::spawn(|| {
+            let _guard = callback_slot().lock().unwrap();
+            panic!("simulate callback registration panic");
+        });
+        assert!(poisoned.join().is_err());
+        let conversions = Arc::new(AtomicUsize::new(0));
+        let result = std::panic::catch_unwind(|| warn(CountedMessage(conversions.clone())));
+        callback_slot().clear_poison();
+        assert!(result.is_ok());
+        assert_eq!(conversions.load(Ordering::SeqCst), 0);
+    }
+}

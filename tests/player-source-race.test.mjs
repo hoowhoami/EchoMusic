@@ -40,6 +40,7 @@ function controllerFixture(proxy = async () => []) {
   const { PlayerController } = compile('../src/main/player/controller.ts', {
     electron: { app: {} },
     '../logger': logger,
+    '../native/logging': compile('../src/main/native/logging.ts', { '../logger': logger }),
     '../networkSettings': {},
     '../storage/persistedStores': {},
     '../networkPolicy': { resolveNativeProxyUrls: proxy },
@@ -90,13 +91,14 @@ test('source switch IPC distinguishes EOF deferral from an unavailable player', 
   const code = transformSync(source.slice(start, end), { loader: 'ts' }).code;
   let handler;
   const ref = { current: null };
-  new Function('ipcRegistry', 'ref', code)(
+  new Function('ipcRegistry', 'ref', 'getOutputHost', code)(
     {
       registerHandler(_name, fn) {
         handler = fn;
       },
     },
     ref,
+    () => null,
   );
   await assert.rejects(handler(null, 'new'), /播放器未初始化/);
   ref.current = { switchSource: async () => null };

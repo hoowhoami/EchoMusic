@@ -41,6 +41,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '私人 FM', keepAlive: true },
       },
       {
+        path: 'discover-flow',
+        name: 'discover-flow',
+        component: () => import('@/views/DiscoverFlow.vue'),
+        meta: { title: '刷歌' },
+      },
+      {
         path: 'recommend',
         name: 'recommend-songs',
         component: () => import('@/views/RecommendSongs.vue'),

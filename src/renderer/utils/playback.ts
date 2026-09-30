@@ -182,7 +182,7 @@ export const playSongInContext = async (
   return queueAndPlaySong(playlistStore, playerStore, song, {
     queueId: MANUAL_PLAYBACK_QUEUE_ID,
     title: '我的队列',
-    subtitle: '手动点播与整理',
+    subtitle: '',
     type: 'manual',
     dynamic: true,
   });

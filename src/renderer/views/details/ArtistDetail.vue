@@ -495,7 +495,7 @@ const handleSongDoubleTapPlay = async (song: Song) => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: `queue:artist:${artist.value?.id ?? getArtistId()}`,
     title: artist.value?.name || '歌手',
-    subtitle: `${songSortLabel.value}歌曲`,
+    subtitle: '',
     type: 'artist',
   });
 };
@@ -506,7 +506,7 @@ const handlePlayAll = async () => {
   const queueOpts = {
     queueId: `queue:artist:${artist.value?.id ?? getArtistId()}`,
     title: artist.value?.name || '歌手',
-    subtitle: `${songSortLabel.value}歌曲`,
+    subtitle: '',
     type: 'artist' as const,
   };
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, queueOpts);
@@ -983,7 +983,7 @@ onUnmounted(() => {
                 :queueOptions="{
                   queueId: `queue:artist:${artist?.id ?? getArtistId()}`,
                   title: artist?.name || '歌手',
-                  subtitle: `${songSortLabel}歌曲`,
+                  subtitle: '',
                   type: 'artist',
                 }"
                 :enableDefaultDoubleTapPlay="true"

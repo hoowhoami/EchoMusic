@@ -16,11 +16,7 @@ import { isPlayableSong } from '@/utils/song';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
 import { iconPlay, iconPlus, iconTrash, iconX, iconList } from '@/icons';
-import {
-  LISTEN_TOGETHER_QUEUE_ID,
-  MANUAL_PLAYBACK_QUEUE_ID,
-  PERSONAL_FM_QUEUE_ID,
-} from '@/stores/playlist';
+import { isTransientPlaybackQueue, MANUAL_PLAYBACK_QUEUE_ID } from '@/stores/playlist';
 import { useVirtualList } from '@/composables/useVirtualList';
 
 interface Props {
@@ -204,10 +200,7 @@ const createdPlaylists = computed(() => playlistStore.getCreatedPlaylists(userSt
 
 const addToPlaybackQueues = computed(() =>
   playlistStore.playbackQueueList.filter(
-    (queue) =>
-      queue.id !== PERSONAL_FM_QUEUE_ID &&
-      queue.id !== LISTEN_TOGETHER_QUEUE_ID &&
-      (queue.songCount ?? queue.songs.length) > 0,
+    (queue) => !isTransientPlaybackQueue(queue.id) && (queue.songCount ?? queue.songs.length) > 0,
   ),
 );
 

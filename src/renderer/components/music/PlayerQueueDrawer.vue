@@ -14,6 +14,10 @@ import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { isInEditableContext } from '@/utils/inputBehaviorGuard';
+import {
+  getPlaybackQueuePresentation,
+  getPlaybackQueueStatus,
+} from '@/utils/playbackQueuePresentation';
 import type { Song } from '@/models/song';
 import {
   iconTrash,
@@ -79,12 +83,7 @@ let dragAnimationFrame = 0;
 
 const currentPlaybackQueue = computed(() => {
   const sourceQueueId = playerStore.currentSourceQueueId;
-  return (
-    playlistStore.getQueueById(sourceQueueId) ??
-    playlistStore.activeQueue ??
-    playlistStore.recentPlaybackQueues[0] ??
-    null
-  );
+  return playlistStore.getQueueById(sourceQueueId) ?? playlistStore.activeQueue ?? null;
 });
 
 const getQueueCount = (queue: QueueLike | null | undefined) =>
@@ -92,7 +91,9 @@ const getQueueCount = (queue: QueueLike | null | undefined) =>
 
 const queueOptions = computed(() => {
   const list: QueueLike[] = [];
-  if (getQueueCount(currentPlaybackQueue.value) > 0) list.push(currentPlaybackQueue.value);
+  if (currentPlaybackQueue.value && getQueueCount(currentPlaybackQueue.value) > 0) {
+    list.push(currentPlaybackQueue.value);
+  }
   if (
     playlistStore.customPlaybackQueue &&
     playlistStore.customPlaybackQueue.id !== currentPlaybackQueue.value?.id &&
@@ -162,18 +163,10 @@ const updatePlayerPlayingState = () => {
   }, 100);
 };
 
-const headerTitle = computed(() => (previewIndex.value === 0 ? '当前' : '历史'));
-const headerSubtitle = computed(() => {
-  const queue = previewQueue.value;
-  if (!queue) return '暂无队列';
-  if (
-    queue.id === playlistStore.customPlaybackQueue?.id &&
-    queue.id !== currentPlaybackQueue.value?.id
-  )
-    return '我的队列';
-  if (queue.id === currentPlaybackQueue.value?.id) return resolveQueueTypeLabel(queue);
-  return queue.title || resolveQueueTypeLabel(queue);
-});
+const headerPresentation = computed(() => getPlaybackQueuePresentation(previewQueue.value));
+const headerStatus = computed(() =>
+  getPlaybackQueueStatus(previewQueue.value, currentPlaybackQueue.value?.id),
+);
 const headerMeta = computed(() => {
   if (!previewQueue.value) return '0 首';
   const count = getQueueCount(previewQueue.value);
@@ -195,25 +188,6 @@ const resolveResumeTrack = (queue: QueueLike | null | undefined) => {
 
 const setQueueListRef = (queueId: string) => (target: Element | ComponentPublicInstance | null) => {
   queueListRefs.value[queueId] = target as QueueVirtualListExposed | null;
-};
-
-const resolveQueueTypeLabel = (
-  queue: { type?: string; title?: string; subtitle?: string } | null | undefined,
-) => {
-  if (!queue) return '播放列表';
-  if (queue.type === 'fm') return queue.title || '私人 FM';
-  if (queue.type === 'listen-together') return queue.title || '一起听';
-  if (queue.type === 'manual') return queue.title || '我的队列';
-  if (queue.type === 'daily-recommend') return '每日推荐';
-  if (queue.type === 'style-recommend') return queue.title || '风格推荐';
-  if (queue.type === 'ranking') return '排行榜';
-  if (queue.type === 'search') return '搜索结果';
-  if (queue.type === 'history') return '播放历史';
-  if (queue.type === 'cloud') return '云盘音乐';
-  if (queue.type === 'album') return '专辑';
-  if (queue.type === 'artist') return '歌手';
-  if (queue.type === 'playlist') return '歌单';
-  return queue.subtitle || queue.title || '播放列表';
 };
 
 const destroySortable = () => {
@@ -721,73 +695,91 @@ onBeforeUnmount(() => {
     panelClass="queue-drawer"
   >
     <div class="queue-header">
-      <div class="queue-title-block">
-        <div class="queue-title-row">
-          <div class="queue-title">{{ headerTitle }}</div>
-          <div v-if="headerSubtitle" class="queue-title-subtitle">
-            {{ headerSubtitle }}
+      <div class="queue-heading">
+        <div class="queue-title-block">
+          <div class="queue-title-row">
+            <span v-if="headerStatus" class="queue-status">{{ headerStatus }}</span>
+            <div class="queue-title" :title="headerPresentation.title">
+              {{ headerPresentation.title }}
+            </div>
+          </div>
+          <div
+            v-if="headerPresentation.subtitle"
+            class="queue-title-subtitle"
+            :title="headerPresentation.subtitle"
+          >
+            {{ headerPresentation.subtitle }}
           </div>
         </div>
-        <div class="queue-meta-row">
-          <div class="queue-title-meta">{{ headerMeta }}</div>
-          <div
-            class="queue-switcher-arrows"
-            v-if="queueOptions.length > 1"
-            role="group"
-            aria-label="队列切换"
-          >
-            <Tooltip content="上一队列">
-              <template #trigger>
-                <button
-                  type="button"
-                  class="queue-arrow-btn"
-                  :disabled="previewIndex === 0"
-                  aria-label="上一队列"
-                  @click="handleSwitchQueueByDirection(-1)"
+        <Button
+          type="button"
+          class="queue-icon-btn queue-close"
+          variant="ghost"
+          size="xs"
+          tooltip="关闭"
+          @click="open = false"
+        >
+          <Icon :icon="iconX" width="20" height="20" />
+        </Button>
+      </div>
+      <div class="queue-meta-row">
+        <div class="queue-title-meta">{{ headerMeta }}</div>
+        <div
+          class="queue-switcher-arrows"
+          v-if="queueOptions.length > 1"
+          role="group"
+          aria-label="队列切换"
+        >
+          <Tooltip content="上一队列">
+            <template #trigger>
+              <button
+                type="button"
+                class="queue-arrow-btn"
+                :disabled="previewIndex === 0"
+                aria-label="上一队列"
+                @click="handleSwitchQueueByDirection(-1)"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
                 >
-                  <svg
-                    width="15"
-                    height="15"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M19 12H5M12 19l-7-7 7-7" />
-                  </svg>
-                </button>
-              </template>
-            </Tooltip>
-            <Tooltip content="下一队列">
-              <template #trigger>
-                <button
-                  type="button"
-                  class="queue-arrow-btn"
-                  :disabled="previewIndex === queueOptions.length - 1"
-                  aria-label="下一队列"
-                  @click="handleSwitchQueueByDirection(1)"
+                  <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+              </button>
+            </template>
+          </Tooltip>
+          <Tooltip content="下一队列">
+            <template #trigger>
+              <button
+                type="button"
+                class="queue-arrow-btn"
+                :disabled="previewIndex === queueOptions.length - 1"
+                aria-label="下一队列"
+                @click="handleSwitchQueueByDirection(1)"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
                 >
-                  <svg
-                    width="15"
-                    height="15"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M5 12h14M12 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </template>
-            </Tooltip>
-          </div>
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </button>
+            </template>
+          </Tooltip>
         </div>
       </div>
-
       <div class="queue-actions">
         <Button
           type="button"
@@ -797,7 +789,7 @@ onBeforeUnmount(() => {
           tooltip="回到顶部"
           @click="scrollPreviewToTop"
         >
-          <Icon :icon="iconArrowUp" width="20" height="20" />
+          <Icon :icon="iconArrowUp" width="18" height="18" />
         </Button>
         <Button
           type="button"
@@ -807,7 +799,7 @@ onBeforeUnmount(() => {
           tooltip="定位当前歌曲"
           @click="scrollToCurrent(false)"
         >
-          <Icon :icon="iconCurrentLocation" width="20" height="20" />
+          <Icon :icon="iconCurrentLocation" width="18" height="18" />
         </Button>
         <Button
           type="button"
@@ -818,7 +810,7 @@ onBeforeUnmount(() => {
           :disabled="!canAddPreviewQueue || isAddingToPlaylist"
           @click="handleAddToPlaylist"
         >
-          <Icon :icon="iconPlaylistAdd" width="20" height="20" />
+          <Icon :icon="iconPlaylistAdd" width="18" height="18" />
         </Button>
 
         <Button
@@ -835,17 +827,7 @@ onBeforeUnmount(() => {
           "
           @click="handleClear"
         >
-          <Icon :icon="iconTrash" width="20" height="20" />
-        </Button>
-        <Button
-          type="button"
-          class="queue-icon-btn"
-          variant="ghost"
-          size="xs"
-          tooltip="关闭"
-          @click="open = false"
-        >
-          <Icon :icon="iconX" width="20" height="20" />
+          <Icon :icon="iconTrash" width="18" height="18" />
         </Button>
       </div>
 
@@ -966,12 +948,13 @@ onBeforeUnmount(() => {
 
 .queue-header {
   position: relative;
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: 'title actions';
+  grid-template-areas: 'heading heading' 'meta actions';
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px 14px;
+  gap: 4px 12px;
+  padding: 8px 16px;
 }
 
 .queue-progress-bar {
@@ -1013,11 +996,19 @@ onBeforeUnmount(() => {
   transform-origin: left;
 }
 
-.queue-title-block {
-  grid-area: title;
+.queue-heading {
+  grid-area: heading;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.queue-title-block {
+  flex: 1;
+  display: grid;
+  grid-template-rows: 24px 18px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -1031,51 +1022,70 @@ onBeforeUnmount(() => {
 }
 
 .queue-title {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
   max-width: 100%;
   font-size: 16px;
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.4;
   color: var(--color-text-main);
+  text-align: left;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-status {
+  flex: 0 0 auto;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+.queue-close {
+  flex-shrink: 0;
 }
 
 .queue-title-subtitle {
   flex: 1 1 auto;
   min-width: 0;
   font-size: 12px;
-  line-height: 1;
+  line-height: 1.4;
   color: var(--color-text-secondary);
+  text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .queue-meta-row {
+  grid-area: meta;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 10px;
 }
 
 .queue-title-meta {
+  width: 54px;
   font-size: 11px;
   color: var(--color-text-secondary);
   opacity: 0.86;
   white-space: nowrap;
   line-height: 1;
-  width: 45px;
   flex-shrink: 0;
 }
 
 .queue-switcher-arrows {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-shrink: 0;
+  gap: 12px;
 }
 
 .queue-arrow-btn {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1105,16 +1115,17 @@ onBeforeUnmount(() => {
 }
 
 .queue-icon-btn {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
   border-radius: 12px;
   color: var(--color-text-secondary);
 }
 
 @media (max-width: 760px) {
   .queue-header {
-    gap: 10px;
+    column-gap: 10px;
   }
   .queue-title-row {
     gap: 6px;
@@ -1123,12 +1134,9 @@ onBeforeUnmount(() => {
     gap: 2px;
   }
   .queue-icon-btn {
-    width: 34px;
-    height: 34px;
-    min-width: 34px;
-  }
-  .queue-title-subtitle {
-    max-width: 140px;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
   }
 }
 

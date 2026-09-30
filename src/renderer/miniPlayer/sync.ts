@@ -8,6 +8,7 @@ import { useThemeStore } from '@/stores/theme';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { executeShortcutCommand } from '@/utils/shortcuts';
 import { setWithLimit } from '@/utils/lruMap';
+import { getPlaybackQueuePresentation } from '@/utils/playbackQueuePresentation';
 import type { Song } from '@/models/song';
 import { resolveFavoriteSongKey } from '@/stores/playlist/helpers';
 import type {
@@ -161,7 +162,7 @@ const buildQueuePayload = (): MiniPlayerQueuePayload => {
   }
   return {
     queueId: queue.id,
-    title: String(queue.title || ''),
+    title: getPlaybackQueuePresentation(queue).title,
     currentTrackId,
     tracks: queue.songs.map((song) => ({
       trackId: String(song.id),

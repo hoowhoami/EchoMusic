@@ -297,7 +297,7 @@ const handleSongDoubleTapPlay = async (song: Song) => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: 'queue:purchased',
     title: '已购音乐',
-    subtitle: '已购单曲',
+    subtitle: '',
     type: 'purchased',
     dynamic: false,
   });
@@ -309,7 +309,7 @@ const handlePlayAll = async () => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
     queueId: 'queue:purchased',
     title: '已购音乐',
-    subtitle: '已购单曲',
+    subtitle: '',
     type: 'purchased',
     dynamic: false,
   });
@@ -503,7 +503,7 @@ onMounted(() => {
                 :queueOptions="{
                   queueId: 'queue:purchased',
                   title: '已购音乐',
-                  subtitle: '已购单曲',
+                  subtitle: '',
                   type: 'purchased',
                   dynamic: false,
                 }"

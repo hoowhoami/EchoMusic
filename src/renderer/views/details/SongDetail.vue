@@ -36,11 +36,7 @@ import Skeleton from '@/components/ui/Skeleton.vue';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
-import {
-  LISTEN_TOGETHER_QUEUE_ID,
-  PERSONAL_FM_QUEUE_ID,
-  usePlaylistStore,
-} from '@/stores/playlist';
+import { isTransientPlaybackQueue, usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
 import { playSongInContext } from '@/utils/playback';
@@ -461,9 +457,7 @@ const selectablePlaylists = computed(() =>
 const addToPlaybackQueues = computed(() =>
   playlistStore.playbackQueueList.filter(
     (queue) =>
-      queue.id !== LISTEN_TOGETHER_QUEUE_ID &&
-      queue.id !== PERSONAL_FM_QUEUE_ID &&
-      Math.max(0, queue.songCount ?? queue.songs.length) > 0,
+      !isTransientPlaybackQueue(queue.id) && Math.max(0, queue.songCount ?? queue.songs.length) > 0,
   ),
 );
 

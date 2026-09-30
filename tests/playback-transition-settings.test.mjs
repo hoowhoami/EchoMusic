@@ -25,6 +25,8 @@ function setup({
   load,
   resolve,
   fm = false,
+  discover = false,
+  replenish,
   fetch,
   timers = { setTimeout, clearTimeout },
 } = {}) {
@@ -45,7 +47,7 @@ function setup({
   };
   const songs = ['a', 'b', 'c'].map((id) => ({ id, hash: id, duration: 100 }));
   const queue = reactive({
-    id: fm ? constants.PERSONAL_FM_QUEUE_ID : 'queue:test',
+    id: fm ? constants.PERSONAL_FM_QUEUE_ID : discover ? constants.DISCOVER_QUEUE_ID : 'queue:test',
     songs: fm ? songs.slice(0, 1) : songs,
     playbackRevision: 0,
     queuedNextTrackIds: [],
@@ -121,7 +123,10 @@ function setup({
     playbackQueues: [queue],
     syncQueuedNextTrackIds: noop,
     consumeQueuedNextTrackIds: noop,
+    consumeQueuedNextTrackId: noop,
     updateQueueCurrentTrack: noop,
+    getQueueById: (id) => (id === queue.id ? queue : null),
+    replenishDiscoverQueue: async () => (replenish ? replenish(queue) : 0),
   };
   const module = { exports: {} };
   const dependencies = {
@@ -143,7 +148,12 @@ function setup({
     '../historyStore': {
       useHistoryStore: () => ({ recordPlay: (song) => calls.history.push(song.id) }),
     },
-    '../toast': { useToastStore: () => ({ show: (text) => calls.notices.push(text) }) },
+    '../toast': {
+      useToastStore: () => ({
+        show: (text) => calls.notices.push(text),
+        info: (text) => calls.notices.push(text),
+      }),
+    },
     './utils': {
       buildMediaMeta: () => null,
       buildMediaState: () => ({}),
@@ -182,6 +192,102 @@ function setup({
   };
   return { manager, state, settings, queue, calls, changeSettings, playlist, engine, fmStore };
 }
+
+test('discover always advances forward under list, single and random playback modes', async () => {
+  for (const mode of ['list', 'single', 'random']) {
+    const e = setup({ discover: true });
+    e.state.playMode = mode;
+    await e.manager.next();
+    assert.equal(e.state.currentTrackId, 'b', mode);
+    assert.equal(e.calls.loops.at(-1), false, mode);
+  }
+});
+
+test('discover waits for a fresh batch at the tail, and never preloads the first song again', async () => {
+  let complete;
+  let requests = 0;
+  const e = setup({
+    discover: true,
+    replenish: (queue) => {
+      requests++;
+      return new Promise((resolve) => {
+        complete = () => {
+          queue.songs = [...queue.songs, { id: 'd', hash: 'd', duration: 100 }];
+          queue.playbackRevision++;
+          resolve(1);
+        };
+      });
+    },
+  });
+  e.state.currentTrackId = 'c';
+  await e.manager.prepareGaplessNext();
+  assert.equal(e.calls.prepared.length, 0);
+  const pending = e.manager.next({ gaplessTransition: true });
+  assert.equal(requests, 1);
+  assert.equal(e.state.currentTrackId, 'c');
+  complete();
+  await pending;
+  assert.equal(e.state.currentTrackId, 'd');
+});
+
+test('discover ends without wrapping when no new recommendations are available', async () => {
+  const e = setup({ discover: true });
+  e.state.currentTrackId = 'c';
+  await e.manager.next();
+  assert.equal(e.state.currentTrackId, 'c');
+  assert.equal(e.state.enginePlayback.status, 'paused');
+  assert.equal(e.calls.loads.length, 0);
+  assert.equal(e.calls.notices.length, 1);
+});
+
+test('discover waiting for a tail batch yields to pause, seek and sleep', async () => {
+  for (const interrupt of [
+    (state) => {
+      state.playbackIntent.shouldPlay = false;
+    },
+    (state) => {
+      state.seekTimestamp++;
+    },
+    (state) => {
+      state.autoNextSuppressed = true;
+    },
+  ]) {
+    let complete;
+    const e = setup({
+      discover: true,
+      replenish: () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    });
+    e.state.currentTrackId = 'c';
+    const pending = e.manager.next({ gaplessTransition: true });
+    interrupt(e.state);
+    complete(0);
+    await pending;
+    assert.equal(e.calls.loads.length, 0);
+    assert.equal(e.calls.notices.length, 0);
+  }
+});
+
+test('discover ignores a late tail response after switching playback source', async () => {
+  let complete;
+  const e = setup({
+    discover: true,
+    replenish: () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  });
+  e.state.currentTrackId = 'c';
+  const pending = e.manager.next();
+  e.state.currentSourceQueueId = 'queue:other';
+  e.state.playbackRequestSeq++;
+  complete(0);
+  await pending;
+  assert.equal(e.calls.loads.length, 0);
+  assert.equal(e.calls.notices.length, 0);
+});
 
 function manualTimers() {
   let now = 0;

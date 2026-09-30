@@ -121,7 +121,7 @@ const handleSongDoubleTapPlay = async (song: Song) => {
     await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
       queueId: `queue:ranking:${selectedRank.value?.id ?? 'default'}`,
       title: selectedRank.value?.name || '排行榜',
-      subtitle: selectedRank.value?.rankTypeName || '实时热门趋势',
+      subtitle: '',
       type: 'ranking',
       dynamic: false,
     });
@@ -137,7 +137,7 @@ const handlePlayAll = async () => {
     await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
       queueId: `queue:ranking:${selectedRank.value?.id ?? 'default'}`,
       title: selectedRank.value?.name || '排行榜',
-      subtitle: selectedRank.value?.rankTypeName || '实时热门趋势',
+      subtitle: '',
       type: 'ranking',
       dynamic: false,
     });
@@ -367,7 +367,7 @@ watch(
               :queueOptions="{
                 queueId: `queue:ranking:${selectedRank?.id ?? 'default'}`,
                 title: selectedRank?.name || '排行榜',
-                subtitle: selectedRank?.rankTypeName || '实时热门趋势',
+                subtitle: '',
                 type: 'ranking',
                 dynamic: false,
               }"

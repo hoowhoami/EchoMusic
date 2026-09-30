@@ -50,16 +50,23 @@ function localPlaybackSuppressed(): boolean {
 export function publishPlayerEvent(name: string, payload?: unknown, extra?: unknown): void {
   const window = getMainWindow();
   if (name === 'time-update') {
-    const body = (payload ?? {}) as { time?: number; trackSeq?: number };
+    // Stamp once before IPC fan-out. Renderer receipt time must not make the
+    // same position look newer when it is sent back to the lyric windows.
+    const body = {
+      ...((payload ?? {}) as { time?: number; trackSeq?: number }),
+      sampledAt: Date.now(),
+    };
     window?.webContents.send('player:time-update', body);
     if (typeof body.time === 'number') {
       patchDesktopLyricPlaybackFromPlayer({
         currentTime: body.time,
+        updatedAt: body.sampledAt,
         trackSeq: body.trackSeq,
         reason: 'tick',
       });
       patchMiniPlayerPlaybackFromPlayer({
         currentTime: body.time,
+        updatedAt: body.sampledAt,
         trackSeq: body.trackSeq,
         reason: 'tick',
       });
@@ -73,16 +80,20 @@ export function publishPlayerEvent(name: string, payload?: unknown, extra?: unkn
     return;
   }
   if (name === 'state-change') {
-    const state = (payload ?? {}) as {
-      timePos?: number;
-      duration?: number;
-      playing?: boolean;
-      speed?: number;
-      trackSeq?: number;
+    const state = {
+      ...((payload ?? {}) as {
+        timePos?: number;
+        duration?: number;
+        playing?: boolean;
+        speed?: number;
+        trackSeq?: number;
+      }),
+      sampledAt: Date.now(),
     };
     window?.webContents.send('player:state-change', state);
     const patch = {
       currentTime: state.timePos,
+      updatedAt: state.sampledAt,
       duration: state.duration,
       isPlaying: Boolean(state.playing),
       playbackRate: state.speed,

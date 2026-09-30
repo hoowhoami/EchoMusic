@@ -3,6 +3,7 @@ import type { Song } from '@/models/song';
 export type PlaybackQueueType =
   | 'default'
   | 'daily-recommend'
+  | 'home-discover'
   | 'style-recommend'
   | 'playlist'
   | 'ranking'
@@ -37,7 +38,9 @@ export interface PlaybackQueueMetaValueMap {
 
 export interface PlaybackQueueState {
   id: string;
+  /** 队列的具体名称，所有展示入口一致使用。 */
   title: string;
+  /** 可选来源信息，如专辑歌手、歌单创建者、搜索关键词；不存类别或推荐文案。 */
   subtitle: string;
   coverUrl: string;
   type: PlaybackQueueType;
@@ -56,7 +59,9 @@ export interface PlaybackQueueState {
 
 export interface SetPlaybackQueueOptions {
   queueId?: string;
+  /** 队列名称，不使用“当前 / 历史”等运行状态。 */
   title?: string;
+  /** 真实来源信息；没有时传空字符串以清除旧信息。 */
   subtitle?: string;
   coverUrl?: string;
   type?: PlaybackQueueType;

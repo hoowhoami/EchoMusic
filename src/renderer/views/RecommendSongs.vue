@@ -102,7 +102,7 @@ const handleSongDoubleTapPlay = async (song: Song) => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: 'queue:daily-recommend',
     title: '每日推荐',
-    subtitle: '为你量身定制',
+    subtitle: '',
     type: 'daily-recommend',
     dynamic: false,
   });
@@ -114,7 +114,7 @@ const handlePlayAll = async () => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
     queueId: 'queue:daily-recommend',
     title: '每日推荐',
-    subtitle: '为你量身定制',
+    subtitle: '',
     type: 'daily-recommend',
     dynamic: false,
   });
@@ -240,7 +240,7 @@ onMounted(() => {
             :queueOptions="{
               queueId: 'queue:daily-recommend',
               title: '每日推荐',
-              subtitle: '为你量身定制',
+              subtitle: '',
               type: 'daily-recommend',
               dynamic: false,
             }"

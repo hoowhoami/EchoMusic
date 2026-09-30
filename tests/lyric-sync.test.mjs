@@ -7,6 +7,7 @@ import * as vue from 'vue';
 import * as playback from '../src/shared/playback.ts';
 import * as loudness from '../src/shared/loudness.ts';
 import * as nowPlaying from '../src/shared/nowPlaying.ts';
+import * as opencc from '../src/shared/opencc.ts';
 import { createLyricTimeline } from '../src/renderer/composables/useLyricTimeline.ts';
 
 const require = createRequire(import.meta.url);
@@ -250,6 +251,7 @@ test('plugin snapshot transport preserves source clock and seek identity', () =>
   const thumbnailStates = [];
   const cardStates = [];
   const api = compile('../src/main/nowPlaying.ts', {
+    '../shared/opencc': opencc,
     './ipc/registry': {},
     electron: { BrowserWindow: { getAllWindows: () => [] } },
     '../shared/nowPlaying': nowPlaying,
@@ -398,4 +400,136 @@ test('transport events carry the authoritative position between throttled ticks'
   f.handlers.onStateChange({ playing: false, paused: true, timePos: 20.125, trackSeq: 1 });
   f.handlers.onStateChange({ playing: true, paused: false, timePos: 20.125, trackSeq: 1 });
   assert.deepEqual(positions, [20.125, 20.125]);
+});
+
+const publisherFixture = () => {
+  const messages = [],
+    desktop = [],
+    mini = [];
+  const api = compile('../src/main/player/index.ts', {
+    '../logger': logger,
+    '../window': {
+      getMainWindow: () => ({ webContents: { send: (...args) => messages.push(args) } }),
+    },
+    './controller': {},
+    '../desktopLyric': { patchDesktopLyricPlaybackFromPlayer: (patch) => desktop.push(patch) },
+    '../miniPlayer': { patchMiniPlayerPlaybackFromPlayer: (patch) => mini.push(patch) },
+    '../taskbarProgress': {},
+    '../outputs/outputHost': {},
+  });
+  return { ...api, messages, desktop, mini };
+};
+
+// Execute the real store callbacks without starting audio devices or network services.
+const storeProgressFixture = () => {
+  const source = readFileSync(new URL('../src/renderer/stores/player.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('      const syncTransportPosition =');
+  const end = source.indexOf('        durationChange:', start);
+  assert.ok(start >= 0 && end > start);
+  const state = { currentTime: 0, nativeTrackSeq: 1, currentTimeUpdatedAt: 0 };
+  const mocks = {
+    state,
+    matchesPendingSeekTarget: playback.matchesPendingSeekTarget,
+    isCurrentNativePlaybackContext: () => true,
+    getPlaybackHasFailed: () => false,
+    listeningTimeManager: { tick() {} },
+    playbackManager: { prepareGaplessNext() {} },
+    historyManager: { commitListeningHistory() {} },
+    engine: { updateMediaPlaybackState() {} },
+    buildMediaState: () => ({}),
+    emitPlayerEvent() {},
+  };
+  const code = transformSync(
+    `
+    let lastEventTimeUpdate = 0, lastHistoryCheck = 0, lastMediaSessionSync = 0;
+    const EVENT_TIMEUPDATE_MS = 1000, HISTORY_CHECK_MS = 5000, MEDIA_SESSION_SYNC_MS = 2000;
+    ${source.slice(start, end)} };
+    return { events, syncTransportPosition };
+  `,
+    { loader: 'ts' },
+  ).code;
+  return { state, ...new Function(...Object.keys(mocks), code)(...Object.values(mocks)) };
+};
+
+test('delayed renderer round trips retain the same sample age as desktop and Mini bridges', (t) => {
+  let elapsed = 0;
+  const epoch = 1_790_000_000_000;
+  t.mock.method(Date, 'now', () => epoch + elapsed);
+  // Each window has a different performance origin; none is a Unix timestamp.
+  let origin = 12_345;
+  t.mock.method(performance, 'now', () => origin + elapsed);
+  const pub = publisherFixture();
+  const engine = engineFixture();
+  const store = storeProgressFixture();
+  engine.engine.setEvents(store.events);
+  for (const delay of [50, 100, 200]) {
+    const sampledAt = Date.now();
+    const position = 10 + elapsed / 1000;
+    pub.publishPlayerEvent('time-update', { time: position, trackSeq: 1 });
+    const event = pub.messages.at(-1)[1];
+    assert.equal(event.sampledAt, sampledAt);
+    const current = { trackId: 'a', trackSeq: 1, isPlaying: true, currentTime: position };
+    const desktopSample = playback.patchPlaybackSnapshot(current, pub.desktop.at(-1));
+    const miniSample = playback.patchPlaybackSnapshot(current, pub.mini.at(-1));
+    elapsed += delay;
+    engine.handlers.onTimeUpdate(event);
+    assert.equal(store.state.currentTimeUpdatedAt, sampledAt);
+    const rendererSample = {
+      ...current,
+      currentTime: store.state.currentTime,
+      updatedAt: store.state.currentTimeUpdatedAt,
+    };
+    const expected = position * 1000 + delay;
+    for (const sample of [desktopSample, miniSample, rendererSample]) {
+      origin += 30_000;
+      assert.equal(createLyricTimeline().getPlaybackMs(sample), expected);
+    }
+    // A delayed resend must not appear newer than a subsequent direct native tick.
+    const newer = playback.patchPlaybackSnapshot(current, { currentTime: position + delay / 1000 });
+    assert.equal(playback.shouldAcceptPlaybackSnapshot(rendererSample, newer), false);
+    elapsed += 300;
+  }
+});
+
+test('pause and resume positions keep the shared publication timestamp through IPC', (t) => {
+  let now = 1_790_000_000_000;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(performance, 'now', () => 100);
+  const pub = publisherFixture();
+  const engine = engineFixture();
+  const store = storeProgressFixture();
+  engine.engine.setEvents({
+    play: store.syncTransportPosition,
+    pause: store.syncTransportPosition,
+  });
+  for (const playing of [false, true]) {
+    const sampledAt = now;
+    pub.publishPlayerEvent('state-change', { timePos: 20, playing, paused: !playing, speed: 2 });
+    now += 100;
+    engine.handlers.onStateChange(pub.messages.at(-1)[1]);
+    assert.equal(store.state.currentTimeUpdatedAt, sampledAt);
+    for (const patch of [pub.desktop.at(-1), pub.mini.at(-1)]) {
+      const sample = playback.patchPlaybackSnapshot({ trackId: 'a' }, patch);
+      assert.equal(sample.clock.sampledAt, sampledAt);
+      assert.equal(createLyricTimeline().getPlaybackMs(sample), playing ? 20_200 : 20_000);
+    }
+  }
+});
+
+test('small clock corrections are applied even below the former 300ms tolerance', (t) => {
+  const epoch = 1_790_000_000_000;
+  let elapsed = 0;
+  t.mock.method(Date, 'now', () => epoch + elapsed);
+  t.mock.method(performance, 'now', () => 500 + elapsed);
+  const timeline = createLyricTimeline();
+  const sample = { currentTime: 10, isPlaying: true, updatedAt: epoch };
+  assert.equal(timeline.getPlaybackMs(sample), 10_000);
+  elapsed = 200;
+  sample.currentTime = 10.1;
+  sample.updatedAt = Date.now();
+  assert.equal(timeline.getPlaybackMs(sample), 10_100);
+  elapsed += 80;
+  assert.equal(timeline.getPlaybackMs(sample), 10_180);
+  timeline.sync({ ...sample });
+  assert.equal(timeline.getPlaybackMs(sample), 10_180, 'resends do not compensate twice');
 });

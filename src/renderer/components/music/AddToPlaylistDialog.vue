@@ -10,6 +10,7 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { orderByPlaylistPosition } from '@/utils/playlistOrder';
 import type { PlaybackQueueState } from '@/stores/playlist/types';
 import { includesPlaylistIdentity } from '@/stores/playlist/helpers';
+import { getPlaybackQueuePresentation } from '@/utils/playbackQueuePresentation';
 
 interface Props {
   open?: boolean;
@@ -89,7 +90,7 @@ const orderedPlaylists = computed(() => {
         >
           <span class="add-to-name">
             <Icon :icon="iconList" width="16" height="16" />
-            {{ queue.title || '播放队列' }}
+            {{ getPlaybackQueuePresentation(queue).title }}
           </span>
           <span class="add-to-count">{{ queue.songCount ?? queue.songs.length }} 首</span>
         </Button>

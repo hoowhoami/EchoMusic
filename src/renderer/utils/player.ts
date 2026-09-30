@@ -49,6 +49,8 @@ export type { PlayerAudioGraphSnapshot };
 export interface PlayerPlaybackContext {
   trackSeq?: number;
   generation?: number;
+  /** Unix epoch milliseconds at the main-process playback event source. */
+  sampledAt?: number;
 }
 
 export interface PlayerSeekStatePayload extends PlayerPlaybackContext {
@@ -247,7 +249,11 @@ export class PlayerEngine {
         time,
         typeof payload === 'number'
           ? undefined
-          : { trackSeq: payload.trackSeq, generation: payload.generation },
+          : {
+              trackSeq: payload.trackSeq,
+              generation: payload.generation,
+              sampledAt: payload.sampledAt,
+            },
       );
     });
     this.cleanupFns.push(offTime);
@@ -318,6 +324,7 @@ export class PlayerEngine {
         trackSeq: state.trackSeq,
         generation: state.generation,
         time: state.timePos,
+        sampledAt: state.sampledAt,
       };
       if (state.playing) {
         this.events.play?.(context);

@@ -86,7 +86,7 @@ const ensurePersonalFmPlaybackQueue = (store: PersonalFmStoreShape) => {
   return store.ensurePlaybackQueue(PERSONAL_FM_QUEUE_ID, {
     queueId: PERSONAL_FM_QUEUE_ID,
     title: presentation.title,
-    subtitle: presentation.subtitle,
+    subtitle: '',
     type: 'fm',
     dynamic: true,
     meta: {
@@ -346,7 +346,7 @@ export const personalFmActions = {
     const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
     if (queue) {
       queue.title = presentation.title;
-      queue.subtitle = presentation.subtitle;
+      queue.subtitle = '';
       queue.meta = {
         ...queue.meta,
         mode: presentation.mode,
@@ -401,7 +401,7 @@ export const personalFmActions = {
         : null;
     if (queue && !options?.preserveQueue) {
       queue.title = presentation.title;
-      queue.subtitle = presentation.subtitle;
+      queue.subtitle = '';
       queue.songs = toRawSongList([]);
       queue.filteredInvalidCount = 0;
       queue.queuedNextTrackIds = [];

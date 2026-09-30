@@ -401,7 +401,7 @@ const playRankSongs = async () => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
     queueId: `queue:explore:rank:${rankId.value ?? 'default'}`,
     title: rankLabel.value || '排行榜',
-    subtitle: '榜单歌曲',
+    subtitle: '',
     type: 'ranking',
   });
 };
@@ -412,7 +412,7 @@ const handleRankSongDoubleTapPlay = async (song: Song) => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: `queue:explore:rank:${rankId.value ?? 'default'}`,
     title: rankLabel.value || '排行榜',
-    subtitle: '榜单歌曲',
+    subtitle: '',
     type: 'ranking',
   });
 };
@@ -428,8 +428,8 @@ const playNewSongs = async () => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
     queueId: 'queue:explore:new-songs',
     title: '新歌速递',
-    subtitle: '发现新鲜声音',
-    type: 'ranking',
+    subtitle: '',
+    type: 'default',
   });
 };
 
@@ -439,8 +439,8 @@ const handleNewSongDoubleTapPlay = async (song: Song) => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: 'queue:explore:new-songs',
     title: '新歌速递',
-    subtitle: '发现新鲜声音',
-    type: 'ranking',
+    subtitle: '',
+    type: 'default',
   });
 };
 
@@ -721,8 +721,7 @@ const filteredArtistCards = computed(() => {
             :queueOptions="{
               queueId: `queue:explore:rank:${rankId ?? 'default'}`,
               title: ranks.find((r: RankMeta) => r.id === rankId)?.name || '排行榜',
-              subtitle:
-                ranks.find((r: RankMeta) => r.id === rankId)?.rankTypeName || '实时热门趋势',
+              subtitle: '',
               type: 'ranking',
               dynamic: false,
             }"
@@ -835,7 +834,7 @@ const filteredArtistCards = computed(() => {
             :queueOptions="{
               queueId: 'queue:explore:new-songs',
               title: '新歌速递',
-              subtitle: albumTypeLabel,
+              subtitle: '',
               type: 'default',
               dynamic: false,
             }"

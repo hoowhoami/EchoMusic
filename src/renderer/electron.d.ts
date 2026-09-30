@@ -217,12 +217,14 @@ type PlayerStateChangePayload = {
   timePos?: number;
   trackSeq?: number;
   generation?: number;
+  sampledAt?: number;
 };
 
 type PlayerTimeUpdatePayload = {
   time?: number;
   trackSeq?: number;
   generation?: number;
+  sampledAt?: number;
 };
 
 type PlayerSeekStatePayload = {

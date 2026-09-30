@@ -4,6 +4,8 @@ import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import {
   DEFAULT_PLAYBACK_QUEUE_ID,
+  DISCOVER_QUEUE_ID,
+  isTransientPlaybackQueue,
   LISTEN_TOGETHER_QUEUE_ID,
   MANUAL_PLAYBACK_QUEUE_ID,
   PERSONAL_FM_MODE,
@@ -21,6 +23,7 @@ import {
 } from './helpers';
 import { favoritesActions } from './favoritesActions';
 import { personalFmActions } from './personalFmActions';
+import { discoverActions } from './discoverActions';
 import { queueActions } from './queueActions';
 import { userActions } from './userActions';
 import type { PersonalFmMode, PersonalFmSongPoolId, PlaybackQueueState } from './types';
@@ -62,6 +65,8 @@ export type {
 } from './types';
 export {
   DEFAULT_PLAYBACK_QUEUE_ID,
+  DISCOVER_QUEUE_ID,
+  isTransientPlaybackQueue,
   FAVORITES_PAGE_SIZE,
   LISTEN_TOGETHER_QUEUE_ID,
   MANUAL_PLAYBACK_QUEUE_ID,
@@ -120,8 +125,7 @@ export const usePlaylistStore = defineStore('playlist', {
         (queue) =>
           queue.id !== this.activeQueueId &&
           queue.id !== MANUAL_PLAYBACK_QUEUE_ID &&
-          queue.id !== PERSONAL_FM_QUEUE_ID &&
-          queue.id !== LISTEN_TOGETHER_QUEUE_ID &&
+          !isTransientPlaybackQueue(queue.id) &&
           this.getQueueSongCount(queue) > 0,
       );
     },
@@ -130,8 +134,7 @@ export const usePlaylistStore = defineStore('playlist', {
         (queue) =>
           queue.id !== this.activeQueueId &&
           queue.id !== MANUAL_PLAYBACK_QUEUE_ID &&
-          queue.id !== PERSONAL_FM_QUEUE_ID &&
-          queue.id !== LISTEN_TOGETHER_QUEUE_ID &&
+          !isTransientPlaybackQueue(queue.id) &&
           this.getQueueSongCount(queue) > 0,
       );
     },
@@ -159,6 +162,7 @@ export const usePlaylistStore = defineStore('playlist', {
     },
   },
   actions: {
+    replenishDiscoverQueue: discoverActions.replenishDiscoverQueue,
     applyPlaybackSnapshot(snapshot: {
       queues: PlaybackQueueState[];
       activeQueueId: string;
@@ -195,8 +199,7 @@ export const usePlaylistStore = defineStore('playlist', {
       const resolvedId = String(queueId ?? '');
       if (
         !resolvedId ||
-        resolvedId === PERSONAL_FM_QUEUE_ID ||
-        resolvedId === LISTEN_TOGETHER_QUEUE_ID ||
+        isTransientPlaybackQueue(resolvedId) ||
         resolvedId === MANUAL_PLAYBACK_QUEUE_ID
       )
         return;
@@ -218,6 +221,9 @@ export const usePlaylistStore = defineStore('playlist', {
       );
       if (this.playbackQueues.some((queue) => queue.id === PERSONAL_FM_QUEUE_ID)) {
         this.removePersonalFmQueue();
+      }
+      if (this.playbackQueues.some((queue) => queue.id === DISCOVER_QUEUE_ID)) {
+        this.removePlaybackQueue(DISCOVER_QUEUE_ID);
       }
       if (this.playbackQueues.some((queue) => queue.id === LISTEN_TOGETHER_QUEUE_ID)) {
         this.removePlaybackQueue(LISTEN_TOGETHER_QUEUE_ID);

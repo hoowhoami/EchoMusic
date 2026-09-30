@@ -372,7 +372,7 @@ const handleSongDoubleTapPlay = async (song: Song) => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: 'queue:history',
     title: '播放历史',
-    subtitle: '最近播放',
+    subtitle: '',
     type: 'history',
     dynamic: false,
   });
@@ -384,7 +384,7 @@ const handlePlayAll = async () => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
     queueId: 'queue:history',
     title: '播放历史',
-    subtitle: '最近播放',
+    subtitle: '',
     type: 'history',
     dynamic: false,
   });
@@ -796,7 +796,7 @@ onUnmounted(() => {
                 :queueOptions="{
                   queueId: 'queue:history',
                   title: '播放历史',
-                  subtitle: '最近播放记录',
+                  subtitle: '',
                   type: 'history',
                   dynamic: false,
                 }"

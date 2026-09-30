@@ -39,6 +39,7 @@ import {
   iconClipboardList,
   iconHeadphones,
   iconPlugin,
+  iconMusicBolt,
 } from '@/icons';
 
 const route = useRoute();
@@ -164,6 +165,16 @@ const registerBuiltinActions = () => {
     order: 30,
     onClick: async () => {
       await router.push({ name: 'listen-together' });
+    },
+  });
+  builtinApi.register({
+    id: 'discover-flow',
+    title: '刷歌',
+    icon: iconMusicBolt,
+    defaultPlacement: 'more',
+    order: 35,
+    onClick: async () => {
+      await router.push({ name: 'discover-flow' });
     },
   });
   builtinApi.register({

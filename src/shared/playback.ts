@@ -49,6 +49,7 @@ export interface PlaybackClockSnapshot {
   isAdvancing?: boolean;
   generation: number;
   seekTimestamp?: number;
+  /** Unix epoch milliseconds for positionMs, preserved across IPC. */
   sampledAt?: number;
   reason?: PlaybackClockReason;
 }
@@ -149,6 +150,8 @@ export interface PlaybackSnapshotLike {
 
 export interface PlaybackSnapshotPatch {
   currentTime?: number;
+  /** Unix epoch milliseconds when the playback event was sampled. */
+  updatedAt?: number;
   duration?: number;
   isPlaying?: boolean;
   isAdvancing?: boolean;
@@ -321,7 +324,7 @@ export const patchPlaybackSnapshot = <T extends PlaybackSnapshotLike & { trackId
     (patch.playbackRate !== undefined && patch.playbackRate !== current.playbackRate);
   const updatedAt =
     patch.currentTime !== undefined || transportChanged
-      ? Date.now()
+      ? readPlaybackSnapshotUpdatedAt(patch) || Date.now()
       : readPlaybackSnapshotUpdatedAt(current);
   const seekTimestamp =
     Number.isFinite(Number(patch.seekTimestamp)) && Number(patch.seekTimestamp) > 0

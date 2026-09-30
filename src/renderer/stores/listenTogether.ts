@@ -527,7 +527,7 @@ export const useListenTogetherStore = defineStore(
     const getListenTogetherQueueOptions = (): SetPlaybackQueueOptions => ({
       queueId: LISTEN_TOGETHER_QUEUE_ID,
       title: activeRoom.value?.name || '一起听',
-      subtitle: '众乐房 · 房间同步',
+      subtitle: '',
       coverUrl:
         currentRoomSong.value?.coverUrl ||
         (playerStore.currentSourceQueueId === LISTEN_TOGETHER_QUEUE_ID

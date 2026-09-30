@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, onScopeDispose, reactive, toRefs, watch } from 'vue';
-import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from './playlist';
+import { DISCOVER_QUEUE_ID, PERSONAL_FM_QUEUE_ID, usePlaylistStore } from './playlist';
 import { useLyricStore } from './lyric';
 import { useSettingStore } from './setting';
 import { useToastStore } from './toast';
@@ -145,6 +145,13 @@ export const usePlayerStore = defineStore(
         seekTimestamp: state.seekTimestamp,
       }),
     );
+
+    // Recommendations keep replenishing even when the discover view is not mounted.
+    watch([() => state.currentSourceQueueId, () => state.currentTrackId], ([queueId, trackId]) => {
+      if (queueId === DISCOVER_QUEUE_ID && trackId) {
+        void playlistStore.replenishDiscoverQueue(trackId);
+      }
+    });
 
     // The store owns the exported lyric index even when every lyric window is closed.
     // Views compute their animated cursor locally and never write it back here.
@@ -744,6 +751,10 @@ export const usePlayerStore = defineStore(
           await playbackManager.advancePersonalFm(true);
           return;
         }
+        if (sourceQueueId === DISCOVER_QUEUE_ID) {
+          await playbackManager.next({ gaplessTransition: true });
+          return;
+        }
         if (state.playMode === 'single') {
           if (state.currentPlaybackSource || state.currentAudioUrl) {
             const restartTrackId = state.currentTrackId;
@@ -1122,7 +1133,9 @@ export const usePlayerStore = defineStore(
       engine.setVolumeNormalization(settingStore.volumeNormalization);
       engine.setReferenceLufs(settingStore.volumeNormalizationLufs);
       engine.setLoopFile(
-        state.playMode === 'single' && state.currentSourceQueueId !== PERSONAL_FM_QUEUE_ID,
+        state.playMode === 'single' &&
+          state.currentSourceQueueId !== PERSONAL_FM_QUEUE_ID &&
+          state.currentSourceQueueId !== DISCOVER_QUEUE_ID,
       );
       engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
       registerSettingWatchers();
@@ -1148,11 +1161,11 @@ export const usePlayerStore = defineStore(
         if (!Number.isFinite(trackSeq) || trackSeq <= 0) return true;
         return state.nativeTrackSeq === null || state.nativeTrackSeq === trackSeq;
       };
-      const syncTransportPosition = (payload?: { time?: number }) => {
+      const syncTransportPosition = (payload?: { time?: number; sampledAt?: number }) => {
         if (typeof payload?.time !== 'number' || !Number.isFinite(payload.time)) return;
         if (!matchesPendingSeekTarget(state.seekTargetTime, payload.time)) return;
         state.currentTime = Math.max(0, payload.time);
-        state.currentTimeUpdatedAt = Date.now();
+        state.currentTimeUpdatedAt = payload.sampledAt ?? Date.now();
       };
 
       const events: PlayerEngineEvents = {
@@ -1186,7 +1199,7 @@ export const usePlayerStore = defineStore(
             state.nativePlaybackProgressRevision = state.nativePlaybackEventRevision;
           }
           state.currentTime = currentTime;
-          state.currentTimeUpdatedAt = now;
+          state.currentTimeUpdatedAt = payload?.sampledAt ?? now;
           listeningTimeManager.tick();
           void playbackManager.prepareGaplessNext();
           if (now - lastEventTimeUpdate >= EVENT_TIMEUPDATE_MS) {

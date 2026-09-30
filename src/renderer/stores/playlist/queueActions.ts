@@ -3,7 +3,8 @@ import { isSameSong } from '@/utils/song';
 import { reconcileQueuedNextForQueueReplacement } from '../../../shared/playbackQueueDecision';
 import {
   DEFAULT_PLAYBACK_QUEUE_ID,
-  LISTEN_TOGETHER_QUEUE_ID,
+  DISCOVER_QUEUE_ID,
+  isTransientPlaybackQueue,
   MANUAL_PLAYBACK_QUEUE_ID,
   MAX_PLAYBACK_QUEUE_COUNT,
   PERSONAL_FM_QUEUE_ID,
@@ -51,11 +52,6 @@ type QueueStoreShape = {
   trimPlaybackQueues: (limit?: number) => void;
 };
 
-const isTransientPlaybackQueue = (queueId: string | number | null | undefined) => {
-  const resolvedId = String(queueId ?? '');
-  return resolvedId === PERSONAL_FM_QUEUE_ID || resolvedId === LISTEN_TOGETHER_QUEUE_ID;
-};
-
 export const queueActions = {
   getPreferredManualQueueOptions(this: QueueStoreShape, options: SetPlaybackQueueOptions = {}) {
     if (options.queueId) return { ...options };
@@ -96,6 +92,19 @@ export const queueActions = {
     return queue?.songs.slice() ?? [];
   },
   syncLegacyPlaybackState(this: QueueStoreShape) {
+    // All activation paths (including FM) synchronize here. Browsing away does not.
+    if (
+      this.activeQueueId !== DISCOVER_QUEUE_ID &&
+      this.playbackQueues.some((queue) => queue.id === DISCOVER_QUEUE_ID)
+    ) {
+      this.playbackQueues = this.playbackQueues.filter((queue) => queue.id !== DISCOVER_QUEUE_ID);
+      if (this.lastNonFmQueueId === DISCOVER_QUEUE_ID) {
+        this.lastNonFmQueueId =
+          this.playbackQueues.find((queue) => !isTransientPlaybackQueue(queue.id))?.id ??
+          DEFAULT_PLAYBACK_QUEUE_ID;
+      }
+      this.persistQueueRemovalToStorage(DISCOVER_QUEUE_ID);
+    }
     const activeQueue =
       this.playbackQueues.find((queue) => queue.id === this.activeQueueId) ??
       this.playbackQueues[0] ??

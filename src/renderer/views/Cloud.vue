@@ -246,7 +246,7 @@ const handleSongDoubleTapPlay = async (song: Song) => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: 'queue:cloud',
     title: '云盘音乐',
-    subtitle: '你的云盘收藏',
+    subtitle: '',
     type: 'cloud',
     dynamic: false,
   });
@@ -258,7 +258,7 @@ const handlePlayAll = async () => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
     queueId: 'queue:cloud',
     title: '云盘音乐',
-    subtitle: '你的云盘收藏',
+    subtitle: '',
     type: 'cloud',
     dynamic: false,
   });
@@ -592,7 +592,7 @@ onMounted(() => {
               :queueOptions="{
                 queueId: 'queue:cloud',
                 title: '云盘音乐',
-                subtitle: '你的云盘收藏',
+                subtitle: '',
                 type: 'cloud',
                 dynamic: false,
               }"
