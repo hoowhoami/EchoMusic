@@ -498,6 +498,23 @@ impl RaopConnection {
         Ok(())
     }
 
+    /// Tell the receiver to resume rendering after a FLUSH without changing the
+    /// local streamer state.
+    pub async fn record(&mut self) -> Result<bool> {
+        let record_req = RtspRequest::record_with_info(self.session.request_uri(), 0, 0);
+        let record_resp = self.rtsp.send(record_req).await?;
+        if record_resp.status_code != 200 {
+            warn!(
+                "RECORD returned status {} after FLUSH",
+                record_resp.status_code
+            );
+            return Ok(false);
+        }
+        self.session.start_playing()?;
+        self.playback_state = PlaybackState::Playing;
+        Ok(true)
+    }
+
     /// Flush queued receiver audio without changing the local playback state.
     pub async fn flush(&mut self) -> Result<()> {
         let flush_req = RtspRequest::flush(self.session.request_uri());

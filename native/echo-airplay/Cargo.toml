@@ -17,6 +17,7 @@ echo-native-log = { path = "../echo-native-log" }
 airplay-client = { path = "../echo-upnp/vendor/airplay2-rs/crates/airplay-client" }
 airplay-audio = { path = "../echo-upnp/vendor/airplay2-rs/crates/airplay-audio" }
 airplay-discovery = { path = "../echo-upnp/vendor/airplay2-rs/crates/airplay-discovery" }
+airplay-core = { path = "../echo-upnp/vendor/airplay2-rs/crates/airplay-core" }
 
 [build-dependencies]
 napi-build = "2"
