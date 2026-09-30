@@ -37,7 +37,9 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
     workArea: { x: 0, y: 0, width: 1440, height: 860 },
   };
   const saved = {
-    closeBehavior: 'background',
+    closeBehavior: 'tray',
+    hideDockInBackground: true,
+    hideMenuBarInBackground: true,
     theme: 'system',
     windowBackground: { enabled: false, frosted: false },
     rememberWindowSize: true,
@@ -123,6 +125,7 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
   }
   const settings = {
     getMainAppSettings: () => saved,
+    setMainClosePreferences: (preferences) => Object.assign(saved, preferences),
     setMainAppSetting: (key, value) => {
       saved[key] = value;
     },

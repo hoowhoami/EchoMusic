@@ -20,7 +20,12 @@ const compiled = {
 };
 const noop = () => {};
 
-async function setup({ behavior = 'background', platform = 'darwin' } = {}) {
+async function setup({
+  behavior = 'tray',
+  platform = 'darwin',
+  hideDockInBackground = true,
+  hideMenuBarInBackground = true,
+} = {}) {
   const events = [];
   const timers = new Map();
   const listeners = new Map();
@@ -30,6 +35,8 @@ async function setup({ behavior = 'background', platform = 'darwin' } = {}) {
   let dockShow = () => Promise.resolve();
   const saved = {
     closeBehavior: behavior,
+    hideDockInBackground,
+    hideMenuBarInBackground,
     theme: 'system',
     windowBackground: { enabled: false, frosted: false },
     rememberWindowSize: true,
@@ -137,6 +144,7 @@ async function setup({ behavior = 'background', platform = 'darwin' } = {}) {
     },
     '../storage/settings': {
       getMainAppSettings: () => saved,
+      setMainClosePreferences: (preferences) => Object.assign(saved, preferences),
       setMainAppSetting: (key, value) => {
         saved[key] = value;
       },
@@ -234,28 +242,48 @@ async function setup({ behavior = 'background', platform = 'darwin' } = {}) {
         });
       return () => resolve();
     },
-    setBehavior(value) {
-      listeners.get('update-close-behavior')({}, value);
+    setBehavior(value, options = { hideDockInBackground, hideMenuBarInBackground }) {
+      listeners.get('update-close-behavior')({}, value, options);
     },
   };
 }
 
 for (const entry of ['native', 'request']) {
-  test(`${entry} close keeps playback window alive and hides macOS icons`, async () => {
-    const e = await setup();
-    if (entry === 'native') assert.equal(e.nativeClose(), true);
-    else e.api.requestMainWindowClose();
-    assert.equal(e.win.isVisible(), false);
-    assert.equal(e.win.isDestroyed(), false);
-    assert.equal(e.win.skipTaskbar, true);
-    assert.equal(e.quitCalls, 0);
-    assert.equal(e.background.isMacBackgroundMode(), true);
-    assert.deepEqual(e.events, ['window:hide', 'tray:false', 'dock:hide']);
-  });
+  for (const hideDockInBackground of [false, true]) {
+    for (const hideMenuBarInBackground of [false, true]) {
+      test(`${entry} tray close: Dock hidden=${hideDockInBackground}, menu bar hidden=${hideMenuBarInBackground}`, async () => {
+        const e = await setup({ hideDockInBackground, hideMenuBarInBackground });
+        if (entry === 'native') assert.equal(e.nativeClose(), true);
+        else e.api.requestMainWindowClose();
+        assert.equal(e.win.isVisible(), false);
+        assert.equal(e.win.isDestroyed(), false);
+        assert.equal(e.win.skipTaskbar, true);
+        assert.equal(e.quitCalls, 0);
+        const hasHiddenIcon = hideDockInBackground || hideMenuBarInBackground;
+        assert.equal(e.background.isMacBackgroundMode(), hasHiddenIcon);
+        assert.deepEqual(e.events, [
+          'window:hide',
+          ...(hasHiddenIcon ? [`tray:${!hideMenuBarInBackground}`] : []),
+          ...(hideDockInBackground ? ['dock:hide'] : []),
+        ]);
+        e.events.length = 0;
+        await e.api.restoreWindow();
+        assert.equal(e.win.isVisible(), true);
+        assert.equal(e.win.isFocused(), true);
+        assert.equal(e.background.isMacBackgroundMode(), false);
+        assert.equal(e.events.includes('dock:show'), hideDockInBackground);
+        assert.equal(e.events.includes('tray:true'), hasHiddenIcon);
+      });
+    }
+  }
 
   test(`${entry} tray close preserves icons and exit still quits`, async () => {
     for (const behavior of ['tray', 'exit']) {
-      const e = await setup({ behavior });
+      const e = await setup({
+        behavior,
+        hideDockInBackground: false,
+        hideMenuBarInBackground: false,
+      });
       if (entry === 'native') assert.equal(e.nativeClose(), behavior === 'tray');
       else e.api.requestMainWindowClose();
       assert.equal(e.background.isMacBackgroundMode(), false);
@@ -520,18 +548,18 @@ test('changing the close preference cancels a pending background transition', as
   const e = await setup();
   e.settleFullscreen(true);
   e.api.requestMainWindowClose();
-  e.setBehavior('tray');
+  e.setBehavior('exit');
   e.settleFullscreen(false);
-  assert.equal(e.saved.closeBehavior, 'tray');
+  assert.equal(e.saved.closeBehavior, 'exit');
   assert.equal(e.win.isVisible(), true);
   assert.equal(e.background.isMacBackgroundMode(), false);
   assert.equal(e.timers.size, 0);
 });
 
 for (const platform of ['win32', 'linux']) {
-  test(`${platform} ignores the macOS-only preference and retains tray behavior`, async () => {
+  test(`${platform} ignores macOS icon preferences and retains tray behavior`, async () => {
     const e = await setup({ behavior: 'tray', platform });
-    e.setBehavior('background');
+    e.setBehavior('tray', { hideDockInBackground: true, hideMenuBarInBackground: true });
     assert.equal(e.saved.closeBehavior, 'tray');
     assert.equal(e.nativeClose(), true);
     assert.equal(e.win.isVisible(), false);
@@ -541,3 +569,43 @@ for (const platform of ['win32', 'linux']) {
     assert.deepEqual(e.events, ['window:hide']);
   });
 }
+
+test('editing icon preferences while visible leaves icons alone until the next tray close', async () => {
+  const e = await setup({ hideDockInBackground: false, hideMenuBarInBackground: false });
+  e.setBehavior('tray', { hideDockInBackground: true, hideMenuBarInBackground: false });
+  assert.equal(e.saved.hideDockInBackground, true);
+  assert.equal(e.saved.hideMenuBarInBackground, false);
+  assert.equal(e.win.isVisible(), true);
+  assert.deepEqual(e.events, []);
+  e.api.requestMainWindowClose();
+  assert.deepEqual(e.events, ['window:hide', 'tray:true', 'dock:hide']);
+});
+
+test('editing icon preferences while hidden changes icons without showing the window', async () => {
+  const e = await setup();
+  e.api.requestMainWindowClose();
+  e.events.length = 0;
+  e.setBehavior('tray', { hideDockInBackground: false, hideMenuBarInBackground: true });
+  assert.deepEqual(e.events, ['tray:false', 'dock:show']);
+  assert.equal(e.win.isVisible(), false);
+  assert.equal(e.background.isMacBackgroundMode(), true);
+  e.events.length = 0;
+  e.setBehavior('tray', { hideDockInBackground: false, hideMenuBarInBackground: false });
+  assert.deepEqual(e.events, ['tray:true']);
+  assert.equal(e.win.isVisible(), false);
+  assert.equal(e.background.isMacBackgroundMode(), true);
+  await e.api.restoreWindow();
+  assert.equal(e.win.isVisible(), true);
+  assert.equal(e.background.isMacBackgroundMode(), false);
+});
+
+test('a pending fullscreen close applies the latest independent icon preferences', async () => {
+  const e = await setup();
+  e.settleFullscreen(true);
+  e.api.requestMainWindowClose();
+  e.setBehavior('tray', { hideDockInBackground: false, hideMenuBarInBackground: true });
+  e.settleFullscreen(false);
+  assert.equal(e.win.isVisible(), false);
+  assert.deepEqual(e.events, ['window:hide', 'tray:false']);
+  assert.equal(e.timers.size, 0);
+});

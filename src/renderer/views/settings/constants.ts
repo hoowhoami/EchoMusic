@@ -106,7 +106,6 @@ export const audioQualityOptions: { label: string; value: AudioQualityValue }[] 
 
 export const closeBehaviorOptions: { label: string; value: CloseBehavior }[] = [
   { label: '最小化到托盘', value: 'tray' },
-  { label: '后台运行（隐藏图标）', value: 'background' },
   { label: '彻底退出程序', value: 'exit' },
 ];
 

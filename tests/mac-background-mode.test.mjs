@@ -12,6 +12,14 @@ const compile = (path) =>
   }).code;
 const backgroundCode = compile('../src/main/macBackgroundMode.ts');
 const trayCode = compile('../src/main/tray.ts');
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+const bothHidden = { hideDockInBackground: true, hideMenuBarInBackground: true };
+const iconCombinations = [
+  { hideDockInBackground: false, hideMenuBarInBackground: false },
+  { hideDockInBackground: true, hideMenuBarInBackground: false },
+  { hideDockInBackground: false, hideMenuBarInBackground: true },
+  bothHidden,
+];
 
 function setup(platform = 'darwin', { deferDockShow = false } = {}) {
   const calls = [];
@@ -148,23 +156,152 @@ function setup(platform = 'darwin', { deferDockShow = false } = {}) {
   };
 }
 
-test('macOS close hides Dock and tray, and reopening restores both', async () => {
+for (const options of iconCombinations) {
+  const { hideDockInBackground, hideMenuBarInBackground } = options;
+  test(`macOS background independently hides Dock=${hideDockInBackground}, menu bar=${hideMenuBarInBackground}`, async () => {
+    const e = setup();
+    const tray = e.loadTray();
+    const original = tray.initTray(e.context);
+    e.background.enterMacBackgroundMode(options);
+    assert.equal(e.background.isMacBackgroundMode(), true);
+    assert.equal(e.dockVisible, !hideDockInBackground);
+    assert.equal(original.destroyed, hideMenuBarInBackground);
+    assert.equal(tray.initTray(e.context), hideMenuBarInBackground ? null : original);
+    const refreshed = tray.refreshTray();
+    assert.equal(refreshed === null, hideMenuBarInBackground);
+    if (refreshed) assert.equal(refreshed.destroyed, false);
+    await e.background.syncMacDockVisibility();
+    assert.equal(
+      e.dockVisible,
+      !hideDockInBackground,
+      'auxiliary window sync respects the Dock choice',
+    );
+
+    await e.background.leaveMacBackgroundMode();
+    assert.equal(e.background.isMacBackgroundMode(), false);
+    assert.equal(e.dockVisible, true);
+    const expectedTrays = 2; // Hidden icons restore; visible icons are recreated by refresh.
+    assert.equal(e.trays.length, expectedTrays);
+    assert.equal(e.trays.at(-1).destroyed, false);
+    assert.equal(e.trays.at(-1).tooltip, 'EchoMusic');
+    await e.background.leaveMacBackgroundMode();
+    assert.equal(e.trays.length, expectedTrays, 'reopening again does not duplicate the tray');
+  });
+}
+
+test('menu-bar-only background restores its tray without changing the Dock activation policy', async () => {
+  const e = setup();
+  const tray = e.loadTray();
+  tray.initTray(e.context);
+  e.background.enterMacBackgroundMode({
+    hideDockInBackground: false,
+    hideMenuBarInBackground: true,
+  });
+  await e.background.leaveMacBackgroundMode();
+  assert.deepEqual(e.calls, []);
+  assert.equal(e.trays.length, 2);
+});
+
+test('Dock-only background allows tray registration and refresh before reopening', async () => {
+  const e = setup();
+  e.background.enterMacBackgroundMode({
+    hideDockInBackground: true,
+    hideMenuBarInBackground: false,
+  });
+  const tray = e.loadTray();
+  const original = tray.initTray(e.context);
+  assert.ok(original);
+  const refreshed = tray.refreshTray();
+  assert.ok(refreshed);
+  assert.equal(refreshed.destroyed, false);
+  assert.equal(e.dockVisible, false);
+  await e.background.leaveMacBackgroundMode();
+  assert.equal(e.trays.length, 2);
+  assert.equal(e.dockVisible, true);
+});
+
+test('editing preferences in the foreground leaves both icons visible', () => {
   const e = setup();
   const tray = e.loadTray();
   const original = tray.initTray(e.context);
-  e.background.enterMacBackgroundMode();
-  assert.equal(e.background.isMacBackgroundMode(), true);
-  assert.equal(e.dockVisible, false);
-  assert.equal(original.destroyed, true);
-
-  await e.background.leaveMacBackgroundMode();
+  e.background.updateMacBackgroundOptions(bothHidden);
   assert.equal(e.background.isMacBackgroundMode(), false);
   assert.equal(e.dockVisible, true);
-  assert.equal(e.trays.length, 2);
-  assert.equal(e.trays[1].destroyed, false);
-  assert.equal(e.trays[1].tooltip, 'EchoMusic');
-  await e.background.leaveMacBackgroundMode();
-  assert.equal(e.trays.length, 2, 'reopening again does not duplicate the tray');
+  assert.equal(original.destroyed, false);
+  assert.deepEqual(e.calls, []);
+});
+
+test('background preference updates independently restore icons without reopening', async () => {
+  const e = setup();
+  const tray = e.loadTray();
+  tray.initTray(e.context);
+  e.background.enterMacBackgroundMode(bothHidden);
+  e.background.updateMacBackgroundOptions({
+    hideDockInBackground: false,
+    hideMenuBarInBackground: true,
+  });
+  await Promise.resolve();
+  assert.equal(e.background.isMacBackgroundMode(), true);
+  assert.equal(e.dockVisible, true);
+  assert.equal(tray.refreshTray(), null);
+  e.background.updateMacBackgroundOptions({
+    hideDockInBackground: true,
+    hideMenuBarInBackground: false,
+  });
+  assert.equal(e.dockVisible, false);
+  assert.equal(e.trays.at(-1).destroyed, false);
+  e.background.updateMacBackgroundOptions({
+    hideDockInBackground: false,
+    hideMenuBarInBackground: false,
+  });
+  await Promise.resolve();
+  assert.equal(e.background.isMacBackgroundMode(), true);
+  assert.equal(e.dockVisible, true);
+  assert.equal(e.trays.at(-1).destroyed, false);
+});
+
+for (const hideDockInBackground of [false, true]) {
+  test(`a pending Dock restore obeys the latest hide-Dock=${hideDockInBackground} preference`, async () => {
+    const e = setup('darwin', { deferDockShow: true });
+    const tray = e.loadTray();
+    tray.initTray(e.context);
+    e.background.enterMacBackgroundMode(bothHidden);
+    e.background.updateMacBackgroundOptions({
+      hideDockInBackground: false,
+      hideMenuBarInBackground: true,
+    });
+    e.background.updateMacBackgroundOptions({
+      hideDockInBackground,
+      hideMenuBarInBackground: true,
+    });
+    e.finishDockShow();
+    await settle();
+    assert.equal(e.background.isMacBackgroundMode(), true);
+    assert.equal(e.dockVisible, !hideDockInBackground);
+    assert.equal(tray.refreshTray(), null);
+  });
+}
+
+test('reopening waits for a Dock restoration already started by a preference update', async () => {
+  const e = setup('darwin', { deferDockShow: true });
+  const tray = e.loadTray();
+  tray.initTray(e.context);
+  e.background.enterMacBackgroundMode(bothHidden);
+  e.background.updateMacBackgroundOptions({
+    hideDockInBackground: false,
+    hideMenuBarInBackground: true,
+  });
+  let restored = false;
+  const reopening = e.background.leaveMacBackgroundMode().then(() => {
+    restored = true;
+  });
+  await Promise.resolve();
+  assert.equal(restored, false);
+  assert.equal(e.calls.filter((call) => call === 'dock:show').length, 1);
+  e.finishDockShow();
+  await reopening;
+  assert.equal(restored, true);
+  assert.equal(e.dockVisible, true);
 });
 
 for (const platform of ['win32', 'linux']) {
@@ -172,7 +309,7 @@ for (const platform of ['win32', 'linux']) {
     const e = setup(platform);
     const tray = e.loadTray();
     const original = tray.initTray(e.context);
-    e.background.enterMacBackgroundMode();
+    e.background.enterMacBackgroundMode(bothHidden);
     await e.background.leaveMacBackgroundMode();
     await e.background.syncMacDockVisibility();
     assert.equal(e.background.isMacBackgroundMode(), false);
@@ -186,10 +323,10 @@ test('a delayed Dock show cannot override a newer background request', async () 
   const e = setup('darwin', { deferDockShow: true });
   const tray = e.loadTray();
   tray.initTray(e.context);
-  e.background.enterMacBackgroundMode();
+  e.background.enterMacBackgroundMode(bothHidden);
   const reopening = e.background.leaveMacBackgroundMode();
   assert.equal(e.trays.length, 2);
-  e.background.enterMacBackgroundMode();
+  e.background.enterMacBackgroundMode(bothHidden);
   e.finishDockShow();
   await reopening;
   assert.equal(e.background.isMacBackgroundMode(), true);
@@ -213,7 +350,7 @@ test('reopening after quit begins does not recreate a hidden tray', async () => 
   const e = setup();
   const tray = e.loadTray();
   tray.initTray(e.context);
-  e.background.enterMacBackgroundMode();
+  e.background.enterMacBackgroundMode(bothHidden);
   e.app.emit('before-quit');
   await e.background.leaveMacBackgroundMode();
   assert.equal(e.dockVisible, false);
@@ -226,7 +363,7 @@ test('icon refresh and repeated tray initialization remain hidden in background 
   const e = setup();
   const tray = e.loadTray();
   tray.initTray(e.context);
-  e.background.enterMacBackgroundMode();
+  e.background.enterMacBackgroundMode(bothHidden);
   assert.equal(tray.refreshTray(), null);
   assert.equal(tray.initTray(e.context), null);
   tray.refreshTrayMenus();
@@ -238,7 +375,7 @@ test('icon refresh and repeated tray initialization remain hidden in background 
 
 test('tray registration after entering background waits until reopening to create an icon', async () => {
   const e = setup();
-  e.background.enterMacBackgroundMode();
+  e.background.enterMacBackgroundMode(bothHidden);
   const tray = e.loadTray();
   assert.equal(tray.initTray(e.context), null);
   assert.equal(tray.refreshTray(), null);
@@ -252,7 +389,7 @@ test('restored tray keeps current playback, lyric controls, window recovery and 
   const e = setup();
   const tray = e.loadTray();
   tray.initTray(e.context);
-  e.background.enterMacBackgroundMode();
+  e.background.enterMacBackgroundMode(bothHidden);
   tray.updateTrayPlaybackState({ isPlaying: true, playMode: 'random', volume: 42 });
   e.lyrics.settings.locked = true;
   tray.refreshTrayMenus();

@@ -13,9 +13,6 @@ import { closeBehaviorOptions, sectionTitles } from '../constants';
 const settingStore = useSettingStore();
 const platform = window.electron?.platform;
 const isMac = computed(() => platform === 'darwin');
-const availableCloseBehaviorOptions = computed(() =>
-  closeBehaviorOptions.filter((option) => option.value !== 'background' || isMac.value),
-);
 const isWindows = computed(() => platform === 'win32');
 const supportsCustomWindowControls = computed(() => platform === 'win32' || platform === 'linux');
 const barEnabled = ref(false);
@@ -165,24 +162,55 @@ const setBar = async (value: boolean) => {
         <p class="text-sm text-text-secondary">点击窗口关闭按钮时的应用行为</p>
       </div>
       <Select
-        class="shrink-0"
-        :class="isMac ? 'w-60' : 'w-45'"
+        class="shrink-0 w-45"
         aria-label="关闭行为"
         :model-value="settingStore.closeBehavior"
-        :options="availableCloseBehaviorOptions"
+        :options="closeBehaviorOptions"
         @update:model-value="
           settingStore.closeBehavior = $event as CloseBehavior;
           settingStore.syncCloseBehavior();
         "
       />
     </div>
-    <p
-      v-if="isMac && settingStore.closeBehavior === 'background'"
-      class="text-sm text-text-secondary"
-    >
-      关闭窗口后继续播放，并隐藏 Dock 和菜单栏图标。通过 Finder 或 Spotlight 再次打开 EchoMusic
-      可恢复窗口和图标；恢复后按 ⌘Q 可彻底退出。
-    </p>
+    <template v-if="isMac && settingStore.closeBehavior === 'tray'">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">后台运行时在 Dock 栏中隐藏</h3>
+          <p class="text-sm text-text-secondary">关闭窗口后隐藏 Dock 图标，恢复窗口时重新显示</p>
+        </div>
+        <Switch
+          :model-value="settingStore.hideDockInBackground"
+          aria-label="后台运行时在 Dock 栏中隐藏"
+          @update:model-value="
+            settingStore.hideDockInBackground = Boolean($event);
+            settingStore.syncCloseBehavior();
+          "
+        />
+      </div>
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">后台运行时在菜单栏中隐藏</h3>
+          <p class="text-sm text-text-secondary">关闭窗口后隐藏菜单栏图标，恢复窗口时重新显示</p>
+        </div>
+        <Switch
+          :model-value="settingStore.hideMenuBarInBackground"
+          aria-label="后台运行时在菜单栏中隐藏"
+          @update:model-value="
+            settingStore.hideMenuBarInBackground = Boolean($event);
+            settingStore.syncCloseBehavior();
+          "
+        />
+      </div>
+      <p
+        v-if="settingStore.hideDockInBackground && settingStore.hideMenuBarInBackground"
+        class="text-sm text-text-secondary"
+      >
+        两个图标均隐藏时，可通过 Finder 或 Spotlight 再次打开
+        EchoMusic，或使用已配置的显示窗口全局快捷键恢复窗口和图标。
+      </p>
+    </template>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

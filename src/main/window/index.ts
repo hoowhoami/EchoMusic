@@ -12,8 +12,12 @@ import {
 } from '../../shared/windowBackgroundStrategy';
 import { BrowserWindow, shell, app, nativeTheme, powerSaveBlocker, screen } from 'electron';
 import { join } from 'path';
-import { normalizeCloseBehavior, type CloseBehavior, type ThemeMode } from '../../shared/app';
-import { getMainAppSettings, setMainAppSetting } from '../storage/settings';
+import { normalizeClosePreferences, type ThemeMode } from '../../shared/app';
+import {
+  getMainAppSettings,
+  setMainAppSetting,
+  setMainClosePreferences,
+} from '../storage/settings';
 import { getActiveWindowMode, setActiveWindowMode } from './mode';
 import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from '../plugins';
 import { ipcRegistry } from '../ipc/registry';
@@ -45,10 +49,11 @@ import {
   isMacBackgroundMode,
   leaveMacBackgroundMode,
   syncMacDockVisibility,
+  updateMacBackgroundOptions,
 } from '../macBackgroundMode';
 
 const initialSettings = getMainAppSettings();
-let closeBehavior: CloseBehavior = initialSettings.closeBehavior;
+let closePreferences = normalizeClosePreferences(initialSettings);
 let currentTheme: ThemeMode = initialSettings.theme;
 let windowBackground = normalizeWindowBackground(initialSettings.windowBackground);
 let windowBackgroundActiveEnabled = windowBackground.enabled;
@@ -155,12 +160,15 @@ export function requestMainWindowClose() {
   windowPresentationRevision++;
   cancelPendingBackgroundClose();
 
-  if (isQuitting || closeBehavior === 'exit') {
+  if (isQuitting || closePreferences.closeBehavior === 'exit') {
     quitApplication();
     return;
   }
 
-  if (process.platform !== 'darwin' || closeBehavior !== 'background') {
+  if (
+    process.platform !== 'darwin' ||
+    (!closePreferences.hideDockInBackground && !closePreferences.hideMenuBarInBackground)
+  ) {
     hideMainWindow();
     return;
   }
@@ -170,7 +178,7 @@ export function requestMainWindowClose() {
     cancelPendingBackgroundClose();
     if (isQuitting || !canUseMainWindow(mainWindow) || mainWindow !== win) return;
     hideMainWindow();
-    enterMacBackgroundMode();
+    enterMacBackgroundMode(closePreferences);
   };
   // AppKit must leave the fullscreen Space before changing the activation policy.
   if (isWindowFullscreen(mainWindow) || isWindowFullscreenTransitioning(mainWindow)) {
@@ -352,14 +360,24 @@ export const registerMainWindowPreferenceHandlers = () => {
     syncMainWindowBackground();
     return windowBackground;
   });
-  ipcRegistry.registerListener('update-close-behavior', (_event, behavior: CloseBehavior) => {
-    closeBehavior = normalizeCloseBehavior(behavior, process.platform);
-    setMainAppSetting('closeBehavior', closeBehavior);
-    if (closeBehavior !== 'background') {
-      cancelPendingBackgroundClose();
-      void leaveMacBackgroundMode();
-    }
-  });
+  ipcRegistry.registerListener(
+    'update-close-behavior',
+    (_event, behavior: unknown, icons: unknown) => {
+      const options = icons && typeof icons === 'object' ? (icons as Record<string, unknown>) : {};
+      closePreferences = normalizeClosePreferences({
+        closeBehavior: behavior,
+        hideDockInBackground: options.hideDockInBackground,
+        hideMenuBarInBackground: options.hideMenuBarInBackground,
+      });
+      setMainClosePreferences(closePreferences);
+      if (closePreferences.closeBehavior !== 'tray') {
+        cancelPendingBackgroundClose();
+        void leaveMacBackgroundMode();
+      } else {
+        updateMacBackgroundOptions(closePreferences);
+      }
+    },
+  );
 
   ipcRegistry.registerListener('update-theme', (_event, theme: ThemeMode) => {
     currentTheme = theme;
@@ -632,7 +650,7 @@ export async function createWindow() {
     flushPersistWindowState();
     if (isQuitting) return;
 
-    if (closeBehavior !== 'exit') {
+    if (closePreferences.closeBehavior !== 'exit') {
       event.preventDefault();
     }
     requestMainWindowClose();

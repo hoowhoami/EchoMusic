@@ -1,15 +1,27 @@
 export type ThemeMode = 'light' | 'dark' | 'system';
 
-export type CloseBehavior = 'tray' | 'background' | 'exit';
+export type CloseBehavior = 'tray' | 'exit';
 
-export const normalizeCloseBehavior = (
-  value: unknown,
-  platform: string | undefined,
-): CloseBehavior => {
+export type ClosePreferences = {
+  closeBehavior: CloseBehavior;
+  hideDockInBackground: boolean;
+  hideMenuBarInBackground: boolean;
+};
+
+export const normalizeCloseBehavior = (value: unknown): CloseBehavior => {
   if (value === 'exit') return 'exit';
-  if (value === 'background' && platform === 'darwin') return 'background';
   return 'tray';
 };
+
+export const normalizeClosePreferences = (input: {
+  closeBehavior?: unknown;
+  hideDockInBackground?: unknown;
+  hideMenuBarInBackground?: unknown;
+}): ClosePreferences => ({
+  closeBehavior: normalizeCloseBehavior(input.closeBehavior),
+  hideDockInBackground: input.hideDockInBackground === true,
+  hideMenuBarInBackground: input.hideMenuBarInBackground === true,
+});
 
 export type UpdateCheckStatus = 'available' | 'latest' | 'error';
 

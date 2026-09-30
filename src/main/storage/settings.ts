@@ -1,6 +1,6 @@
 import { MAIN_WINDOW_DEFAULT_SIZE } from '../windowSizing';
 import { DEFAULT_WINDOW_BACKGROUND, type WindowBackground } from '../../shared/windowBackground';
-import { normalizeCloseBehavior, type CloseBehavior, type ThemeMode } from '../../shared/app';
+import { normalizeClosePreferences, type ClosePreferences, type ThemeMode } from '../../shared/app';
 import type { DesktopLyricSettings } from '../../shared/desktopLyric';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../shared/desktopLyric';
 import type { LogSettings } from '../../shared/logging';
@@ -23,8 +23,7 @@ export type MiniPlayerWindowState = {
   alwaysOnTop: boolean;
 };
 
-export type MainAppSettings = {
-  closeBehavior: CloseBehavior;
+export type MainAppSettings = ClosePreferences & {
   theme: ThemeMode;
   windowBackground: WindowBackground;
   windowZoomLevel: number;
@@ -56,6 +55,8 @@ export type DesktopLyricPersistedSettings = DesktopLyricSettings & {
 
 export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   closeBehavior: 'tray',
+  hideDockInBackground: false,
+  hideMenuBarInBackground: false,
   theme: 'system',
   windowBackground: { ...DEFAULT_WINDOW_BACKGROUND },
   windowZoomLevel: 0,
@@ -104,7 +105,7 @@ export const getMainAppSettings = (): MainAppSettings => {
   const merged = mergeObject(DEFAULT_MAIN_APP_SETTINGS, saved);
   return {
     ...merged,
-    closeBehavior: normalizeCloseBehavior(merged.closeBehavior, process.platform),
+    ...normalizeClosePreferences(merged),
     windowState: {
       ...DEFAULT_MAIN_APP_SETTINGS.windowState,
       ...(saved?.windowState ?? {}),
@@ -124,8 +125,17 @@ export const setMainAppSetting = <K extends keyof MainAppSettings>(
     ...getMainAppSettings(),
     [key]: value,
   };
-  next.closeBehavior = normalizeCloseBehavior(next.closeBehavior, process.platform);
-  getKvStorage().set(MAIN_SETTINGS_KEY, next);
+  getKvStorage().set(MAIN_SETTINGS_KEY, {
+    ...next,
+    ...normalizeClosePreferences(next),
+  });
+};
+
+export const setMainClosePreferences = (preferences: ClosePreferences) => {
+  getKvStorage().set(MAIN_SETTINGS_KEY, {
+    ...getMainAppSettings(),
+    ...normalizeClosePreferences(preferences),
+  });
 };
 
 export const getDisableGpuAccelerationSetting = () =>
