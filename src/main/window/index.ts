@@ -116,11 +116,12 @@ export async function prepareWindowPresentation() {
   return () => !isQuitting && revision === windowPresentationRevision;
 }
 
-export async function showMainWindow(focus = true) {
+export async function showMainWindow(focus = true, forceRaise = false) {
   if (!canUseMainWindow(win)) return;
+  // Publish the requested mode before Dock restoration can trigger app.activate.
+  setActiveWindowMode('main');
   const canPresent = await prepareWindowPresentation();
   if (!canPresent() || !canUseMainWindow(win)) return;
-  setActiveWindowMode('main');
 
   const wasVisible = win.isVisible();
   const wasMinimized = win.isMinimized();
@@ -138,7 +139,7 @@ export async function showMainWindow(focus = true) {
 
   win.setSkipTaskbar(false);
 
-  if (!wasVisible || wasMinimized || !wasFocused) {
+  if (forceRaise || !wasVisible || wasMinimized || !wasFocused) {
     win.moveTop();
     if (focus) win.focus();
   }

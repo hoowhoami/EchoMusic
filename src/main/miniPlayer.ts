@@ -631,9 +631,10 @@ export const ensureMiniPlayerWindow = async (canPresent = () => true) => {
 };
 
 export const showMiniPlayerWindow = async () => {
+  // A second toggle must see this intent even while the Dock is still restoring.
+  setActiveWindowMode('mini');
   const canPresent = await prepareWindowPresentation();
   if (!canPresent()) return snapshot;
-  setActiveWindowMode('mini');
   const win = await ensureMiniPlayerWindow(canPresent);
   if (!canPresent() || win.isDestroyed()) return snapshot;
   if (!win.isVisible()) win.show();

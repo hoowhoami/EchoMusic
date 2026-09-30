@@ -150,7 +150,7 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
       }
       const win = getMainWindow();
       if (!win || win.isDestroyed()) return { ok: false, error: '主窗口不可用' };
-      await showMainWindow(focus);
+      await showMainWindow(focus, true);
       if (win.isDestroyed()) return { ok: false, error: '主窗口不可用' };
       return { ok: true, target: 'main' };
     },

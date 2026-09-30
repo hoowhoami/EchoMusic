@@ -434,6 +434,73 @@ test('a later inactive show supersedes a pending focused show without stealing f
   assert.deepEqual(e.events, ['tray:true', 'dock:show', 'window:show-inactive', 'window:move-top']);
 });
 
+test('an explicit raise moves an already-focused window above an inactive window without refocusing', async () => {
+  const e = await setup();
+  // A plugin can use showInactive() without taking the main window's focus.
+  e.win.focused = true;
+  let focusCalls = 0;
+  e.win.on('focus', () => focusCalls++);
+  e.events.length = 0;
+
+  await e.api.showMainWindow(false, true);
+
+  assert.deepEqual(e.events, ['window:move-top']);
+  assert.equal(focusCalls, 0, 'focus:false must not activate the window again');
+});
+
+test('plugin host show-on-top explicitly raises and waits for main window presentation', async () => {
+  const handlers = new Map();
+  const calls = [];
+  let finishPresentation;
+  const presentation = new Promise((resolve) => {
+    finishPresentation = resolve;
+  });
+  const win = { isDestroyed: () => false };
+  const modules = {
+    electron: {},
+    'node:os': { release: () => '25.0.0' },
+    './registry': {
+      ipcRegistry: {
+        registerHandler: (name, handler) => handlers.set(name, handler),
+        registerListener: noop,
+      },
+    },
+    '../window': {
+      showMainWindow: (...args) => {
+        calls.push(args);
+        return presentation;
+      },
+    },
+    '../window/modeController': {},
+    '../miniPlayer': {},
+    '../systemShutdown': {},
+    '../window/fullscreen': {},
+  };
+  const module = { exports: {} };
+  runInNewContext(compile('../src/main/ipc/window.ts'), {
+    module,
+    process: { platform: 'darwin' },
+    require(name) {
+      assert.ok(Object.hasOwn(modules, name), `unexpected dependency: ${name}`);
+      return modules[name];
+    },
+  });
+  module.exports.registerWindowHandlers({ getMainWindow: () => win });
+
+  let returned = false;
+  const result = handlers.get('plugins:host:show-on-top')({}, 'main', { focus: false });
+  result.then(() => {
+    returned = true;
+  });
+  await Promise.resolve();
+  assert.equal(returned, false, 'IPC must wait until Dock/window presentation completes');
+  finishPresentation();
+  const response = await result;
+  assert.equal(response.ok, true);
+  assert.equal(response.target, 'main');
+  assert.deepEqual(calls, [[false, true]], 'the explicit raise must survive delegation');
+});
+
 test('quitting while Dock restoration is pending never reopens the window', async () => {
   const e = await setup();
   e.api.requestMainWindowClose();
