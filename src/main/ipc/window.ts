@@ -7,6 +7,7 @@ import {
   hideMainWindow,
   quitApplication,
   requestMainWindowClose,
+  showMainWindow,
 } from '../window';
 import { restoreActiveWindowMode } from '../window/modeController';
 import { showMiniPlayerWindowOnTop } from '../miniPlayer';
@@ -136,11 +137,11 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
 
   ipcRegistry.registerHandler(
     'plugins:host:show-on-top',
-    (
+    async (
       _event,
       target: PluginHostWindowTarget = 'main',
       options?: PluginShowOnTopOptions,
-    ): PluginHostWindowResult => {
+    ): Promise<PluginHostWindowResult> => {
       const focus = options?.focus !== false;
       if (target === 'mini-player') {
         return showMiniPlayerWindowOnTop(focus)
@@ -149,13 +150,8 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
       }
       const win = getMainWindow();
       if (!win || win.isDestroyed()) return { ok: false, error: '主窗口不可用' };
-      if (win.isMinimized()) win.restore();
-      if (!win.isVisible()) {
-        if (focus) win.show();
-        else win.showInactive();
-      }
-      if (typeof win.moveTop === 'function') win.moveTop();
-      if (focus) win.focus();
+      await showMainWindow(focus, true);
+      if (win.isDestroyed()) return { ok: false, error: '主窗口不可用' };
       return { ok: true, target: 'main' };
     },
   );

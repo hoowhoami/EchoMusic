@@ -9,14 +9,17 @@ import log from './logger';
 import { getKvStorage } from './storage/kv';
 import {
   getDesktopLyricPersistedSettings,
+  getMainAppSettings,
   patchDesktopLyricPersistedSettings,
   setMainAppSetting,
+  setMainClosePreferences,
   setPersistedLogSettings,
   type MainAppSettings,
 } from './storage/settings';
 import { normalizeLogSettings, type AppLogLevel } from '../shared/logging';
 import { getStorePersistenceKey } from '../shared/storePersistence';
 import { isBlockedObjectKey } from '../shared/objectSafety';
+import { normalizeClosePreferences, type ClosePreferences } from '../shared/app';
 import {
   SETTINGS_BACKUP_EXTENSION,
   SETTINGS_BACKUP_FORMAT,
@@ -774,19 +777,27 @@ const importSettingsBackupForOwner = async (
     if (importSettings) {
       const key = getStorePersistenceKey('setting');
       const current = getKvStorage().get<Record<string, unknown>>(key);
+      const importedSettings = sanitizePortableAppSettings(freshArchive.settings);
+      const hasClosePreferences = [
+        'closeBehavior',
+        'hideDockInBackground',
+        'hideMenuBarInBackground',
+      ].some((settingKey) => Object.hasOwn(importedSettings, settingKey));
+      const closePreferences = normalizeClosePreferences({
+        ...getMainAppSettings(),
+        ...importedSettings,
+      });
+      if (hasClosePreferences) Object.assign(importedSettings, closePreferences);
       getKvStorage().set(key, {
         ...(isPlainObject(current) ? current : {}),
-        ...sanitizePortableAppSettings(freshArchive.settings),
+        ...importedSettings,
       });
-      const importedSettings = sanitizePortableAppSettings(freshArchive.settings);
-      if (['tray', 'exit'].includes(String(importedSettings.closeBehavior))) {
-        setMainAppSetting('closeBehavior', importedSettings.closeBehavior as 'tray' | 'exit');
-      }
+      if (hasClosePreferences) setMainClosePreferences(closePreferences);
       if (['system', 'light', 'dark'].includes(String(importedSettings.theme))) {
         setMainAppSetting('theme', importedSettings.theme as 'system' | 'light' | 'dark');
       }
       const booleanMainSettingKeys: Array<
-        Exclude<keyof MainAppSettings, 'closeBehavior' | 'theme' | 'dpiScale'>
+        Exclude<keyof MainAppSettings, keyof ClosePreferences | 'theme' | 'dpiScale'>
       > = [
         'rememberWindowSize',
         'preventSleep',

@@ -1,5 +1,6 @@
 import { ipcRegistry } from '../ipc/registry';
 import { BrowserWindow, app, screen } from 'electron';
+import { syncMacDockVisibility } from '../macBackgroundMode';
 import { join } from 'path';
 import type {
   PluginShowOnTopOptions,
@@ -92,7 +93,7 @@ const scheduleDockRestore = () => {
   clearDockRestoreTimers();
   pluginWindowDockTimers = PLUGIN_WINDOW_DOCK_RESTORE_DELAYS_MS.map((delay) =>
     setTimeout(() => {
-      app.dock?.show();
+      void syncMacDockVisibility();
     }, delay),
   );
 };

@@ -19,10 +19,11 @@ import {
   shouldApplyPlaybackBridgePatch,
   type PlaybackSnapshotPatch,
 } from '../shared/playback';
-import { getMainWindow, hideMainWindow, showMainWindow } from './window';
+import { getMainWindow, hideMainWindow, prepareWindowPresentation, showMainWindow } from './window';
 import { getActiveWindowMode, setActiveWindowMode } from './window/mode';
 import { getMainAppSettings, setMainAppSetting } from './storage/settings';
 import { WindowDragController } from './windowDrag';
+import { syncMacDockVisibility } from './macBackgroundMode';
 
 const MINI_PLAYER_WIDTH = MINI_PLAYER_DIMENSIONS.width;
 const MINI_PLAYER_HEIGHT = MINI_PLAYER_DIMENSIONS.collapsedHeight;
@@ -159,7 +160,7 @@ const scheduleMiniPlayerDockRestore = () => {
   clearMiniPlayerDockRestoreTimers();
   miniPlayerDockTimers = MINI_PLAYER_DOCK_RESTORE_DELAYS_MS.map((delay) =>
     setTimeout(() => {
-      app.dock?.show();
+      void syncMacDockVisibility();
     }, delay),
   );
 };
@@ -524,7 +525,7 @@ const notifyMiniPlayerLyricVisibility = (visible: boolean) => {
   mainWindow.webContents.send('mini-player:lyric-visibility', visible);
 };
 
-export const ensureMiniPlayerWindow = async () => {
+export const ensureMiniPlayerWindow = async (canPresent = () => true) => {
   if (canUseWindow(miniPlayerWindow)) {
     if (miniPlayerWindow.isMinimized()) miniPlayerWindow.restore();
     if (!miniPlayerWindow.isVisible()) miniPlayerWindow.show();
@@ -595,7 +596,7 @@ export const ensureMiniPlayerWindow = async () => {
     scheduleMiniPlayerPresentationSync();
     const shouldSuppressShow = suppressNextMiniPlayerReadyToShow;
     suppressNextMiniPlayerReadyToShow = false;
-    if (!shouldSuppressShow) win.show();
+    if (!shouldSuppressShow && canPresent()) win.show();
     sendSnapshot();
   });
 
@@ -630,14 +631,19 @@ export const ensureMiniPlayerWindow = async () => {
 };
 
 export const showMiniPlayerWindow = async () => {
+  // A second toggle must see this intent even while the Dock is still restoring.
   setActiveWindowMode('mini');
-  const win = await ensureMiniPlayerWindow();
+  const canPresent = await prepareWindowPresentation();
+  if (!canPresent()) return snapshot;
+  const win = await ensureMiniPlayerWindow(canPresent);
+  if (!canPresent() || win.isDestroyed()) return snapshot;
   if (!win.isVisible()) win.show();
   if (win.isMinimized()) win.restore();
   win.focus();
   hideMainWindow();
   if (process.platform === 'darwin') {
     setTimeout(() => {
+      if (!canPresent()) return;
       hideMainWindow();
       if (!win.isDestroyed()) {
         if (!win.isVisible()) win.show();

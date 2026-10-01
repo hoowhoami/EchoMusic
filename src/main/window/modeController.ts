@@ -7,5 +7,5 @@ export const restoreActiveWindowMode = async () => {
     await showMiniPlayerWindow();
     return;
   }
-  showMainWindow();
+  await showMainWindow();
 };

@@ -9,7 +9,7 @@ import {
 } from '../../shared/windowBackground';
 import { applyWindowBackground } from '@/utils/windowBackground';
 import { defineStore } from 'pinia';
-import type { CloseBehavior, ThemeMode } from '../../shared/app';
+import { normalizeClosePreferences, type CloseBehavior, type ThemeMode } from '../../shared/app';
 import type { RecognizeAudioSource } from '../../shared/recognize';
 import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../shared/logging';
 import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
@@ -139,6 +139,8 @@ export const useSettingStore = defineStore('setting', {
     mvBarrageConfig: { opacity: 100, fontSize: 17, speed: 1, area: 25, density: 2 },
     searchDefaultEnabled: false,
     closeBehavior: 'tray' as CloseBehavior,
+    hideDockInBackground: false,
+    hideMenuBarInBackground: false,
     playbackQueueMode: 'context' as 'context' | 'single',
     autoPlayOnLaunch: false,
     volumeFade: true,
@@ -462,8 +464,13 @@ export const useSettingStore = defineStore('setting', {
       }
     },
     syncCloseBehavior() {
+      const preferences = normalizeClosePreferences(this);
+      this.$patch(preferences);
       if (window.electron?.ipcRenderer) {
-        window.electron.ipcRenderer.send('update-close-behavior', this.closeBehavior);
+        window.electron.ipcRenderer.send('update-close-behavior', preferences.closeBehavior, {
+          hideDockInBackground: preferences.hideDockInBackground,
+          hideMenuBarInBackground: preferences.hideMenuBarInBackground,
+        });
       }
     },
     syncTheme() {

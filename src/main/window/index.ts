@@ -12,8 +12,12 @@ import {
 } from '../../shared/windowBackgroundStrategy';
 import { BrowserWindow, shell, app, nativeTheme, powerSaveBlocker, screen } from 'electron';
 import { join } from 'path';
-import type { CloseBehavior, ThemeMode } from '../../shared/app';
-import { getMainAppSettings, setMainAppSetting } from '../storage/settings';
+import { normalizeClosePreferences, type ThemeMode } from '../../shared/app';
+import {
+  getMainAppSettings,
+  setMainAppSetting,
+  setMainClosePreferences,
+} from '../storage/settings';
 import { getActiveWindowMode, setActiveWindowMode } from './mode';
 import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from '../plugins';
 import { ipcRegistry } from '../ipc/registry';
@@ -40,9 +44,16 @@ import {
   setWindowFullscreen,
 } from './fullscreen';
 import { normalizeZoomLevel, titleBarHeight, zoomLevelToFactor } from '../../shared/windowZoom';
+import {
+  enterMacBackgroundMode,
+  isMacBackgroundMode,
+  leaveMacBackgroundMode,
+  syncMacDockVisibility,
+  updateMacBackgroundOptions,
+} from '../macBackgroundMode';
 
 const initialSettings = getMainAppSettings();
-let closeBehavior: CloseBehavior = initialSettings.closeBehavior;
+let closePreferences = normalizeClosePreferences(initialSettings);
 let currentTheme: ThemeMode = initialSettings.theme;
 let windowBackground = normalizeWindowBackground(initialSettings.windowBackground);
 let windowBackgroundActiveEnabled = windowBackground.enabled;
@@ -72,6 +83,8 @@ app.setLoginItemSettings({ openAtLogin: initialSettings.autoLaunch });
 
 let win: BrowserWindow | null = null;
 let isQuitting = false;
+let windowPresentationRevision = 0;
+let cancelPendingBackgroundClose = () => {};
 let zoomController: ReturnType<typeof installWindowZoom> | null = null;
 let backgroundUnavailableReason = '';
 let titleBarController: ReturnType<typeof createTitleBarController> | null = null;
@@ -100,9 +113,20 @@ export function hideMainWindow() {
   win.hide();
 }
 
-export function showMainWindow() {
+// Main and mini windows share one foreground request, so a newer close wins.
+export async function prepareWindowPresentation() {
+  cancelPendingBackgroundClose();
+  const revision = ++windowPresentationRevision;
+  await leaveMacBackgroundMode();
+  return () => !isQuitting && revision === windowPresentationRevision;
+}
+
+export async function showMainWindow(focus = true, forceRaise = false) {
   if (!canUseMainWindow(win)) return;
+  // Publish the requested mode before Dock restoration can trigger app.activate.
   setActiveWindowMode('main');
+  const canPresent = await prepareWindowPresentation();
+  if (!canPresent() || !canUseMainWindow(win)) return;
 
   const wasVisible = win.isVisible();
   const wasMinimized = win.isMinimized();
@@ -114,14 +138,15 @@ export function showMainWindow() {
 
   // 先 show 再 setSkipTaskbar(false)，确保窗口可见后任务栏条目能正确创建
   if (!wasVisible) {
-    win.show();
+    if (focus) win.show();
+    else win.showInactive();
   }
 
   win.setSkipTaskbar(false);
 
-  if (!wasVisible || wasMinimized || !wasFocused) {
+  if (forceRaise || !wasVisible || wasMinimized || !wasFocused) {
     win.moveTop();
-    win.focus();
+    if (focus) win.focus();
   }
 }
 
@@ -132,17 +157,47 @@ export function quitApplication() {
 
 export function requestMainWindowClose() {
   if (!canUseMainWindow(win)) return;
+  windowPresentationRevision++;
+  cancelPendingBackgroundClose();
 
-  if (isQuitting || closeBehavior === 'exit') {
+  if (isQuitting || closePreferences.closeBehavior === 'exit') {
     quitApplication();
     return;
   }
 
-  hideMainWindow();
+  if (
+    process.platform !== 'darwin' ||
+    (!closePreferences.hideDockInBackground && !closePreferences.hideMenuBarInBackground)
+  ) {
+    hideMainWindow();
+    return;
+  }
+
+  const mainWindow = win;
+  const finishClose = () => {
+    cancelPendingBackgroundClose();
+    if (isQuitting || !canUseMainWindow(mainWindow) || mainWindow !== win) return;
+    hideMainWindow();
+    enterMacBackgroundMode(closePreferences);
+  };
+  // AppKit must leave the fullscreen Space before changing the activation policy.
+  if (isWindowFullscreen(mainWindow) || isWindowFullscreenTransitioning(mainWindow)) {
+    const timer = setTimeout(finishClose, 10_000);
+    cancelPendingBackgroundClose = () => {
+      clearTimeout(timer);
+      mainWindow.removeListener('leave-full-screen', finishClose);
+      cancelPendingBackgroundClose = () => {};
+    };
+    mainWindow.once('leave-full-screen', finishClose);
+    setWindowFullscreen(mainWindow, false);
+    return;
+  }
+  finishClose();
 }
 
 // 监听应用准备退出
 app.on('before-quit', () => {
+  cancelPendingBackgroundClose();
   flushPersistWindowState();
   isQuitting = true;
 });
@@ -305,10 +360,24 @@ export const registerMainWindowPreferenceHandlers = () => {
     syncMainWindowBackground();
     return windowBackground;
   });
-  ipcRegistry.registerListener('update-close-behavior', (_event, behavior: CloseBehavior) => {
-    closeBehavior = behavior;
-    setMainAppSetting('closeBehavior', behavior);
-  });
+  ipcRegistry.registerListener(
+    'update-close-behavior',
+    (_event, behavior: unknown, icons: unknown) => {
+      const options = icons && typeof icons === 'object' ? (icons as Record<string, unknown>) : {};
+      closePreferences = normalizeClosePreferences({
+        closeBehavior: behavior,
+        hideDockInBackground: options.hideDockInBackground,
+        hideMenuBarInBackground: options.hideMenuBarInBackground,
+      });
+      setMainClosePreferences(closePreferences);
+      if (closePreferences.closeBehavior !== 'tray') {
+        cancelPendingBackgroundClose();
+        void leaveMacBackgroundMode();
+      } else {
+        updateMacBackgroundOptions(closePreferences);
+      }
+    },
+  );
 
   ipcRegistry.registerListener('update-theme', (_event, theme: ThemeMode) => {
     currentTheme = theme;
@@ -502,7 +571,7 @@ export async function createWindow() {
   win.once('ready-to-show', () => {
     flushPersistWindowState();
     void logMainMemory('main window:ready-to-show');
-    if (!initialSettings.startMinimized) {
+    if (!initialSettings.startMinimized && !isMacBackgroundMode()) {
       win?.show();
       void logMainMemory('main window:after show');
     }
@@ -513,6 +582,12 @@ export async function createWindow() {
   // Hide/show can recreate the Hyprland client property while the saved
   // setting stays unchanged. Re-apply it after every map, without delaying show.
   win.on('show', () => syncHyprlandBackground(true));
+  win.on('leave-full-screen', () => {
+    if (isMacBackgroundMode()) {
+      hideMainWindow();
+      void syncMacDockVisibility();
+    }
+  });
 
   win.webContents.once('dom-ready', () => {
     void logMainMemory('main window:dom-ready');
@@ -575,15 +650,14 @@ export async function createWindow() {
     flushPersistWindowState();
     if (isQuitting) return;
 
-    if (closeBehavior === 'tray') {
+    if (closePreferences.closeBehavior !== 'exit') {
       event.preventDefault();
-      hideMainWindow();
-    } else {
-      quitApplication();
     }
+    requestMainWindowClose();
   });
 
   win.on('closed', () => {
+    cancelPendingBackgroundClose();
     windowStateTracker?.dispose();
     windowStateTracker = null;
     syncPowerSaveBlocker();
@@ -604,5 +678,5 @@ export async function createWindow() {
 }
 
 export function restoreWindow() {
-  showMainWindow();
+  return showMainWindow();
 }
