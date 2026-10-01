@@ -142,7 +142,7 @@ async function createBar(): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   });
   win = candidate;

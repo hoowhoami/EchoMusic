@@ -7,6 +7,7 @@ import type {
   UpdateState,
 } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
+import type { PlayerRuntimeSession, PlayerSessionRestore } from '../shared/playerSession';
 import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
@@ -960,7 +961,10 @@ export interface IElectronAPI {
       idle: boolean;
       path: string;
       audioDevice: string;
+      trackSeq?: number;
     } | null>;
+    getRuntimeSession: () => Promise<PlayerSessionRestore | null>;
+    syncRuntimeSession: (session: PlayerRuntimeSession | null) => Promise<void>;
     available: () => Promise<boolean>;
     restart: () => Promise<boolean>;
     setPauseOnDeviceDisconnect: (enabled: boolean) => Promise<void>;

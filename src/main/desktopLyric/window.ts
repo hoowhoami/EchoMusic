@@ -201,7 +201,7 @@ export const createDesktopLyricWindow = () => {
       enableWebSQL: false,
       webSecurity: false,
       allowRunningInsecureContent: true,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
       zoomFactor: 1.0,
       partition: 'persist:desktop-lyric',
     },

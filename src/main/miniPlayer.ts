@@ -568,7 +568,7 @@ export const ensureMiniPlayerWindow = async (canPresent = () => true) => {
       enableWebSQL: false,
       webSecurity: false,
       allowRunningInsecureContent: true,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
       zoomFactor: 1.0,
       // Chromium shares host zoom within a session; Mini has a fixed DIP layout.
       partition: 'persist:mini-player',

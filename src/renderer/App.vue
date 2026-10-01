@@ -303,10 +303,15 @@ onMounted(async () => {
     playlistStore.hydratePersonalFmPreferences(),
     historyStore.hydrate(),
   ]);
-  activePlayer.init();
+  const recoveredLiveSession = await activePlayer.init();
 
   // 启动时自动播放：如果开启了设置且有恢复的曲目
-  if (settings.autoPlayOnLaunch && activePlayer.currentTrackId && !activePlayer.isPlaying) {
+  if (
+    !recoveredLiveSession &&
+    settings.autoPlayOnLaunch &&
+    activePlayer.currentTrackId &&
+    !activePlayer.isPlaying
+  ) {
     // 延迟启动播放，确保所有初始化完成
     window.setTimeout(() => {
       if (activePlayer.currentTrackId && !activePlayer.isPlaying) {

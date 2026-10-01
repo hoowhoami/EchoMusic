@@ -24,6 +24,7 @@ import {
 import { dspProviderRestorePatch } from '../../shared/dspProviderSettings';
 
 import { createPlayerState } from './player/state';
+import { capturePlayerSession, restorePlayerSession } from './player/session';
 import { createSleepTimer } from './player/sleepTimer';
 import { createPlaybackManager } from './player/playback';
 import { createAudioManager } from './player/audio';
@@ -74,6 +75,12 @@ export const usePlayerStore = defineStore(
     const settingStore = useSettingStore();
     const lyricStore = useLyricStore();
     const toastStore = useToastStore();
+    let disposeRuntimeSessionSync: (() => void) | null = null;
+    onScopeDispose(() => disposeRuntimeSessionSync?.());
+    let resolveInitialization!: () => void;
+    const initialization = new Promise<void>((resolve) => {
+      resolveInitialization = resolve;
+    });
 
     const resolver = createResolver(state, playlistStore, settingStore);
     const historyManager = createHistoryManager(state);
@@ -1084,7 +1091,9 @@ export const usePlayerStore = defineStore(
       engine.updateMediaPlaybackState(buildMediaState(state));
     };
 
-    const init = () => {
+    const init = async () => {
+      const initialRequestSeq = state.playbackRequestSeq;
+      let recoveredLiveSession = false;
       state.audioEffect = normalizeEffect(state.audioEffect);
       // 提前注册 MediaSession handlers，避免启动时丢失系统媒体控制事件
       engine.setMediaSessionHandlers({
@@ -1110,7 +1119,69 @@ export const usePlayerStore = defineStore(
           ),
       });
 
-      restorePlaybackSessionFromQueue();
+      let runtimeSession = null;
+      try {
+        runtimeSession = await window.electron?.player?.getRuntimeSession?.();
+      } catch (error) {
+        logger.warn('Player', 'Failed to recover live playback session', error);
+      }
+      if (state.playbackRequestSeq === initialRequestSeq) {
+        if (runtimeSession && restorePlayerSession(state, runtimeSession)) {
+          recoveredLiveSession = true;
+          const queue = runtimeSession.session.queue;
+          if (queue) {
+            playlistStore.activeQueueId = queue.id;
+            playlistStore.upsertPlaybackQueueInMemory(queue);
+            playlistStore.updateQueueCurrentTrack(state.currentTrackId, queue.id);
+          }
+          engine.adoptPreparedSource(state.currentPlaybackSource ?? state.currentAudioUrl);
+          engine.adoptPreparedTrackLoudness(state.currentResolvedAudioLoudness);
+          const track = state.currentTrackSnapshot!;
+          const mediaMeta = buildMediaMeta(track);
+          if (mediaMeta)
+            engine.updateMediaMetadata({ ...mediaMeta, durationMs: state.duration * 1000 });
+          engine.updateMediaPlaybackState(buildMediaState(state), { forceTimeline: true });
+          const lyricHash = String(track.hash ?? track.id ?? '');
+          if (track.lyric) lyricStore.setLyric(track.lyric, lyricHash);
+          if (lyricHash) {
+            void lyricStore.fetchLyrics(lyricHash, {
+              preserveCurrent: Boolean(track.lyric),
+              duration: state.duration * 1000,
+              track,
+            });
+          }
+          logger.info('Player', 'Recovered live playback session', {
+            trackId: state.currentTrackId,
+            nativeTrackSeq: state.nativeTrackSeq,
+            sourceQueueId: state.currentSourceQueueId,
+          });
+        } else {
+          restorePlaybackSessionFromQueue();
+        }
+      }
+      disposeRuntimeSessionSync?.();
+      disposeRuntimeSessionSync = watch(
+        () => ({
+          session: capturePlayerSession(
+            state,
+            playlistStore.getQueueById(state.currentSourceQueueId),
+          ),
+          ready: state.playbackIntent.phase === 'ready' && !state.awaitingTrackLoad,
+        }),
+        ({ session, ready }) => {
+          const bridge = window.electron?.player;
+          let request: Promise<void> | undefined;
+          if (!state.currentTrackId) {
+            request = bridge?.syncRuntimeSession?.(null);
+          } else if (ready && state.nativeTrackSeq && state.currentAudioUrl) {
+            request = bridge?.syncRuntimeSession?.(JSON.parse(JSON.stringify(session)));
+          }
+          void request?.catch((error) =>
+            logger.warn('Player', 'Failed to sync live playback session', error),
+          );
+        },
+        { deep: true, immediate: true },
+      );
       audioManager.setVolume(state.volume);
       engine.setPlaybackRate(state.playbackRate);
       engine.setEqualizer(state.equalizerGains);
@@ -1450,6 +1521,8 @@ export const usePlayerStore = defineStore(
       engine.setEvents(events);
       window.electron?.player?.getState?.().then((playerState) => {
         if (!playerState) return;
+        if (state.playbackRequestSeq !== initialRequestSeq || state.awaitingTrackLoad) return;
+        if (state.nativeTrackSeq && playerState.trackSeq !== state.nativeTrackSeq) return;
         if (playerState.playing && !getPlaybackIsPlaying(state)) {
           setPlaybackIntentPlayback(state, true);
           settingStore.syncPreventSleep(true);
@@ -1464,6 +1537,8 @@ export const usePlayerStore = defineStore(
           state.currentTimeUpdatedAt = Date.now();
         }
       });
+      resolveInitialization();
+      return recoveredLiveSession;
     };
 
     const setVolumeSmooth = async (value: number, durationMs?: number) => {
@@ -1544,6 +1619,7 @@ export const usePlayerStore = defineStore(
       clearPlaybackNotice,
       refreshCurrentTrack,
       init,
+      whenInitialized: () => initialization,
       setVolumeSmooth,
       setAutoNextSuppressed,
       onPlayerEvent: playerEvents.on,

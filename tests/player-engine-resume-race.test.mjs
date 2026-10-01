@@ -83,6 +83,16 @@ function engineFixture() {
   return { engine, bridge, calls, loads, plays, mediaCalls };
 }
 
+test('an adopted live source resumes without issuing another audio load', async () => {
+  const { engine, calls, loads, plays } = engineFixture();
+  engine.adoptPreparedSource({ url: 'http://cdn/live.flac', audioTrackId: null });
+  await engine.play();
+  assert.equal(engine.source, 'http://cdn/live.flac');
+  assert.deepEqual(loads, []);
+  assert.deepEqual(calls, ['play']);
+  assert.deepEqual(plays, [undefined]);
+});
+
 test('play during an in-flight source load is deferred and delivered after the load settles', async () => {
   const { engine, calls, loads, plays } = engineFixture();
   const loading = engine.setSource('http://cdn/a.mp3');

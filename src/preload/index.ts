@@ -3,6 +3,7 @@ import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/apiServer';
 import type { AppInfoResult, UpdateDownloadResult, UpdateState } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
+import type { PlayerRuntimeSession, PlayerSessionRestore } from '../shared/playerSession';
 import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
@@ -763,6 +764,10 @@ contextBridge.exposeInMainWorld('electron', {
     playWithFade: (targetVolume: number, durationMs: number, requestId?: number) =>
       ipcRenderer.invoke('player:play-with-fade', targetVolume, durationMs, requestId),
     getState: () => ipcRenderer.invoke('player:get-state'),
+    getRuntimeSession: () =>
+      ipcRenderer.invoke('player:get-runtime-session') as Promise<PlayerSessionRestore | null>,
+    syncRuntimeSession: (session: PlayerRuntimeSession | null) =>
+      ipcRenderer.invoke('player:sync-runtime-session', session) as Promise<void>,
     available: () => ipcRenderer.invoke('player:available') as Promise<boolean>,
     restart: () => ipcRenderer.invoke('player:restart') as Promise<boolean>,
     setPauseOnDeviceDisconnect: (enabled: boolean) =>

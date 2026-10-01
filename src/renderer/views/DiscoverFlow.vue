@@ -45,6 +45,7 @@ const lastWheelAt = ref(-Infinity);
 let playbackSeq = 0;
 let navigationSeq = 0;
 let appendRequest: Promise<void> | null = null;
+let disposed = false;
 const followActiveQueue = ref(true);
 
 const currentItem = computed(() => items.value[activeIndex.value] ?? null);
@@ -302,10 +303,12 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 };
 
-onMounted(() => {
+onMounted(async () => {
+  window.addEventListener('keydown', handleKeydown);
+  await playerStore.whenInitialized();
+  if (disposed) return;
   if (items.value.length === 0) void loadDiscover(false);
   else loading.value = false;
-  window.addEventListener('keydown', handleKeydown);
 });
 
 const deactivate = () => {
@@ -317,7 +320,11 @@ onActivated(() => {
   window.addEventListener('keydown', handleKeydown);
 });
 onDeactivated(deactivate);
-onBeforeUnmount(deactivate);
+onBeforeUnmount(() => {
+  disposed = true;
+  requestSeq.value += 1;
+  deactivate();
+});
 </script>
 
 <template>

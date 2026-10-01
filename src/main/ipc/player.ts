@@ -13,10 +13,49 @@ import { getOutputHost } from '../outputs/outputHost';
 import { setPlayerAudioEffect } from '../player/audioEffectCommand';
 import { DspProviderRegistry } from '../player/dspProviderRegistry';
 import log from '../logger';
+import { createPlayerSessionCache } from '../player/session';
+import type { PlayerRuntimeSession } from '../../shared/playerSession';
 
 export type PlayerRef = { current: PlayerController | null };
 
 export function registerPlayerIpc(ref: PlayerRef): void {
+  const sessions = createPlayerSessionCache();
+  let sessionRevision = 0;
+  const getSessionOwner = () => {
+    const output = getOutputHost();
+    return output?.ownsTransport ? output : ref.current;
+  };
+  const getPlaybackState = async () => {
+    const output = getOutputHost();
+    if (output?.ownsTransport) return output.getState();
+    const state = ref.current?.getState() ?? null;
+    if (output?.airplayActive && state && typeof state.timePos === 'number') {
+      return { ...state, timePos: Math.max(0, state.timePos - output.airplayDelaySec()) };
+    }
+    return state;
+  };
+  ipcRegistry.registerHandler(
+    'player:sync-runtime-session',
+    async (_event, session: PlayerRuntimeSession | null) => {
+      const revision = ++sessionRevision;
+      if (!session) sessions.clear();
+      else {
+        const owner = getSessionOwner();
+        const transport = await getPlaybackState();
+        if (revision === sessionRevision && owner === getSessionOwner()) {
+          sessions.sync(session, owner, transport);
+        }
+      }
+    },
+  );
+  ipcRegistry.registerHandler('player:get-runtime-session', async () => {
+    const owner = getSessionOwner();
+    if (!sessions.get(owner, await getPlaybackState())) return null;
+    // A reloaded renderer cannot accept the previous renderer's prepared transition.
+    if (!getOutputHost()?.ownsTransport) ref.current?.clearPreparedNextSource();
+    const transport = await getPlaybackState();
+    return owner === getSessionOwner() ? sessions.get(owner, transport) : null;
+  });
   const providerRoot = path.join(app.getPath('userData'), 'dsp-providers');
   const providerRegistry = new DspProviderRegistry(
     providerRoot,
@@ -187,6 +226,8 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   });
 
   ipcRegistry.registerHandler('player:stop', async () => {
+    sessionRevision++;
+    sessions.clear();
     const output = getOutputHost();
     if (output?.ownsTransport) return output.stop();
     await ref.current?.stop();
@@ -281,21 +322,15 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     },
   );
 
-  ipcRegistry.registerHandler('player:get-state', () => {
-    const output = getOutputHost();
-    if (output?.ownsTransport) return output.getState();
-    const state = ref.current?.getState() ?? null;
-    if (output?.airplayActive && state && typeof state.timePos === 'number') {
-      return { ...state, timePos: Math.max(0, state.timePos - output.airplayDelaySec()) };
-    }
-    return state;
-  });
+  ipcRegistry.registerHandler('player:get-state', getPlaybackState);
 
   ipcRegistry.registerHandler('player:available', () => {
     return ref.current?.available ?? false;
   });
 
   ipcRegistry.registerHandler('player:restart', async () => {
+    sessionRevision++;
+    sessions.clear();
     const instance = await restartPlayer();
     ref.current = instance;
     return !!instance;
