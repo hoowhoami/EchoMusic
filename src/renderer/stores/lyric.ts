@@ -744,6 +744,7 @@ export const useLyricStore = defineStore('lyric', {
     // 所有歌曲共用的时间校准；与单曲微调叠加，切歌和重置单曲时保留。
     globalTimeOffsetMs: 0,
     displayConversionSerial: 0,
+    displayRevision: 0,
   }),
   getters: {
     manualCandidateForCurrentHash: (state): ManualLyricSelection | null => {
@@ -826,6 +827,7 @@ export const useLyricStore = defineStore('lyric', {
   },
   actions: {
     resetLyricsState(payload?: { hash?: string; tips?: string }) {
+      this.displayConversionSerial += 1;
       this.lines = [];
       this.displayLines = [];
       this.currentIndex = -1;
@@ -870,9 +872,16 @@ export const useLyricStore = defineStore('lyric', {
       const mode = normalizeLyricTextConversionMode(this.textConversionMode);
       this.textConversionMode = mode;
 
+      if (mode === 'none') {
+        this.displayLines = sourceLines;
+        this.displayRevision += 1;
+        return;
+      }
+
       const converted = await convertLyricLinesForDisplay(sourceLines, mode);
       if (serial !== this.displayConversionSerial || sourceLines !== this.lines) return;
       this.displayLines = converted;
+      this.displayRevision += 1;
     },
     // 调整当前歌曲的歌词时间偏移（毫秒）
     adjustTimeOffset(deltaMs: number): number {
@@ -921,7 +930,6 @@ export const useLyricStore = defineStore('lyric', {
       this.resetLyricsState({ hash, tips: '暂无歌词' });
       const parsed = parseLyricDetailPayload(payload);
       this.lines = parsed.lines;
-      this.displayLines = parsed.lines;
       void this.refreshDisplayLines();
       this.rawLyric = parsed.rawLyric;
       this.loadedHash = hash;

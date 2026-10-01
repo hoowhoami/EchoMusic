@@ -7,7 +7,7 @@ import { isOpenccProfile, type OpenccProfile } from '../../shared/opencc';
 
 export interface NativeOpenccAddon {
   convert(text: string, profile: OpenccProfile): string;
-  convertBatch(texts: string[], profile: OpenccProfile): string[];
+  convertBatch(texts: string[], profile: OpenccProfile): Promise<string[]>;
 }
 
 let addon: NativeOpenccAddon | null = null;
@@ -46,10 +46,10 @@ const normalizeInputTexts = (texts: unknown): string[] => {
   return texts.map((text) => String(text ?? ''));
 };
 
-export const convertOpenccBatch = (texts: unknown, profile: unknown): string[] => {
+export const convertOpenccBatch = async (texts: unknown, profile: unknown): Promise<string[]> => {
   const normalizedTexts = normalizeInputTexts(texts);
-  if (!isOpenccProfile(profile)) return normalizedTexts;
+  if (!isOpenccProfile(profile)) throw new Error('Unsupported OpenCC profile');
   const nativeOpencc = loadNativeOpenccAddon();
-  if (!nativeOpencc) return normalizedTexts;
+  if (!nativeOpencc) throw new Error('OpenCC native addon is unavailable');
   return nativeOpencc.convertBatch(normalizedTexts, profile);
 };

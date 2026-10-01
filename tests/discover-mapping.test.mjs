@@ -28,7 +28,7 @@ const shared = compile('../src/renderer/utils/mappers/shared.ts', {
   '../../../shared/object': compile('../src/shared/object.ts'),
 });
 const song = compile('../src/renderer/utils/mappers/song.ts', { './shared': shared });
-const { mapDiscoverItems, applyDiscoverMetadata } = compile(
+const { mapDiscoverItems, applyDiscoverMetadata, applyDiscoverQualities } = compile(
   '../src/renderer/utils/mappers/discover.ts',
   {
     './shared': shared,
@@ -95,11 +95,106 @@ test('maps the discover response identities, album, artwork, duration, rights an
     s.coverUrl,
     row.song_info.album_cover.replace('http:', 'https:').replace('{size}', '400'),
   );
+  assert.equal(s.cover, row.song_info.album_cover);
+  assert.match(cover.normalizeCoverUrl(s.cover, 800), /stdmusic\/800\//);
   assert.deepEqual(
     s.relateGoods.map((g) => g.quality),
     ['320', 'flac'],
   );
   assert.equal(mapDiscoverItems({ data: { items: [row, row] } }).length, 1);
+});
+
+// Quality types and levels from /privilege/lite on 2026-10-01, adapted to the fixture hashes.
+const fullQualities = [
+  { hash: row.song_info.hash_128, quality: '128', level: 2 },
+  { hash: row.song_info.hash_320, quality: '320', level: 4 },
+  { hash: row.song_info.hash_flac, quality: 'flac', level: 5 },
+  { hash: '58066BF15A37CC10F2DEBB34CB29B28D', quality: 'high', level: 6 },
+  { hash: '9A00C96C37AE93014D727CFC7EC0FAF1', quality: 'viper_atmos', level: 0 },
+  { hash: row.song_info.hash_320, quality: 'viper_tape', level: 0 },
+  { hash: 'C84241F017E72E52E94EFD5722CFDA05', quality: 'viper_clear', level: 0 },
+  { hash: 'A1AE77592C91891D0C00607ED2142EFB', quality: 'multitrack', level: 0 },
+];
+const songQualities = compile('../src/renderer/utils/song.ts');
+
+test('joins complete quality records by hash and retains distinct qualities sharing a hash', () => {
+  const items = mapDiscoverItems({ data: { items: [row] } });
+  const [enriched] = applyDiscoverQualities(items, {
+    data: [
+      { hash: 'unrelated', relate_goods: [{ hash: 'foreign', quality: 'high' }] },
+      { hash: row.song_info.hash_128.toLowerCase(), relate_goods: fullQualities },
+    ],
+  });
+  assert.deepEqual(enriched.song.relateGoods, fullQualities);
+  assert.deepEqual(songQualities.getAvailableSongQualities(enriched.song), [
+    '128',
+    '320',
+    'flac',
+    'high',
+    'viper_tape',
+  ]);
+  assert.deepEqual(songQualities.getSongQualityTags(enriched.song.relateGoods), [
+    'HQ',
+    'SQ',
+    'Hi-Res',
+    '母带',
+  ]);
+  assert.deepEqual(songQualities.getSongQualityTags(enriched.song.relateGoods, false), [
+    'HQ',
+    'SQ',
+    'Hi-Res',
+  ]);
+  assert.equal(songQualities.resolveEffectiveSongQuality(enriched.song, 'high'), 'high');
+  assert.equal(
+    songQualities.resolveEffectiveSongQuality(enriched.song, 'viper_tape'),
+    'viper_tape',
+  );
+  assert.equal(enriched.song.hash, items[0].song.hash);
+  assert.deepEqual(
+    applyDiscoverQualities(items, { data: [{ hash: 'unrelated', relate_goods: fullQualities }] }),
+    items,
+  );
+  assert.deepEqual(
+    applyDiscoverQualities(items, { data: [{ hash: row.song_info.hash_128, relate_goods: [] }] }),
+    items,
+  );
+});
+
+test('discover enriches one batch without coupling artist and quality request failures', async () => {
+  for (const failure of ['metadata', 'qualities', null]) {
+    const calls = [];
+    const { fetchDiscoverItems } = compile('../src/renderer/services/discover.ts', {
+      '@/api/music': {
+        async getHomeDiscover() {
+          return { data: { items: [row] } };
+        },
+        async getSongMetadata(ids) {
+          calls.push(['metadata', ids]);
+          if (failure === 'metadata') throw new Error('metadata unavailable');
+          return { data: [metadata] };
+        },
+        async getSongPrivilegeLite(hash, albums) {
+          calls.push(['qualities', hash, albums]);
+          if (failure === 'qualities') throw new Error('qualities unavailable');
+          return { data: [{ hash, relate_goods: fullQualities }] };
+        },
+      },
+      '@/utils/mappers/discover': {
+        mapDiscoverItems,
+        applyDiscoverMetadata,
+        applyDiscoverQualities,
+      },
+      '@/utils/logger': { __esModule: true, default: { warn() {} } },
+    });
+    const [item] = await fetchDiscoverItems();
+    assert.deepEqual(calls, [
+      ['metadata', ['644833397']],
+      ['qualities', row.song_info.hash_128, '106374641'],
+    ]);
+    assert.equal(item.song.artists[0].id, failure === 'metadata' ? undefined : '93475');
+    assert.equal(songQualities.hasSongQuality(item.song, 'high'), failure !== 'qualities');
+    assert.equal(item.song.cover, row.song_info.album_cover);
+  }
 });
 
 test('joins nested authors by album_audio_id without changing playback identity or guessing missing IDs', () => {

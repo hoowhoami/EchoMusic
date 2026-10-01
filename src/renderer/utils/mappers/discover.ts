@@ -1,6 +1,14 @@
 import type { Song } from '@/models/song';
 import { mapTopSong } from './song';
-import { buildArtists, getArray, getRecord, isRecord, pickValue, readString } from './shared';
+import {
+  buildArtists,
+  buildRelateGoods,
+  getArray,
+  getRecord,
+  isRecord,
+  pickValue,
+  readString,
+} from './shared';
 
 export interface DiscoverItem {
   key: string;
@@ -25,12 +33,28 @@ export const mapDiscoverItems = (payload: unknown): DiscoverItem[] => {
       hash: pickValue(info.hash, info.hash_128, info.hash_320),
       timelength: pickValue(info.timelength, info.timelength_128, info.timelength_320),
     });
+    // Keep the size placeholder for large artwork; coverUrl remains the list thumbnail.
+    song.cover = readString(pickValue(info.album_sizable_cover, info.album_cover, song.cover));
     const key = String(song.mixSongId || song.id);
     if (!key || !song.id || seen.has(key)) continue;
     seen.add(key);
     result.push({ key, song, algPath: readString(row.alg_path), itemId: readString(row.item_id) });
   }
   return result;
+};
+
+export const applyDiscoverQualities = (items: DiscoverItem[], payload: unknown): DiscoverItem[] => {
+  if (!isRecord(payload)) return items;
+  const records = (getArray(payload.data) ?? []).filter(isRecord);
+  return items.map((item) => {
+    const record = records.find(
+      (entry) => readString(entry.hash).toLowerCase() === item.song.hash.toLowerCase(),
+    );
+    if (!record) return item;
+    const relateGoods = buildRelateGoods(record, {});
+    if (!relateGoods.length) return item;
+    return { ...item, song: { ...item.song, relateGoods } };
+  });
 };
 
 export const applyDiscoverMetadata = (items: DiscoverItem[], payload: unknown): DiscoverItem[] => {

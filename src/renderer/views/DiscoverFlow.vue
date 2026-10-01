@@ -23,6 +23,7 @@ import {
   type SetPlaybackQueueOptions,
 } from '@/stores/playlist';
 import { useToastStore } from '@/stores/toast';
+import { useSettingStore } from '@/stores/setting';
 import type { DiscoverItem } from '@/utils/mappers/discover';
 import { resolvePlayableQueue } from '@/utils/playback';
 import { getSongQualityTags, isPlayableSong } from '@/utils/song';
@@ -30,6 +31,7 @@ import { getSongQualityTags, isPlayableSong } from '@/utils/song';
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const toastStore = useToastStore();
+const settingStore = useSettingStore();
 
 const items = ref<DiscoverItem[]>([]);
 const activeIndex = ref(0);
@@ -47,6 +49,7 @@ const followActiveQueue = ref(true);
 
 const currentItem = computed(() => items.value[activeIndex.value] ?? null);
 const currentSong = computed(() => currentItem.value?.song ?? null);
+const artworkUrl = computed(() => currentSong.value?.cover || currentSong.value?.coverUrl || '');
 const queueSongs = computed(() => items.value.map((item) => item.song));
 const currentTrackId = computed(() => String(playerStore.currentTrackId ?? ''));
 const isCurrentTrack = computed(
@@ -69,7 +72,7 @@ const progressLabel = computed(() =>
 );
 const qualityTags = computed(() => {
   const song = currentSong.value;
-  return song ? getSongQualityTags(song.relateGoods) : [];
+  return song ? getSongQualityTags(song.relateGoods, settingStore.viperTapeQualityEnabled) : [];
 });
 
 const discoverQueueOptions = computed<SetPlaybackQueueOptions>(() => ({
@@ -320,20 +323,8 @@ onBeforeUnmount(deactivate);
 <template>
   <section class="discover-reel-page" @wheel.prevent="handleWheel">
     <Transition name="discover-backdrop">
-      <div
-        v-if="currentSong?.coverUrl"
-        :key="currentSong.coverUrl"
-        class="discover-reel-backdrop"
-        aria-hidden="true"
-      >
-        <Cover
-          :url="currentSong.coverUrl"
-          :size="800"
-          width="100%"
-          height="100%"
-          :border-radius="0"
-          alt=""
-        />
+      <div v-if="artworkUrl" :key="artworkUrl" class="discover-reel-backdrop" aria-hidden="true">
+        <Cover :url="artworkUrl" :size="800" width="100%" height="100%" :border-radius="0" alt="" />
       </div>
     </Transition>
 
@@ -467,18 +458,29 @@ onBeforeUnmount(deactivate);
 .discover-reel-backdrop {
   position: absolute;
   inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
   pointer-events: none;
-  /* Fade the artwork into MainLayout's shared gradient and translucent surface. */
-  mask-image: linear-gradient(180deg, transparent, #000 22%, #000 44%, transparent 86%);
 }
 
 .discover-reel-backdrop :deep(.cover-container) {
-  filter: blur(3px) saturate(0.85);
-  transform: scale(1.03);
+  background: transparent;
+  mask-image: linear-gradient(
+    180deg,
+    transparent,
+    rgb(0 0 0 / 10%) 5%,
+    rgb(0 0 0 / 45%) 12%,
+    rgb(0 0 0 / 82%) 20%,
+    #000 28%,
+    #000 58%,
+    transparent
+  );
 }
 
 .discover-reel-backdrop :deep(.cover-img) {
+  object-fit: cover;
   object-position: center 35%;
 }
 
@@ -489,9 +491,9 @@ onBeforeUnmount(deactivate);
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    transparent 24%,
-    color-mix(in srgb, var(--color-bg-main) 22%, transparent) 40%,
-    var(--color-bg-main) 90%
+    transparent 28%,
+    color-mix(in srgb, var(--color-bg-main) 18%, transparent) 58%,
+    color-mix(in srgb, var(--color-bg-main) 88%, transparent)
   );
 }
 

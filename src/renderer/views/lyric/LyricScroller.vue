@@ -469,7 +469,7 @@ watch(
 );
 
 watch(
-  () => [lyricStore.loadedHash, lyricStore.lines, lyricStore.displayLines],
+  () => [lyricStore.loadedHash, lyricStore.displayLines],
   async () => {
     resetCharRegistry();
     refreshLyricIndexes({ resetStable: true });

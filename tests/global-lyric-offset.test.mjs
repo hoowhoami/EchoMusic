@@ -235,6 +235,7 @@ test('paused global calibration reaches now-playing/taskbar, Mini and desktop sn
     './store': { useDesktopLyricStore: () => desktop },
     '@/utils/shortcuts': {},
     '@/utils/lruMap': lruMap,
+    '@/utils/playbackQueuePresentation': { getPlaybackQueuePresentation: () => ({ title: '' }) },
     '@/stores/playlist/helpers': { resolveFavoriteSongKey: () => 'a' },
     '../../shared/nowPlaying': nowPlaying,
     '../../shared/lyrics': lyrics,

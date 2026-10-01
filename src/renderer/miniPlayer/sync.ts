@@ -194,6 +194,16 @@ const buildLyricPayload = (): MiniPlayerLyricPayload => {
   };
 };
 
+const buildLyricStatePayload = () => {
+  const lyricStore = useLyricStore();
+  const desktopLyricStore = useDesktopLyricStore();
+  return {
+    currentIndex: lyricStore.currentIndex,
+    timeOffset: lyricStore.currentTimeOffset,
+    desktopLyricEnabled: desktopLyricStore.settings.enabled,
+  };
+};
+
 const queuePayloadKey = (payload: MiniPlayerQueuePayload | null | undefined): string => {
   if (!payload) return '';
   return [
@@ -329,12 +339,11 @@ export const initMiniPlayerSync = async () => {
   } = storeToRefs(playerStore);
   const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
   const {
-    lines,
     displayLines,
+    displayRevision,
     wantTranslation,
     wantRomanization,
     showRomanizationAsRuby,
-    textConversionMode,
     hasTranslation,
     hasRomanization,
     tips,
@@ -398,21 +407,11 @@ export const initMiniPlayerSync = async () => {
   };
 
   const syncLyricStateSnapshot = () => {
-    const lyric = buildLyricPayload();
-    const nextStateKey = JSON.stringify({
-      currentIndex: lyric.currentIndex,
-      timeOffset: lyric.timeOffset,
-      desktopLyricEnabled: lyric.desktopLyricEnabled,
-    });
+    const lyric = buildLyricStatePayload();
+    const nextStateKey = JSON.stringify(lyric);
     if (nextStateKey === lastSyncedLyricStateKey) return;
 
-    window.electron.miniPlayer?.syncSnapshot({
-      lyric: {
-        currentIndex: lyric.currentIndex,
-        timeOffset: lyric.timeOffset,
-        desktopLyricEnabled: lyric.desktopLyricEnabled,
-      },
-    });
+    window.electron.miniPlayer?.syncSnapshot({ lyric });
     lastSyncedLyricStateKey = nextStateKey;
   };
 
@@ -473,12 +472,11 @@ export const initMiniPlayerSync = async () => {
   stops.push(
     watch(
       [
-        lines,
         displayLines,
+        displayRevision,
         wantTranslation,
         wantRomanization,
         showRomanizationAsRuby,
-        textConversionMode,
         hasTranslation,
         hasRomanization,
         currentTimeOffset,
@@ -486,7 +484,7 @@ export const initMiniPlayerSync = async () => {
         () => desktopLyricStore.settings.enabled,
       ],
       syncLyricLinesSnapshot,
-      { immediate: true, deep: true },
+      { immediate: true },
     ),
   );
 

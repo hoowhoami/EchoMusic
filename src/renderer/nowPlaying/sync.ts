@@ -161,8 +161,8 @@ export const initNowPlayingSync = async () => {
   } = storeToRefs(playerStore);
   const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
   const {
-    lines,
     displayLines,
+    displayRevision,
     currentIndex,
     loadedHash,
     currentTimeOffset,
@@ -332,19 +332,18 @@ export const initNowPlayingSync = async () => {
     ),
     watch(
       [
-        lines,
         displayLines,
+        displayRevision,
         loadedHash,
         wantTranslation,
         wantRomanization,
-        textConversionMode,
         hasTranslation,
         hasRomanization,
         isLoading,
         tips,
       ],
       syncLyricSnapshot,
-      { deep: true, immediate: true },
+      { immediate: true },
     ),
     watch([currentIndex, currentTimeOffset], syncPlaybackSnapshot),
     watch(

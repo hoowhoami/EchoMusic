@@ -247,8 +247,8 @@ export const initDesktopLyricSync = async () => {
     seekTimestamp,
   } = storeToRefs(playerStore);
   const {
-    lines,
     displayLines,
+    displayRevision,
     currentIndex,
     loadedHash,
     currentTimeOffset,
@@ -480,11 +480,18 @@ export const initDesktopLyricSync = async () => {
 
   stops.push(
     watch(
-      [lines, displayLines, loadedHash, currentTrackId, currentTrackSnapshot, nativeTrackSeq],
+      [
+        displayLines,
+        displayRevision,
+        loadedHash,
+        currentTrackId,
+        currentTrackSnapshot,
+        nativeTrackSeq,
+      ],
       () => {
         void syncLyricsSnapshot();
       },
-      { immediate: true, deep: true },
+      { immediate: true },
     ),
   );
 
