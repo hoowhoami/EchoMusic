@@ -3,21 +3,26 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"lint": "biome lint . --error-on-warnings",
+		"lint": "biome check . --error-on-warnings",
 		"format": "biome format --write .",
 		"format:check": "biome format .",
 		"typecheck": "tsc -b",
 		"extract:slim": "node scripts/extract_slim.ts",
-		"generate:config": "node scripts/generate_config.ts"
+		"generate:config": "node scripts/generate_config.ts",
+		"changeset": "changeset",
+		"version-packages": "changeset version && node scripts/release/sync-cargo-versions.ts"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.3",
+		"@biomejs/biome": "^2.5.14",
+		"@changesets/changelog-github": "^1.0.1",
+		"@changesets/cli": "^3.0.3",
+		"@changesets/get-release-plan": "^5.0.2",
 		"@types/node": "^26.1.1",
 		"tinyglobby": "^0.2.17",
 		"typescript": "^7.0.2"
 	},
 	"dependencies": {
-		"jszip": "^3.10.1"
+		"jszip": "^3.10.2"
 	},
-	"packageManager": "pnpm@11.10.0"
+	"packageManager": "pnpm@12.6.0"
 }

@@ -263,6 +263,21 @@ export function getUserFans() {
   return request.post('/user/fans');
 }
 
+export interface UserFollowParams {
+  tuid: string | number;
+  source?: number;
+}
+
+/** 关注酷狗用户，与歌手关注体系独立。 */
+export function addUserFollow(params: UserFollowParams) {
+  return request.post('/user/follow/add', params);
+}
+
+/** 取消关注酷狗用户。 */
+export function deleteUserFollow(params: UserFollowParams) {
+  return request.post('/user/follow/del', params);
+}
+
 /**
  * 获取访客列表，默认查当前账号。
  */

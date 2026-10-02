@@ -6,8 +6,9 @@ repository = "https://github.com/apoint123/ffmpeg-audio"
 readme = "README.md"
 keywords = ["ffmpeg", "audio", "ffi", "bindings"]
 categories = ["external-ffi-bindings", "multimedia::audio"]
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
+exclude = ["package.json"]
 
 [lib]
 doctest = false
@@ -16,7 +17,9 @@ doctest = false
 libc = "0.2"
 
 [build-dependencies]
-bindgen = "0.72"
+# Keep runtime loading/logging without the optional prettyplease formatter: its
+# syn 2 AST is incompatible with bindgen 0.73's currently resolved syn 3 AST.
+bindgen = { version = "0.73", default-features = false, features = ["logging", "runtime"] }
 cc = { version = "1", features = ["parallel"] }
 pkg-config = "0.3"
 vcpkg = "0.2"

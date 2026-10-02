@@ -4,85 +4,54 @@ on:
   push:
     branches: [main]
   pull_request:
+  # 发版前由 release.yml 调用，调用方传 full: true
+  workflow_call:
+    inputs:
+      full:
+        description: "强制跑完整矩阵"
+        type: boolean
+        default: false
+  # 手动入口：默认就是完整矩阵，用于验证常驻子集覆盖不到的平台。
+  # 改动构建配置后必须跑一次，见 CLAUDE.md。
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "跑完整矩阵（关闭时只跑 main 上那套常驻子集）"
+        type: boolean
+        default: true
 
 jobs:
+  # 决定本次跑哪些 target：PR 与发版跑完整矩阵，main 上的普通提交只跑常驻子集。
+  # 筛选而不是给整个 job 加 if，是为了让 Test (...) 这些检查在每种事件下都照常上报。
+  select:
+    name: Select targets
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.select.outputs.include }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Select targets
+        id: select
+        env:
+          # inputs 上下文只在 workflow_call / workflow_dispatch 下被填充，
+          # 其余事件下求值为空字符串，因此这里要带上事件名一起判定。
+          FULL: ${{ github.event_name == 'pull_request' || inputs.full }}
+        run: node scripts/ci/select-platforms.ts
+
   test:
     name: Test (${{ matrix.target }})
+    needs: select
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Windows MSVC targets
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-          - target: i686-pc-windows-msvc
-            os: windows-latest
-            msvc_arch: x86
-          - target: aarch64-pc-windows-msvc
-            os: windows-latest
-            msvc_arch: amd64_arm64
-            check_only: true
-
-          # Windows GNU targets
-          - target: x86_64-pc-windows-gnu
-            os: ubuntu-latest
-            apt_packages: mingw-w64
-            check_only: true
-          - target: aarch64-pc-windows-gnullvm
-            os: ubuntu-latest
-            llvm_mingw: true
-            check_only: true
-
-          # macOS targets
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: aarch64-apple-darwin
-            os: macos-latest
-
-          # Linux GNU targets
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            apt_packages: gcc-aarch64-linux-gnu libclang-dev
-            check_only: true
-          - target: i686-unknown-linux-gnu
-            os: ubuntu-latest
-            apt_packages: gcc-multilib libc6-dev-i386 libclang-dev
-            check_sys_only: true
-          - target: armv7-unknown-linux-gnueabihf
-            os: ubuntu-latest
-            apt_packages: gcc-arm-linux-gnueabihf libc6-dev-armhf-cross libclang-dev
-            check_only: true
-
-          # Android targets
-          - target: aarch64-linux-android
-            os: ubuntu-latest
-            cross: true
-          - target: armv7-linux-androideabi
-            os: ubuntu-latest
-            cross: true
-          - target: i686-linux-android
-            os: ubuntu-latest
-            cross: true
-          - target: x86_64-linux-android
-            os: ubuntu-latest
-            cross: true
-
-          # iOS target
-          - target: aarch64-apple-ios
-            os: macos-latest
-            check_only: true
-
-          # WASM target
-          - target: wasm32-unknown-emscripten
-            os: ubuntu-latest
-            emscripten: true
-
+        # 矩阵定义在 scripts/ci/platforms.ts
+        include: ${{ fromJSON(needs.select.outputs.include) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -113,9 +82,9 @@ jobs:
       - name: Install LLVM-MinGW
         if: matrix.llvm_mingw
         run: |
-          wget https://github.com/mstorsjo/llvm-mingw/releases/download/20260602/llvm-mingw-20260602-ucrt-ubuntu-22.04-x86_64.tar.xz
-          tar -xf llvm-mingw-20260602-ucrt-ubuntu-22.04-x86_64.tar.xz
-          echo "$(pwd)/llvm-mingw-20260602-ucrt-ubuntu-22.04-x86_64/bin" >> $GITHUB_PATH
+          wget https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz
+          tar -xf llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz
+          echo "$(pwd)/llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64/bin" >> $GITHUB_PATH
 
       - name: Add Emscripten target
         if: matrix.emscripten
@@ -147,7 +116,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -162,7 +131,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -183,7 +152,7 @@ jobs:
         uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: pnpm
@@ -199,3 +168,9 @@ jobs:
 
       - name: Type check
         run: pnpm run typecheck
+
+      - name: Check crate versions are in sync
+        run: node scripts/release/sync-cargo-versions.ts --check
+
+      - name: Check changesets
+        run: node scripts/release/check-release-plan.ts

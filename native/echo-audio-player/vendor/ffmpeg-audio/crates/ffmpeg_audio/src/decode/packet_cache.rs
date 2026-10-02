@@ -9,7 +9,7 @@ use std::{
 };
 
 use super::demuxer::Demuxer;
-use crate::{AudioError, Result, TimeBase, sys};
+use crate::{AudioError, Result, core::timeline::Timeline, sys};
 
 #[derive(Clone, Copy, Debug)]
 pub struct PacketCacheOptions {
@@ -150,7 +150,7 @@ struct PacketCacheState {
     next_packet_index: u64,
     total_bytes: usize,
     stop: bool,
-    pending_seek: Option<Duration>,
+    pending_seek: Option<i64>,
     error: Option<AudioError>,
     read_failed: bool,
     read_cancelled: bool,
@@ -169,13 +169,14 @@ struct SharedPacketCache {
 pub(crate) struct PacketCache {
     shared: Arc<SharedPacketCache>,
     options: PacketCacheOptions,
+    timeline: Timeline,
     has_returned_packet: bool,
     interrupt: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
 }
 
 impl PacketCache {
-    pub(crate) fn new(demuxer: Demuxer, time_base: TimeBase, options: PacketCacheOptions) -> Self {
+    pub(crate) fn new(demuxer: Demuxer, timeline: Timeline, options: PacketCacheOptions) -> Self {
         let interrupt = demuxer.interrupt_flag();
         let shared = Arc::new(SharedPacketCache {
             state: Mutex::new(PacketCacheState {
@@ -199,12 +200,13 @@ impl PacketCache {
         let worker_shared = shared.clone();
         let worker = thread::Builder::new()
             .name("ffmpeg-audio-packet-cache".to_string())
-            .spawn(move || run_packet_cache_worker(demuxer, time_base, options, worker_shared))
+            .spawn(move || run_packet_cache_worker(demuxer, timeline, options, worker_shared))
             .expect("failed to spawn packet cache thread");
 
         Self {
             shared,
             options,
+            timeline,
             has_returned_packet: false,
             interrupt,
             worker: Some(worker),
@@ -279,12 +281,22 @@ impl PacketCache {
     }
 
     pub(crate) fn seek_to(&mut self, target: Duration) -> Result<()> {
+        self.seek(Some(target), self.timeline.seek_pts(target))
+    }
+
+    /// Restore the decoder cursor using raw ticks, without rounding through public time
+    /// or replaying a cached range from a different frame boundary.
+    pub(crate) fn seek_raw(&mut self, raw_pts: i64) -> Result<()> {
+        self.seek(None, raw_pts)
+    }
+
+    fn seek(&mut self, target: Option<Duration>, raw_pts: i64) -> Result<()> {
         self.has_returned_packet = false;
         // Interrupt an in-flight read before deciding whether this seek can be
         // satisfied from the current range. The worker owns clearing the flag
         // once it has observed the request and selected a resume/seek action.
         self.interrupt.store(true, Ordering::Release);
-        if self.try_seek_cached(target) {
+        if target.is_some_and(|target| self.try_seek_cached(target)) {
             return Ok(());
         }
 
@@ -299,7 +311,7 @@ impl PacketCache {
         state.read_failed = false;
         state.read_cancelled = false;
         state.resume_after_cancel = false;
-        state.pending_seek = Some(target);
+        state.pending_seek = Some(raw_pts);
         state.epoch = state.epoch.wrapping_add(1);
         let epoch = state.epoch;
         state.read_hysteresis = false;
@@ -441,7 +453,7 @@ impl Drop for PacketCache {
 impl Demuxer {
     pub(crate) fn read_cached_packet(
         &mut self,
-        time_base: TimeBase,
+        timeline: Timeline,
     ) -> Result<Option<CachedPacket>> {
         let Some(packet) = self.read_packet()? else {
             return Ok(None);
@@ -451,8 +463,8 @@ impl Demuxer {
             if cloned.is_null() {
                 return Err(AudioError::from_ffmpeg(sys::AVERROR_ENOMEM));
             }
-            let pts = packet_pts(packet, time_base);
-            let end = packet_end(packet, time_base).or(pts);
+            let pts = packet_pts(packet, timeline);
+            let end = packet_end(packet, timeline).or(pts);
             let size = (*packet).size.max(0) as usize;
             Ok(Some(CachedPacket {
                 packet: cloned,
@@ -466,7 +478,7 @@ impl Demuxer {
 
 fn run_packet_cache_worker(
     mut demuxer: Demuxer,
-    time_base: TimeBase,
+    timeline: Timeline,
     options: PacketCacheOptions,
     shared: Arc<SharedPacketCache>,
 ) {
@@ -519,7 +531,7 @@ fn run_packet_cache_worker(
                 let result = demuxer.seek_to(target);
                 complete_packet_cache_seek(&shared, epoch, result);
             }
-            PacketCacheAction::Read { epoch } => match demuxer.read_cached_packet(time_base) {
+            PacketCacheAction::Read { epoch } => match demuxer.read_cached_packet(timeline) {
                 Ok(Some(packet)) => {
                     if let Ok(mut state) = shared.state.lock() {
                         if state.epoch != epoch {
@@ -561,7 +573,7 @@ fn run_packet_cache_worker(
 
 enum PacketCacheAction {
     Resume,
-    Seek { target: Duration, epoch: u64 },
+    Seek { target: i64, epoch: u64 },
     Read { epoch: u64 },
 }
 
@@ -898,38 +910,54 @@ fn is_interrupt_error(error: &AudioError) -> bool {
     matches!(error, AudioError::FFmpeg(code, _) if *code == sys::AVERROR_EXIT)
 }
 
-fn packet_pts(packet: *const sys::AVPacket, time_base: TimeBase) -> Option<Duration> {
-    unsafe {
-        let pts = (*packet).pts;
-        if pts == sys::AV_NOPTS_VALUE {
-            None
-        } else {
-            time_base.calc_micros(pts).and_then(duration_from_micros)
-        }
-    }
+fn packet_pts(packet: *const sys::AVPacket, timeline: Timeline) -> Option<Duration> {
+    unsafe { timeline.packet_pts((*packet).pts) }
 }
 
-fn packet_end(packet: *const sys::AVPacket, time_base: TimeBase) -> Option<Duration> {
-    unsafe {
-        let pts = (*packet).pts;
-        if pts == sys::AV_NOPTS_VALUE {
-            return None;
-        }
-        let duration = (*packet).duration.max(0);
-        time_base
-            .calc_micros(pts.saturating_add(duration))
-            .and_then(duration_from_micros)
-    }
-}
-
-fn duration_from_micros(value: i64) -> Option<Duration> {
-    (value >= 0).then(|| Duration::from_micros(value.cast_unsigned()))
+fn packet_end(packet: *const sys::AVPacket, timeline: Timeline) -> Option<Duration> {
+    unsafe { timeline.packet_end((*packet).pts, (*packet).duration) }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::ptr;
+
+    #[test]
+    fn packet_cache_times_share_the_public_origin_and_nanosecond_precision() {
+        let timeline = Timeline::new(
+            sys::AVRational {
+                num: 1,
+                den: 44_100,
+            },
+            44_100,
+        )
+        .unwrap();
+        let mut packet = unsafe { std::mem::zeroed::<sys::AVPacket>() };
+        packet.pts = 44_145;
+        packet.duration = 1;
+
+        assert_eq!(
+            packet_pts(&packet, timeline),
+            Some(Duration::from_nanos(1_020_408))
+        );
+        assert_eq!(
+            packet_end(&packet, timeline),
+            Some(Duration::from_nanos(1_043_083))
+        );
+
+        packet.pts = 44_099;
+        packet.duration = 2;
+        assert_eq!(packet_pts(&packet, timeline), None);
+        assert_eq!(
+            packet_end(&packet, timeline),
+            Some(Duration::from_nanos(22_675))
+        );
+
+        packet.pts = sys::AV_NOPTS_VALUE;
+        assert_eq!(packet_pts(&packet, timeline), None);
+        assert_eq!(packet_end(&packet, timeline), None);
+    }
 
     fn packet_with_time(pts: u64, end: u64, size: usize) -> CachedPacket {
         CachedPacket {
@@ -1431,7 +1459,7 @@ mod tests {
     fn timed_out_packet_cache_seek_invalidates_old_epoch_and_latches_error() {
         let mut state = single_range_state(Vec::new(), 0, 0);
         state.epoch = 4;
-        state.pending_seek = Some(Duration::from_secs(30));
+        state.pending_seek = Some(30);
         let shared = SharedPacketCache {
             state: Mutex::new(state),
             changed: Condvar::new(),

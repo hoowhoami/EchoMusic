@@ -1,0 +1,12 @@
+{
+	"changelog": [
+		"@changesets/changelog-github",
+		{ "repo": "apoint123/ffmpeg-audio" }
+	],
+	"commit": false,
+	"format": false,
+	"baseBranch": "main",
+	"updateInternalDependencies": "patch",
+	"ignore": ["@ffmpeg-audio/web"],
+	"privatePackages": { "version": true, "tag": true }
+}

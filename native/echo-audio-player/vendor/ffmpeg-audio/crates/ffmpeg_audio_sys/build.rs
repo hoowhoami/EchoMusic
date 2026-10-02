@@ -1,9 +1,19 @@
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    path::PathBuf,
+};
 
 mod utils {
     use std::{
-        env, fs,
-        io::{self},
+        env,
+        fs,
+        hash::{
+            DefaultHasher,
+            Hasher,
+        },
+        io::{
+            self,
+        },
         path::Path,
     };
 
@@ -66,9 +76,36 @@ mod utils {
         matched_dir.to_string()
     }
 
-    pub fn extract_zip(zip_path: &Path, dest: &Path) -> io::Result<()> {
-        let file = fs::File::open(zip_path)?;
-        let mut archive = zip::ZipArchive::new(file)
+    /// Extracts `zip_path` into `dest`, unless `dest` already holds an extraction of the same
+    /// archive.
+    ///
+    /// `OUT_DIR` does not change when the bundled archives are updated, so the archive's hash is
+    /// recorded in a stamp file next to `dest`. A changed archive, or an extraction that never
+    /// completed, causes `dest` to be wiped and extracted again.
+    pub fn extract_zip_if_changed(zip_path: &Path, dest: &Path) -> io::Result<()> {
+        let data = fs::read(zip_path)?;
+        let mut hasher = DefaultHasher::new();
+        hasher.write(&data);
+        let hash = hasher.finish();
+        let hash = format!("{hash:016x}");
+
+        let stamp = dest.with_extension("stamp");
+        if dest.exists() && fs::read_to_string(&stamp).is_ok_and(|s| s == hash) {
+            return Ok(());
+        }
+
+        if stamp.exists() {
+            fs::remove_file(&stamp)?;
+        }
+        if dest.exists() {
+            fs::remove_dir_all(dest)?;
+        }
+        extract_zip(&data, dest)?;
+        fs::write(&stamp, hash)
+    }
+
+    fn extract_zip(data: &[u8], dest: &Path) -> io::Result<()> {
+        let mut archive = zip::ZipArchive::new(io::Cursor::new(data))
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         for i in 0..archive.len() {
@@ -139,8 +176,12 @@ mod utils {
 mod bundled {
     use std::{
         collections::BTreeSet,
-        env, fs,
-        path::{Path, PathBuf},
+        env,
+        fs,
+        path::{
+            Path,
+            PathBuf,
+        },
     };
 
     use crate::utils;
@@ -227,14 +268,10 @@ mod bundled {
             let ffmpeg_dir = out_dir.join("ffmpeg_slim");
             let configs_base = out_dir.join("configs");
 
-            if !ffmpeg_dir.exists() {
-                utils::extract_zip(&slim_zip, &ffmpeg_dir)
-                    .map_err(|e| format!("Failed to extract ffmpeg_slim.zip: {e}"))?;
-            }
-            if !configs_base.exists() {
-                utils::extract_zip(&configs_zip, &configs_base)
-                    .map_err(|e| format!("Failed to extract configs.zip: {e}"))?;
-            }
+            utils::extract_zip_if_changed(&slim_zip, &ffmpeg_dir)
+                .map_err(|e| format!("Failed to extract ffmpeg_slim.zip: {e}"))?;
+            utils::extract_zip_if_changed(&configs_zip, &configs_base)
+                .map_err(|e| format!("Failed to extract configs.zip: {e}"))?;
             Ok((ffmpeg_dir, configs_base))
         }
     }
@@ -392,11 +429,19 @@ mod bundled {
 }
 
 mod system {
-    use std::path::{Path, PathBuf};
+    use std::path::{
+        Path,
+        PathBuf,
+    };
 
     use crate::utils;
 
-    const REQUIRED_LIBS: [&str; 4] = ["libavcodec", "libavformat", "libavutil", "libswresample"];
+    const REQUIRED_LIBS: [(&str, &str); 4] = [
+        ("libavcodec", "62.28.102"),
+        ("libavformat", "62.12.102"),
+        ("libavutil", "60.26.102"),
+        ("libswresample", "6.3.102"),
+    ];
 
     pub fn build(out_dir: &Path, target_os: &str) {
         println!("cargo:warning=ffmpeg_slim.zip not found, attempting to find an installed FFmpeg");
@@ -421,9 +466,9 @@ mod system {
         }
 
         if include_paths.is_empty() {
-            for lib in &REQUIRED_LIBS {
+            for &(lib, version) in &REQUIRED_LIBS {
                 let library = pkg_config::Config::new()
-                    .atleast_version("61.0")
+                    .atleast_version(version)
                     .probe(lib)
                     .unwrap_or_else(|e| panic!("Failed to find {lib}: {e} "));
                 include_paths.extend(library.include_paths);

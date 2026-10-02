@@ -2,6 +2,16 @@ name: Update Bundled FFmpeg
 
 on:
   workflow_dispatch:
+    inputs:
+      changeset-bump:
+        description: "给 ffmpeg_audio_sys 生成碎片时的版本级别（minor 表示破坏性变更，会同时给 ffmpeg_audio 写 minor）；none 表示不生成"
+        type: choice
+        options: [none, patch, minor]
+        default: none
+      changeset-summary:
+        description: "碎片正文（英文，以粗体动词开头，例如 **Updated** bundled FFmpeg ...）"
+        type: string
+        required: false
 
 permissions:
   contents: write
@@ -76,7 +86,7 @@ jobs:
 
       - name: Clone FFmpeg
         run: |
-          git clone --depth 1 --branch n8.1.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+          git clone --depth 1 --branch n9.0.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
           cp scripts/generate_config.ts ffmpeg/
 
       - name: Run Configuration Script
@@ -124,7 +134,7 @@ jobs:
 
       - name: Clone FFmpeg
         run: |
-          git clone --depth 1 --branch n8.1.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+          git clone --depth 1 --branch n9.0.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
           cp scripts/generate_config.ts ffmpeg/
 
       - name: Run Configuration Script
@@ -190,7 +200,7 @@ jobs:
       - name: Clone FFmpeg and Run Script
         shell: msys2 {0}
         run: |
-          git clone --depth 1 --branch n8.1.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+          git clone --depth 1 --branch n9.0.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
           cp scripts/generate_config.ts ffmpeg/
           cd ffmpeg
           node generate_config.ts ${{ matrix.os }} ${{ matrix.arch }}
@@ -239,7 +249,7 @@ jobs:
           done
 
       - name: Clone FFmpeg
-        run: git clone --depth 1 --branch n8.1.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+        run: git clone --depth 1 --branch n9.0.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
 
       - name: Generate ffmpeg_slim and pack zips
         run: |
@@ -248,6 +258,28 @@ jobs:
       - name: Show zip sizes
         run: |
           ls -lh crates/ffmpeg_audio_sys/vendor/ffmpeg_slim.zip crates/ffmpeg_audio_sys/vendor/configs.zip
+
+      - name: Write changeset
+        if: inputs.changeset-bump != 'none'
+        env:
+          BUMP: ${{ inputs.changeset-bump }}
+          SUMMARY: ${{ inputs.changeset-summary }}
+        run: |
+          if [ -z "$SUMMARY" ]; then
+            echo "::error::选择了版本级别，但没有填写碎片正文"
+            exit 1
+          fi
+          {
+            echo "---"
+            echo "\"ffmpeg_audio_sys\": $BUMP"
+            # ffmpeg_audio 公开导出了 sys，sys 的破坏性变更对它也是破坏性变更
+            if [ "$BUMP" = minor ]; then
+              echo "\"ffmpeg_audio\": minor"
+            fi
+            echo "---"
+            echo
+            echo "$SUMMARY"
+          } > .changeset/update-bundled-ffmpeg-${{ github.run_id }}.md
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
@@ -274,4 +306,5 @@ jobs:
           add-paths: |
             crates/ffmpeg_audio_sys/vendor/ffmpeg_slim.zip
             crates/ffmpeg_audio_sys/vendor/configs.zip
+            .changeset
           delete-branch: true

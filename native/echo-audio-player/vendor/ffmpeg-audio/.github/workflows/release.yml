@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # 有待发布的碎片时，创建或更新 release PR；合并它即发版
+  version:
+    name: Version PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-version
+      cancel-in-progress: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # changelog-github 需要找到添加碎片的提交
+          fetch-depth: 0
+
+      - name: Check for changesets
+        id: changesets
+        run: |
+          if find .changeset -maxdepth 1 -name '*.md' ! -name README.md | grep -q .; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Close stale release PR
+        if: steps.changesets.outputs.found == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for pr in $(gh pr list --head changeset-release/main --state open --json number --jq '.[].number'); do
+            gh pr close "$pr" --delete-branch --comment "没有待发布的碎片了，自动关闭。"
+          done
+
+      - name: Setup pnpm
+        if: steps.changesets.outputs.found == 'true'
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        if: steps.changesets.outputs.found == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.changesets.outputs.found == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Create or update release PR
+        if: steps.changesets.outputs.found == 'true'
+        uses: changesets/action/version@v2
+        with:
+          script: pnpm run version-packages
+          commit-message: "chore(release): version packages"
+          pr-title: "chore(release): version packages"
+
+  # 找出本次 push 引入、但还没发布的 crate 版本
+  plan:
+    name: Plan release
+    runs-on: ubuntu-latest
+    outputs:
+      has-pending: ${{ steps.plan.outputs.has-pending }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Find versions to release
+        id: plan
+        run: node scripts/release/publish.ts plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUSH_BEFORE: ${{ github.event.before }}
+
+  # 发布前对要发布的提交完整跑一遍 CI。必须传 full: true：
+  # release.yml 由 push 触发，ci.yml 里的 github.event_name 是调用方的事件名（push），
+  # 不传这个输入会被当成 main 上的普通提交而降级成常驻子集。
+  ci:
+    name: CI
+    needs: plan
+    if: needs.plan.outputs.has-pending == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      full: true
+
+  publish:
+    name: Publish
+    needs: [plan, ci]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PUSH_BEFORE: ${{ github.event.before }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      # 先完整编译验证，再换取 crates.io token：token 只有 30 分钟有效期，而编译 FFmpeg 耗时较长
+      - name: Package crates
+        id: package
+        run: node scripts/release/publish.ts package
+
+      - name: Authenticate with crates.io
+        id: auth
+        if: steps.package.outputs.upload == 'true'
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Upload crates
+        if: steps.package.outputs.upload == 'true'
+        run: node scripts/release/publish.ts upload
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Create tags and GitHub releases
+        run: node scripts/release/publish.ts finalize

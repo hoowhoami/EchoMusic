@@ -11,9 +11,9 @@
 		"typecheck": "tsc -b"
 	},
 	"devDependencies": {
-		"vite": "^8.1.4",
 		"@types/audioworklet": "^0.0.100",
-		"@types/node": "^26.1.1",
-		"@types/wicg-file-system-access": "^2023.10.7"
+		"@types/node": "^26.6.2",
+		"@types/wicg-file-system-access": "^2023.10.7",
+		"vite": "^8.3.1"
 	}
 }

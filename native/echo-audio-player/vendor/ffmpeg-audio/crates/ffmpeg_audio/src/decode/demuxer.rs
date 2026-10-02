@@ -3,12 +3,9 @@ use std::{
     ffi::CStr,
     ptr,
     sync::{Arc, atomic::AtomicBool},
-    time::Duration,
 };
 
-use crate::{
-    AudioCover, AudioError, AudioStreamInfo, FfErrorExt as _, IoContext, Result, TimeBase, sys,
-};
+use crate::{AudioCover, AudioError, AudioStreamInfo, FfErrorExt as _, IoContext, Result, sys};
 
 pub struct Demuxer {
     ctx: *mut sys::AVFormatContext,
@@ -149,7 +146,8 @@ impl Demuxer {
         }
     }
 
-    pub fn time_base(&self) -> Result<TimeBase> {
+    /// Returns the raw time base of the audio stream.
+    pub fn time_base(&self) -> Result<sys::AVRational> {
         unsafe {
             if self.audio_stream_idx >= (*self.ctx).nb_streams as usize {
                 return Err(AudioError::InvalidParameter(
@@ -157,47 +155,35 @@ impl Demuxer {
                 ));
             }
 
-            let stream = *(*self.ctx).streams.add(self.audio_stream_idx);
-            let raw_tb = (*stream).time_base;
-
-            TimeBase::try_new(raw_tb)
+            Ok((*self.stream()).time_base)
         }
     }
 
-    /// Returns the raw stream PTS corresponding to the public timeline origin.
-    pub fn timeline_origin_pts(&self) -> i64 {
-        unsafe {
-            let stream_ptr = *(*self.ctx).streams.add(self.audio_stream_idx);
-            let start_time = (*stream_ptr).start_time;
-            if start_time == sys::AV_NOPTS_VALUE {
-                0
-            } else {
-                start_time.max(0)
-            }
-        }
+    /// Returns the start time the audio stream declares, as a raw timestamp.
+    pub fn start_time(&self) -> i64 {
+        unsafe { (*self.stream()).start_time }
     }
 
-    pub fn seek_to(&mut self, target: Duration) -> Result<()> {
+    /// Returns the duration the audio stream declares, in raw ticks.
+    pub fn stream_duration(&self) -> i64 {
+        unsafe { (*self.stream()).duration }
+    }
+
+    /// Returns the duration the container declares, in microseconds.
+    pub fn container_duration(&self) -> i64 {
+        unsafe { (*self.ctx).duration }
+    }
+
+    /// Seeks to the last position the demuxer can reach at or before the raw timestamp `pts`.
+    pub fn seek_to(&mut self, pts: i64) -> Result<()> {
         unsafe {
             self.io_ctx.clear_read_error();
-            let stream_ptr = *(*self.ctx).streams.add(self.audio_stream_idx);
-            let time_base = (*stream_ptr).time_base;
-
-            let target_us = i64::try_from(target.as_micros()).unwrap_or(i64::MAX);
-
-            let mut pts = sys::av_rescale_q(target_us, sys::MICROSECONDS_Q, time_base);
-
-            pts = pts.saturating_add(self.timeline_origin_pts());
-
-            let min_pts = i64::MIN;
-            let max_pts = pts;
-
             let ret = sys::avformat_seek_file(
                 self.ctx,
                 self.audio_stream_idx as i32,
-                min_pts,
+                i64::MIN,
                 pts,
-                max_pts,
+                pts,
                 sys::AVSEEK_FLAG_BACKWARD.cast_signed(),
             );
 
@@ -313,29 +299,8 @@ impl Demuxer {
         unsafe { (*self.ctx).bit_rate }
     }
 
-    pub fn duration(&self) -> Option<Duration> {
-        unsafe {
-            let stream_ptr = *(*self.ctx).streams.add(self.audio_stream_idx);
-            let stream_duration = (*stream_ptr).duration;
-
-            if stream_duration >= 0 && stream_duration != sys::AV_NOPTS_VALUE {
-                let time_base = (*stream_ptr).time_base;
-
-                let duration_us =
-                    sys::av_rescale_q(stream_duration, time_base, sys::MICROSECONDS_Q);
-
-                if duration_us >= 0 {
-                    return Some(Duration::from_micros(duration_us.cast_unsigned()));
-                }
-            }
-
-            let ctx_duration = (*self.ctx).duration;
-            if ctx_duration >= 0 && ctx_duration != sys::AV_NOPTS_VALUE {
-                return Some(Duration::from_micros(ctx_duration.cast_unsigned()));
-            }
-
-            None
-        }
+    fn stream(&self) -> *mut sys::AVStream {
+        unsafe { *(*self.ctx).streams.add(self.audio_stream_idx) }
     }
 }
 

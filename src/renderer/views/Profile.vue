@@ -25,6 +25,8 @@ import Tag from '@/components/ui/Tag.vue';
 import logger from '@/utils/logger';
 import { useToastStore } from '@/stores/toast';
 import {
+  addUserFollow,
+  deleteUserFollow,
   getUserFans,
   getUserFollow,
   getUserFriends,
@@ -43,7 +45,9 @@ import {
   iconInfo,
   iconLogOut,
   iconMessageCircle,
+  iconMinus,
   iconPencil,
+  iconPlus,
   iconRefreshCw,
   iconScan,
   iconSmartphone,
@@ -181,7 +185,7 @@ const rawFollowCount = computed(() => {
   const count = Number(value);
   return Number.isFinite(count) ? count : 0;
 });
-const friendCount = computed(() => {
+const rawFriendCount = computed(() => {
   const value = detail.value.friends ?? detail.value.friend_count ?? 0;
   const count = Number(value);
   return Number.isFinite(count) ? count : 0;
@@ -210,6 +214,11 @@ const socialLoaded = reactive<Record<SocialTabKey, boolean>>({
 const followCount = computed(() =>
   socialLoaded.follow ? socialUsers.follow.length : rawFollowCount.value,
 );
+const friendCount = computed(() =>
+  socialLoaded.friends ? socialUsers.friends.length : rawFriendCount.value,
+);
+const socialFollowPending = reactive(new Set<string>());
+const socialListRequests: Partial<Record<SocialTabKey, Promise<boolean>>> = {};
 const socialError = reactive<Record<SocialTabKey, string>>({
   follow: '',
   friends: '',
@@ -712,11 +721,29 @@ const mapSocialUser = (item: unknown, index: number, tab: SocialTabKey): SocialU
   );
   const relationText = resolveSocialMeta(nested, tab, timeText);
   const isFriend = readSocialText(pickFromRecords(nested, ['is_friend', 'isFriend']));
-  const friendAction =
-    tab === 'fans' && isFriend === '0'
-      ? 'follow'
-      : tab === 'fans' && isFriend === '1'
-        ? 'unfollow'
+  // 社交写接口只接受用户 ID，不能使用歌手 ID 或无身份信息的列表行 ID。
+  const followUserId = readSocialText(
+    pickFromRecords(nested, [
+      'userid',
+      'user_id',
+      'userId',
+      'uid',
+      't_userid',
+      'visit_userid',
+      'friend_userid',
+      'fan_userid',
+    ]),
+  );
+  const canFollow =
+    followUserId === userId &&
+    /^[1-9]\d*$/.test(userId) &&
+    String(userStore.info?.userid ?? '') !== userId;
+  const friendAction = !canFollow
+    ? ''
+    : tab === 'follow' || tab === 'friends' || (tab === 'fans' && isFriend === '1')
+      ? 'unfollow'
+      : tab === 'fans' && isFriend === '0'
+        ? 'follow'
         : '';
   const rawId = userId || `row-${tab}-${index}`;
 
@@ -742,29 +769,92 @@ const getSocialErrorMessage = (error: unknown, fallback: string) => {
   const message = readSocialText(
     body?.msg,
     body?.error,
+    body?.errmsg,
     error instanceof Error ? error.message : '',
   );
   return message && !message.startsWith('API Error:') ? message : fallback;
 };
 
 const loadSocialList = async (tab = activeSocialTab.value, force = false) => {
-  if (!userStore.isLoggedIn || socialLoading[tab]) return;
-  if (socialLoaded[tab] && !force) return;
+  if (!userStore.isLoggedIn) return false;
+  // 写操作后的刷新必须等旧请求结束，再取一次，避免拿到操作前的关系。
+  while (socialListRequests[tab]) {
+    const loaded = await socialListRequests[tab];
+    if (!force) return loaded;
+  }
+  if (socialLoaded[tab] && !force) return true;
 
   socialLoading[tab] = true;
   socialError[tab] = '';
+  const pending = (async () => {
+    try {
+      const payload = await socialTabFetcher[tab]();
+      const records = findFirstArray(unwrapPayload(payload), socialListKeys[tab]);
+      socialUsers[tab] = records
+        .map((item, index) => mapSocialUser(item, index, tab))
+        .filter((item): item is SocialUser => Boolean(item));
+      socialLoaded[tab] = true;
+      return true;
+    } catch (error) {
+      logger.error('Profile', `Load ${tab} failed:`, error);
+      socialError[tab] = getSocialErrorMessage(error, '列表加载失败，请稍后重试');
+      return false;
+    } finally {
+      socialLoading[tab] = false;
+    }
+  })();
+  socialListRequests[tab] = pending;
   try {
-    const payload = await socialTabFetcher[tab]();
-    const records = findFirstArray(unwrapPayload(payload), socialListKeys[tab]);
-    socialUsers[tab] = records
-      .map((item, index) => mapSocialUser(item, index, tab))
-      .filter((item): item is SocialUser => Boolean(item));
-    socialLoaded[tab] = true;
-  } catch (error) {
-    logger.error('Profile', `Load ${tab} failed:`, error);
-    socialError[tab] = getSocialErrorMessage(error, '列表加载失败，请稍后重试');
+    return await pending;
   } finally {
-    socialLoading[tab] = false;
+    delete socialListRequests[tab];
+  }
+};
+
+const toggleSocialFollow = async (item: SocialUser) => {
+  if (
+    !userStore.isLoggedIn ||
+    !item.friendAction ||
+    socialFollowPending.has(item.userId) ||
+    !/^[1-9]\d*$/.test(item.userId) ||
+    String(userStore.info?.userid ?? '') === item.userId
+  )
+    return;
+
+  const following = item.friendAction === 'follow';
+  socialFollowPending.add(item.userId);
+  try {
+    let alreadyFollowed = false;
+    try {
+      const payload = await (following ? addUserFollow : deleteUserFollow)({ tuid: item.userId });
+      if (
+        !isPlainRecord(payload) ||
+        Number(payload.status) !== 1 ||
+        Number(payload.error_code ?? 0) !== 0
+      ) {
+        throw Object.assign(new Error('关注操作失败'), { response: { body: payload } });
+      }
+    } catch (error) {
+      const body = (error as { response?: { body?: RawRecord } })?.response?.body;
+      if (!following || Number(body?.error_code) !== 31702) throw error;
+      alreadyFollowed = true;
+    }
+
+    if (alreadyFollowed) toastStore.info('已关注该用户');
+    else toastStore.success(following ? '关注成功' : '已取消关注');
+    const refreshed = await Promise.all(
+      (['follow', 'friends', 'fans'] as const).map((tab) => loadSocialList(tab, true)),
+    );
+    if (refreshed.some((loaded) => !loaded)) {
+      toastStore.warning('关系已更新，部分列表刷新失败，请重试');
+    }
+  } catch (error) {
+    logger.error('Profile', 'Update follow failed:', error);
+    toastStore.warning(
+      getSocialErrorMessage(error, following ? '关注失败，请稍后重试' : '取消关注失败，请稍后重试'),
+    );
+  } finally {
+    socialFollowPending.delete(item.userId);
   }
 };
 
@@ -1626,26 +1716,38 @@ onMounted(() => loadData());
                   </div>
                   <p>{{ item.description || `ID ${item.userId || '-'}` }}</p>
                 </div>
-                <Button
-                  v-if="item.friendAction"
-                  type="button"
-                  :variant="item.friendAction === 'follow' ? 'primary' : 'outline'"
-                  size="xs"
-                  class="profile-social-follow-btn"
-                  @click.stop.prevent
-                >
-                  {{ item.friendAction === 'follow' ? '关注' : '取消关注' }}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  class="profile-social-message-btn"
-                  :disabled="!item.canMessage"
-                  @click="openSocialChat(item)"
-                >
-                  <Icon :icon="iconMessageCircle" width="14" height="14" />
-                  <span>私信</span>
-                </Button>
+                <div class="profile-social-user-actions">
+                  <Button
+                    v-if="item.friendAction"
+                    type="button"
+                    :variant="item.friendAction === 'follow' ? 'primary' : 'secondary'"
+                    size="xs"
+                    class="profile-social-follow-btn"
+                    :class="{ 'is-unfollow': item.friendAction === 'unfollow' }"
+                    :loading="socialFollowPending.has(item.userId)"
+                    :disabled="isSocialBusy"
+                    @click.stop.prevent="toggleSocialFollow(item)"
+                  >
+                    <Icon
+                      v-if="!socialFollowPending.has(item.userId)"
+                      :icon="item.friendAction === 'follow' ? iconPlus : iconMinus"
+                      class="profile-social-follow-icon"
+                      width="14"
+                      height="14"
+                    />
+                    <span>{{ item.friendAction === 'follow' ? '关注' : '取消关注' }}</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    class="profile-social-message-btn"
+                    :disabled="!item.canMessage"
+                    @click="openSocialChat(item)"
+                  >
+                    <Icon :icon="iconMessageCircle" width="14" height="14" />
+                    <span>私信</span>
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -2108,10 +2210,12 @@ onMounted(() => loadData());
 }
 .profile-social-users {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 .profile-social-user {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 12px;
   padding: 10px;
@@ -2157,9 +2261,30 @@ onMounted(() => loadData());
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.profile-social-follow-btn {
+.profile-social-user-actions {
+  display: flex;
   flex-shrink: 0;
-  min-width: 64px;
+  align-items: center;
+  gap: 6px;
+}
+.profile-social-follow-btn {
+  width: 96px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.profile-social-follow-btn.is-unfollow {
+  color: var(--color-text-secondary);
+}
+.profile-social-follow-btn.is-unfollow:hover:not(:disabled) {
+  color: var(--color-text-main);
+}
+.profile-social-follow-icon {
+  flex-shrink: 0;
+  margin-right: 6px;
 }
 .profile-social-message-btn {
   flex-shrink: 0;

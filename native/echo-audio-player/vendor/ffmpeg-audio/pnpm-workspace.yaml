@@ -1,5 +1,8 @@
 packages:
   - web
+  # 仅供 changesets 管理版本号，见各目录下的 package.json
+  - crates/ffmpeg_audio
+  - crates/ffmpeg_audio_sys
 
 minimumReleaseAgeExclude:
   - "@typescript/typescript-aix-ppc64@7.0.2"

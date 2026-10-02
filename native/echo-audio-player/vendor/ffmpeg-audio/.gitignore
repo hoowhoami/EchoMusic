@@ -29,3 +29,7 @@ Cargo.lock
 *.sln
 *.sw?
 *.tsbuildinfo
+
+# Keep upstream release tooling despite the host repository's release artifact rule.
+!scripts/release/
+!scripts/release/**

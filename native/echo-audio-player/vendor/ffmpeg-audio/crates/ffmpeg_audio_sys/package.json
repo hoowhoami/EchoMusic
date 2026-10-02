@@ -1,0 +1,6 @@
+{
+	"name": "ffmpeg_audio_sys",
+	"version": "0.2.0",
+	"private": true,
+	"description": "仅供 changesets 管理版本号，发布到 crates.io 的是同目录的 Cargo crate；版本号由 scripts/release/sync-cargo-versions.ts 同步到 Cargo.toml"
+}

@@ -7,7 +7,7 @@ A lightweight FFmpeg audio decoding wrapper designed for music player applicatio
 * Simple and intuitive API
 * Pure Rust compilation via [cc](https://github.com/rust-lang/cc-rs) — no C build system required
 * Fully statically linked with zero external FFmpeg dependencies
-* Bundled with a specific, up-to-date FFmpeg version (currently 8.1.2)
+* Bundled with a specific, up-to-date FFmpeg version (currently 9.0.2)
 * Optional `tracing` feature for FFmpeg log integration
 
 ## Supported Audio Formats
