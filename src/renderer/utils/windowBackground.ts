@@ -13,6 +13,10 @@ export function applyWindowBackground(
   root.classList.toggle('app-background-enabled', background.enabled);
   root.classList.toggle('app-background-transparent', background.enabled);
   root.classList.toggle('app-background-frosted', background.frosted);
+  root.classList.toggle(
+    'app-background-frosted-keep',
+    background.enabled && background.frosted && background.keepFrostedOnBlur === true,
+  );
   root.style.setProperty('--app-background-opacity', String(1 - background.transparency / 100));
   if (background.color) root.style.setProperty('--app-background-color', background.color);
   else root.style.removeProperty('--app-background-color');

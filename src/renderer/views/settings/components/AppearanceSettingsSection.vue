@@ -217,6 +217,25 @@ const isAccentGradientDefault = computed(
         @update:model-value="setBackgroundMode"
       />
     </div>
+    <template v-if="windowPlatform === 'win32' && backgroundMode === 'frosted'">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">失焦时保持毛玻璃效果</h3>
+          <p class="text-sm text-text-secondary">
+            实验性选项，开启后在移动窗口时会暂时丢失模糊，切换立即生效
+          </p>
+        </div>
+        <Switch
+          :model-value="settingStore.windowBackground.keepFrostedOnBlur === true"
+          :disabled="restarting"
+          aria-label="失焦时保持毛玻璃效果"
+          @update:model-value="
+            settingStore.setWindowBackground({ keepFrostedOnBlur: Boolean($event) })
+          "
+        />
+      </div>
+    </template>
     <template
       v-if="
         backgroundMode === 'transparent' && settingStore.windowBackgroundTransparentMode === 'pure'
