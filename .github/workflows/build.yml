@@ -158,6 +158,18 @@ jobs:
           build_addon() {
             local dir="$1"
             cd "native/$dir"
+            # Windows ARM64 上 fdk-aac-sys 0.5.0 的编译参数：只给 echo-airplay 注入，
+            # 绝不能放全局 env —— 其它 addon 的 C 依赖会被 __aarch64__ 带偏，例如 zstd 的
+            # compiler.h 有 `#elif defined(__aarch64__)` 分支会用 GCC 内联汇编 prefetch，
+            # MSVC 直接报 __asm__ 未声明。echo-airplay 依赖树里只有 fdk-aac-sys 用 cc。
+            # 1) -D__aarch64__：MSVC ARM64 只定义 _M_ARM64，FDK_archdef.h 识别不了而落入
+            #    #warning 兜底（VS18 起是 fatal error C1188），补这个宏走它的 ARM64 分支；
+            # 2) -FI：该分支会连带定义 __arm__，打开 hbe.cpp / sac_reshapeBBEnv.cpp 里的
+            #    __attribute__（GCC 语法，MSVC 报 C2065），强制包含仓库垫片置空即可
+            #    （MSVC 的 /D 不支持函数式宏，只能 /FI；垫片按 FDK_FALLTHROUGH 收窄）。
+            if [[ "$dir" == "echo-airplay" && "${{ runner.os }}" == "Windows" && "${{ runner.arch }}" == "ARM64" ]]; then
+              export CFLAGS_aarch64_pc_windows_msvc="-D__aarch64__ -FI$(cygpath -m "$PWD")/patches/fdk-aac-msvc-arm64.h"
+            fi
             npm install
             if [ -n "${{ matrix.rust_target }}" ]; then
               npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
