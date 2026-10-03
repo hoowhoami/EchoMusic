@@ -253,8 +253,6 @@ const syncMainWindowBackground = () => {
   if (!canUseMainWindow(win)) return;
   if (nativeTheme.themeSource !== currentTheme) nativeTheme.themeSource = currentTheme;
   syncTitleBar();
-  const dark =
-    currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors);
   if (process.platform === 'win32') {
     const state = resolveRunningWindowBackground(
       windowBackground,
@@ -265,7 +263,7 @@ const syncMainWindowBackground = () => {
     windowBackgroundRestartRequired = state.restartRequired;
     backgroundUnavailableReason = '';
     try {
-      applyWindowsComposition(win, state.background, osBuild, dark);
+      applyWindowsComposition(win, state.background, osBuild);
       win.setBackgroundColor(
         state.background.enabled ? '#00000000' : getMainWindowBackgroundColor(),
       );
@@ -289,6 +287,8 @@ const syncMainWindowBackground = () => {
     windowBackgroundActiveEnabled = state.background.enabled;
     windowBackgroundActiveFrosted = state.background.frosted;
     if (process.platform === 'darwin') {
+      const dark =
+        currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors);
       applyMacWindowBackground(win, state.background, activeComposition.transparent, dark);
     } else {
       win.setBackgroundColor(
