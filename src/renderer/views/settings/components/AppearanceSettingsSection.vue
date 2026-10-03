@@ -223,7 +223,7 @@ const isAccentGradientDefault = computed(
         <div class="space-y-1">
           <h3 class="font-semibold">失焦时保持毛玻璃效果</h3>
           <p class="text-sm text-text-secondary">
-            通过系统未公开接口强制窗口按激活态渲染，窗口失去焦点时毛玻璃不再变灰。该行为随系统版本更新可能变化，失效时恢复默认的失焦降级表现
+            毛玻璃切换为兼容实现：聚焦时仍是 Acrylic，失焦时自动切换为不受激活状态影响的系统旧版模糊，不再变灰。未聚焦的观感与聚焦时略有差异，切换即时生效
           </p>
         </div>
         <Switch

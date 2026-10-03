@@ -7,31 +7,14 @@ export const supportsWindowsAccent = () => Boolean(getNativePlatform());
 
 const active = new WeakMap<
   BrowserWindow,
-  'none' | 'clear' | 'electron-transparent' | 'accent-acrylic' | 'acrylic'
+  'none' | 'clear' | 'electron-transparent' | 'accent-acrylic' | 'accent-acrylic-keep' | 'acrylic'
 >();
-const forcedActive = new WeakMap<BrowserWindow, boolean>();
 
 const nativeWindowAddress = (win: BrowserWindow) => {
   const handle = win.getNativeWindowHandle();
   return handle.length === 8
     ? handle.readBigUInt64LE().toString()
     : String(handle.readUInt32LE());
-};
-
-// 失焦保持依赖未公开属性 WCA_FORCE_ACTIVEWINDOW_APPEARANCE；旧版原生模块缺失该
-// 导出时静默跳过，不影响毛玻璃本身，仅回到系统默认的失焦降级行为。
-const syncForceActiveAppearance = (win: BrowserWindow, desired: boolean) => {
-  const native = getNativePlatform();
-  if (typeof native?.setWindowForceActiveAppearance !== 'function') {
-    forcedActive.set(win, false);
-    return;
-  }
-  try {
-    const ok = native.setWindowForceActiveAppearance(nativeWindowAddress(win), desired) === true;
-    forcedActive.set(win, ok ? desired : false);
-  } catch {
-    forcedActive.set(win, false);
-  }
 };
 
 export function readWindowsCompositionDiagnostics(win: BrowserWindow) {
@@ -57,35 +40,39 @@ export function applyWindowsComposition(
   background: WindowBackground,
   build: number,
 ) {
+  // 失焦保持需要换成 Accent 后端：DWM 对 system backdrop（setBackgroundMaterial）
+  // 的失活降级无法从外部阻止，只有 Accent 路径能被子类在失焦时切换到旧版模糊(3)。
+  const keep = background.keepFrostedOnBlur === true;
   const mode = !background.enabled
     ? 'none'
     : background.frosted
-      ? build >= 22621
-        ? 'acrylic'
-        : 'accent-acrylic'
+      ? keep
+        ? 'accent-acrylic-keep'
+        : build >= 22621
+          ? 'acrylic'
+          : 'accent-acrylic'
       : build >= 22621
         ? 'clear'
         : 'electron-transparent';
-  // 失焦保持仅对毛玻璃后端有意义；透明/关闭模式不涉及。
-  const wantForce =
-    (mode === 'acrylic' || mode === 'accent-acrylic') && background.keepFrostedOnBlur === true;
   const previous = active.get(win) ?? 'none';
-  if (previous === mode) {
-    // 模式未变（如仅切换失焦保持开关）时只需同步该标志，避免重放整套后端。
-    if ((forcedActive.get(win) ?? false) !== wantForce) syncForceActiveAppearance(win, wantForce);
-    return;
-  }
-  const accent = (value: number) => {
-    if (!getNativePlatform()?.setWindowComposition(nativeWindowAddress(win), value)) {
+  if (previous === mode) return;
+  const accent = (value: number, keep = false) => {
+    if (!getNativePlatform()?.setWindowComposition(nativeWindowAddress(win), value, keep)) {
       throw new Error('系统背景接口不可用，已使用实色背景；请确认原生模块已更新。');
     }
   };
   try {
     // Clear the previous backend before selecting another; do not reset DWM on tint updates.
-    if (previous === 'acrylic' || (previous === 'clear' && build >= 22621))
+    // accent-acrylic-keep 在 Win11 上同样用 setBackgroundMaterial 准备过表面，退出时一并重置；
+    // 未准备过时 syncWindowsBackgroundMaterial 内部会直接跳过。
+    if (
+      previous === 'acrylic' ||
+      previous === 'accent-acrylic-keep' ||
+      (previous === 'clear' && build >= 22621)
+    )
       syncWindowsBackgroundMaterial(win, false);
     if (previous === 'clear') accent(0);
-    if (previous === 'accent-acrylic') accent(11);
+    if (previous === 'accent-acrylic' || previous === 'accent-acrylic-keep') accent(11);
     active.set(win, 'none');
     if (mode === 'acrylic') syncWindowsBackgroundMaterial(win, true);
     else if (mode === 'clear' && build >= 22621) {
@@ -93,11 +80,18 @@ export function applyWindowsComposition(
       // Prepare it through Electron, then remove only the native system backdrop.
       syncWindowsBackgroundMaterial(win, true);
       accent(5);
+    } else if (mode === 'accent-acrylic-keep') {
+      if (build >= 22621) {
+        // Electron 先准备半透明表面，原生侧只清除 backdrop 并叠加 Accent Acrylic。
+        syncWindowsBackgroundMaterial(win, true);
+        accent(12, true);
+      } else {
+        accent(10, true);
+      }
     } else if (mode === 'accent-acrylic') accent(10);
     // Legacy clear is provided by BrowserWindow.transparent. Calling the old
     // DWM mode here would reintroduce the failed opaque-window workaround.
     active.set(win, mode);
-    syncForceActiveAppearance(win, wantForce);
   } catch (error) {
     try {
       syncWindowsBackgroundMaterial(win, false);
@@ -109,7 +103,6 @@ export function applyWindowsComposition(
     } catch {
       /* solid Chromium surface remains the fallback */
     }
-    syncForceActiveAppearance(win, false);
     active.delete(win);
     throw error;
   }

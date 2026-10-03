@@ -120,14 +120,17 @@ unsafe fn set_accent(handle: *mut c_void, state: i32) -> bool {
 
 // Suspend expensive legacy Acrylic during the OS modal move/resize loop.
 // Unlike a JS debounce, these messages also cover a paused mouse inside the loop.
-// Data bits: 1 = suspended, 2 = last native operation failed.
+// 失焦保持（keep 位，data bit 3）：聚焦时用 Acrylic(4)，失焦时切换为不受激活
+// 状态影响的旧版模糊(3)——DWM 对失焦窗口的 Acrylic 降级无法从外部阻止，
+// 旧版模糊则两种激活状态下都会渲染，保证不出现灰底。
+// Data bits: 1 = suspended, 2 = last native operation failed, 4 = keep on blur.
 unsafe extern "system" fn acrylic_drag_proc(
     hwnd: *mut c_void,
     message: u32,
     wparam: usize,
     lparam: isize,
     id: usize,
-    _data: usize,
+    ref_data: usize,
 ) -> isize {
     if message == 0x0082 {
         RemoveWindowSubclass(hwnd, acrylic_drag_proc, id); // WM_NCDESTROY
@@ -136,17 +139,30 @@ unsafe extern "system" fn acrylic_drag_proc(
     if message == 0x0231 {
         // WM_ENTERSIZEMOVE: disable before the modal loop.
         let ok = set_accent(hwnd, 0);
-        SetWindowSubclass(hwnd, acrylic_drag_proc, id, 1 | if ok { 0 } else { 2 });
+        SetWindowSubclass(hwnd, acrylic_drag_proc, id, (ref_data & 4) | 1 | if ok { 0 } else { 2 });
     }
     let result = DefSubclassProc(hwnd, message, wparam, lparam);
     let mut data = 0;
-    if matches!(message, 0x0232 | 0x031e) // WM_EXITSIZEMOVE / WM_DWMCOMPOSITIONCHANGED
+    if matches!(message, 0x0006 | 0x0232 | 0x031e) // WM_ACTIVATE / WM_EXITSIZEMOVE / WM_DWMCOMPOSITIONCHANGED
         && IsWindow(hwnd) != 0
         && GetWindowSubclass(hwnd, acrylic_drag_proc, id, &mut data) != 0
-        && (message == 0x0232 || data & 1 == 0)
     {
-        let ok = set_accent(hwnd, 4);
-        SetWindowSubclass(hwnd, acrylic_drag_proc, id, if ok { 0 } else { 2 });
+        let keep = data & 4 != 0;
+        let suspended = data & 1 != 0;
+        let restore = match message {
+            0x0232 => true,          // 拖动/缩放结束，无条件恢复（顺带清 suspended 位）
+            0x031e => !suspended,    // 合成状态变化，暂停期间不抢恢复
+            _ => keep && !suspended, // WM_ACTIVATE：仅失焦保持模式需要切换
+        };
+        if restore {
+            let focused = if message == 0x0006 {
+                (wparam & 0xffff) != 0 // WA_INACTIVE=0，WA_ACTIVE/WA_CLICKACTIVE 非零
+            } else {
+                GetForegroundWindow() == hwnd
+            };
+            let ok = set_accent(hwnd, if keep && !focused { 3 } else { 4 });
+            SetWindowSubclass(hwnd, acrylic_drag_proc, id, (data & 4) | if ok { 0 } else { 2 });
+        }
     }
     result
 }
@@ -191,7 +207,7 @@ unsafe extern "system" fn legacy_composition_proc(
             GetForegroundWindow() == hwnd
         };
         let repaired = if message == 0x031e {
-            set_window_composition((hwnd as usize).to_string(), mode as u32)
+            set_window_composition((hwnd as usize).to_string(), mode as u32, None)
         } else {
             refresh_legacy_frame(hwnd, mode as u32, active, false)
         };
@@ -253,6 +269,7 @@ pub struct WindowCompositionDiagnostics {
     pub acrylic_drag_handler_installed: bool,
     pub acrylic_suspended: bool,
     pub acrylic_last_operation_succeeded: Option<bool>,
+    pub acrylic_keep_on_blur: bool,
     pub legacy_frame_repair_installed: bool,
     pub legacy_frame_repair_last_succeeded: Option<bool>,
     pub layered: bool,
@@ -336,6 +353,7 @@ pub fn get_window_composition_diagnostics(hwnd: String) -> Option<WindowComposit
             acrylic_suspended: acrylic_drag_handler_installed && acrylic_data & 1 != 0,
             acrylic_last_operation_succeeded: acrylic_drag_handler_installed
                 .then_some(acrylic_data & 2 == 0),
+            acrylic_keep_on_blur: acrylic_drag_handler_installed && acrylic_data & 4 != 0,
             legacy_frame_repair_installed,
             legacy_frame_repair_last_succeeded: legacy_frame_repair_installed
                 .then_some(legacy_mode & 0x100 == 0),
@@ -377,12 +395,15 @@ unsafe fn set_alpha_composition(handle: *mut c_void, enabled: bool) -> bool {
 
 /// mode: 0=off, 5=Win11 DWM clear, 6=legacy DWM clear+frame repair, 7=legacy blur+frame repair,
 /// 8=old opaque-window Acrylic; 10/11=enable/clear Accent on an Electron transparent
-/// window without modifying Electron's DWM alpha or frame margins.
+/// window without modifying Electron's DWM alpha or frame margins;
+/// 12=Accent Acrylic on a Win11 material-prepared window: clear only the system
+/// backdrop, enable per-pixel alpha, then stack Accent Acrylic (keep-on-blur always on).
+/// keep_on_blur 仅对 10/12 有意义：子类在失焦时切换到旧版模糊(3)，聚焦时切回。
 /// Modes 6/7 deliberately differ from the former legacy 4/2 protocol:
 /// old addons reject them, causing an explicit fallback instead of silent failure.
 #[napi]
-pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
-    if !matches!(mode, 0 | 5 | 6 | 7 | 8 | 10 | 11) {
+pub fn set_window_composition(hwnd: String, mode: u32, keep_on_blur: Option<bool>) -> bool {
+    if !matches!(mode, 0 | 5 | 6 | 7 | 8 | 10 | 11 | 12) {
         return false;
     }
     let Ok(address) = hwnd.parse::<usize>() else {
@@ -391,24 +412,6 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
     let handle = address as *mut c_void;
     unsafe {
         if handle.is_null() || IsWindow(handle) == 0 {
-            return false;
-        }
-        if matches!(mode, 10 | 11) {
-            // Electron owns the alpha surface and margins of this window. Never
-            // reset them on entry, exit or rollback; doing so can break clear.
-            if !remove_acrylic_drag(handle) {
-                return false;
-            }
-            if mode == 11 {
-                return set_accent(handle, 0);
-            }
-            if set_accent(handle, 4)
-                && SetWindowSubclass(handle, acrylic_drag_proc, ACRYLIC_DRAG_SUBCLASS, 0) != 0
-            {
-                return true;
-            }
-            let _ = remove_acrylic_drag(handle);
-            let _ = set_accent(handle, 0);
             return false;
         }
         let accent = |state: i32| set_accent(handle, state);
@@ -423,6 +426,56 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
                 },
             ) >= 0
         };
+        if matches!(mode, 10 | 11 | 12) {
+            // Electron owns the alpha surface and margins of mode 10/11 windows. Never
+            // reset them on entry, exit or rollback; doing so can break clear.
+            if !remove_acrylic_drag(handle) {
+                return false;
+            }
+            if mode == 11 {
+                return set_accent(handle, 0);
+            }
+            let keep = mode == 12 || keep_on_blur.unwrap_or(false);
+            if mode == 12 {
+                // Win11 material-prepared window: Electron already prepared the
+                // translucent surface via setBackgroundMaterial('acrylic'); clear only
+                // the system backdrop, then enable per-pixel alpha and stack Accent
+                // Acrylic on top. Margins(-1) matches mode 5 and is idempotent.
+                let applied = {
+                    let none: u32 = 1; // DWMSBT_NONE
+                    DwmSetWindowAttribute(
+                        handle,
+                        38,
+                        (&none as *const u32).cast(),
+                        size_of::<u32>() as u32,
+                    ) >= 0 && margins(-1)
+                        && set_alpha_composition(handle, true)
+                        && set_accent(handle, 4)
+                };
+                if applied
+                    && SetWindowSubclass(handle, acrylic_drag_proc, ACRYLIC_DRAG_SUBCLASS, 4) != 0
+                {
+                    return true;
+                }
+                // Best-effort rollback; the backdrop stays DWMSBT_NONE like mode 5's.
+                let _ = set_alpha_composition(handle, false);
+                let _ = set_accent(handle, 0);
+                return false;
+            }
+            if set_accent(handle, 4)
+                && SetWindowSubclass(
+                    handle,
+                    acrylic_drag_proc,
+                    ACRYLIC_DRAG_SUBCLASS,
+                    if keep { 4 } else { 0 },
+                ) != 0
+            {
+                return true;
+            }
+            let _ = remove_acrylic_drag(handle);
+            let _ = set_accent(handle, 0);
+            return false;
+        }
         let success = (|| {
             if !remove_legacy_frame_repair(handle) {
                 return false;
