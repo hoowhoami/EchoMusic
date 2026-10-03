@@ -155,13 +155,16 @@ jobs:
       - name: Build native addons
         shell: bash
         env:
-          # 修复 Windows ARM64 上 fdk-aac-sys 的编译：MSVC 不定义 GCC 风格架构宏，
-          # FDK_archdef.h 落入 #warning 兜底，新版 MSVC 视为 fatal error C1188。
-          # cc 在 build.rs 未调用 .cpp(true) 时即使编译 .cpp 也按 C 规则读 CFLAGS，
-          # 故 CFLAGS/CXXFLAGS 都注入；define 必须用 -D 前缀（/D 开头的值会被
-          # Git Bash/MSYS2 当作路径转换掉）；其余平台为空串，无影响。
-          CFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && '-D__aarch64__' || '' }}
-          CXXFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && '-D__aarch64__' || '' }}
+          # 修复 Windows ARM64 上 fdk-aac-sys 0.5.0 的编译（其余平台为空串，无影响）：
+          # 1) MSVC ARM64 只定义 _M_ARM64，FDK_archdef.h 识别不到而落入 #warning 兜底，
+          #    VS18 起是 fatal error C1188 —— 补 -D__aarch64__ 走它的 ARM64 分支；
+          # 2) 该分支定义 __arm__，会打开 hbe.cpp / sac_reshapeBBEnv.cpp 的 __attribute__
+          #    （GCC 语法，MSVC 报 C2065）—— 再用 -FI 强制包含仓库垫片
+          #    native/echo-airplay/patches/fdk-aac-msvc-arm64.h 置空 __attribute__；
+          #    MSVC 的 /D 不支持函数式宏只能 /FI，垫片按 FDK_FALLTHROUGH 收窄作用域。
+          # 3) define 用 -D 前缀（/D 开头的值会被 Git Bash/MSYS2 当路径转换掉）；cc 未调
+          #    .cpp(true) 时一律按 C 规则读 CFLAGS（CI 日志可证 CXXFLAGS 未读），只需注入 CFLAGS。
+          CFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && format('-D__aarch64__ -FI{0}/native/echo-airplay/patches/fdk-aac-msvc-arm64.h', github.workspace) || '' }}
         run: |
           build_addon() {
             local dir="$1"
