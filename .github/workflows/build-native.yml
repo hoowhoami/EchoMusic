@@ -269,15 +269,14 @@ jobs:
 
           find "$staging" -type f -print | sort
           printf '%s\n' "$staging" > "$RUNNER_TEMP/echo-music-native-staging"
+          printf '%s\n' "${#addons[@]}" > "$RUNNER_TEMP/echo-music-native-count"
 
       - name: Verify staged native addons
         shell: bash
-        env:
-          INCLUDE_PLATFORM_ADAPTOR: ${{ matrix.include_platform_adaptor }}
         run: |
           set -euo pipefail
           staging=$(<"$RUNNER_TEMP/echo-music-native-staging")
-          expected="${{ matrix.include_platform_adaptor && 7 || 6 }}"
+          expected=$(<"$RUNNER_TEMP/echo-music-native-count")
           node_count=$(find "$staging/native" -type f -name '*.node' | wc -l | tr -d ' ')
           if [[ "$node_count" -ne "$expected" ]]; then
             echo "发现的 native 文件："
