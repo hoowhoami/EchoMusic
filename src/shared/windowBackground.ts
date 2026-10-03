@@ -9,6 +9,8 @@ export interface WindowBackground {
   transparency: number;
   frosted: boolean;
   color: string;
+  /** 失焦时强制保持毛玻璃渲染（仅 Windows 毛玻璃后端生效）。 */
+  keepFrostedOnBlur: boolean;
 }
 
 export const DEFAULT_WINDOW_BACKGROUND: WindowBackground = {
@@ -16,6 +18,7 @@ export const DEFAULT_WINDOW_BACKGROUND: WindowBackground = {
   transparency: 0,
   frosted: false,
   color: '',
+  keepFrostedOnBlur: false,
 };
 
 export function normalizeWindowBackground(
@@ -28,6 +31,7 @@ export function normalizeWindowBackground(
     frosted: value?.frosted === true,
     color:
       typeof value?.color === 'string' && /^#[\da-f]{6}$/i.test(value.color) ? value.color : '',
+    keepFrostedOnBlur: value?.keepFrostedOnBlur === true,
   };
 }
 

@@ -85,14 +85,19 @@ extern "system" {
 const LEGACY_COMPOSITION_SUBCLASS: usize = 0x4543484f;
 const ACRYLIC_DRAG_SUBCLASS: usize = 0x45434841;
 
-unsafe fn set_accent(handle: *mut c_void, state: i32) -> bool {
-    let name: Vec<u16> = "user32.dll\0".encode_utf16().collect();
-    let module = GetModuleHandleW(name.as_ptr());
-    let proc = if module.is_null() {
+// 组合属性相关 API 未公开，按名称运行时解析；缺失时由调用方按失败处理。
+unsafe fn resolve_user32_proc(name: &[u8]) -> *mut c_void {
+    let module: Vec<u16> = "user32.dll\0".encode_utf16().collect();
+    let module = GetModuleHandleW(module.as_ptr());
+    if module.is_null() {
         std::ptr::null_mut()
     } else {
-        GetProcAddress(module, b"SetWindowCompositionAttribute\0".as_ptr())
-    };
+        GetProcAddress(module, name.as_ptr())
+    }
+}
+
+unsafe fn set_accent(handle: *mut c_void, state: i32) -> bool {
+    let proc = resolve_user32_proc(b"SetWindowCompositionAttribute\0");
     if proc.is_null() {
         return state == 0;
     }
@@ -256,6 +261,7 @@ pub struct WindowCompositionDiagnostics {
     pub composition_enabled: Option<bool>,
     pub accent_state: Option<i32>,
     pub system_backdrop: Option<u32>,
+    pub force_active_appearance: Option<bool>,
 }
 
 /// Read back state without changing styles, materials, or capturing other windows.
@@ -278,13 +284,7 @@ pub fn get_window_composition_diagnostics(hwnd: String) -> Option<WindowComposit
             size_of::<u32>() as u32,
         ) >= 0)
             .then_some(backdrop);
-        let name: Vec<u16> = "user32.dll\0".encode_utf16().collect();
-        let module = GetModuleHandleW(name.as_ptr());
-        let proc = if module.is_null() {
-            std::ptr::null_mut()
-        } else {
-            GetProcAddress(module, b"GetWindowCompositionAttribute\0".as_ptr())
-        };
+        let proc = resolve_user32_proc(b"GetWindowCompositionAttribute\0");
         let mut accent_state = None;
         if !proc.is_null() {
             let get: SetComposition = transmute(proc);
@@ -301,6 +301,20 @@ pub fn get_window_composition_diagnostics(hwnd: String) -> Option<WindowComposit
             };
             if get(handle, &mut data) != 0 {
                 accent_state = Some(policy.state);
+            }
+        }
+        // WCA_FORCE_ACTIVEWINDOW_APPEARANCE(15) 回读；数据是单个 BOOL。
+        let mut force_active_appearance = None;
+        if !proc.is_null() {
+            let get: SetComposition = transmute(proc);
+            let mut value: i32 = 0;
+            let mut data = AttributeData {
+                attribute: 15,
+                data: (&mut value as *mut i32).cast(),
+                size: size_of::<i32>(),
+            };
+            if get(handle, &mut data) != 0 {
+                force_active_appearance = Some(value != 0);
             }
         }
         let mut legacy_mode = 0;
@@ -331,6 +345,7 @@ pub fn get_window_composition_diagnostics(hwnd: String) -> Option<WindowComposit
             composition_enabled,
             accent_state,
             system_backdrop,
+            force_active_appearance,
         })
     }
 }
@@ -474,5 +489,32 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
             let _ = margins(0);
         }
         success
+    }
+}
+
+/// WCA_FORCE_ACTIVEWINDOW_APPEARANCE(15)：未公开的组合属性，强制 DWM 始终按激活态
+/// 渲染窗口，使 Acrylic/system backdrop 在窗口失焦时不降级为灰色。数据为单个 BOOL。
+#[napi]
+pub fn set_window_force_active_appearance(hwnd: String, enabled: bool) -> bool {
+    let Ok(address) = hwnd.parse::<usize>() else {
+        return false;
+    };
+    let handle = address as *mut c_void;
+    unsafe {
+        if handle.is_null() || IsWindow(handle) == 0 {
+            return false;
+        }
+        let proc = resolve_user32_proc(b"SetWindowCompositionAttribute\0");
+        if proc.is_null() {
+            return false;
+        }
+        let set: SetComposition = transmute(proc);
+        let mut value: i32 = i32::from(enabled);
+        let mut data = AttributeData {
+            attribute: 15,
+            data: (&mut value as *mut i32).cast(),
+            size: size_of::<i32>(),
+        };
+        set(handle, &mut data) != 0
     }
 }

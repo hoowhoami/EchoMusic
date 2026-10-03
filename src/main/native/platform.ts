@@ -18,6 +18,8 @@ export interface NativePlatform {
     systemBackdrop?: number;
   } | null;
   setWindowComposition(handle: string, mode: number): boolean;
+  /** 失焦保持毛玻璃：WCA_FORCE_ACTIVEWINDOW_APPEARANCE(15)，旧版原生模块可能缺失。 */
+  setWindowForceActiveAppearance?(handle: string, enabled: boolean): boolean;
   taskbarEnableIconic(handle: string): void;
   taskbarDisableIconic(handle: string): void;
   taskbarInvalidate(handle: string): void;
