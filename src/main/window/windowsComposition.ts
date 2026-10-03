@@ -9,6 +9,12 @@ const active = new WeakMap<
   BrowserWindow,
   'none' | 'clear' | 'electron-transparent' | 'accent-acrylic' | 'accent-acrylic-keep' | 'acrylic'
 >();
+const activeTint = new WeakMap<BrowserWindow, number>();
+
+// 失焦保持模式的 Accent 着色（AccentPolicy.GradientColor，ABGR）：旧实现是 DWM
+// system backdrop 自带提亮层，Accent 路径没有，需按主题补一层罩色对齐观感。
+// 如需微调浓度改高位 alpha（0x99 ≈ 60%）。
+const frostedTint = (dark: boolean) => (dark ? 0x99202020 : 0x99ffffff);
 
 const nativeWindowAddress = (win: BrowserWindow) => {
   const handle = win.getNativeWindowHandle();
@@ -39,6 +45,7 @@ export function applyWindowsComposition(
   win: BrowserWindow,
   background: WindowBackground,
   build: number,
+  dark = false,
 ) {
   // 失焦保持需要换成 Accent 后端：DWM 对 system backdrop（setBackgroundMaterial）
   // 的失活降级无法从外部阻止，只有 Accent 路径能被子类在失焦时切换到旧版模糊(3)。
@@ -54,13 +61,23 @@ export function applyWindowsComposition(
       : build >= 22621
         ? 'clear'
         : 'electron-transparent';
-  const previous = active.get(win) ?? 'none';
-  if (previous === mode) return;
-  const accent = (value: number, keep = false) => {
-    if (!getNativePlatform()?.setWindowComposition(nativeWindowAddress(win), value, keep)) {
+  const tint = keep ? frostedTint(dark) : 0;
+  const accent = (value: number, keep = false, tint?: number) => {
+    if (
+      !getNativePlatform()?.setWindowComposition(nativeWindowAddress(win), value, keep, tint)
+    ) {
       throw new Error('系统背景接口不可用，已使用实色背景；请确认原生模块已更新。');
     }
   };
+  const previous = active.get(win) ?? 'none';
+  if (previous === mode) {
+    // 模式未变但深浅色切换导致着色变化时，重放 keep 后端以更新着色。
+    if (mode === 'accent-acrylic-keep' && activeTint.get(win) !== tint) {
+      accent(build >= 22621 ? 12 : 10, true, tint);
+      activeTint.set(win, tint);
+    }
+    return;
+  }
   try {
     // Clear the previous backend before selecting another; do not reset DWM on tint updates.
     // accent-acrylic-keep 在 Win11 上同样用 setBackgroundMaterial 准备过表面，退出时一并重置；
@@ -84,10 +101,11 @@ export function applyWindowsComposition(
       if (build >= 22621) {
         // Electron 先准备半透明表面，原生侧只清除 backdrop 并叠加 Accent Acrylic。
         syncWindowsBackgroundMaterial(win, true);
-        accent(12, true);
+        accent(12, true, tint);
       } else {
-        accent(10, true);
+        accent(10, true, tint);
       }
+      activeTint.set(win, tint);
     } else if (mode === 'accent-acrylic') accent(10);
     // Legacy clear is provided by BrowserWindow.transparent. Calling the old
     // DWM mode here would reintroduce the failed opaque-window workaround.
