@@ -158,9 +158,10 @@ jobs:
           # 修复 Windows ARM64 上 fdk-aac-sys 的编译：MSVC 不定义 GCC 风格架构宏，
           # FDK_archdef.h 落入 #warning 兜底，新版 MSVC 视为 fatal error C1188。
           # cc 在 build.rs 未调用 .cpp(true) 时即使编译 .cpp 也按 C 规则读 CFLAGS，
-          # 故 CFLAGS/CXXFLAGS 都注入；其余平台为空串，无影响。
-          CFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && '/D__aarch64__' || '' }}
-          CXXFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && '/D__aarch64__' || '' }}
+          # 故 CFLAGS/CXXFLAGS 都注入；define 必须用 -D 前缀（/D 开头的值会被
+          # Git Bash/MSYS2 当作路径转换掉）；其余平台为空串，无影响。
+          CFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && '-D__aarch64__' || '' }}
+          CXXFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && '-D__aarch64__' || '' }}
         run: |
           build_addon() {
             local dir="$1"

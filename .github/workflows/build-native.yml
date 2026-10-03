@@ -186,8 +186,10 @@ jobs:
           # 使其走上 header 自带的 ARM64 分支（clang-cl 也定义该宏，语义一致）。
           # 注意 cc 在 build.rs 未调用 .cpp(true) 时即使编译 .cpp 也按 C 规则读
           # CFLAGS（见 cc 源码 envflags(if self.cpp...)），因此 CFLAGS/CXXFLAGS 都注入。
-          CFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && '/D__aarch64__' || '' }}
-          CXXFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && '/D__aarch64__' || '' }}
+          # define 必须用 -D 前缀：/D 开头的值会被 step 的 Git Bash（MSYS2）当作
+          # POSIX 路径转换成 C:/Program Files/Git/...（cl 兼容 -D，cc 内部同样用 -D）。
+          CFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && '-D__aarch64__' || '' }}
+          CXXFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && '-D__aarch64__' || '' }}
         run: |
           set -euo pipefail
 
