@@ -180,6 +180,11 @@ jobs:
         env:
           RUST_TARGET: ${{ matrix.rust_target }}
           INCLUDE_PLATFORM_ADAPTOR: ${{ matrix.include_platform_adaptor }}
+          # Windows ARM64 的 MSVC 不定义 GCC 风格架构宏（只定义 _M_ARM64），而
+          # fdk-aac-sys 的 FDK_archdef.h 恰好漏掉 _M_ARM64 分支，导致落入 #warning
+          # 兜底，新版 MSVC（VS18 起）将其视为 fatal error C1188。补定义 __aarch64__
+          # 使其走上 header 自带的 ARM64 分支（clang-cl 也定义该宏，语义一致）。
+          CXXFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && '/D__aarch64__' || '' }}
         run: |
           set -euo pipefail
 
