@@ -180,19 +180,6 @@ jobs:
         env:
           RUST_TARGET: ${{ matrix.rust_target }}
           INCLUDE_PLATFORM_ADAPTOR: ${{ matrix.include_platform_adaptor }}
-          # Windows ARM64 上 fdk-aac-sys 0.5.0 的编译修复（仅该目标注入，其余平台为空串）：
-          # 1) MSVC ARM64 只定义 _M_ARM64，FDK_archdef.h 识别不到，落入 #warning 兜底，
-          #    VS18 起 MSVC 视 #warning 为 fatal error C1188 —— 补 -D__aarch64__ 走其
-          #    header 自带的 ARM64 分支（clang-cl 也定义该宏，语义一致）。
-          # 2) 该分支同时定义 __arm__，会打开 hbe.cpp / sac_reshapeBBEnv.cpp 里的
-          #    __attribute__（GCC 语法，MSVC 报 C2065）—— 再用 -FI 强制包含仓库里的
-          #    垫片 native/echo-airplay/patches/fdk-aac-msvc-arm64.h 把它定义成空宏；
-          #    MSVC 的 /D 不支持函数式宏，只能 /FI。垫片只在注入过 FDK_FALLTHROUGH 的
-          #    fdk-aac 编译单元里生效（build.rs 注入），其它 crate 不受影响。
-          # 3) define 用 -D 前缀：/D 开头的值会被 Git Bash（MSYS2）当 POSIX 路径转换掉；
-          #    cc 未调 .cpp(true) 时一律按 C 规则读 CFLAGS（CI 日志可证 CXXFLAGS 未读），
-          #    所以只需注入 CFLAGS。
-          CFLAGS_aarch64_pc_windows_msvc: ${{ runner.os == 'Windows' && runner.arch == 'ARM64' && format('-D__aarch64__ -FI{0}/native/echo-airplay/patches/fdk-aac-msvc-arm64.h', github.workspace) || '' }}
         run: |
           set -euo pipefail
 
@@ -200,6 +187,18 @@ jobs:
             local addon="$1"
             (
               cd "native/$addon"
+              # Windows ARM64 上 fdk-aac-sys 0.5.0 的编译参数：只给 echo-airplay 注入，
+              # 绝不能放全局 env —— 其它 addon 的 C 依赖会被 __aarch64__ 带偏，例如 zstd 的
+              # compiler.h 有 `#elif defined(__aarch64__)` 分支会用 GCC 内联汇编 prefetch，
+              # MSVC 直接报 __asm__ 未声明。echo-airplay 依赖树里只有 fdk-aac-sys 用 cc。
+              # 1) -D__aarch64__：MSVC ARM64 只定义 _M_ARM64，FDK_archdef.h 识别不了而落入
+              #    #warning 兜底（VS18 起是 fatal error C1188），补这个宏走它的 ARM64 分支；
+              # 2) -FI：该分支会连带定义 __arm__，打开 hbe.cpp / sac_reshapeBBEnv.cpp 里的
+              #    __attribute__（GCC 语法，MSVC 报 C2065），强制包含仓库垫片置空即可
+              #    （MSVC 的 /D 不支持函数式宏，只能 /FI；垫片按 FDK_FALLTHROUGH 收窄）。
+              if [[ "$addon" == "echo-airplay" && "${{ runner.os }}" == "Windows" && "${{ runner.arch }}" == "ARM64" ]]; then
+                export CFLAGS_aarch64_pc_windows_msvc="-D__aarch64__ -FI$(cygpath -m "$PWD")/patches/fdk-aac-msvc-arm64.h"
+              fi
               npm install
               if [[ -n "$RUST_TARGET" ]]; then
                 npx napi build --release --no-const-enum --target "$RUST_TARGET"
