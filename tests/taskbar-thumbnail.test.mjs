@@ -6,6 +6,17 @@ import { transformSync } from 'esbuild';
 
 const THUMBNAIL = 0x0323;
 const LIVE_PREVIEW = 0x0326;
+
+test('album previews do not ship the retired card renderer or its native packages', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  for (const section of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+    assert.equal(manifest[section]?.['@resvg/resvg-js'], undefined);
+  }
+  for (const file of ['pnpm-lock.yaml', 'vite.config.mts', 'THIRD_PARTY_NOTICES.md']) {
+    assert.doesNotMatch(readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), /@resvg\//);
+  }
+});
+
 const packedSize = (width, height) => {
   const value = Buffer.alloc(4);
   value.writeUInt32LE(((width << 16) | height) >>> 0);
