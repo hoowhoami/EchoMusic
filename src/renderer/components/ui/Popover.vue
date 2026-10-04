@@ -1,5 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, inject, provide } from 'vue';
+import {
+  ref,
+  computed,
+  watch,
+  onMounted,
+  onUnmounted,
+  onActivated,
+  onDeactivated,
+  inject,
+  provide,
+} from 'vue';
 import { PopoverRoot, PopoverTrigger, PopoverPortal, PopoverContent, PopoverArrow } from 'reka-ui';
 
 type TriggerMode = 'hover' | 'click' | 'focus' | 'manual';
@@ -39,6 +49,10 @@ const emit = defineEmits<{
 }>();
 
 const internalOpen = ref(props.open ?? false);
+const suspended = ref(false);
+const disposed = ref(false);
+const mounted = ref(false);
+const canOpen = computed(() => !props.disabled && !suspended.value && !disposed.value);
 // 真实 DOM 引用，用于点击外部判断
 const triggerWrapRef = ref<HTMLElement | null>(null);
 const contentWrapRef = ref<HTMLElement | null>(null);
@@ -64,28 +78,31 @@ let showTimer: ReturnType<typeof setTimeout> | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
 const isOpen = computed(() => {
+  if (!canOpen.value) return false;
   if (props.trigger === 'manual') return props.open ?? false;
   return internalOpen.value;
 });
 
 const clearTimers = () => {
-  if (showTimer) {
+  if (showTimer !== null) {
     clearTimeout(showTimer);
     showTimer = null;
   }
-  if (hideTimer) {
+  if (hideTimer !== null) {
     clearTimeout(hideTimer);
     hideTimer = null;
   }
 };
 
 const setOpen = (val: boolean) => {
+  clearTimers();
+  if (val && !canOpen.value) return;
   internalOpen.value = val;
   emit('update:open', val);
 };
 
 const doShow = () => {
-  if (props.disabled) return;
+  if (!canOpen.value) return;
   clearTimers();
   if (props.trigger === 'hover') {
     showTimer = setTimeout(() => setOpen(true), props.delay);
@@ -95,7 +112,7 @@ const doShow = () => {
 };
 
 const doHide = () => {
-  if (props.holdOpen) return;
+  if (!canOpen.value || props.holdOpen) return;
   clearTimers();
   if (props.trigger === 'hover') {
     hideTimer = setTimeout(() => setOpen(false), props.duration);
@@ -135,10 +152,18 @@ const handleTriggerClick = () => {
 
 // 点击外部关闭（替代 reka-ui 的 interact-outside）
 const handleDocumentMousedown = (e: MouseEvent) => {
-  if (props.trigger !== 'click' || !internalOpen.value) return;
+  if (props.trigger !== 'click' || !isOpen.value) return;
   const target = e.target as Node;
   if (containsPopoverTarget(target)) return;
   doHide();
+};
+
+const handleEscapeKeyDown = (event: KeyboardEvent) => {
+  // Reka dispatches this only for its highest layer. Consume the event even
+  // while held open or exiting so the drawer/dialog behind it cannot close.
+  event.preventDefault();
+  event.stopPropagation();
+  if (isOpen.value && !props.holdOpen) setOpen(false);
 };
 
 // 阻止 reka-ui 自行管理 open
@@ -152,9 +177,11 @@ watch(
   () => props.open,
   (val) => {
     if (val !== undefined) {
+      clearTimers();
       internalOpen.value = val;
     }
   },
+  { flush: 'sync' },
 );
 
 watch(
@@ -164,20 +191,52 @@ watch(
     clearTimers();
     setOpen(false);
   },
+  { flush: 'sync' },
 );
 
 // A hover popover may become click-dismissed while editing inside it.
 // A pending mouseleave timeout must not close that editing session.
-watch(() => props.trigger, clearTimers);
+watch(() => props.trigger, clearTimers, { flush: 'sync' });
+watch(
+  () => props.holdOpen,
+  (holdOpen) => {
+    if (holdOpen && hideTimer !== null) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+  },
+  { flush: 'sync' },
+);
+
+let listeningForOutsideClick = false;
+const syncOutsideClickListener = () => {
+  const shouldListen = mounted.value && isOpen.value && props.trigger === 'click';
+  if (shouldListen === listeningForOutsideClick) return;
+  listeningForOutsideClick = shouldListen;
+  if (shouldListen) document.addEventListener('mousedown', handleDocumentMousedown, true);
+  else document.removeEventListener('mousedown', handleDocumentMousedown, true);
+};
+watch([mounted, isOpen, () => props.trigger], syncOutsideClickListener, { flush: 'sync' });
 
 onMounted(() => {
-  document.addEventListener('mousedown', handleDocumentMousedown, true);
+  mounted.value = true;
 });
-
-onUnmounted(() => {
-  unregisterParentBranch?.();
+onDeactivated(() => {
+  const wasOpen = isOpen.value;
+  suspended.value = true;
   clearTimers();
-  document.removeEventListener('mousedown', handleDocumentMousedown, true);
+  if (wasOpen || internalOpen.value) setOpen(false);
+});
+onActivated(() => {
+  if (!disposed.value) suspended.value = false;
+});
+onUnmounted(() => {
+  disposed.value = true;
+  mounted.value = false;
+  syncOutsideClickListener();
+  unregisterParentBranch?.();
+  childBranches.clear();
+  clearTimers();
 });
 
 defineExpose({
@@ -203,27 +262,26 @@ defineExpose({
       </span>
     </PopoverTrigger>
     <PopoverPortal>
-      <Transition name="popover-fade">
-        <PopoverContent
-          v-if="isOpen"
-          :side="props.side"
-          :align="props.align"
-          :side-offset="props.sideOffset"
-          :collision-padding="12"
-          avoid-collisions
-          :class="['echo-popover-content', props.contentClass]"
-          :style="props.contentStyle"
-          @mouseenter="handleContentEnter"
-          @mouseleave="handleContentLeave"
-          @interact-outside="handleInteractOutside"
-          @open-auto-focus="emit('open-auto-focus', $event)"
-        >
-          <div ref="contentWrapRef">
-            <slot />
-          </div>
-          <PopoverArrow v-if="props.showArrow" :width="14" :height="8" class="echo-popover-arrow" />
-        </PopoverContent>
-      </Transition>
+      <PopoverContent
+        :side="props.side"
+        :align="props.align"
+        :side-offset="props.sideOffset"
+        :collision-padding="12"
+        avoid-collisions
+        :class="['echo-popover-content', props.contentClass]"
+        :style="props.contentStyle"
+        :inert="!isOpen || undefined"
+        @mouseenter="handleContentEnter"
+        @mouseleave="handleContentLeave"
+        @interact-outside="handleInteractOutside"
+        @escape-key-down="handleEscapeKeyDown"
+        @open-auto-focus="emit('open-auto-focus', $event)"
+      >
+        <div ref="contentWrapRef">
+          <slot />
+        </div>
+        <PopoverArrow v-if="props.showArrow" :width="14" :height="8" class="echo-popover-arrow" />
+      </PopoverContent>
     </PopoverPortal>
   </PopoverRoot>
 </template>
@@ -250,16 +308,18 @@ defineExpose({
   stroke: none;
 }
 
-.popover-fade-enter-active {
-  transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+.echo-popover-content[data-state='open'] {
+  animation: motion-popover-in var(--motion-duration-normal) var(--motion-ease-enter);
 }
 
-.popover-fade-leave-active {
-  transition: opacity 0.1s cubic-bezier(0.4, 0, 1, 1);
+.echo-popover-content[data-state='closed'] {
+  pointer-events: none;
+  animation: motion-fade-out var(--motion-duration-fast) var(--motion-ease-exit);
 }
 
-.popover-fade-enter-from,
-.popover-fade-leave-to {
-  opacity: 0;
+@media (prefers-reduced-motion: reduce) {
+  .echo-popover-content[data-state] {
+    animation: none;
+  }
 }
 </style>

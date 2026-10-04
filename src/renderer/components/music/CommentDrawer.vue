@@ -140,6 +140,7 @@ watch(
       <div class="comment-drawer-body">
         <div v-if="singerComments.length" class="comment-drawer-section">歌手说</div>
         <CommentList
+          :resource-id="resourceId"
           v-if="singerComments.length"
           :comments="singerComments"
           :loading="false"
@@ -151,6 +152,7 @@ watch(
         <div v-if="singerComments.length" class="comment-drawer-divider"></div>
 
         <CommentList
+          :resource-id="resourceId"
           :comments="comments"
           :loading="isLoadingComments"
           :resourceType="resourceType"
@@ -211,8 +213,8 @@ watch(
 
 @media (max-width: 420px) {
   :global(.drawer-panel.comment-drawer) {
-    --drawer-top-gap: 16px;
-    --drawer-bottom-gap: -4px;
+    --drawer-top-gap: 4px;
+    --drawer-bottom-gap: 8px;
     right: 8px;
     width: min(460px, calc(100vw - 16px));
   }

@@ -3,7 +3,8 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 import RollingNumber from '@/components/ui/RollingNumber.vue';
 
 defineOptions({ name: 'profile' });
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue';
+import { captureUserSession } from '@/utils/userSession';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useLoginDeviceStore, type LoginDeviceSession } from '@/stores/loginDevices';
@@ -100,12 +101,14 @@ const listeningDuration = computed(() =>
   formatListeningDuration(detail.value.d_sec, detail.value.duration),
 );
 const openGradeDetail = async () => {
+  if (!userStore.isLoggedIn || disposed || gradeLoading.value) return;
+  const isCurrent = captureProfileScope();
   showGradeDetail.value = true;
   gradeLoading.value = true;
   try {
     await userStore.fetchGradeInfo();
   } finally {
-    gradeLoading.value = false;
+    if (isCurrent()) gradeLoading.value = false;
   }
 };
 const isSavingProfile = ref(false);
@@ -239,6 +242,86 @@ const socialChatDraftOverLimit = computed(
 );
 const sentChatMessageIds = reactive<Set<string>>(new Set());
 
+let profileGeneration = 0;
+let disposed = false;
+let chatGeneration = 0;
+let chatRequestSequence = 0;
+let profileLoadSequence = 0;
+let chatRefreshTimer: number | null = null;
+const socialUserScopes = new WeakMap<SocialUser, () => boolean>();
+
+const captureProfileScope = () => {
+  const generation = profileGeneration;
+  const isCurrentSession = captureUserSession(userStore);
+  return () => !disposed && generation === profileGeneration && isCurrentSession();
+};
+
+const isCurrentSocialUser = (item: SocialUser) =>
+  userStore.isLoggedIn && Boolean(socialUserScopes.get(toRaw(item))?.());
+
+const cancelChatRefresh = () => {
+  if (chatRefreshTimer !== null) window.clearTimeout(chatRefreshTimer);
+  chatRefreshTimer = null;
+};
+
+const resetChat = () => {
+  chatGeneration++;
+  chatRequestSequence++;
+  cancelChatRefresh();
+  socialChatTarget.value = null;
+  socialChatMessages.value = [];
+  socialChatDraft.value = '';
+  socialChatTag.value = '';
+  socialChatLoading.value = false;
+  socialChatSending.value = false;
+  sentChatMessageIds.clear();
+};
+
+const captureChatScope = (target: SocialUser) => {
+  const generation = chatGeneration;
+  const isCurrentProfile = captureProfileScope();
+  return () =>
+    isCurrentProfile() &&
+    userStore.isLoggedIn &&
+    generation === chatGeneration &&
+    target.userId === socialChatTarget.value?.userId;
+};
+
+const resetProfileState = () => {
+  profileGeneration++;
+  profileLoadSequence++;
+  resetChat();
+  socialDrawerOpen.value = false;
+  socialFollowPending.clear();
+  for (const { key } of socialTabs) {
+    socialUsers[key] = [];
+    socialLoading[key] = false;
+    socialLoaded[key] = false;
+    socialError[key] = '';
+    delete socialListRequests[key];
+  }
+  isLoading.value = false;
+  isSavingProfile.value = false;
+  isUploadingAvatar.value = false;
+  gradeLoading.value = false;
+  showProfileEditor.value = false;
+  showGradeDetail.value = false;
+  showDeviceManager.value = false;
+  showKickConfirm.value = false;
+  pendingKickDevice.value = null;
+  showLogoutConfirm.value = false;
+  showContentBlacklist.value = false;
+  showListeningPreferences.value = false;
+  Object.assign(profileForm, {
+    nickname: '',
+    sex: 2,
+    birthday: '',
+    signature: '',
+    province: '',
+    city: '',
+  });
+};
+
 const tvip = computed(() => busiVip.value.find((v) => v.product_type === 'tvip' && v.is_vip === 1));
 const svip = computed(() => busiVip.value.find((v) => v.product_type === 'svip' && v.is_vip === 1));
 
@@ -281,7 +364,8 @@ const getProfileErrorMessage = (error: unknown, fallback: string) => {
 };
 
 const saveProfile = async () => {
-  if (isSavingProfile.value) return;
+  if (!userStore.isLoggedIn || disposed || isSavingProfile.value) return;
+  const isCurrent = captureProfileScope();
 
   const nickname = profileForm.nickname.trim();
   if (!nickname) {
@@ -320,13 +404,15 @@ const saveProfile = async () => {
   isSavingProfile.value = true;
   try {
     await userStore.updateProfile(params);
+    if (!isCurrent()) return;
     showProfileEditor.value = false;
     toastStore.success('个人资料已更新');
   } catch (error) {
+    if (!isCurrent()) return;
     logger.error('Profile', 'Update profile error:', error);
     toastStore.danger(getProfileErrorMessage(error, '个人资料保存失败，请稍后重试'));
   } finally {
-    isSavingProfile.value = false;
+    if (isCurrent()) isSavingProfile.value = false;
   }
 };
 
@@ -349,7 +435,8 @@ const handleAvatarSelected = async (event: Event) => {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   input.value = '';
-  if (!file || isUploadingAvatar.value) return;
+  if (!file || !userStore.isLoggedIn || disposed || isUploadingAvatar.value) return;
+  const isCurrent = captureProfileScope();
 
   const mime = file.type.toLowerCase();
   const extension = file.name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? '';
@@ -367,6 +454,7 @@ const handleAvatarSelected = async (event: Event) => {
   isUploadingAvatar.value = true;
   try {
     const dataUrl = await readFileAsDataUrl(file);
+    if (!isCurrent()) return;
     const filename =
       mime === 'image/gif' || extension === 'gif'
         ? 'avatar.gif'
@@ -374,14 +462,16 @@ const handleAvatarSelected = async (event: Event) => {
           ? 'avatar.png'
           : 'avatar.jpg';
     const result = await userStore.updateAvatar(dataUrl, filename);
+    if (!isCurrent()) return;
     toastStore.success(
       result.reviewPending ? '头像已上传，正在审核中' : '头像已提交，审核完成后将正式生效',
     );
   } catch (error) {
+    if (!isCurrent()) return;
     logger.error('Profile', 'Update avatar error:', error);
     toastStore.danger(getProfileErrorMessage(error, '头像上传失败，请稍后重试'));
   } finally {
-    isUploadingAvatar.value = false;
+    if (isCurrent()) isUploadingAvatar.value = false;
   }
 };
 
@@ -748,7 +838,7 @@ const mapSocialUser = (item: unknown, index: number, tab: SocialTabKey): SocialU
         : '';
   const rawId = userId || `row-${tab}-${index}`;
 
-  return {
+  const mapped: SocialUser = {
     key: rawId,
     userId,
     canMessage: Boolean(userId && String(userStore.info?.userid ?? '') !== userId),
@@ -759,6 +849,8 @@ const mapSocialUser = (item: unknown, index: number, tab: SocialTabKey): SocialU
     friendAction,
     raw: item,
   };
+  socialUserScopes.set(mapped, captureProfileScope());
+  return mapped;
 };
 
 const getSocialErrorMessage = (error: unknown, fallback: string) => {
@@ -777,10 +869,12 @@ const getSocialErrorMessage = (error: unknown, fallback: string) => {
 };
 
 const loadSocialList = async (tab = activeSocialTab.value, force = false) => {
-  if (!userStore.isLoggedIn) return false;
+  if (!userStore.isLoggedIn || disposed) return false;
+  const isCurrent = captureProfileScope();
   // 写操作后的刷新必须等旧请求结束，再取一次，避免拿到操作前的关系。
   while (socialListRequests[tab]) {
     const loaded = await socialListRequests[tab];
+    if (!isCurrent()) return false;
     if (!force) return loaded;
   }
   if (socialLoaded[tab] && !force) return true;
@@ -790,6 +884,7 @@ const loadSocialList = async (tab = activeSocialTab.value, force = false) => {
   const pending = (async () => {
     try {
       const payload = await socialTabFetcher[tab]();
+      if (!isCurrent()) return false;
       const records = findFirstArray(unwrapPayload(payload), socialListKeys[tab]);
       socialUsers[tab] = records
         .map((item, index) => mapSocialUser(item, index, tab))
@@ -797,24 +892,25 @@ const loadSocialList = async (tab = activeSocialTab.value, force = false) => {
       socialLoaded[tab] = true;
       return true;
     } catch (error) {
+      if (!isCurrent()) return false;
       logger.error('Profile', `Load ${tab} failed:`, error);
       socialError[tab] = getSocialErrorMessage(error, '列表加载失败，请稍后重试');
       return false;
     } finally {
-      socialLoading[tab] = false;
+      if (isCurrent()) socialLoading[tab] = false;
     }
   })();
-  socialListRequests[tab] = pending;
+  if (isCurrent()) socialListRequests[tab] = pending;
   try {
     return await pending;
   } finally {
-    delete socialListRequests[tab];
+    if (socialListRequests[tab] === pending) delete socialListRequests[tab];
   }
 };
 
 const toggleSocialFollow = async (item: SocialUser) => {
   if (
-    !userStore.isLoggedIn ||
+    !isCurrentSocialUser(item) ||
     !item.friendAction ||
     socialFollowPending.has(item.userId) ||
     !/^[1-9]\d*$/.test(item.userId) ||
@@ -822,12 +918,14 @@ const toggleSocialFollow = async (item: SocialUser) => {
   )
     return;
 
+  const isCurrent = captureProfileScope();
   const following = item.friendAction === 'follow';
   socialFollowPending.add(item.userId);
   try {
     let alreadyFollowed = false;
     try {
       const payload = await (following ? addUserFollow : deleteUserFollow)({ tuid: item.userId });
+      if (!isCurrent()) return;
       if (
         !isPlainRecord(payload) ||
         Number(payload.status) !== 1 ||
@@ -836,6 +934,7 @@ const toggleSocialFollow = async (item: SocialUser) => {
         throw Object.assign(new Error('关注操作失败'), { response: { body: payload } });
       }
     } catch (error) {
+      if (!isCurrent()) return;
       const body = (error as { response?: { body?: RawRecord } })?.response?.body;
       if (!following || Number(body?.error_code) !== 31702) throw error;
       alreadyFollowed = true;
@@ -844,31 +943,34 @@ const toggleSocialFollow = async (item: SocialUser) => {
     if (alreadyFollowed) toastStore.info('已关注该用户');
     else toastStore.success(following ? '关注成功' : '已取消关注');
     const refreshed = await Promise.all(
-      (['follow', 'friends', 'fans'] as const).map((tab) => loadSocialList(tab, true)),
+      (['follow', 'friends', 'fans'] as const).map((tab) =>
+        isCurrent() ? loadSocialList(tab, true) : Promise.resolve(false),
+      ),
     );
-    if (refreshed.some((loaded) => !loaded)) {
+    if (isCurrent() && refreshed.some((loaded) => !loaded)) {
       toastStore.warning('关系已更新，部分列表刷新失败，请重试');
     }
   } catch (error) {
+    if (!isCurrent()) return;
     logger.error('Profile', 'Update follow failed:', error);
     toastStore.warning(
       getSocialErrorMessage(error, following ? '关注失败，请稍后重试' : '取消关注失败，请稍后重试'),
     );
   } finally {
-    socialFollowPending.delete(item.userId);
+    if (isCurrent()) socialFollowPending.delete(item.userId);
   }
 };
 
 const openSocialDrawer = (tab: SocialTabKey) => {
   activeSocialTab.value = tab;
-  socialChatTarget.value = null;
+  resetChat();
   socialDrawerOpen.value = true;
   void loadSocialList(tab);
 };
 
 const selectSocialTab = (tab: SocialTabKey) => {
   activeSocialTab.value = tab;
-  socialChatTarget.value = null;
+  resetChat();
   void loadSocialList(tab);
 };
 
@@ -993,10 +1095,19 @@ const loadChatMessages = async (
   target = socialChatTarget.value,
   options: { silent?: boolean } = {},
 ) => {
-  if (!target?.userId || socialChatLoading.value) return;
-  if (!options.silent) socialChatLoading.value = true;
+  if (
+    !target?.userId ||
+    !isCurrentSocialUser(target) ||
+    target.userId !== socialChatTarget.value?.userId
+  )
+    return;
+  const isCurrentChat = captureChatScope(target);
+  const sequence = ++chatRequestSequence;
+  const isCurrent = () => isCurrentChat() && sequence === chatRequestSequence;
+  socialChatLoading.value = !options.silent;
   try {
     const payload = await getUserFollowMessages({ id: target.userId, pagesize: 30 });
+    if (!isCurrent()) return;
     const records = getMessageRecords(payload);
     const firstRecordWithTag = records.find(
       (record): record is RawRecord => isPlainRecord(record) && Boolean(readSocialText(record.tag)),
@@ -1012,29 +1123,22 @@ const loadChatMessages = async (
       .filter((item): item is ChatMessage => Boolean(item))
       .reverse();
   } catch (error) {
+    if (!isCurrent()) return;
     logger.error('Profile', 'Load chat messages failed:', error);
     toastStore.warning(getSocialErrorMessage(error, '私信记录加载失败'));
-    if (!options.silent) socialChatMessages.value = [];
   } finally {
-    if (!options.silent) socialChatLoading.value = false;
+    if (isCurrent()) socialChatLoading.value = false;
   }
 };
 
 const openSocialChat = (target: SocialUser) => {
-  if (!target.canMessage) return;
+  if (!target.canMessage || !isCurrentSocialUser(target)) return;
+  resetChat();
   socialChatTarget.value = target;
-  socialChatDraft.value = '';
-  socialChatMessages.value = [];
-  socialChatTag.value = '';
   void loadChatMessages(target);
 };
 
-const closeSocialChat = () => {
-  socialChatTarget.value = null;
-  socialChatDraft.value = '';
-  socialChatMessages.value = [];
-  socialChatTag.value = '';
-};
+const closeSocialChat = () => resetChat();
 
 const rememberSocialChatTag = (payload: unknown) => {
   const responseRecord = isPlainRecord(payload) ? payload : {};
@@ -1069,8 +1173,10 @@ const rememberSentChatMessage = (messageId = '') => {
 
 const sendSocialChat = async () => {
   const target = socialChatTarget.value;
-  const text = socialChatDraft.value.trim();
-  if (!target?.userId || !text || socialChatSending.value) return;
+  const draft = socialChatDraft.value;
+  const text = draft.trim();
+  if (!target?.userId || !isCurrentSocialUser(target) || !text || socialChatSending.value) return;
+  const isCurrent = captureChatScope(target);
   if (text.length > SOCIAL_CHAT_TEXT_LIMIT) {
     toastStore.warning(`私信最多 ${SOCIAL_CHAT_TEXT_LIMIT} 字`);
     return;
@@ -1084,6 +1190,9 @@ const sendSocialChat = async () => {
       alert: text,
       nickname: userInfo.value?.nickname,
     });
+    if (!isCurrent()) return;
+    chatRequestSequence++;
+    socialChatLoading.value = false;
     rememberSocialChatTag(payload);
     const messageId = readSentChatMessageId(payload);
     rememberSentChatMessage(messageId);
@@ -1101,30 +1210,42 @@ const sendSocialChat = async () => {
         raw: {},
       },
     ];
-    socialChatDraft.value = '';
+    if (socialChatDraft.value === draft) socialChatDraft.value = '';
     toastStore.success('私信已发送');
-    window.setTimeout(() => void loadChatMessages(target, { silent: true }), 350);
+    cancelChatRefresh();
+    const timer = window.setTimeout(() => {
+      if (chatRefreshTimer === timer) chatRefreshTimer = null;
+      if (isCurrent()) void loadChatMessages(target, { silent: true });
+    }, 350);
+    chatRefreshTimer = timer;
   } catch (error) {
+    if (!isCurrent()) return;
     logger.error('Profile', 'Send chat failed:', error);
     toastStore.warning(getSocialErrorMessage(error, '私信发送失败'));
   } finally {
-    socialChatSending.value = false;
+    if (isCurrent()) socialChatSending.value = false;
   }
 };
 
 const loadData = async () => {
-  if (!userStore.isLoggedIn) return;
+  if (!userStore.isLoggedIn || disposed) return;
+  const isCurrentProfile = captureProfileScope();
+  const sequence = ++profileLoadSequence;
+  const isCurrent = () => isCurrentProfile() && sequence === profileLoadSequence;
   isLoading.value = true;
   try {
     await userStore.fetchUserInfo();
+    if (!isCurrent()) return;
     // 并行刷新听歌等级信息（等级/积分），不阻塞主流程
     void userStore.fetchGradeInfo();
+    if (!isCurrent()) return;
     void loginDeviceStore.fetchDevices();
+    if (!isCurrent()) return;
     void loadSocialList('follow');
   } catch (e) {
-    logger.error('Profile', 'Load Data Error:', e);
+    if (isCurrent()) logger.error('Profile', 'Load Data Error:', e);
   } finally {
-    isLoading.value = false;
+    if (isCurrent()) isLoading.value = false;
   }
 };
 
@@ -1159,8 +1280,9 @@ const requestKickDevice = (device: LoginDeviceSession) => {
 const confirmKickDevice = async () => {
   const device = pendingKickDevice.value;
   if (!device) return;
+  const isCurrent = captureProfileScope();
   const ok = await loginDeviceStore.kickDevice(device);
-  if (ok) {
+  if (ok && isCurrent() && pendingKickDevice.value === device) {
     showKickConfirm.value = false;
     pendingKickDevice.value = null;
   }
@@ -1168,7 +1290,27 @@ const confirmKickDevice = async () => {
 
 const showLogoutConfirm = ref(false);
 
+const profileSessionSources = [
+  () => userStore.isLoggedIn,
+  () => userStore.accountRevision,
+  () => userStore.info?.userid,
+  () => userStore.info?.userId,
+  () => userStore.info?.token,
+];
+watch(profileSessionSources, resetProfileState, { flush: 'sync' });
+watch(profileSessionSources, () => void loadData());
+watch(
+  socialDrawerOpen,
+  (open) => {
+    if (!open) resetChat();
+  },
+  { flush: 'sync' },
+);
 onMounted(() => loadData());
+onUnmounted(() => {
+  disposed = true;
+  resetProfileState();
+});
 </script>
 
 <template>

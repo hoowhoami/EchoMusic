@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
+import { captureUserSession } from '@/utils/userSession';
 import { handleComposerKeydown } from '@/utils/composerKeyboard';
 
 defineOptions({ name: 'listen-together' });
 
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import Checkbox from '@/components/ui/Checkbox.vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -138,6 +139,27 @@ const orderSongSearchKeyword = ref('');
 const orderSongSearchResults = ref<Song[]>([]);
 const searchingOrderSongs = ref(false);
 let orderPlaylistLoadRequestId = 0;
+let disposed = false;
+let roomUiRevision = 0;
+let previewUiRevision = 0;
+let createUiRevision = 0;
+let dismissUiRevision = 0;
+let leaveUiRevision = 0;
+let pickerUiRevision = 0;
+let searchUiRevision = 0;
+const capturePageScope = (check: () => boolean = () => true) => {
+  const isAccountCurrent = captureUserSession(userStore);
+  return () => !disposed && isAccountCurrent() && check();
+};
+const captureRoomUiScope = () => {
+  const revision = roomUiRevision;
+  return capturePageScope(() => revision === roomUiRevision);
+};
+const capturePickerScope = () => {
+  const revision = pickerUiRevision;
+  const isRoomCurrent = captureRoomUiScope();
+  return () => isRoomCurrent() && orderSongPickerOpen.value && revision === pickerUiRevision;
+};
 
 const mergeVisibleMembers = (
   room: ListenTogetherRoom | null,
@@ -391,6 +413,8 @@ const showStoreError = (fallback: string) => {
 };
 
 const loadRooms = async (reset = false, roomType = selectedRoomType.value) => {
+  const scope = roomScope.value;
+  const isCurrent = capturePageScope(() => scope === roomScope.value);
   try {
     if (roomScope.value === 'mine') {
       if (!userStore.isLoggedIn) {
@@ -402,7 +426,7 @@ const loadRooms = async (reset = false, roomType = selectedRoomType.value) => {
       await listenStore.loadRooms({ reset, tagId: '', roomType });
     }
   } catch {
-    showStoreError('房间列表加载失败');
+    if (isCurrent()) showStoreError('房间列表加载失败');
   }
 };
 
@@ -423,10 +447,13 @@ const selectTag = (tagKey: string) => {
 };
 
 const openRoomPreview = async (room: ListenTogetherRoom) => {
+  const revision = ++previewUiRevision;
+  const isCurrent = capturePageScope(() => revision === previewUiRevision && previewOpen.value);
   previewOpen.value = true;
   try {
     await listenStore.inspectRoom(room);
   } catch {
+    if (!isCurrent()) return;
     previewOpen.value = false;
     showStoreError('房间详情加载失败');
   }
@@ -467,11 +494,15 @@ const joinPreviewRoom = async () => {
     toastStore.warning('请先结束当前房间，再加入其他房间');
     return;
   }
+  const revision = previewUiRevision;
+  const isCurrent = capturePageScope(() => previewOpen.value && revision === previewUiRevision);
   try {
     await listenStore.joinRoom(room);
+    if (!isCurrent()) return;
     sessionMinimized.value = false;
     previewOpen.value = false;
   } catch {
+    if (!isCurrent()) return;
     if (!previewRoom.value) previewOpen.value = false;
     showStoreError('加入房间失败');
   }
@@ -557,6 +588,9 @@ const orderSongEmptyCopy = computed(() => {
 
 const submitCreateRoom = async () => {
   if (!canCreate.value) return;
+  const isAccountCurrent = capturePageScope();
+  const revision = createUiRevision;
+  const isCurrent = capturePageScope(() => createOpen.value && revision === createUiRevision);
   try {
     await listenStore.createRoom(
       {
@@ -570,16 +604,20 @@ const submitCreateRoom = async () => {
       },
       musicRoomQueueSongs.value,
     );
+    if (!isCurrent()) return;
     createOpen.value = false;
   } catch (error) {
+    if (!isCurrent()) return;
     if (error instanceof ListenTogetherApiError && error.code === 55004) {
       createOpen.value = false;
       selectedRoomType.value = createRoomType.value;
       roomScope.value = 'mine';
       selectedTagKey.value = '';
       roomSearch.value = '';
+      const closedRevision = createUiRevision;
       await loadRooms(true, createRoomType.value);
-      toastStore.warning('已达到房间创建上限，请先在“我的房间”中管理已有房间');
+      if (isAccountCurrent() && closedRevision === createUiRevision)
+        toastStore.warning('已达到房间创建上限，请先在“我的房间”中管理已有房间');
       return;
     }
     showStoreError('创建房间失败');
@@ -594,16 +632,22 @@ const openOwnedRoomDismiss = (room: ListenTogetherRoom) => {
 const confirmDismissOwnedRoom = async () => {
   const room = ownedRoomToDismiss.value;
   if (!room || dismissingOwnedRoom.value) return;
+  const revision = dismissUiRevision;
+  const isCurrent = capturePageScope(
+    () =>
+      revision === dismissUiRevision && dismissOwnedOpen.value && ownedRoomToDismiss.value === room,
+  );
   dismissingOwnedRoom.value = true;
   try {
     await listenStore.dismissOwnedRoom(room);
+    if (!isCurrent()) return;
     dismissOwnedOpen.value = false;
     previewOpen.value = false;
     ownedRoomToDismiss.value = null;
   } catch {
-    showStoreError('解散房间失败');
+    if (isCurrent()) showStoreError('解散房间失败');
   } finally {
-    dismissingOwnedRoom.value = false;
+    if (isCurrent()) dismissingOwnedRoom.value = false;
   }
 };
 
@@ -617,12 +661,15 @@ const confirmLeave = async (dismiss = false) => {
     toastStore.info('房间已转入后台，仍在保持同步');
     return;
   }
+  const revision = leaveUiRevision;
+  const isCurrent = capturePageScope(() => revision === leaveUiRevision);
   try {
     await listenStore.leaveRoom({ dismiss });
+    if (!isCurrent()) return;
     sessionMinimized.value = false;
     leaveOpen.value = false;
   } catch {
-    showStoreError(dismiss ? '解散房间失败' : '离开房间失败');
+    if (isCurrent()) showStoreError(dismiss ? '解散房间失败' : '离开房间失败');
   }
 };
 
@@ -634,18 +681,24 @@ const sendMessage = async () => {
     toastStore.warning(`消息不能超过 ${CHAT_MESSAGE_MAX_LENGTH} 个字`);
     return;
   }
+  const isRoomCurrent = captureRoomUiScope();
+  const isCurrent = () => isRoomCurrent() && messageText.value.trim() === text;
   try {
     await listenStore.sendMessage(text);
+    if (!isCurrent()) return;
     messageText.value = '';
     isUserNearBottom.value = true;
     chatCooldown.value = true;
     if (chatCooldownTimer !== null) window.clearTimeout(chatCooldownTimer);
-    chatCooldownTimer = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
+      if (!isRoomCurrent() || chatCooldownTimer !== timer) return;
       chatCooldown.value = false;
       chatCooldownTimer = null;
     }, CHAT_SEND_COOLDOWN_MS);
+    chatCooldownTimer = timer;
   } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '消息发送失败');
+    if (isRoomCurrent())
+      toastStore.warning(error instanceof Error ? error.message : '消息发送失败');
   }
 };
 
@@ -658,10 +711,11 @@ const handleChatScroll = (event: Event) => {
 
 const toggleChat = async () => {
   if (!activeRoom.value || !isOwner.value || updatingChat.value) return;
+  const isCurrent = captureRoomUiScope();
   try {
     await listenStore.setChatEnabled(!activeRoom.value.allowChat);
   } catch (error) {
-    toastStore.danger(error instanceof Error ? error.message : '聊天设置更新失败');
+    if (isCurrent()) toastStore.danger(error instanceof Error ? error.message : '聊天设置更新失败');
   }
 };
 
@@ -680,6 +734,7 @@ const resizeMessageTextarea = () => {
 const focusMessageTextarea = () => messageTextarea.value?.focus();
 
 const loadOrderPlaylistSongs = async (playlist: PlaylistMeta | undefined) => {
+  const isCurrent = capturePickerScope();
   const requestId = ++orderPlaylistLoadRequestId;
   const queryId = playlist
     ? resolvePlaylistTrackQueryId(playlistOptionId(playlist), {
@@ -705,39 +760,49 @@ const loadOrderPlaylistSongs = async (playlist: PlaylistMeta | undefined) => {
     const allSongs: Song[] = [];
     const pageSize = ownedListId !== null ? 300 : 50;
     for (let page = 1; page <= 50; page += 1) {
+      if (!isCurrent() || requestId !== orderPlaylistLoadRequestId) return;
       const response =
         ownedListId !== null
           ? await getPlaylistTracksNew(ownedListId, page, pageSize)
           : await getPlaylistTracks(queryId, page, pageSize);
+      if (!isCurrent() || requestId !== orderPlaylistLoadRequestId) return;
       const { songs, filteredCount } = parsePlaylistTracks(response);
       allSongs.push(...songs);
       if (songs.length + filteredCount < pageSize) break;
     }
-    if (requestId !== orderPlaylistLoadRequestId) return;
+    if (!isCurrent() || requestId !== orderPlaylistLoadRequestId) return;
     orderPlaylistSongs.value = dedupeSongs(
       ownedListId !== null
         ? orderByPlaylistPosition(allSongs, (song) => song.playlistSort)
         : allSongs,
     );
   } catch {
-    if (requestId !== orderPlaylistLoadRequestId) return;
+    if (!isCurrent() || requestId !== orderPlaylistLoadRequestId) return;
     orderPlaylistSongs.value = [];
     toastStore.warning('歌单歌曲加载失败，请稍后重试');
   } finally {
-    if (requestId === orderPlaylistLoadRequestId) {
+    if (isCurrent() && requestId === orderPlaylistLoadRequestId) {
       loadingOrderPlaylistSongs.value = false;
     }
   }
 };
 
 const selectOrderSongSource = async (source: OrderSongSource) => {
+  pickerUiRevision++;
+  searchUiRevision++;
+  searchingOrderSongs.value = false;
+  addingOrderSongs.value = false;
+  loadingOrderPlaylistSongs.value = false;
+  orderPlaylistLoadRequestId++;
+  const isPickerCurrent = capturePickerScope();
+  const isCurrent = () => isPickerCurrent() && orderSongSource.value === source;
   orderSongSource.value = source;
   orderPlaylistSongs.value = [];
   selectedOrderSongKeys.value = new Set();
   if (source === 'created' || source === 'favorites') {
     loadingOrderPlaylistSongs.value = true;
     await playlistStore.fetchUserPlaylists();
-    if (orderSongSource.value !== source || !orderSongPickerOpen.value) return;
+    if (!isCurrent()) return;
     const first = orderSourcePlaylists.value[0];
     selectedOrderPlaylistId.value = first ? playlistOptionId(first) : '';
     void loadOrderPlaylistSongs(first);
@@ -745,6 +810,9 @@ const selectOrderSongSource = async (source: OrderSongSource) => {
 };
 
 const selectOrderPlaylist = (playlistId: string) => {
+  pickerUiRevision++;
+  searchUiRevision++;
+  searchingOrderSongs.value = false;
   selectedOrderPlaylistId.value = playlistId;
   orderPlaylistSongs.value = [];
   selectedOrderSongKeys.value = new Set();
@@ -796,6 +864,10 @@ const setAllOrderSongsChecked = (checked: OrderSongCheckboxState) => {
 };
 
 const openOrderSongPicker = () => {
+  pickerUiRevision++;
+  searchingOrderSongs.value = false;
+  addingOrderSongs.value = false;
+  loadingOrderPlaylistSongs.value = false;
   orderSongSource.value = 'recent';
   orderSongSearchKeyword.value = '';
   orderSongSearchResults.value = [];
@@ -814,86 +886,102 @@ const openOrderSongPicker = () => {
 const searchOrderSongs = async () => {
   const keyword = orderSongSearchKeyword.value.trim();
   if (!keyword || searchingOrderSongs.value) return;
+  const revision = ++searchUiRevision;
+  const isPickerCurrent = capturePickerScope();
+  const isCurrent = () =>
+    isPickerCurrent() &&
+    revision === searchUiRevision &&
+    keyword === orderSongSearchKeyword.value.trim();
   searchingOrderSongs.value = true;
   try {
     const payload = await search(keyword, 'song', 1, 50);
+    if (!isCurrent()) return;
     orderSongSearchResults.value = dedupeSongs(extractSearchLists(payload).map(mapSearchSong));
   } catch {
-    toastStore.warning('歌曲搜索失败，请稍后重试');
+    if (isCurrent()) toastStore.warning('歌曲搜索失败，请稍后重试');
   } finally {
-    searchingOrderSongs.value = false;
+    if (isCurrent()) searchingOrderSongs.value = false;
   }
 };
 
 const addSelectedOrderSongs = async () => {
   const songs = selectedOrderSongs.value;
   if (!songs.length || addingOrderSongs.value) return;
+  const isCurrent = capturePickerScope();
   addingOrderSongs.value = true;
   try {
     const added = await listenStore.addRoomSongs(songs);
-    if (!added) return;
+    if (!isCurrent() || !added) return;
     selectedOrderSongKeys.value = new Set();
     orderSongPickerOpen.value = false;
   } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '批量添加歌曲失败');
+    if (isCurrent())
+      toastStore.warning(error instanceof Error ? error.message : '批量添加歌曲失败');
   } finally {
-    addingOrderSongs.value = false;
+    if (isCurrent()) addingOrderSongs.value = false;
   }
 };
 
 const requestSong = async (song: Song) => {
+  const isCurrent = capturePickerScope();
   try {
     if (isOwner.value) await listenStore.addRoomSong(song);
     else {
       await listenStore.requestSong(song);
-      orderSongPickerOpen.value = false;
+      if (isCurrent()) orderSongPickerOpen.value = false;
     }
   } catch (error) {
-    toastStore.warning(
-      error instanceof Error ? error.message : isOwner.value ? '添加歌曲失败' : '点歌失败',
-    );
+    if (isCurrent())
+      toastStore.warning(
+        error instanceof Error ? error.message : isOwner.value ? '添加歌曲失败' : '点歌失败',
+      );
   }
 };
 
 const openSongOrders = async () => {
   songOrdersOpen.value = true;
+  const isCurrent = captureRoomUiScope();
   try {
     await listenStore.loadSongOrders();
   } catch {
-    toastStore.warning('点播列表加载失败');
+    if (isCurrent()) toastStore.warning('点播列表加载失败');
   }
 };
 
 const approveSongOrder = async (order: ListenTogetherSongOrder) => {
+  const isCurrent = captureRoomUiScope();
   try {
     await listenStore.approveSongOrder(order);
   } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '允许加歌失败');
+    if (isCurrent()) toastStore.warning(error instanceof Error ? error.message : '允许加歌失败');
   }
 };
 
 const removeSongOrder = async (order: ListenTogetherSongOrder) => {
+  const isCurrent = captureRoomUiScope();
   try {
     await listenStore.removeSongOrder(order);
   } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '忽略点歌失败');
+    if (isCurrent()) toastStore.warning(error instanceof Error ? error.message : '忽略点歌失败');
   }
 };
 
 const refreshRoomSongs = async () => {
+  const isCurrent = captureRoomUiScope();
   try {
     await listenStore.refreshRoomSongs();
   } catch {
-    toastStore.warning('房间歌单刷新失败');
+    if (isCurrent()) toastStore.warning('房间歌单刷新失败');
   }
 };
 
 const playRoomSong = async (song: Song) => {
   if (!isOwner.value || activeRoom.value?.roomType !== 0) return;
+  const isCurrent = captureRoomUiScope();
   try {
     await listenStore.playRoomSong(song);
   } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '切换歌曲失败');
+    if (isCurrent()) toastStore.warning(error instanceof Error ? error.message : '切换歌曲失败');
   }
 };
 
@@ -905,9 +993,16 @@ const formatMessageTime = (timestamp: number) => {
   }).format(new Date(timestamp));
 };
 
-watch(previewOpen, (open) => {
-  if (!open) listenStore.closePreview();
-});
+watch(
+  previewOpen,
+  (open) => {
+    if (!open) {
+      previewUiRevision++;
+      listenStore.closePreview();
+    }
+  },
+  { flush: 'sync' },
+);
 
 watch(messageText, () => nextTick(resizeMessageTextarea));
 
@@ -941,9 +1036,12 @@ watch(
     roomScope.value = 'discover';
     selectedTagKey.value = '';
     roomSearch.value = '';
+    const revision = ++previewUiRevision;
+    const isCurrent = capturePageScope(() => revision === previewUiRevision && previewOpen.value);
     previewOpen.value = true;
     void loadRooms(true, roomType);
     void listenStore.inspectRoomById(roomId, roomType, roomName).catch(() => {
+      if (!isCurrent()) return;
       previewOpen.value = false;
       showStoreError('分享的房间暂时无法打开');
     });
@@ -952,6 +1050,7 @@ watch(
 );
 
 onMounted(() => {
+  const isCurrent = capturePageScope();
   void (async () => {
     // 分享链接由上面的路由 watcher 打开预览；普通入口则优先恢复服务端仍有效的
     // 众乐房会话，避免应用重启后对同一个房间重复执行 join。
@@ -969,17 +1068,103 @@ onMounted(() => {
     if (userStore.isLoggedIn) {
       try {
         const restoredRoomId = await listenStore.recoverCurrentMusicRoomSession();
-        if (restoredRoomId) return;
+        if (!isCurrent() || restoredRoomId) return;
       } catch (error) {
+        if (!isCurrent()) return;
         logger.warn('ListenTogether', 'Failed to restore current room on mount', error);
       }
     }
-    await loadRooms(true);
+    if (isCurrent()) await loadRooms(true);
   })();
 });
 
-onUnmounted(() => {
+const clearChatCooldown = () => {
   if (chatCooldownTimer !== null) window.clearTimeout(chatCooldownTimer);
+  chatCooldownTimer = null;
+  chatCooldown.value = false;
+};
+watch(
+  leaveOpen,
+  () => {
+    leaveUiRevision++;
+  },
+  { flush: 'sync' },
+);
+watch(
+  createOpen,
+  () => {
+    createUiRevision++;
+  },
+  { flush: 'sync' },
+);
+watch(
+  [dismissOwnedOpen, ownedRoomToDismiss],
+  () => {
+    dismissUiRevision++;
+    dismissingOwnedRoom.value = false;
+  },
+  { flush: 'sync' },
+);
+watch(
+  orderSongPickerOpen,
+  () => {
+    pickerUiRevision++;
+    searchUiRevision++;
+    orderPlaylistLoadRequestId++;
+    searchingOrderSongs.value = false;
+    loadingOrderPlaylistSongs.value = false;
+    addingOrderSongs.value = false;
+  },
+  { flush: 'sync' },
+);
+watch(
+  orderSongSearchKeyword,
+  () => {
+    searchUiRevision++;
+    searchingOrderSongs.value = false;
+  },
+  { flush: 'sync' },
+);
+watch(
+  [() => listenStore.activeRoomId, joined],
+  () => {
+    roomUiRevision++;
+    leaveOpen.value = false;
+    messageText.value = '';
+    clearChatCooldown();
+    orderSongPickerOpen.value = false;
+    songOrdersOpen.value = false;
+  },
+  { flush: 'sync' },
+);
+watch(
+  [
+    () => userStore.isLoggedIn,
+    () => userStore.accountRevision,
+    () => userStore.info?.userid ?? userStore.info?.userId,
+    () => userStore.info?.token,
+  ],
+  () => {
+    previewOpen.value = false;
+    createOpen.value = false;
+    dismissOwnedOpen.value = false;
+    orderSongPickerOpen.value = false;
+    songOrdersOpen.value = false;
+    leaveOpen.value = false;
+    ownedRoomToDismiss.value = null;
+    createName.value = '';
+    selectedOrderPlaylistId.value = '';
+    orderPlaylistSongs.value = [];
+    orderSongSearchResults.value = [];
+    selectedOrderSongKeys.value = new Set();
+  },
+  { flush: 'sync' },
+);
+onBeforeUnmount(() => {
+  disposed = true;
+  orderPlaylistLoadRequestId++;
+  listenStore.closePreview();
+  clearChatCooldown();
 });
 </script>
 

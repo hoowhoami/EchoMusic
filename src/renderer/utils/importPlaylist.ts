@@ -66,7 +66,11 @@ export const runImport = async (
   if (total === 0) return summary;
 
   const matchConcurrency = 1;
-  const addBatchSize = Math.max(1, Math.min(callbacks.addBatchSize ?? DEFAULT_ADD_BATCH_SIZE, 50));
+  const requestedBatchSize = callbacks.addBatchSize ?? DEFAULT_ADD_BATCH_SIZE;
+  const addBatchSize = Number.isFinite(requestedBatchSize)
+    ? Math.max(1, Math.min(Math.floor(requestedBatchSize), 50))
+    : DEFAULT_ADD_BATCH_SIZE;
+  const isCurrent = () => !callbacks.shouldAbort?.();
 
   const items: ImportItemResult[] = tracks.map((t) => ({ external: t, status: 'pending' }));
   const matched: MatchResult[] = new Array(total).fill(null);
@@ -81,26 +85,31 @@ export const runImport = async (
       : total * 0.5 + (summary.skipped + addProgress) * 0.5;
     return Math.min(total, Math.round(raw));
   };
-  const emit = (i: number) => callbacks.onProgress?.(computeDone(), total, { ...items[i] });
+  const emit = (i: number) => {
+    if (isCurrent()) callbacks.onProgress?.(computeDone(), total, { ...items[i] });
+  };
 
   // Phase 1: 并发匹配，结果按下标写入 matched[]，保证顺序
   let nextMatchIdx = 0;
   const matchWorker = async () => {
     while (true) {
-      if (callbacks.shouldAbort?.()) return;
+      if (!isCurrent()) return;
       const i = nextMatchIdx++;
       if (i >= total) return;
       items[i].status = 'matching';
       emit(i);
       try {
         matched[i] = await findBestMatch(tracks[i], {
+          isCurrent,
           delayBetweenSearches: true,
           shouldStopEarly: isImportPlaylistMatchAcceptable,
         });
       } catch (e) {
+        if (!isCurrent()) return;
         logger.warn('ImportPlaylist', 'match worker error', e);
         matched[i] = null;
       }
+      if (!isCurrent()) return;
       matchProgress++;
       emit(i);
       // 每次请求后 worker 暂停一段抖动时间，避免稳定 QPS 触发风控
@@ -111,12 +120,13 @@ export const runImport = async (
   };
   await Promise.all(Array.from({ length: Math.min(matchConcurrency, total) }, () => matchWorker()));
 
-  if (callbacks.shouldAbort?.()) return summary;
+  if (!isCurrent()) return summary;
 
   // Phase 2: 处理跳过项 + 收集待添加列表（按下标顺序）
   inMatchPhase = false;
   const pendingAdd: { index: number; song: Song; score: number }[] = [];
   for (let i = 0; i < total; i++) {
+    if (!isCurrent()) return summary;
     const m = matched[i];
     if (!m || !isImportPlaylistMatchAcceptable(m)) {
       items[i].status = 'skipped';
@@ -145,7 +155,7 @@ export const runImport = async (
     for (const entry of pendingAdd) {
       const payload = buildSongPayload(entry.song);
       const payloadLen = encodeURIComponent(payload).length;
-      const extra = current.length > 0 ? 1 + payloadLen : payloadLen; // 含分隔逗号
+      const extra = current.length > 0 ? 3 + payloadLen : payloadLen; // 编码后的逗号为 %2C
       const overSize = current.length > 0 && currentLen + extra > ADD_BATCH_MAX_PARAM_LEN;
       const overCount = current.length >= addBatchSize;
       if (overSize || overCount) {
@@ -161,7 +171,7 @@ export const runImport = async (
 
   // Phase 3: 顺序按批次提交，一批一次 HTTP，组件内部按 payload 顺序追加
   for (let bi = 0; bi < addChunks.length; bi++) {
-    if (callbacks.shouldAbort?.()) break;
+    if (!isCurrent()) break;
     const chunk = addChunks[bi];
     const payload = chunk.map((c) => c.payload).join(',');
     let ok = false;
@@ -195,7 +205,7 @@ export const runImport = async (
       addProgress++;
       emit(c.index);
     }
-    if (bi + 1 < addChunks.length) {
+    if (bi + 1 < addChunks.length && isCurrent()) {
       await new Promise((resolve) => setTimeout(resolve, ADD_BATCH_DELAY_MS));
     }
   }

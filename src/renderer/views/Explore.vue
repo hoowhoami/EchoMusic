@@ -632,7 +632,7 @@ const filteredArtistCards = computed(() => {
         </div>
       </PageStickyHeader>
 
-      <div v-if="activeTabIndex === 0" class="mt-0">
+      <div v-if="activeTabIndex === 0" class="mt-0 motion-content-enter">
         <div class="explore-toolbar">
           <CustomSelector :label="playlistCategoryLabel" @click="showPlaylistPicker = true" />
         </div>
@@ -656,7 +656,7 @@ const filteredArtistCards = computed(() => {
         </VirtualGrid>
       </div>
 
-      <div v-else-if="activeTabIndex === 1" class="mt-0">
+      <div v-else-if="activeTabIndex === 1" class="mt-0 motion-content-enter">
         <PageStickyHeader
           class="rank-toolbar sticky z-120 bg-bg-main"
           :sticky-top="exploreHeaderHeight"
@@ -734,7 +734,7 @@ const filteredArtistCards = computed(() => {
         </div>
       </div>
 
-      <div v-else-if="activeTabIndex === 2" class="mt-0">
+      <div v-else-if="activeTabIndex === 2" class="mt-0 motion-content-enter">
         <div class="explore-toolbar">
           <CustomSelector :label="albumTypeLabel" @click="showAlbumPicker = true" />
         </div>
@@ -758,7 +758,7 @@ const filteredArtistCards = computed(() => {
         </VirtualGrid>
       </div>
 
-      <div v-else-if="activeTabIndex === 3" class="mt-0">
+      <div v-else-if="activeTabIndex === 3" class="mt-0 motion-content-enter">
         <PageStickyHeader
           class="new-song-toolbar sticky z-120 bg-bg-main"
           :sticky-top="exploreHeaderHeight"
@@ -847,7 +847,7 @@ const filteredArtistCards = computed(() => {
         </div>
       </div>
 
-      <div v-else-if="activeTabIndex === 4" class="mt-0">
+      <div v-else-if="activeTabIndex === 4" class="mt-0 motion-content-enter">
         <div class="explore-toolbar">
           <div class="flex items-center gap-2">
             <CustomSelector

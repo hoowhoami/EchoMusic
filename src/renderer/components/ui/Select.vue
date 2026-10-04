@@ -52,6 +52,7 @@ const emit = defineEmits<{
 const open = ref(false);
 const searchTerm = ref('');
 const inputRef = ref<HTMLInputElement | null>(null);
+const listRef = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 const isHovered = ref(false);
 
@@ -101,6 +102,7 @@ const useVirtual = computed(() => filteredOptions.value.length > props.virtualTh
 const triggerRef = ref<HTMLElement | null>(null);
 const menuWidth = ref<number | null>(null);
 const measureMenuWidth = () => {
+  if (!open.value || props.disabled) return;
   const trigger = triggerRef.value;
   if (!trigger) return;
   const style = getComputedStyle(trigger);
@@ -126,7 +128,15 @@ watch(
   { deep: true },
 );
 const totalHeight = computed(() => filteredOptions.value.length * ITEM_HEIGHT);
-const startIndex = computed(() => Math.max(0, Math.floor(scrollTop.value / ITEM_HEIGHT) - 2));
+const startIndex = computed(() =>
+  Math.max(
+    0,
+    Math.min(
+      Math.floor(scrollTop.value / ITEM_HEIGHT) - 2,
+      filteredOptions.value.length - VISIBLE_COUNT,
+    ),
+  ),
+);
 const endIndex = computed(() =>
   Math.min(filteredOptions.value.length, startIndex.value + VISIBLE_COUNT + 4),
 );
@@ -136,8 +146,31 @@ const visibleItems = computed(() => {
 });
 const offsetY = computed(() => (useVirtual.value ? startIndex.value * ITEM_HEIGHT : 0));
 
+const setListScrollTop = (top: number) => {
+  scrollTop.value = top;
+  listRef.value?.scrollTo({ top, behavior: 'instant' });
+};
+watch(searchTerm, () => setListScrollTop(0), { flush: 'sync' });
+watch(
+  () => filteredOptions.value.length,
+  (length) => {
+    const height = listRef.value?.clientHeight || VISIBLE_COUNT * ITEM_HEIGHT;
+    const maximum = Math.max(0, length * ITEM_HEIGHT - height);
+    if (scrollTop.value > maximum) setListScrollTop(maximum);
+  },
+  { flush: 'sync' },
+);
+
 const handleScroll = (e: Event) => {
   scrollTop.value = (e.target as HTMLDivElement).scrollTop;
+};
+
+const handleSearchKeydown = (event: KeyboardEvent) => {
+  if (event.isComposing || event.keyCode === 229) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    open.value = false;
+  }
 };
 
 const isSelected = (value: SelectValueType) => {
@@ -178,12 +211,14 @@ const removeTag = (value: SelectValueType, e: Event) => {
 };
 
 watch(open, (val) => {
+  searchTerm.value = '';
   if (val) {
-    searchTerm.value = '';
-    scrollTop.value = 0;
+    setListScrollTop(0);
     nextTick(measureMenuWidth);
     if (props.filterable) {
-      nextTick(() => inputRef.value?.focus());
+      nextTick(() => {
+        if (open.value && !props.disabled) inputRef.value?.focus();
+      });
     }
   }
 });
@@ -211,7 +246,11 @@ watch(open, (val) => {
         <template #trigger>
           <div
             ref="triggerRef"
-            :class="['echo-select-trigger', props.class, { 'is-disabled': props.disabled }]"
+            :class="[
+              'echo-select-trigger motion-control-feedback',
+              props.class,
+              { 'is-disabled': props.disabled },
+            ]"
             :data-state="open ? 'open' : 'closed'"
             role="combobox"
             :tabindex="props.disabled ? -1 : 0"
@@ -228,7 +267,10 @@ watch(open, (val) => {
             <div v-if="props.multiple" class="echo-select-tags">
               <span v-for="tag in visibleTags" :key="String(tag.value)" class="echo-select-tag">
                 <span class="echo-select-tag-text">{{ tag.label }}</span>
-                <span class="echo-select-tag-close" @click="removeTag(tag.value, $event)">
+                <span
+                  class="echo-select-tag-close motion-control-feedback"
+                  @click="removeTag(tag.value, $event)"
+                >
                   <Icon :icon="iconX" width="10" height="10" />
                 </span>
               </span>
@@ -242,7 +284,7 @@ watch(open, (val) => {
                 class="echo-select-input"
                 :disabled="props.disabled"
                 :placeholder="selectedTags.length === 0 ? props.placeholder : ''"
-                @keydown.stop
+                @keydown.stop="handleSearchKeydown"
               />
               <span v-else-if="selectedTags.length === 0" class="echo-select-placeholder">
                 {{ props.placeholder }}
@@ -257,7 +299,7 @@ watch(open, (val) => {
                 class="echo-select-input"
                 :disabled="props.disabled"
                 :placeholder="selectedLabel || props.placeholder"
-                @keydown.stop
+                @keydown.stop="handleSearchKeydown"
               />
               <span
                 v-else
@@ -270,7 +312,11 @@ watch(open, (val) => {
             </template>
 
             <!-- 清除 / 箭头 -->
-            <span v-if="showClear" class="echo-select-clear" @click="handleClear">
+            <span
+              v-if="showClear"
+              class="echo-select-clear motion-control-feedback"
+              @click="handleClear"
+            >
               <Icon :icon="iconX" width="12" height="12" />
             </span>
             <span v-else class="echo-select-arrow" :class="{ 'is-open': open }">
@@ -284,6 +330,7 @@ watch(open, (val) => {
     <div v-if="filteredOptions.length === 0" class="echo-select-empty">无匹配项</div>
     <div
       v-else
+      ref="listRef"
       class="echo-select-list"
       @scroll.passive="handleScroll"
       @keydown.esc.stop.prevent="open = false"
@@ -327,7 +374,7 @@ watch(open, (val) => {
 @reference "@/style.css";
 
 .echo-select-trigger {
-  @apply inline-flex h-9 px-3 rounded-xl border text-text-main text-[13px] font-semibold items-center gap-2 transition-all cursor-pointer overflow-hidden;
+  @apply inline-flex h-9 px-3 rounded-xl border text-text-main text-[13px] font-semibold items-center gap-2 cursor-pointer overflow-hidden;
   background: var(--control-muted-bg);
   border-color: var(--control-border);
 }
@@ -370,7 +417,7 @@ watch(open, (val) => {
 }
 
 .echo-select-tag-close {
-  @apply flex items-center justify-center w-3.5 h-3.5 rounded-full hover:bg-primary/20 transition-colors cursor-pointer;
+  @apply flex items-center justify-center w-3.5 h-3.5 rounded-full hover:bg-primary/20 cursor-pointer;
 }
 
 .echo-select-input {
@@ -394,12 +441,13 @@ watch(open, (val) => {
 }
 
 .echo-select-clear {
-  @apply flex items-center justify-center w-4 h-4 rounded-full text-text-secondary hover:text-text-main transition-colors cursor-pointer shrink-0;
+  @apply flex items-center justify-center w-4 h-4 rounded-full text-text-secondary hover:text-text-main cursor-pointer shrink-0;
   background: var(--control-hover-bg);
 }
 
 .echo-select-arrow {
-  @apply transition-transform duration-200 shrink-0 text-text-secondary;
+  @apply shrink-0 text-text-secondary;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .echo-select-arrow.is-open {
@@ -445,7 +493,7 @@ watch(open, (val) => {
   border: none;
   outline: none;
   cursor: pointer;
-  transition: background-color 0.12s ease;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .echo-select-item:hover {

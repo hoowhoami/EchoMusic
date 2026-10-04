@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import { parse, compileScript } from 'vue/compiler-sfc';
 import * as Vue from 'vue';
+import * as abortError from '../src/shared/abortError.ts';
 import { normalizeAlbumCoverId } from '../src/renderer/utils/albumDynamicCover.ts';
 
 const source = readFileSync(
@@ -31,6 +32,7 @@ function setup(loader = async (id) => cover(id)) {
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)(
     (name) => {
+      if (name === '../../../shared/abortError') return abortError;
       if (name === 'vue')
         return {
           ...Vue,

@@ -58,8 +58,16 @@ const setup = async (query = { q: 'love' }) => {
     const scope = vue.effectScope();
     const state = scope.run(() =>
       evaluate(script + '\nexport { activeTabIndex, selectSearchTab, paginationState };', {
-        vue: { ...vue, onMounted: () => {}, onUnmounted: () => {} },
+        vue: {
+          ...vue,
+          onMounted: () => {},
+          onUnmounted: () => {},
+          onBeforeUnmount: () => {},
+          onActivated: () => {},
+          onDeactivated: () => {},
+        },
         'vue-router': { useRoute: () => route, useRouter: () => router },
+
         '@/api/search': {
           search: async (keyword, type, page) => {
             calls.push({ keyword, type, page });

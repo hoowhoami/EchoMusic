@@ -1,6 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  useAttrs,
+  watch,
+} from 'vue';
 import type { ComponentPublicInstance } from 'vue';
+import { resolveScrollBehavior } from '@/utils/scrollMotion';
 
 defineOptions({
   inheritAttrs: false,
@@ -53,6 +64,8 @@ const isHovering = ref(false);
 const isMouseInArea = ref(false);
 const autoHideTimer = ref<number | null>(null);
 let measureFrame = 0;
+let suspended = true;
+let disposed = false;
 let resizeObserver: ResizeObserver | null = null;
 let observedChild: Element | null = null;
 
@@ -100,7 +113,7 @@ const setViewRef = (target: Element | ComponentPublicInstance | null) => {
 };
 
 const scrollTo = (options: ScrollToOptions) => {
-  wrapRef.value?.scrollTo(options);
+  wrapRef.value?.scrollTo({ ...options, behavior: resolveScrollBehavior(options.behavior) });
 };
 
 const setScrollTop = (value: number) => {
@@ -147,6 +160,7 @@ const thumbTop = computed(() => {
 });
 
 const updateScrollMetrics = () => {
+  if (suspended || disposed) return;
   const wrap = wrapRef.value;
   if (!wrap) return;
   scrollTop.value = wrap.scrollTop;
@@ -155,7 +169,7 @@ const updateScrollMetrics = () => {
 };
 
 const scheduleUpdate = () => {
-  if (measureFrame) cancelAnimationFrame(measureFrame);
+  if (suspended || disposed || measureFrame) return;
   measureFrame = requestAnimationFrame(() => {
     measureFrame = 0;
     updateScrollMetrics();
@@ -183,7 +197,7 @@ const rebindObservedChild = () => {
 
 const connectObservers = () => {
   disconnectObservers();
-  if (!wrapRef.value) return;
+  if (suspended || disposed || !wrapRef.value) return;
 
   resizeObserver = new ResizeObserver(() => {
     scheduleUpdate();
@@ -204,6 +218,7 @@ const clearAutoHideTimer = () => {
 };
 
 const scheduleAutoHide = () => {
+  if (suspended || disposed) return;
   clearAutoHideTimer();
   autoHideTimer.value = window.setTimeout(() => {
     if (!isDragging.value && !isMouseInArea.value) {
@@ -214,6 +229,7 @@ const scheduleAutoHide = () => {
 };
 
 const handleScroll = (event: Event) => {
+  if (suspended || disposed) return;
   updateScrollMetrics();
 
   // 滚动时显示滚动条
@@ -223,6 +239,7 @@ const handleScroll = (event: Event) => {
 };
 
 const handleScrollAreaMouseEnter = () => {
+  if (suspended || disposed) return;
   updateScrollMetrics();
   isMouseInArea.value = true;
   isHovering.value = true;
@@ -237,6 +254,7 @@ const handleScrollAreaMouseLeave = () => {
 };
 
 const handleThumbMouseDown = (e: MouseEvent) => {
+  if (suspended || disposed) return;
   e.preventDefault();
   isDragging.value = true;
   dragStartY.value = e.clientY;
@@ -270,6 +288,7 @@ const handleMouseUp = () => {
 };
 
 const handleScrollbarMouseEnter = () => {
+  if (suspended || disposed) return;
   isHovering.value = true;
   clearAutoHideTimer();
 };
@@ -281,6 +300,7 @@ const handleScrollbarMouseLeave = () => {
 };
 
 const handleTrackClick = (e: MouseEvent) => {
+  if (suspended || disposed) return;
   if (!wrapRef.value || !scrollbarRef.value) return;
   if (e.target === thumbRef.value) return;
 
@@ -299,29 +319,41 @@ const handleTrackClick = (e: MouseEvent) => {
   const thumbCenter = thumbHeight.value / 2;
   const targetScrollTop = ((clickY - thumbCenter) / maxThumbOffset) * maxScroll;
 
-  wrapRef.value.scrollTo({
+  scrollTo({
     top: Math.max(0, Math.min(maxScroll, targetScrollTop)),
     behavior: 'smooth',
   });
 };
 
-onMounted(() => {
-  connectObservers();
-  void nextTick(() => {
-    scheduleUpdate();
-  });
-});
-
-onBeforeUnmount(() => {
-  assignContentRef(contentRefTarget.value, null);
+const suspend = () => {
+  suspended = true;
   clearAutoHideTimer();
   disconnectObservers();
   if (measureFrame) {
     cancelAnimationFrame(measureFrame);
     measureFrame = 0;
   }
+  isDragging.value = false;
+  isMouseInArea.value = false;
+  isHovering.value = false;
   document.removeEventListener('mousemove', handleMouseMove);
   document.removeEventListener('mouseup', handleMouseUp);
+};
+
+const resume = () => {
+  if (disposed || !suspended) return;
+  suspended = false;
+  connectObservers();
+  void nextTick(scheduleUpdate);
+};
+
+onMounted(resume);
+onActivated(resume);
+onDeactivated(suspend);
+onBeforeUnmount(() => {
+  disposed = true;
+  suspend();
+  assignContentRef(contentRefTarget.value, null);
 });
 
 watch(

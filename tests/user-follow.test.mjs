@@ -16,6 +16,15 @@ const profileCode = transformSync(
     format: 'cjs',
   },
 ).code;
+const sessionModule = { exports: {} };
+new Function(
+  'module',
+  'exports',
+  transformSync(
+    readFileSync(new URL('../src/renderer/utils/userSession.ts', import.meta.url), 'utf8'),
+    { loader: 'ts', format: 'cjs' },
+  ).code,
+)(sessionModule, sessionModule.exports);
 const deferred = () => {
   let resolve;
   const promise = new Promise((done) => {
@@ -65,7 +74,8 @@ function fixture() {
     return { status: 1, error_code: 0 };
   };
   const deps = {
-    vue: { ...vue, onMounted() {} },
+    vue: { ...vue, onMounted() {}, onUnmounted() {} },
+    '@/utils/userSession': sessionModule.exports,
     'vue-router': { useRouter: () => ({}) },
     '@/stores/user': { useUserStore: () => user },
     '@/stores/loginDevices': { useLoginDeviceStore: () => ({}) },

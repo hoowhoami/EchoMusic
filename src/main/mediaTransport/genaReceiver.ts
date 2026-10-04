@@ -13,6 +13,11 @@
 import { randomBytes } from 'node:crypto';
 import http from 'node:http';
 
+const MAX_EVENT_BYTES = 1024 * 1024;
+interface SubscriptionGrant {
+  sid: string;
+}
+
 export interface GenaLastChange {
   instanceId: string;
   /** 已识别的属性（键：LastChange XML 属性名） */
@@ -37,8 +42,10 @@ export class GenaReceiver {
     Pick<GenaReceiverOptions, 'log' | 'onLastChange' | 'onSubscriptionTimeout'>;
   private server: http.Server | null = null;
   private boundPort = 0;
-  /** sid → { subscriptionId, validTill } 仅作校验用；宿主回调同时收到 sid。 */
-  private activeSubscriptions = new Set<string>();
+  private startFlight: Promise<number> | null = null;
+  private stopFlight: Promise<void> | null = null;
+  /** SID 的授权对象用于区分同名但已被替换的订阅。 */
+  private activeSubscriptions = new Map<string, SubscriptionGrant>();
 
   constructor(options: GenaReceiverOptions) {
     this.options = { ...options, now: options.now ?? Date.now };
@@ -49,11 +56,16 @@ export class GenaReceiver {
     return this.boundPort;
   }
 
-  private armedTokens = new Set<string>();
+  private armedTokens = new Map<string, SubscriptionGrant>();
 
   /** 在 SID 返回前允许带该 token 的首个 NOTIFY，避免订阅响应和初始事件竞争。 */
   armToken(token: string): void {
-    if (token) this.armedTokens.add(token);
+    if (token) this.armedTokens.set(token, { sid: '' });
+  }
+
+  /** 临时授权只用于 SUBSCRIBE 响应前的首个 SID，响应结束后必须撤销。 */
+  disarmToken(token: string): void {
+    this.armedTokens.delete(token);
   }
 
   /** 生成回调 URL。传入稳定 token 时，宿主可在订阅完成前 arm 它。 */
@@ -67,16 +79,36 @@ export class GenaReceiver {
 
   /** 登记宿主已成功订阅的 sid（供校验）。 */
   trackSubscription(sid: string): void {
-    this.activeSubscriptions.add(sid);
+    if (!sid || this.activeSubscriptions.has(sid)) return;
+    const provisional = [...this.armedTokens.values()].find((grant) => grant.sid === sid);
+    this.activeSubscriptions.set(sid, provisional ?? { sid });
+    if (provisional) {
+      for (const [token, grant] of this.armedTokens) {
+        if (grant === provisional) this.armedTokens.delete(token);
+      }
+    }
   }
 
   untrackSubscription(sid: string): void {
     this.activeSubscriptions.delete(sid);
+    for (const [token, grant] of this.armedTokens) {
+      if (grant.sid === sid) this.armedTokens.delete(token);
+    }
   }
 
-  async start(port = 0): Promise<number> {
+  start(port = 0): Promise<number> {
+    if (this.stopFlight) return this.stopFlight.then(() => this.start(port));
+    if (this.startFlight) return this.startFlight;
+    const flight = this.startNow(port).finally(() => {
+      if (this.startFlight === flight) this.startFlight = null;
+    });
+    this.startFlight = flight;
+    return flight;
+  }
+
+  private async startNow(port: number): Promise<number> {
     if (this.server) return this.boundPort;
-    this.server = http.createServer((req, res) => {
+    const server = http.createServer((req, res) => {
       if ((req.method ?? '') !== 'POST' && (req.method ?? '') !== 'NOTIFY') {
         res.statusCode = 405;
         res.end();
@@ -84,47 +116,131 @@ export class GenaReceiver {
       }
       const sid = (req.headers['sid'] as string | undefined)?.trim() ?? '';
       const token = tokenFromPath(req.url);
-      const known = Boolean(sid) && this.activeSubscriptions.has(sid);
-      const armed = Boolean(token) && this.armedTokens.has(token);
-      if (!known && !armed) {
+      const grant = this.authorize(sid, token);
+      if (!grant) {
         // 忽略未知订阅，同时避免对无关请求暴露信息。
         res.statusCode = 412;
         res.end();
         return;
       }
-      if (sid) this.trackSubscription(sid);
-      this.consume(req, res, sid || token);
+      this.consume(req, res, sid, token, grant, server);
     });
-    this.server.on('clientError', (_err, socket) => {
+    this.server = server;
+    server.on('clientError', (_err, socket) => {
       try {
         socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
       } catch {
         // 尽力
       }
     });
-    await new Promise<void>((resolve, reject) => {
-      this.server!.once('error', reject);
-      this.server!.listen(port, this.options.bindHost, () => resolve());
-    });
-    const address = this.server.address();
-    this.boundPort = typeof address === 'object' && address ? address.port : 0;
-    return this.boundPort;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const onError = (error: Error) => {
+          server.off('listening', onListening);
+          reject(error);
+        };
+        const onListening = () => {
+          server.off('error', onError);
+          resolve();
+        };
+        server.once('error', onError);
+        server.once('listening', onListening);
+        try {
+          server.listen(port, this.options.bindHost);
+        } catch (error) {
+          server.off('error', onError);
+          server.off('listening', onListening);
+          reject(error);
+        }
+      });
+      const address = server.address();
+      this.boundPort = typeof address === 'object' && address ? address.port : 0;
+      return this.boundPort;
+    } catch (error) {
+      if (this.server === server) this.server = null;
+      this.boundPort = 0;
+      server.close();
+      throw error;
+    }
   }
 
-  async stop(): Promise<void> {
-    if (!this.server) return;
-    const server = this.server;
-    this.server = null;
+  stop(): Promise<void> {
+    if (this.stopFlight) return this.stopFlight;
     this.activeSubscriptions.clear();
     this.armedTokens.clear();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    const flight = this.stopNow().finally(() => {
+      if (this.stopFlight === flight) this.stopFlight = null;
+    });
+    this.stopFlight = flight;
+    return flight;
   }
 
-  private consume(req: http.IncomingMessage, res: http.ServerResponse, sid: string): void {
+  private async stopNow(): Promise<void> {
+    await this.startFlight?.catch(() => undefined);
+    const server = this.server;
+    this.server = null;
+    this.boundPort = 0;
+    if (!server) return;
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections();
+    });
+  }
+
+  private authorize(sid: string, token: string): SubscriptionGrant | null {
+    if (!sid) return null;
+    const known = this.activeSubscriptions.get(sid);
+    if (known) return known;
+    const provisional = this.armedTokens.get(token);
+    if (!provisional || (provisional.sid && provisional.sid !== sid)) return null;
+    provisional.sid = sid;
+    return provisional;
+  }
+
+  private isCurrentGrant(sid: string, token: string, grant: SubscriptionGrant): boolean {
+    return this.activeSubscriptions.get(sid) === grant || this.armedTokens.get(token) === grant;
+  }
+
+  private consume(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    sid: string,
+    token: string,
+    grant: SubscriptionGrant,
+    server: http.Server,
+  ): void {
     const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    let bytes = 0;
+    let rejected = false;
+    const tooLarge = () => {
+      rejected = true;
+      chunks.length = 0;
+      res.statusCode = 413;
+      res.setHeader('Connection', 'close');
+      res.end();
+      req.resume();
+    };
+    if (Number(req.headers['content-length']) > MAX_EVENT_BYTES) {
+      tooLarge();
+      return;
+    }
+    req.on('data', (chunk: Buffer) => {
+      if (rejected) return;
+      bytes += chunk.length;
+      if (bytes > MAX_EVENT_BYTES) tooLarge();
+      else chunks.push(chunk);
+    });
     req.on('end', () => {
+      if (rejected || res.destroyed) return;
+      // 授权在上传期间可能被退订或替换，SID 文本相同也不是同一会话。
+      if (server !== this.server || !this.isCurrentGrant(sid, token, grant)) {
+        chunks.length = 0;
+        res.statusCode = 412;
+        res.end();
+        return;
+      }
       const body = Buffer.concat(chunks).toString('utf8');
+      chunks.length = 0;
       res.statusCode = 200;
       res.end();
       // 仅接受本 min/core 可识别的 XML。
@@ -163,8 +279,9 @@ function tokenFromPath(url: string | undefined): string {
 export function parseLastChange(
   raw: string,
 ): { instanceId: string; values: Record<string, string | undefined> } | null {
-  const match = /<LastChange[^>]*>([\s\S]*?)<\/LastChange>/.exec(raw);
-  const body = match ? match[1] : raw;
+  const match = /<LastChange(?=\s|>)[^>]*>([\s\S]*?)<\/LastChange>/.exec(raw);
+  const payload = match ? match[1] : raw;
+  const body = match && /^\s*&lt;/.test(payload) ? decodeAmp(payload) : payload;
   if (!body) return null;
 
   // 单实例最简单：<InstanceID val="0"> ... </InstanceID>，多层属性嵌套。
@@ -196,11 +313,11 @@ export function parseLastChange(
   const values: Record<string, string | undefined> = {};
   let found = false;
   for (const key of knownKeys) {
-    const tagMatch = new RegExp(`<${key}[^>]*\\sval="([^"]*)"`).exec(inner);
+    const tagMatch = new RegExp(`<${key}(?=\\s|/?>)[^>]*\\sval="([^"]*)"`).exec(inner);
     if (tagMatch) {
       values[key] = decodeAmp(tagMatch[1]);
       found = true;
-    } else if (new RegExp(`<${key}[^>]*>`).test(inner)) {
+    } else if (new RegExp(`<${key}(?=\\s|/?>)[^>]*>`).test(inner)) {
       values[key] = undefined;
       found = true;
     }
@@ -210,9 +327,6 @@ export function parseLastChange(
 }
 
 function decodeAmp(value: string): string {
-  return value
-    .replaceAll('&amp;', '&')
-    .replaceAll('&quot;', '"')
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>');
+  const entities: Record<string, string> = { amp: '&', quot: '"', lt: '<', gt: '>', apos: "'" };
+  return value.replace(/&(amp|quot|lt|gt|apos);/g, (_, entity: string) => entities[entity]);
 }

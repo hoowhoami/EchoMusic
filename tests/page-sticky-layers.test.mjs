@@ -16,6 +16,8 @@ function setup() {
   const frames = new Map();
   const observers = [];
   const unmount = [];
+  const activate = [];
+  const deactivate = [];
   let nextFrame = 0;
   let context;
   let reads = 0;
@@ -67,6 +69,8 @@ function setup() {
             context = value;
           },
           onBeforeUnmount: (callback) => unmount.push(callback),
+          onActivated: (callback) => activate.push(callback),
+          onDeactivated: (callback) => deactivate.push(callback),
         };
       if (name === '@/utils/pageStickyLayout') return { planPageStickyLayout };
       throw new Error(name);
@@ -109,6 +113,12 @@ function setup() {
       const pending = [...frames.values()];
       frames.clear();
       pending.forEach((callback) => callback());
+    },
+    activate() {
+      activate.forEach((callback) => callback());
+    },
+    deactivate() {
+      deactivate.forEach((callback) => callback());
     },
     unmount() {
       unmount.forEach((callback) => callback());
@@ -217,4 +227,74 @@ test('removing headers resets clipping and unmount cancels queued layout work', 
   env.unmount();
   env.api.update();
   assert.equal(env.frames.size, 0);
+});
+
+function header(env, height = () => 56) {
+  return {
+    placeholder: env.element(() => ({ top: 0, left: 0, width: 800 })),
+    content: env.element(() => ({ height: height() })),
+    layer: env.element(() => ({})),
+    top: () => 0,
+    flowHeight: () => undefined,
+  };
+}
+
+test('cached sticky layers disconnect observers, discard queued layout and remeasure on return', () => {
+  const env = setup();
+  let height = 56;
+  const entry = header(env, () => height);
+  env.context.register(entry);
+  env.flush();
+  assert.equal(env.api.topInset.value, 56);
+  env.api.update();
+  const queued = [...env.frames.values()];
+  env.deactivate();
+  const reads = env.reads;
+  assert.ok(env.observers.every((observer) => observer.targets.length === 0));
+  assert.equal(env.frames.size, 0);
+  height = 92;
+  env.observers.forEach((observer) => observer.callback());
+  queued.forEach((callback) => callback());
+  assert.equal(env.frames.size, 0);
+  assert.equal(env.reads, reads);
+  env.activate();
+  env.activate();
+  assert.equal(env.frames.size, 1);
+  assert.equal(env.observers.filter((observer) => observer.targets.length).length, 2);
+  env.flush();
+  assert.equal(env.api.topInset.value, 92);
+  assert.equal(env.reads - reads, 3);
+  env.unmount();
+});
+
+test('headers registered or removed while cached only reconnect surviving entries', () => {
+  const env = setup();
+  const removeOld = env.context.register(header(env));
+  env.deactivate();
+  env.context.register(header(env, () => 80));
+  removeOld();
+  assert.equal(env.frames.size, 0);
+  assert.ok(env.observers.every((observer) => observer.targets.length === 0));
+  env.activate();
+  env.flush();
+  assert.equal(env.api.topInset.value, 80);
+  assert.equal(env.observers.filter((observer) => observer.targets.length).length, 2);
+  env.unmount();
+});
+
+test('provider disposal owns observer cleanup even before child unregister callbacks run', () => {
+  const env = setup();
+  const remove = env.context.register(header(env));
+  const pending = [...env.frames.values()];
+  env.unmount();
+  assert.ok(env.observers.every((observer) => observer.targets.length === 0));
+  pending.forEach((callback) => callback());
+  env.observers.forEach((observer) => observer.callback());
+  const count = env.observers.length;
+  env.context.register(header(env))();
+  remove();
+  env.activate();
+  assert.equal(env.observers.length, count);
+  assert.equal(env.frames.size, 0);
+  assert.equal(env.reads, 0);
 });

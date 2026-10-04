@@ -1,7 +1,18 @@
 <script setup lang="ts">
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'cloud' });
-import { computed, onMounted, ref, shallowRef, watch } from 'vue';
+import {
+  computed,
+  onMounted,
+  onActivated,
+  onDeactivated,
+  onBeforeUnmount,
+  ref,
+  shallowRef,
+  toRaw,
+  watch,
+} from 'vue';
+import { captureUserSession } from '@/utils/userSession';
 import { deleteCloudSongs, getUserCloud } from '@/api/user';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
@@ -44,6 +55,18 @@ const cloudUploadStore = useCloudUploadStore();
 const themeStore = useThemeStore();
 const toastStore = useToastStore();
 
+let disposed = false;
+let active = true;
+let dataGeneration = 0;
+let initialized = false;
+let retryFromStart = true;
+const sessionGeneration = ref(0);
+const loadError = ref('');
+const captureScope = () => {
+  const generation = sessionGeneration.value;
+  const isSessionCurrent = captureUserSession(userStore);
+  return () => !disposed && active && generation === sessionGeneration.value && isSessionCurrent();
+};
 const loading = ref(false);
 const loadingMore = ref(false);
 const hasMore = ref(false);
@@ -181,63 +204,80 @@ const deduplicateCloudSongs = (batch: Song[], seenIds: Set<string>): Song[] => {
 };
 
 const resolveAllCloudSongs = async (totalCount: number) => {
-  if (isBackgroundResolving.value || songs.value.length >= totalCount) return;
+  if (
+    disposed ||
+    !active ||
+    !isLoggedIn.value ||
+    loading.value ||
+    isBackgroundResolving.value ||
+    !hasMore.value ||
+    songs.value.length >= totalCount
+  )
+    return;
+  const generation = dataGeneration;
+  const ownsScope = captureScope();
+  const isCurrent = () => ownsScope() && generation === dataGeneration;
   isBackgroundResolving.value = true;
+  retryFromStart = false;
+  loadError.value = '';
   const seenIds = new Set(songs.value.map((song) => song.id));
   let page = currentPage.value + 1;
-
   try {
-    while (songs.value.length < totalCount) {
+    while (isCurrent() && songs.value.length < totalCount) {
       const res = await getUserCloud(page, PAGE_SIZE);
+      if (!isCurrent()) return;
       const nextBatch = mapCloudPage(res).songs;
-
-      if (nextBatch.length === 0) break;
-
-      const filtered = deduplicateCloudSongs(nextBatch, seenIds);
-      if (filtered.length > 0) {
-        songs.value = [...songs.value, ...filtered];
+      if (nextBatch.length === 0) {
+        hasMore.value = false;
+        break;
       }
-
+      songs.value = [...songs.value, ...deduplicateCloudSongs(nextBatch, seenIds)];
       currentPage.value = page;
       hasMore.value = songs.value.length < totalCount;
-      page += 1;
+      page++;
     }
-  } catch {
-    hasMore.value = songs.value.length < totalCount;
+  } catch (error) {
+    if (isCurrent()) loadError.value = error instanceof Error ? error.message : '加载云盘歌曲失败';
   } finally {
-    isBackgroundResolving.value = false;
+    if (isCurrent()) isBackgroundResolving.value = false;
   }
 };
 
 const loadCloud = async () => {
-  if (!isLoggedIn.value) return;
+  if (disposed || !active || !isLoggedIn.value) return;
+  const generation = ++dataGeneration;
+  const ownsScope = captureScope();
+  const isCurrent = () => ownsScope() && generation === dataGeneration;
+  isBackgroundResolving.value = false;
   loading.value = true;
-
+  retryFromStart = true;
+  loadError.value = '';
   try {
     const res = await getUserCloud(1, PAGE_SIZE);
+    if (!isCurrent()) return;
     const parsed = mapCloudPage(res);
-    const seenIds = new Set<string>();
-    songs.value = deduplicateCloudSongs(parsed.songs, seenIds);
+    songs.value = deduplicateCloudSongs(parsed.songs, new Set<string>());
     currentPage.value = 1;
     totalSongCount.value = parsed.total;
     cloudCapacity.value = parsed.capacity;
     cloudAvailable.value = parsed.available;
-    hasMore.value = songs.value.length < totalSongCount.value;
-
-    if (songs.value.length > 0 && totalSongCount.value > songs.value.length) {
-      void resolveAllCloudSongs(totalSongCount.value);
-    }
+    hasMore.value = songs.value.length > 0 && songs.value.length < parsed.total;
+    initialized = true;
     void refreshCloudAudioIndex(true);
-  } catch {
-    songs.value = [];
-    totalSongCount.value = 0;
-    cloudCapacity.value = 0;
-    cloudAvailable.value = 0;
-    hasMore.value = false;
+  } catch (error) {
+    if (isCurrent()) loadError.value = error instanceof Error ? error.message : '加载云盘歌曲失败';
   } finally {
-    loading.value = false;
-    loadingMore.value = false;
+    if (isCurrent()) {
+      loading.value = false;
+      loadingMore.value = false;
+    }
   }
+  if (isCurrent() && !loadError.value && hasMore.value)
+    void resolveAllCloudSongs(totalSongCount.value);
+};
+const retryCloud = () => {
+  if (retryFromStart) void loadCloud();
+  else void resolveAllCloudSongs(totalSongCount.value);
 };
 
 const handleSongDoubleTapPlay = async (song: Song) => {
@@ -272,10 +312,18 @@ const openBatchDrawer = () => {
 const showUploadDialog = ref(false);
 
 const canDeleteCloudSong = (song: Song) => {
-  return Boolean(String(song.cloudFileId ?? '').trim() || String(song.hash ?? '').trim());
+  const fileId = String(song.cloudFileId ?? '').trim();
+  return /^\d+$/.test(fileId) && !/^0+$/.test(fileId);
 };
 
 const openDeleteCloudSongDialog = (song: Song) => {
+  if (
+    disposed ||
+    !active ||
+    !isLoggedIn.value ||
+    !songs.value.some((item) => toRaw(item) === toRaw(song))
+  )
+    return;
   if (!canDeleteCloudSong(song)) {
     toastStore.warning('缺少云盘文件标识，无法删除');
     return;
@@ -290,7 +338,18 @@ const closeDeleteCloudSongDialog = () => {
 
 const confirmDeleteCloudSong = async () => {
   const song = deleteTarget.value;
-  if (!song || deletingCloudSong.value) return;
+  if (
+    disposed ||
+    !active ||
+    !isLoggedIn.value ||
+    !song ||
+    deletingCloudSong.value ||
+    !songs.value.some((item) => toRaw(item) === toRaw(song)) ||
+    !canDeleteCloudSong(song)
+  )
+    return;
+  const ownsScope = captureScope();
+  const isCurrent = () => ownsScope() && deleteTarget.value === song;
   deletingCloudSong.value = true;
   try {
     await deleteCloudSongs([
@@ -300,16 +359,18 @@ const confirmDeleteCloudSong = async () => {
         albumAudioId: song.albumAudioId ?? song.mixSongId,
       },
     ]);
+    if (!isCurrent()) return;
     songs.value = songs.value.filter((item) => item.id !== song.id);
     totalSongCount.value = Math.max(0, totalSongCount.value - 1);
     deleteTarget.value = null;
     toastStore.actionCompleted('已从云盘删除');
     void loadCloud();
   } catch (error) {
+    if (!isCurrent()) return;
     const message = error instanceof Error && error.message ? error.message : '删除云盘歌曲失败';
     toastStore.warning(message);
   } finally {
-    deletingCloudSong.value = false;
+    if (ownsScope()) deletingCloudSong.value = false;
   }
 };
 
@@ -317,6 +378,11 @@ const handleBatchDeleteCloudSongs = async (
   selectedSongs: Song[],
   onProgress?: (done: number, total: number) => void,
 ) => {
+  if (disposed || !active || !isLoggedIn.value) return;
+  const isCurrent = captureScope();
+  const visible = new Set(songs.value.map((song) => toRaw(song)));
+  if (selectedSongs.some((song) => !visible.has(toRaw(song))))
+    throw new Error('云盘歌曲列表已改变，请重新选择');
   const removableSongs = selectedSongs.filter(canDeleteCloudSong);
   const skippedCount = selectedSongs.length - removableSongs.length;
   if (removableSongs.length === 0) {
@@ -324,13 +390,19 @@ const handleBatchDeleteCloudSongs = async (
   }
 
   onProgress?.(0, selectedSongs.length);
-  await deleteCloudSongs(
-    removableSongs.map((song) => ({
-      cloudFileId: song.cloudFileId,
-      hash: song.hash,
-      albumAudioId: song.albumAudioId ?? song.mixSongId,
-    })),
-  );
+  try {
+    await deleteCloudSongs(
+      removableSongs.map((song) => ({
+        cloudFileId: song.cloudFileId,
+        hash: song.hash,
+        albumAudioId: song.albumAudioId ?? song.mixSongId,
+      })),
+    );
+  } catch (error) {
+    if (!isCurrent()) return;
+    throw error;
+  }
+  if (!isCurrent()) return;
   onProgress?.(selectedSongs.length, selectedSongs.length);
 
   const removedIds = new Set(removableSongs.map((song) => song.id));
@@ -368,24 +440,43 @@ const secondaryActions = computed(() => [
 const handleLocate = () => songListRef.value?.scrollToActive?.();
 
 const handleUploadOpenRequest = () => {
-  if (!cloudUploadStore.consumeOpenRequest()) return;
+  if (disposed || !active || !isLoggedIn.value || !cloudUploadStore.consumeOpenRequest()) return;
   showUploadDialog.value = true;
 };
 
+const sessionSources = [
+  () => userStore.isLoggedIn,
+  () => userStore.accountRevision,
+  () => userStore.info?.userid ?? userStore.info?.userId,
+  () => userStore.info?.token,
+];
+const invalidatePageOperations = () => {
+  sessionGeneration.value++;
+  dataGeneration++;
+  initialized = false;
+  loading.value = false;
+  loadingMore.value = false;
+  isBackgroundResolving.value = false;
+  deleteTarget.value = null;
+  deletingCloudSong.value = false;
+  showBatchDrawer.value = false;
+};
 watch(
-  () => isLoggedIn.value,
-  (loggedIn) => {
-    if (loggedIn) {
-      void loadCloud();
-      return;
-    }
+  sessionSources,
+  () => {
+    invalidatePageOperations();
     resetCloudState();
+    loadError.value = '';
+    showUploadDialog.value = false;
     clearCloudAudioIndex();
-    // 登出时中止并清理上传任务（requestAbort 触发 onAbort 停止上传，dismiss 立即清理）
-    cloudUploadStore.requestAbort();
+    cloudUploadStore.requestAbort({ feedback: false });
     cloudUploadStore.dismiss();
   },
+  { flush: 'sync' },
 );
+watch(sessionSources, () => {
+  if (active && isLoggedIn.value) void loadCloud();
+});
 
 let lastUploadOpenRequested = cloudUploadStore.openRequested;
 watch(
@@ -410,6 +501,20 @@ onMounted(() => {
     void loadCloud();
   }
   handleUploadOpenRequest();
+});
+onDeactivated(() => {
+  active = false;
+  invalidatePageOperations();
+});
+onActivated(() => {
+  active = true;
+  if (!initialized && !loading.value && isLoggedIn.value) void loadCloud();
+  handleUploadOpenRequest();
+});
+onBeforeUnmount(() => {
+  disposed = true;
+  active = false;
+  invalidatePageOperations();
 });
 </script>
 
@@ -487,6 +592,7 @@ onMounted(() => {
         </SliverHeader>
 
         <BatchActionDrawer
+          :key="sessionGeneration"
           v-model:open="showBatchDrawer"
           :songs="songs"
           source-id="cloud"
@@ -557,7 +663,15 @@ onMounted(() => {
 
           <div class="px-6 pb-12">
             <div
-              v-if="!loading && songs.length === 0"
+              v-if="loadError"
+              role="alert"
+              class="flex items-center justify-center gap-3 py-4 text-sm text-text-secondary"
+            >
+              <span>{{ loadError }}</span>
+              <Button variant="outline" size="sm" @click="retryCloud">重试加载</Button>
+            </div>
+            <div
+              v-if="!loading && !loadError && songs.length === 0"
               class="cloud-empty flex flex-col items-center justify-center py-24 text-center"
             >
               <div

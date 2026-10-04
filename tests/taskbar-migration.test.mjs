@@ -142,6 +142,7 @@ test('new main snapshot integration sanitizes and forwards state without an extr
     './storage/settings': {},
     '../shared/nowPlaying': load('../src/shared/nowPlaying.ts', {}),
     '../shared/playback': load('../src/shared/playback.ts', {}),
+    '../shared/opencc': load('../src/shared/opencc.ts', {}),
     './taskbarThumbnail': {
       isCoverPreviewEnabled: () => true,
       setTaskbarCardPlayback: (state) => cards.push(state),

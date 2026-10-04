@@ -5,7 +5,9 @@ import {
   computed,
   nextTick,
   onMounted,
-  onUnmounted,
+  onActivated,
+  onDeactivated,
+  onBeforeUnmount,
   reactive,
   ref,
   watch,
@@ -58,6 +60,7 @@ const playerStore = usePlayerStore();
 const route = useRoute();
 const router = useRouter();
 
+let disposed = false;
 const currentSearchKeyword = ref('');
 const isLoading = ref(false);
 const isLoadingHot = ref(true);
@@ -158,17 +161,27 @@ let loadMoreObserver: IntersectionObserver | null = null;
 
 const setupLoadMoreObserver = () => {
   loadMoreObserver?.disconnect();
+  loadMoreObserver = null;
+  if (disposed || !isActive.value) return;
   const root = scrollTarget ?? scrollContainerRef.value ?? null;
-  loadMoreObserver = new IntersectionObserver(
+  const observer = new IntersectionObserver(
     (entries) => {
+      if (disposed || !isActive.value || loadMoreObserver !== observer) return;
       const entry = entries[0];
-      if (!entry?.isIntersecting) return;
+      if (!entry?.isIntersecting || entry.target !== loadMoreSentinelRef.value) return;
       if (isLoading.value || !hasSearched.value) return;
-      if (!activePagination.value.loaded || activePagination.value.loading) return;
+      if (
+        !activePagination.value.loaded ||
+        activePagination.value.loading ||
+        activePagination.value.error ||
+        searchErrors[activeSearchType.value]
+      )
+        return;
       void loadMoreActiveResults();
     },
     { root, rootMargin: '0px 0px 240px 0px' },
   );
+  loadMoreObserver = observer;
   if (loadMoreSentinelRef.value) {
     loadMoreObserver.observe(loadMoreSentinelRef.value);
   }
@@ -185,6 +198,12 @@ watch(loadMoreSentinelRef, (el) => {
 
 const attachScrollTarget = async () => {
   await nextTick();
+  if (disposed || !isActive.value) return;
+  if (scrollTarget && scrollTarget === scrollContainerRef.value && loadMoreObserver) {
+    handleScroll();
+    return;
+  }
+  detachScrollTarget();
   scrollTarget = scrollContainerRef.value;
   if (scrollTarget) {
     scrollTarget.addEventListener('scroll', handleScroll, { passive: true });
@@ -202,15 +221,20 @@ const detachScrollTarget = () => {
   loadMoreObserver = null;
 };
 
+let hotSearchToken = 0;
 const loadHotSearches = async () => {
+  if (disposed) return;
+  const token = ++hotSearchToken;
   isLoadingHot.value = true;
   try {
     const hotRes = await getSearchHot();
+    if (disposed || token !== hotSearchToken) return;
+
     hotSearchCategories.value = extractHotCategories(hotRes);
   } catch {
-    hotSearchCategories.value = [];
+    // 保留上次成功结果，热搜失败不影响搜索和滚动容器初始化。
   } finally {
-    isLoadingHot.value = false;
+    if (!disposed && token === hotSearchToken) isLoadingHot.value = false;
   }
 };
 
@@ -281,6 +305,7 @@ const resetPaginationState = () => {
     paginationState[type].loading = false;
     paginationState[type].loaded = false;
     paginationState[type].total = null;
+    paginationState[type].error = '';
   });
 };
 
@@ -294,7 +319,8 @@ const applyPaginationState = (
   paginationState[type].total = total;
   paginationState[type].loaded = true;
   paginationState[type].hasMore =
-    total !== null ? page * SEARCH_PAGE_SIZE < total : listLength >= SEARCH_PAGE_SIZE;
+    listLength > 0 &&
+    (total !== null ? page * SEARCH_PAGE_SIZE < total : listLength >= SEARCH_PAGE_SIZE);
 };
 
 const fetchSearchPage = async (keywords: string, type: SearchTabType, page = 1) => {
@@ -331,9 +357,10 @@ const loadSearchResults = async (
   const token = options?.token ?? latestSearchToken;
   const keywords = (options?.keywords ?? currentSearchKeyword.value).trim();
 
-  if (!keywords || state.loading) return;
+  if (disposed || !isActive.value || !keywords || state.loading || state.loadingMore) return;
 
   state.loading = true;
+  state.error = '';
   delete searchErrors[type];
   if (options?.useGlobalLoading) {
     isLoading.value = true;
@@ -341,26 +368,21 @@ const loadSearchResults = async (
 
   try {
     const { lists, total } = await fetchSearchPage(keywords, type, 1);
-    if (token !== latestSearchToken) return;
+    if (disposed || !isActive.value || token !== latestSearchToken) return;
 
     replaceResultsByType(type, lists);
     applyPaginationState(type, 1, lists.length, total);
   } catch {
-    if (token !== latestSearchToken) return;
-    replaceResultsByType(type, []);
+    if (disposed || !isActive.value || token !== latestSearchToken) return;
     searchErrors[type] = '搜索请求失败，请重试';
-    state.page = 1;
-    state.total = null;
-    state.hasMore = false;
-    state.loaded = true;
   } finally {
-    if (token === latestSearchToken) {
+    if (!disposed && token === latestSearchToken) {
       state.loading = false;
       if (options?.useGlobalLoading) {
         isLoading.value = false;
       }
       await nextTick();
-      handleScroll();
+      if (!disposed && isActive.value && token === latestSearchToken) handleScroll();
     }
   }
 };
@@ -370,32 +392,43 @@ const loadMoreActiveResults = async () => {
   const keywords = currentSearchKeyword.value.trim();
   const state = paginationState[type];
 
-  if (!keywords || !state.loaded || state.loading || !state.hasMore || state.loadingMore) return;
+  if (
+    disposed ||
+    !isActive.value ||
+    !keywords ||
+    !state.loaded ||
+    state.loading ||
+    !state.hasMore ||
+    state.loadingMore
+  )
+    return;
 
   state.loadingMore = true;
+  state.error = '';
   const token = latestSearchToken;
   const nextPage = state.page + 1;
 
   try {
     const { lists, total } = await fetchSearchPage(keywords, type, nextPage);
-    if (token !== latestSearchToken) return;
+    if (disposed || !isActive.value || token !== latestSearchToken) return;
 
     appendResultsByType(type, lists, resultRefs);
     applyPaginationState(type, nextPage, lists.length, total);
   } catch {
-    paginationState[type].hasMore = false;
+    if (disposed || !isActive.value || token !== latestSearchToken) return;
+    state.error = '加载更多失败，请重试';
   } finally {
-    if (token === latestSearchToken) {
+    if (!disposed && token === latestSearchToken) {
       paginationState[type].loadingMore = false;
       await nextTick();
-      handleScroll();
+      if (!disposed && isActive.value && token === latestSearchToken) handleScroll();
     }
   }
 };
 
 const runSearch = async (keyword: string) => {
   const keywords = keyword.trim();
-  if (!keywords) return;
+  if (disposed || !isActive.value || !keywords) return;
 
   currentSearchKeyword.value = keywords;
   latestSearchToken += 1;
@@ -418,12 +451,12 @@ const runSearch = async (keyword: string) => {
       useGlobalLoading: true,
     });
   } catch {
-    clearSearchResults();
-    resetPaginationState();
+    if (disposed || !isActive.value || searchToken !== latestSearchToken) return;
+    searchErrors[activeSearchType.value] = '搜索请求失败，请重试';
   } finally {
-    if (searchToken === latestSearchToken) {
+    if (!disposed && searchToken === latestSearchToken) {
       await nextTick();
-      handleScroll();
+      if (!disposed && isActive.value && searchToken === latestSearchToken) handleScroll();
     }
   }
 };
@@ -435,17 +468,19 @@ const albumCards = computed(() => albumResults.value.map((entry) => getAlbumCard
 const artistCards = computed(() => artistResults.value.map((entry) => getArtistCardProps(entry)));
 const mvCards = computed(() => mvResults.value);
 
-onMounted(async () => {
-  await loadHotSearches();
-  await attachScrollTarget();
+onMounted(() => {
+  void loadHotSearches();
+  void attachScrollTarget();
 });
+onActivated(() => void attachScrollTarget());
+onDeactivated(detachScrollTarget);
 
 const selectSearchTab = (index: number) => selectTabs({ tab: TAB_SEARCH_TYPES[index] });
 
 watch(
-  () => [route.name, route.query.q, activeSearchType.value] as const,
+  [() => route.name, () => route.query.q, activeSearchType, isActive],
   ([name, queryKeyword, type]) => {
-    if (name !== 'search' || !isActive.value) return;
+    if (disposed || name !== 'search' || !isActive.value) return;
     const keyword = typeof queryKeyword === 'string' ? queryKeyword.trim() : '';
 
     if (!keyword) {
@@ -474,24 +509,26 @@ watch(
   () => activeTabIndex.value,
   () => {
     nextTick(() => {
-      handleScroll();
+      if (!disposed && isActive.value) handleScroll();
     });
   },
 );
 
 // 响应滚动容器变化（PageScrollContainer 延迟 provide 时重新绑定）
 watch(scrollContainerRef, () => {
-  detachScrollTarget();
-  scrollTarget = scrollContainerRef.value;
-  if (scrollTarget) {
-    scrollTarget.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
-  }
-  // root 变了，需要重建 observer
-  setupLoadMoreObserver();
+  void attachScrollTarget();
 });
 
-onUnmounted(() => {
+onBeforeUnmount(() => {
+  disposed = true;
+  latestSearchToken++;
+  hotSearchToken++;
+  isLoading.value = false;
+  isLoadingHot.value = false;
+  TAB_SEARCH_TYPES.forEach((type) => {
+    paginationState[type].loading = false;
+    paginationState[type].loadingMore = false;
+  });
   detachScrollTarget();
 });
 </script>
@@ -526,13 +563,16 @@ onUnmounted(() => {
 
       <div v-else-if="searchErrors[activeSearchType]" class="search-placeholder px-10" role="alert">
         <p>{{ searchErrors[activeSearchType] }}</p>
-        <Button variant="secondary" size="sm" @click="runSearch(currentSearchKeyword)"
+        <Button
+          variant="secondary"
+          size="sm"
+          @click="loadSearchResults(activeSearchType, { useGlobalLoading: true })"
           >重新搜索</Button
         >
       </div>
 
       <div v-else class="px-10 pt-4">
-        <div v-if="activeTabIndex === 0">
+        <div v-if="activeTabIndex === 0" class="motion-content-enter">
           <SearchSongResultsPanel
             ref="songResultsPanelRef"
             :active-song-id="activeSongId"
@@ -555,10 +595,11 @@ onUnmounted(() => {
             :active-pagination="activePagination"
             :has-items="songResults.length > 0"
             :set-sentinel-ref="setLoadMoreSentinelRef"
+            @retry="loadMoreActiveResults"
           />
         </div>
 
-        <div v-else-if="activeTabIndex === 1">
+        <div v-else-if="activeTabIndex === 1" class="motion-content-enter">
           <SearchGridResultsPanel
             :items="playlistCards"
             :loading="paginationState.special.loading && !paginationState.special.loaded"
@@ -584,10 +625,11 @@ onUnmounted(() => {
             :active-pagination="activePagination"
             :has-items="playlistResults.length > 0"
             :set-sentinel-ref="setLoadMoreSentinelRef"
+            @retry="loadMoreActiveResults"
           />
         </div>
 
-        <div v-else-if="activeTabIndex === 2">
+        <div v-else-if="activeTabIndex === 2" class="motion-content-enter">
           <SearchGridResultsPanel
             :items="albumCards"
             :loading="paginationState.album.loading && !paginationState.album.loaded"
@@ -612,10 +654,11 @@ onUnmounted(() => {
             :active-pagination="activePagination"
             :has-items="albumResults.length > 0"
             :set-sentinel-ref="setLoadMoreSentinelRef"
+            @retry="loadMoreActiveResults"
           />
         </div>
 
-        <div v-else-if="activeTabIndex === 3">
+        <div v-else-if="activeTabIndex === 3" class="motion-content-enter">
           <SearchGridResultsPanel
             :items="artistCards"
             :loading="paginationState.author.loading && !paginationState.author.loaded"
@@ -640,10 +683,11 @@ onUnmounted(() => {
             :active-pagination="activePagination"
             :has-items="artistResults.length > 0"
             :set-sentinel-ref="setLoadMoreSentinelRef"
+            @retry="loadMoreActiveResults"
           />
         </div>
 
-        <div v-else-if="activeTabIndex === 4">
+        <div v-else-if="activeTabIndex === 4" class="motion-content-enter">
           <SearchSongResultsPanel
             :active-song-id="activeSongId"
             :queue-id-prefix="'queue:search-lyric'"
@@ -660,10 +704,11 @@ onUnmounted(() => {
             :active-pagination="activePagination"
             :has-items="lyricResults.length > 0"
             :set-sentinel-ref="setLoadMoreSentinelRef"
+            @retry="loadMoreActiveResults"
           />
         </div>
 
-        <div v-else>
+        <div v-else class="motion-content-enter">
           <SearchGridResultsPanel
             :items="mvCards"
             :loading="paginationState.mv.loading && !paginationState.mv.loaded"
@@ -691,6 +736,7 @@ onUnmounted(() => {
             :active-pagination="activePagination"
             :has-items="mvResults.length > 0"
             :set-sentinel-ref="setLoadMoreSentinelRef"
+            @retry="loadMoreActiveResults"
           />
         </div>
       </div>

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { Song } from '@/models/song';
 import type { StorageHistoryEntry } from '../../shared/storage';
+import logger from '@/utils/logger';
 
 export interface LocalHistoryEntry {
   /** 歌曲完整信息（可独立渲染，不依赖远端 API） */
@@ -59,7 +60,9 @@ export const useHistoryStore = defineStore('history', () => {
   const removingKeys = ref(new Set<string>());
   let hydratePromise: Promise<void> | null = null;
   let exitTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingPromotion: LocalHistoryEntry | null = null;
   let removeTimer: ReturnType<typeof setTimeout> | null = null;
+  let generation = 0;
 
   const hydrate = async () => {
     if (hydrated.value) return;
@@ -69,14 +72,16 @@ export const useHistoryStore = defineStore('history', () => {
       hydrated.value = true;
       return;
     }
+    const requestGeneration = generation;
     hydratePromise = storage
       .getHistoryEntries({ offset: 0, limit: maxEntries.value })
       .then((saved) => {
+        if (requestGeneration !== generation) return;
         entries.value = (saved ?? []).map(toLocalEntry);
         hydrated.value = true;
       })
-      .catch(() => {
-        hydrated.value = true;
+      .catch((error) => {
+        logger.warn('HistoryStore', 'Load history failed', error);
       })
       .finally(() => {
         hydratePromise = null;
@@ -85,6 +90,15 @@ export const useHistoryStore = defineStore('history', () => {
   };
 
   const applyRecordedEntry = (entry: LocalHistoryEntry, previousKey?: string | null) => {
+    if (exitTimer !== null) {
+      clearTimeout(exitTimer);
+      exitTimer = null;
+    }
+    if (pendingPromotion) {
+      entries.value = upsertEntryAtTop(entries.value, pendingPromotion, maxEntries.value);
+      pendingPromotion = null;
+    }
+    promotedKey.value = null;
     const current = entries.value;
     const existingIndex = current.findIndex(
       (item) => resolveSongHistoryId(item.song) === resolveSongHistoryId(entry.song),
@@ -97,10 +111,11 @@ export const useHistoryStore = defineStore('history', () => {
     }
 
     const oldKey = previousKey ?? current[existingIndex].historyKey;
-    if (exitTimer !== null) clearTimeout(exitTimer);
+    pendingPromotion = entry;
     promotedKey.value = oldKey;
     exitTimer = setTimeout(() => {
       entries.value = upsertEntryAtTop(entries.value, entry, maxEntries.value);
+      pendingPromotion = null;
       promotedKey.value = null;
       exitTimer = null;
       playRecordVersion.value++;
@@ -109,7 +124,9 @@ export const useHistoryStore = defineStore('history', () => {
 
   /** 记录一次播放，由 player 在 play 事件触发时调用 */
   const recordPlay = async (song: Song) => {
+    const requestGeneration = generation;
     if (!hydrated.value) await hydrate();
+    if (requestGeneration !== generation) return;
     const now = Date.now();
     const mxid = resolveSongHistoryId(song);
     const existing = entries.value.find((entry) => resolveSongHistoryId(entry.song) === mxid);
@@ -124,16 +141,19 @@ export const useHistoryStore = defineStore('history', () => {
     } catch {
       return;
     }
-    if (!stored) return;
+    if (!stored || requestGeneration !== generation) return;
 
     applyRecordedEntry(toLocalEntry(stored), existing?.historyKey);
   };
 
   /** 清空所有本地播放历史（立即生效，无动画） */
   const clear = () => {
+    generation += 1;
+    hydrated.value = true;
     entries.value = [];
     removingKeys.value = new Set();
     promotedKey.value = null;
+    pendingPromotion = null;
     if (exitTimer !== null) {
       clearTimeout(exitTimer);
       exitTimer = null;
@@ -142,29 +162,26 @@ export const useHistoryStore = defineStore('history', () => {
       clearTimeout(removeTimer);
       removeTimer = null;
     }
-    void window.electron?.storage?.clearHistory();
+    void window.electron?.storage?.clearHistory().catch((error) => {
+      logger.warn('HistoryStore', 'Clear history failed', error);
+    });
   };
 
   /** 删除单条播放历史（退场动画 → 250ms 后实际移除） */
   const removeEntry = (historyKey: string) => {
-    void window.electron?.storage?.removeHistoryEntries({ historyKeys: [historyKey] });
-    removingKeys.value = new Set([...removingKeys.value, historyKey]);
-    if (removeTimer !== null) clearTimeout(removeTimer);
-    removeTimer = setTimeout(() => {
-      entries.value = entries.value.filter((entry) => entry.historyKey !== historyKey);
-      removingKeys.value = new Set();
-      removeTimer = null;
-    }, EXIT_ANIM_MS);
+    removeEntries([historyKey]);
   };
 
   /** 批量删除播放历史（退场动画 → 250ms 后实际移除） */
   const removeEntries = (historyKeys: string[]) => {
     if (!historyKeys.length) return;
-    void window.electron?.storage?.removeHistoryEntries({ historyKeys });
+    void window.electron?.storage?.removeHistoryEntries({ historyKeys }).catch((error) => {
+      logger.warn('HistoryStore', 'Remove history failed', error);
+    });
     removingKeys.value = new Set([...removingKeys.value, ...historyKeys]);
     if (removeTimer !== null) clearTimeout(removeTimer);
     removeTimer = setTimeout(() => {
-      const keySet = new Set(historyKeys);
+      const keySet = removingKeys.value;
       entries.value = entries.value.filter((entry) => !keySet.has(entry.historyKey));
       removingKeys.value = new Set();
       removeTimer = null;

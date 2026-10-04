@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, useAttrs, onActivated, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import {
+  ref,
+  computed,
+  useAttrs,
+  onActivated,
+  onDeactivated,
+  nextTick,
+  onMounted,
+  onBeforeUnmount,
+} from 'vue';
 import { providePageStickyLayers } from '@/composables/usePageStickyLayers';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import BackToTop from '@/components/ui/BackToTop.vue';
@@ -32,15 +41,9 @@ const {
   onWheel,
 } = providePageStickyLayers(scrollContainerEl);
 let sizeObserver: ResizeObserver | undefined;
-onMounted(() => {
-  sizeObserver = new ResizeObserver(invalidateStickyLayers);
-  if (scrollContainerEl.value) sizeObserver.observe(scrollContainerEl.value);
-  window.addEventListener('resize', invalidateStickyLayers);
-});
-onBeforeUnmount(() => {
-  sizeObserver?.disconnect();
-  window.removeEventListener('resize', invalidateStickyLayers);
-});
+let active = false;
+let disposed = false;
+let activation = 0;
 let savedScrollTop = 0;
 
 // 当 Scrollbar 组件挂载后，获取其内部的滚动 DOM 元素
@@ -59,6 +62,7 @@ const contentProps = computed(() => ({
 
 // 实时追踪滚动位置（DOM 移到离屏容器时 scrollTop 会被重置，所以不能在 onDeactivated 时读取）
 const handleScroll = () => {
+  if (!active || disposed) return;
   if (scrollContainerEl.value) {
     savedScrollTop = scrollContainerEl.value.scrollTop;
   }
@@ -68,14 +72,37 @@ const handleScroll = () => {
 // 向子组件提供滚动容器引用
 provideScrollContainer(scrollContainerEl);
 
-// KeepAlive activated 时恢复滚动位置
-onActivated(() => {
-  nextTick(() => {
+// Pause cached pages and invalidate queued restores when navigation supersedes them.
+const activate = () => {
+  if (disposed || active) return;
+  active = true;
+  const current = ++activation;
+  sizeObserver = new ResizeObserver(invalidateStickyLayers);
+  if (scrollContainerEl.value) sizeObserver.observe(scrollContainerEl.value);
+  window.addEventListener('resize', invalidateStickyLayers);
+  void nextTick(() => {
+    if (disposed || !active || current !== activation) return;
     if (scrollContainerEl.value && savedScrollTop > 0) {
       scrollContainerEl.value.scrollTop = savedScrollTop;
     }
-    updateStickyLayers();
+    invalidateStickyLayers();
   });
+};
+
+const deactivate = () => {
+  active = false;
+  activation++;
+  sizeObserver?.disconnect();
+  sizeObserver = undefined;
+  window.removeEventListener('resize', invalidateStickyLayers);
+};
+
+onMounted(activate);
+onActivated(activate);
+onDeactivated(deactivate);
+onBeforeUnmount(() => {
+  disposed = true;
+  deactivate();
 });
 
 const scrollTo = (options: ScrollToOptions) => {

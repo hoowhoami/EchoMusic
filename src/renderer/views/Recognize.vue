@@ -3,7 +3,16 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 
 defineOptions({ name: 'recognize-page' });
 
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import {
+  ref,
+  computed,
+  onMounted,
+  onBeforeUnmount,
+  onActivated,
+  onDeactivated,
+  toRaw,
+  watch,
+} from 'vue';
 import { useRouter } from 'vue-router';
 import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
@@ -30,6 +39,7 @@ import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import { queueAndPlaySong } from '@/utils/playback';
 import { logger } from '@/utils/logger';
+import { captureUserSession } from '@/utils/userSession';
 import type { Song } from '@/models/song';
 import type { RecognizeMatch } from '@/utils/mappers';
 import type {
@@ -49,7 +59,9 @@ const toastStore = useToastStore();
 
 const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
+const isPlaylistSubmitting = ref(false);
 const pendingSong = ref<Song | null>(null);
+let playlistOperation = 0;
 
 const audioSource = computed<RecognizeAudioSource>({
   get: () => settingStore.recognizeAudioSource,
@@ -68,6 +80,11 @@ let captureActive = false;
 let capturePending = false;
 let captureOperation = 0;
 let disposed = false;
+let active = true;
+let devicesOperation = 0;
+let captureSource: RecognizeAudioSource = 'system';
+const isCaptureCurrent = (operation: number) =>
+  !disposed && active && operation === captureOperation;
 
 const isActive = computed(() => status.value === 'recording' || status.value === 'recognizing');
 
@@ -77,8 +94,11 @@ const micDevices = ref<{ label: string; value: string }[]>([
 ]);
 
 async function fetchMicDevices() {
+  if (disposed || !active) return;
+  const operation = ++devicesOperation;
   try {
     const devices = await window.electron.recognize.listInputDevices();
+    if (disposed || !active || operation !== devicesOperation) return;
     micDevices.value = [
       { label: '系统默认', value: 'default' },
       ...devices.map((device: RecognizeInputDevice) => ({
@@ -87,6 +107,7 @@ async function fetchMicDevices() {
       })),
     ];
   } catch {
+    if (disposed || !active || operation !== devicesOperation) return;
     micDevices.value = [{ label: '系统默认', value: 'default' }];
   }
 }
@@ -109,11 +130,12 @@ function distPercent(confidence: number): string {
   return `${Math.round(confidence * 100)}%`;
 }
 
-async function submitRecognition(pcm: ArrayBuffer) {
+async function submitRecognition(pcm: ArrayBuffer, operation: number) {
+  if (!isCaptureCurrent(operation)) return;
   status.value = 'recognizing';
   try {
     const results = await recognizeAudio(pcm);
-    if (disposed) return;
+    if (!isCaptureCurrent(operation)) return;
     if (results.length > 0) {
       matches.value = results;
       status.value = 'success';
@@ -122,15 +144,17 @@ async function submitRecognition(pcm: ArrayBuffer) {
       errorMsg.value = '未识别到歌曲，请靠近音源重试';
     }
   } catch (err) {
-    if (disposed) return;
+    if (!isCaptureCurrent(operation)) return;
     status.value = 'failed';
     errorMsg.value = '识别过程出错';
     logger.error('Recognize', '识别过程出错', err);
   }
 }
 
-function startRecordingTimer() {
+function startRecordingTimer(operation: number) {
+  clearRecordingTimer();
   recordingTimer = setInterval(() => {
+    if (!isCaptureCurrent(operation) || !captureActive) return;
     recordingSeconds.value++;
     if (recordingSeconds.value >= MAX_SECONDS) void stopRecording();
   }, 1000);
@@ -184,9 +208,12 @@ function describeCaptureError(error: unknown, source: RecognizeAudioSource): str
 }
 
 async function startRecording() {
-  if (isActive.value) return;
+  if (disposed || !active || isActive.value) return;
   const operation = ++captureOperation;
   const source = audioSource.value;
+  const deviceId = settingStore.inputDevice;
+  captureSource = source;
+  closePlaylistDialog();
   status.value = 'recording';
   matches.value = [];
   errorMsg.value = '';
@@ -196,22 +223,20 @@ async function startRecording() {
     if (source === 'mic') {
       await fetchMicDevices();
     }
-    if (disposed || operation !== captureOperation) return;
+    if (!isCaptureCurrent(operation)) return;
     const captureStatus = await window.electron.recognize.startAudioCapture({
       source,
-      ...(source === 'mic' && settingStore.inputDevice !== 'default'
-        ? { deviceId: settingStore.inputDevice }
-        : {}),
+      ...(source === 'mic' && deviceId !== 'default' ? { deviceId } : {}),
     });
-    if (disposed || operation !== captureOperation) return;
+    if (!isCaptureCurrent(operation)) return;
     capturePending = false;
     if (!captureStatus.running) {
       throw new Error(captureStatus.error || 'audio capture failed to start');
     }
     captureActive = true;
-    startRecordingTimer();
+    startRecordingTimer(operation);
   } catch (err) {
-    if (operation !== captureOperation || disposed) return;
+    if (!isCaptureCurrent(operation)) return;
     capturePending = false;
     status.value = 'failed';
     errorMsg.value = describeCaptureError(err, source);
@@ -226,31 +251,34 @@ function clearRecordingTimer() {
 }
 
 async function stopRecording() {
+  if (disposed || !active) return;
   clearRecordingTimer();
   if (capturePending) {
-    captureOperation++;
-    capturePending = false;
+    cancelRecording();
     status.value = 'idle';
-    void window.electron.recognize.cancelAudioCapture();
     return;
   }
   if (captureActive) {
+    const operation = captureOperation;
+    const source = captureSource;
     captureActive = false;
     status.value = 'recognizing';
     try {
       const bytes = await window.electron.recognize.stopAudioCapture();
+      if (!isCaptureCurrent(operation)) return;
       const pcm = new Uint8Array(bytes).slice().buffer;
-      await submitRecognition(pcm);
+      await submitRecognition(pcm, operation);
     } catch (error) {
-      if (disposed) return;
+      if (!isCaptureCurrent(operation)) return;
       status.value = 'failed';
-      errorMsg.value = describeCaptureError(error, audioSource.value);
+      errorMsg.value = describeCaptureError(error, source);
     }
   }
 }
 
 function cancelRecording() {
   captureOperation++;
+  devicesOperation++;
   clearRecordingTimer();
   const shouldCancelCapture = captureActive || capturePending;
   captureActive = false;
@@ -264,6 +292,7 @@ function cancelRecording() {
 
 function resetAndRestart() {
   cancelRecording();
+  closePlaylistDialog();
   status.value = 'idle';
   matches.value = [];
   errorMsg.value = '';
@@ -276,28 +305,31 @@ function handleMainButton() {
 }
 
 function selectMicDevice(deviceId: string) {
-  if (isActive.value) return;
+  if (disposed || !active || isActive.value) return;
   audioSource.value = 'mic';
   settingStore.inputDevice = deviceId;
   sourceMenuOpen.value = false;
 }
 
 function selectSystemAudio() {
-  if (isActive.value) return;
+  if (disposed || !active || isActive.value) return;
   audioSource.value = 'system';
   sourceMenuOpen.value = false;
 }
 
 async function handlePlay(song: Song) {
+  if (!isVisibleSong(song)) return;
   await queueAndPlaySong(playlistStore, playerStore, song);
 }
 
 function handleFavorite(song: Song) {
+  if (!isVisibleSong(song)) return;
   if (isFavorite(song)) void playlistStore.removeFavoriteSong(song);
   else void playlistStore.addToFavorites(song);
 }
 
 function goToDetail(song: Song) {
+  if (!isVisibleSong(song)) return;
   const commentId = song.mixSongId || song.id;
   router.push({
     name: 'song-detail',
@@ -321,38 +353,86 @@ const selectablePlaylists = computed(() =>
   playlistStore.getCreatedPlaylists(userStore.info?.userid),
 );
 
+function isVisibleSong(song: Song) {
+  return (
+    !disposed &&
+    active &&
+    status.value === 'success' &&
+    matches.value.some((match) => toRaw(match.song) === toRaw(song))
+  );
+}
+
+function closePlaylistDialog() {
+  playlistOperation++;
+  showPlaylistDialog.value = false;
+  pendingSong.value = null;
+  isPlaylistLoading.value = false;
+  isPlaylistSubmitting.value = false;
+}
+
+function capturePlaylistScope() {
+  const operation = playlistOperation;
+  const song = pendingSong.value;
+  const isSessionCurrent = captureUserSession(userStore);
+  return () =>
+    !disposed &&
+    active &&
+    showPlaylistDialog.value &&
+    operation === playlistOperation &&
+    pendingSong.value === song &&
+    isSessionCurrent();
+}
+
 async function handleAddToPlaylist(song: Song) {
+  if (!isVisibleSong(song)) return;
+  closePlaylistDialog();
   pendingSong.value = song;
   showPlaylistDialog.value = true;
+  const isCurrent = capturePlaylistScope();
   if (playlistStore.userPlaylists.length === 0) {
     isPlaylistLoading.value = true;
     try {
       await playlistStore.fetchUserPlaylists();
     } catch {
-      toastStore.loadFailed('歌单');
+      if (isCurrent()) toastStore.loadFailed('歌单');
     } finally {
-      isPlaylistLoading.value = false;
+      if (isCurrent()) isPlaylistLoading.value = false;
     }
   }
 }
 
 async function handleSelectPlaylist(listId: string | number) {
-  if (!pendingSong.value) return;
+  const song = pendingSong.value;
+  if (
+    !song ||
+    !isVisibleSong(song) ||
+    !showPlaylistDialog.value ||
+    !userStore.isLoggedIn ||
+    isPlaylistLoading.value ||
+    isPlaylistSubmitting.value ||
+    !selectablePlaylists.value.some((entry) => String(entry.listid ?? entry.id) === String(listId))
+  )
+    return;
+  const isCurrent = capturePlaylistScope();
+  isPlaylistSubmitting.value = true;
   try {
-    const result = await playlistStore.addToPlaylist(String(listId), pendingSong.value);
+    const result = await playlistStore.addToPlaylist(String(listId), song);
+    if (!isCurrent()) return;
     if (result === 'added') {
       toastStore.actionCompleted('添加成功');
-      showPlaylistDialog.value = false;
+      closePlaylistDialog();
       return;
     }
     if (result === 'exists') {
       toastStore.warning('歌单中已有此内容');
-      showPlaylistDialog.value = false;
+      closePlaylistDialog();
       return;
     }
     toastStore.actionFailed('添加到歌单');
   } catch {
-    toastStore.actionFailed('添加到歌单');
+    if (isCurrent()) toastStore.actionFailed('添加到歌单');
+  } finally {
+    if (isCurrent()) isPlaylistSubmitting.value = false;
   }
 }
 
@@ -364,9 +444,41 @@ watch(sourceMenuOpen, (open) => {
   if (open && !isActive.value) void fetchMicDevices();
 });
 
-onUnmounted(() => {
-  disposed = true;
+watch(
+  showPlaylistDialog,
+  (open) => {
+    if (!open) closePlaylistDialog();
+  },
+  { flush: 'sync' },
+);
+watch(
+  [
+    () => userStore.accountRevision,
+    () => userStore.isLoggedIn,
+    () => userStore.info?.userid,
+    () => userStore.info?.token,
+  ],
+  closePlaylistDialog,
+  { flush: 'sync' },
+);
+
+function deactivatePage() {
+  active = false;
   cancelRecording();
+  closePlaylistDialog();
+  sourceMenuOpen.value = false;
+  if (isActive.value) {
+    status.value = 'idle';
+    recordingSeconds.value = 0;
+  }
+}
+onDeactivated(deactivatePage);
+onActivated(() => {
+  active = true;
+});
+onBeforeUnmount(() => {
+  disposed = true;
+  deactivatePage();
 });
 </script>
 
@@ -610,6 +722,7 @@ onUnmounted(() => {
           class="rec-playlist-item"
           variant="ghost"
           size="sm"
+          :disabled="isPlaylistLoading || isPlaylistSubmitting"
           @click="handleSelectPlaylist(entry.listid ?? entry.id)"
         >
           <span class="text-[13px] font-semibold text-text-main truncate">{{ entry.name }}</span>

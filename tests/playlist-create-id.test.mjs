@@ -11,7 +11,30 @@ const loadUserActions = (addPlaylist, warnings) => {
   const { code } = transformSync(source, { loader: 'ts', format: 'cjs', target: 'node22' });
   const module = { exports: {} };
   const logger = { warn: (...args) => warnings.push(args), error() {} };
+  const scopeModule = { exports: {} };
+  const scopeCode = transformSync(
+    readFileSync(
+      new URL('../src/renderer/stores/playlist/accountScope.ts', import.meta.url),
+      'utf8',
+    ),
+    { loader: 'ts', format: 'cjs' },
+  ).code;
+  new Function('require', 'module', 'exports', scopeCode)(
+    (id) => {
+      if (id === '@/stores/user') return { useUserStore: () => ({ info: { userid: 7 } }) };
+      const helper = { exports: {} };
+      const code = transformSync(
+        readFileSync(new URL('../src/renderer/utils/userSession.ts', import.meta.url), 'utf8'),
+        { loader: 'ts', format: 'cjs' },
+      ).code;
+      new Function('module', 'exports', code)(helper, helper.exports);
+      return helper.exports;
+    },
+    scopeModule,
+    scopeModule.exports,
+  );
   const modules = {
+    './accountScope': scopeModule.exports,
     '@/api/playlist': { addPlaylist, deletePlaylist() {}, getUserPlaylists() {} },
     '@/utils/logger': { __esModule: true, default: logger },
     '@/utils/mappers': { mapPlaylistMeta: (value) => value },

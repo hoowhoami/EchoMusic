@@ -36,7 +36,11 @@ const page = (ids, total = ids.length) => ({
 });
 const setup = (get, set = async () => {}) => {
   setActivePinia(createPinia());
-  const user = reactive({ isLoggedIn: true, info: { userid: 1 } });
+  const user = reactive({
+    isLoggedIn: true,
+    accountRevision: 0,
+    info: { userid: 1, token: 'first' },
+  });
   const { useVideoCollectionStore } = load('../src/renderer/stores/videoCollection.ts', {
     '@/api/user': { getUserVideoCollect: get },
     '@/api/video': { setVideoCollected: set },
@@ -200,6 +204,48 @@ test('account switches discard old reads and old mutation completions', async ()
   assert.equal(store.isPending(456), false);
   user.isLoggedIn = false;
   await assert.rejects(store.toggle(456), /登录/);
+});
+
+for (const change of ['token', 'revision']) {
+  test(`same-user ${change} change discards pending MV reads without releasing a newer load`, async () => {
+    const old = deferred();
+    const fresh = deferred();
+    let calls = 0;
+    const { store, user } = setup(() => (++calls === 1 ? old.promise : fresh.promise));
+    const a = store.ensureLoaded();
+    if (change === 'token') user.info.token = 'renewed';
+    else user.accountRevision += 1;
+    const b = store.ensureLoaded();
+    assert.equal(calls, 2);
+    old.resolve(page([123]));
+    await a;
+    assert.equal(store.loading, true);
+    assert.equal(store.isCollected(123), false);
+    const c = store.ensureLoaded();
+    assert.equal(calls, 2);
+    fresh.resolve(page([456]));
+    await Promise.all([b, c]);
+    assert.equal(store.isCollected(456), true);
+    assert.equal(store.loading, false);
+  });
+}
+
+test('same-user relogin clears loaded MV IDs and rejects late mutation completion', async () => {
+  const pending = deferred();
+  const { store, user } = setup(
+    async () => page([123]),
+    () => pending.promise,
+  );
+  await store.ensureLoaded();
+  const write = store.toggle(123);
+  await Promise.resolve();
+  user.accountRevision += 1;
+  assert.equal(store.loaded, false);
+  assert.equal(store.isCollected(123), false);
+  assert.equal(store.isPending(123), false);
+  pending.resolve();
+  assert.equal(await write, undefined);
+  assert.equal(store.revision, 0);
 });
 
 const videoMapper = load('../src/renderer/utils/mappers/video.ts', {

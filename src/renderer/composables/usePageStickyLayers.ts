@@ -1,4 +1,13 @@
-import { inject, provide, ref, onBeforeUnmount, type InjectionKey, type Ref } from 'vue';
+import {
+  inject,
+  provide,
+  ref,
+  onActivated,
+  onDeactivated,
+  onBeforeUnmount,
+  type InjectionKey,
+  type Ref,
+} from 'vue';
 import { planPageStickyLayout } from '@/utils/pageStickyLayout';
 
 export interface PageStickyEntry {
@@ -34,10 +43,12 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
   const topInset = ref(0);
   const entries = new Set<PageStickyEntry>();
   const metrics = new Map<PageStickyEntry, StickyMetric>();
+  const observers = new Map<PageStickyEntry, { connect: () => void; disconnect: () => void }>();
   let viewport = { top: 0, left: 0, height: 0 };
   let stale = true;
   let updateFrame = 0;
   let disposed = false;
+  let suspended = false;
 
   const setStyle = (el: HTMLElement, name: string, value: string) => {
     if (el.style.getPropertyValue(name) !== value) el.style.setProperty(name, value);
@@ -70,7 +81,8 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
   };
 
   const commitLayout = () => {
-    if (!scroll.value || !target.value || !scroll.value.isConnected) return;
+    if (disposed || suspended || !scroll.value || !target.value || !scroll.value.isConnected)
+      return;
     ensureMetrics();
     if (!viewport.height) return;
     const scrollTop = scroll.value.scrollTop;
@@ -123,7 +135,7 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
   };
 
   const update = () => {
-    if (disposed || updateFrame) return;
+    if (disposed || suspended || updateFrame) return;
     updateFrame = requestAnimationFrame(() => {
       updateFrame = 0;
       commitLayout();
@@ -136,28 +148,38 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
   };
 
   const register = (entry: PageStickyEntry) => {
+    if (disposed) return () => {};
     entries.add(entry);
     stale = true;
     const resize = new ResizeObserver(invalidate);
-    resize.observe(entry.content);
-    resize.observe(entry.placeholder);
-    let parent = entry.placeholder.parentElement;
-    while (parent && parent !== scroll.value) {
-      resize.observe(parent);
-      parent = parent.parentElement;
-    }
     const mutation = new MutationObserver(invalidate);
-    mutation.observe(entry.content, {
-      attributes: true,
-      childList: true,
-      attributeFilter: ['style', 'class'],
-    });
+    const disconnect = () => {
+      resize.disconnect();
+      mutation.disconnect();
+    };
+    const connect = () => {
+      disconnect();
+      resize.observe(entry.content);
+      resize.observe(entry.placeholder);
+      let parent = entry.placeholder.parentElement;
+      while (parent && parent !== scroll.value) {
+        resize.observe(parent);
+        parent = parent.parentElement;
+      }
+      mutation.observe(entry.content, {
+        attributes: true,
+        childList: true,
+        attributeFilter: ['style', 'class'],
+      });
+    };
+    observers.set(entry, { connect, disconnect });
+    if (!suspended) connect();
     update();
     return () => {
       entries.delete(entry);
       metrics.delete(entry);
-      resize.disconnect();
-      mutation.disconnect();
+      observers.delete(entry);
+      disconnect();
       stale = true;
       update();
     };
@@ -166,6 +188,7 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
   provide(key, { target, register, update, invalidate });
 
   const onWheel = (event: WheelEvent) => {
+    if (disposed || suspended) return;
     const viewport = scroll.value;
     if (!viewport || event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
     let element = event.target instanceof Element ? event.target : null;
@@ -182,9 +205,24 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
     viewport.scrollBy({ top: event.deltaY * scale, behavior: 'instant' });
   };
 
+  const suspend = () => {
+    suspended = true;
+    if (updateFrame) cancelAnimationFrame(updateFrame);
+    updateFrame = 0;
+    for (const observer of observers.values()) observer.disconnect();
+  };
+
+  onDeactivated(suspend);
+  onActivated(() => {
+    if (disposed || !suspended) return;
+    suspended = false;
+    for (const observer of observers.values()) observer.connect();
+    invalidate();
+  });
   onBeforeUnmount(() => {
     disposed = true;
-    if (updateFrame) cancelAnimationFrame(updateFrame);
+    suspend();
+    observers.clear();
     entries.clear();
     metrics.clear();
   });

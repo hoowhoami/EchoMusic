@@ -22,6 +22,12 @@ function load(path, dependencies = {}, timers = { setTimeout, clearTimeout }) {
   return module.exports;
 }
 
+const object = load('../../src/shared/object.ts');
+const extractors = load('../../src/renderer/utils/extractors.ts', {
+  '../../shared/object': object,
+});
+const session = load('../../src/renderer/utils/userSession.ts');
+
 export const constants = load('../../src/renderer/stores/playlist/constants.ts');
 export const songUtils = load('../../src/renderer/utils/song.ts');
 export const helpers = load('../../src/renderer/stores/playlist/helpers.ts', {
@@ -35,7 +41,10 @@ export const queuePolicy = load('../../src/renderer/stores/player/queueAdvancePo
   '../playlist/constants': constants,
 });
 
-export function createFmStore({ queue, buffer, fetch, timers } = {}) {
+export function createFmStore({ queue, buffer, fetch, timers, user: initialUser } = {}) {
+  const user = vue.reactive(
+    initialUser ?? { isLoggedIn: true, accountRevision: 0, info: { userid: 7, token: 'one' } },
+  );
   const requests = [];
   const persisted = [];
   const actions = load(
@@ -47,7 +56,10 @@ export function createFmStore({ queue, buffer, fetch, timers } = {}) {
           return fetch ? fetch(params) : Promise.resolve([]);
         },
       },
-      '@/utils/extractors': { extractList: (result) => result },
+      '@/utils/extractors': extractors,
+
+      '@/utils/userSession': session,
+      '@/stores/user': { useUserStore: () => user },
       '@/utils/mappers': { mapTopSong: (song) => song },
       '@/utils/logger': { warn: noop },
       '@/utils/song': songUtils,
@@ -118,5 +130,5 @@ export function createFmStore({ queue, buffer, fetch, timers } = {}) {
     persistQueueAppendToStorage: (_queue, songs) => persisted.push(...songs),
     ...actions.personalFmActions,
   });
-  return { store, requests, persisted, helpers };
+  return { store, user, requests, persisted, helpers };
 }

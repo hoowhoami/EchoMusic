@@ -1,4 +1,7 @@
 import { defineStore } from 'pinia';
+import { computed, ref, shallowRef, toRaw, watch } from 'vue';
+import { useUserStore } from '@/stores/user';
+import { captureUserSession } from '@/utils/userSession';
 import { getLoginDevices, kickLoginDevice } from '@/api/user';
 import { useDeviceStore } from '@/stores/device';
 import { ensureDevice } from '@/utils/device';
@@ -111,25 +114,59 @@ const normalizeSession = (
   };
 };
 
-export const useLoginDeviceStore = defineStore('loginDevices', {
-  state: () => ({
-    devices: [] as LoginDeviceSession[],
-    loading: false,
-    kickingId: '',
-    loaded: false,
-    error: '',
-  }),
-  getters: {
-    currentDevice: (state) => state.devices.find((device) => device.isCurrent) || null,
-  },
-  actions: {
-    async fetchDevices() {
-      this.loading = true;
-      this.error = '';
-      this.devices = [];
+export const useLoginDeviceStore = defineStore('loginDevices', () => {
+  const user = useUserStore();
+  const devices = shallowRef<LoginDeviceSession[]>([]);
+  const loading = ref(false);
+  const kickingId = ref('');
+  const loaded = ref(false);
+  const error = ref('');
+  const currentDevice = computed(() => devices.value.find((device) => device.isCurrent) || null);
+  let generation = 0;
+  let fetchSequence = 0;
+  let fetchFlight: Promise<void> | null = null;
+  let kickFlight: Promise<boolean> | null = null;
+  const deviceGenerations = new WeakMap<object, number>();
+
+  const reset = () => {
+    generation += 1;
+    fetchSequence += 1;
+    fetchFlight = null;
+    kickFlight = null;
+    devices.value = [];
+    loading.value = false;
+    kickingId.value = '';
+    loaded.value = false;
+    error.value = '';
+  };
+  watch(
+    [
+      () => user.isLoggedIn,
+      () => user.accountRevision,
+      () => user.info?.userid ?? user.info?.userId,
+      () => user.info?.token,
+    ],
+    reset,
+    { flush: 'sync' },
+  );
+
+  const fetchDevices = (force = false): Promise<void> => {
+    if (!user.isLoggedIn) return Promise.resolve();
+    if (fetchFlight && !force) return fetchFlight;
+    const requestGeneration = generation;
+    const requestSequence = ++fetchSequence;
+    const isCurrentSession = captureUserSession(user);
+    const isCurrent = () =>
+      requestGeneration === generation && requestSequence === fetchSequence && isCurrentSession();
+    loading.value = true;
+    error.value = '';
+    const task = async () => {
       try {
         await ensureDevice();
+        if (!isCurrent()) return;
         const response = await getLoginDevices();
+        if (!isCurrent()) return;
+        const records = extractDeviceRecords(response);
         const currentMids = new Set<string>();
         const storeMid = useDeviceStore().info?.mid;
         if (storeMid) currentMids.add(storeMid);
@@ -139,24 +176,49 @@ export const useLoginDeviceStore = defineStore('loginDevices', {
         } catch {
           // main 进程身份读取失败时仅使用 renderer 持久化的 mid
         }
-        this.devices = extractDeviceRecords(response)
+        if (!isCurrent()) return;
+        const next = records
           .map((record, index) => normalizeSession(record, index, Array.from(currentMids)))
-          .sort((a, b) => {
-            if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
-            return sortableTime(b) - sortableTime(a);
-          });
-        this.loaded = true;
-      } catch (error) {
-        this.error = '登录设备获取失败';
-        logger.warn('LoginDevices', 'Fetch login devices failed', error);
+          .sort((a, b) =>
+            a.isCurrent !== b.isCurrent
+              ? a.isCurrent
+                ? -1
+                : 1
+              : sortableTime(b) - sortableTime(a),
+          );
+        next.forEach((device) => deviceGenerations.set(device, requestGeneration));
+        devices.value = next;
+        loaded.value = true;
+      } catch (cause) {
+        if (!isCurrent()) return;
+        error.value = '登录设备获取失败';
+        logger.warn('LoginDevices', 'Fetch login devices failed', cause);
       } finally {
-        this.loading = false;
+        if (isCurrent()) loading.value = false;
       }
-    },
-    async kickDevice(device: LoginDeviceSession) {
-      if (!device.canKick || device.isCurrent) return false;
-      this.kickingId = device.id;
-      this.error = '';
+    };
+    const flight = task().finally(() => {
+      if (fetchFlight === flight) fetchFlight = null;
+    });
+    if (generation === requestGeneration) fetchFlight = flight;
+    return flight;
+  };
+
+  const kickDevice = (device: LoginDeviceSession): Promise<boolean> => {
+    if (
+      !user.isLoggedIn ||
+      !device.canKick ||
+      device.isCurrent ||
+      deviceGenerations.get(toRaw(device)) !== generation ||
+      kickFlight
+    )
+      return Promise.resolve(false);
+    const requestGeneration = generation;
+    const isCurrentSession = captureUserSession(user);
+    const isCurrent = () => requestGeneration === generation && isCurrentSession();
+    kickingId.value = device.id;
+    error.value = '';
+    const task = async () => {
       try {
         await kickLoginDevice({
           t_mid: device.tMid,
@@ -167,22 +229,34 @@ export const useLoginDeviceStore = defineStore('loginDevices', {
           dfid: device.dfid,
           uuid: device.uuid,
         });
-        await this.fetchDevices();
-        return true;
-      } catch (error) {
-        this.error = '设备移除失败';
-        logger.warn('LoginDevices', 'Kick login device failed', error);
+        if (!isCurrent()) return false;
+        // 移除后必须刷新，不能复用移除前已在途的列表快照。
+        await fetchDevices(true);
+        return isCurrent();
+      } catch (cause) {
+        if (!isCurrent()) return false;
+        error.value = '设备移除失败';
+        logger.warn('LoginDevices', 'Kick login device failed', cause);
         return false;
       } finally {
-        this.kickingId = '';
+        if (isCurrent()) kickingId.value = '';
       }
-    },
-    reset() {
-      this.devices = [];
-      this.loading = false;
-      this.kickingId = '';
-      this.loaded = false;
-      this.error = '';
-    },
-  },
+    };
+    const flight = task().finally(() => {
+      if (kickFlight === flight) kickFlight = null;
+    });
+    if (generation === requestGeneration) kickFlight = flight;
+    return flight;
+  };
+  return {
+    devices,
+    loading,
+    kickingId,
+    loaded,
+    error,
+    currentDevice,
+    fetchDevices,
+    kickDevice,
+    reset,
+  };
 });

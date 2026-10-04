@@ -148,6 +148,8 @@ export interface SearchMatchResult {
 }
 
 export interface FindBestMatchOptions {
+  /** 停止失效的匹配任务，避免等待结束后继续搜索下一个关键词。 */
+  isCurrent?: () => boolean;
   /** 每个搜索词请求的候选数 */
   pageSize?: number;
   /** 最多尝试的搜索词数量 */
@@ -261,14 +263,17 @@ export const findBestMatch = async (
   const pageSize = Math.max(1, Math.min(options.pageSize ?? 5, 10));
   let best: SearchMatchResult | null = null;
   for (let i = 0; i < keywords.length; i++) {
+    if (options.isCurrent && !options.isCurrent()) return null;
     const keyword = keywords[i];
     let lists: unknown[] = [];
     try {
       const res = await search(keyword, 'song', 1, pageSize);
+      if (options.isCurrent && !options.isCurrent()) return null;
       const data = (res as { data?: { lists?: unknown; list?: unknown } })?.data ?? {};
       const raw = data.lists ?? data.list;
       lists = Array.isArray(raw) ? raw : [];
     } catch (e) {
+      if (options.isCurrent && !options.isCurrent()) return null;
       logger.warn('SongMatching', `search failed: ${keyword}`, e);
       continue;
     }
@@ -293,6 +298,7 @@ export const findBestMatch = async (
       await matchThinkDelay();
     }
   }
+  if (options.isCurrent && !options.isCurrent()) return null;
   return best;
 };
 

@@ -35,7 +35,12 @@ type HookProc = unsafe extern "system" fn(i32, usize, isize) -> isize;
 
 #[link(name = "user32")]
 extern "system" {
-    fn SetWindowsHookExW(id_hook: i32, proc: HookProc, module: *mut c_void, thread_id: u32) -> usize;
+    fn SetWindowsHookExW(
+        id_hook: i32,
+        proc: HookProc,
+        module: *mut c_void,
+        thread_id: u32,
+    ) -> usize;
     fn UnhookWindowsHookEx(hook: usize) -> i32;
     fn CallNextHookEx(hook: usize, code: i32, wparam: usize, lparam: isize) -> isize;
     fn GetForegroundWindow() -> *mut c_void;
@@ -121,10 +126,11 @@ pub fn start_windows_double_click_monitor(
     stop_windows_double_click_monitor();
     // A low-level hook is process-global: dwThreadId must be 0. It is delivered
     // on the thread that installed it (the Electron main thread's message loop).
-    let hook =
-        unsafe { SetWindowsHookExW(WH_MOUSE_LL, mouse_proc, std::ptr::null_mut(), 0) };
+    let hook = unsafe { SetWindowsHookExW(WH_MOUSE_LL, mouse_proc, std::ptr::null_mut(), 0) };
     if hook == 0 {
-        return Err(napi::Error::from_reason("Could not install WH_MOUSE_LL hook"));
+        return Err(napi::Error::from_reason(
+            "Could not install WH_MOUSE_LL hook",
+        ));
     }
     TOTAL_DBLCLK.store(0, Ordering::Relaxed);
     FOREGROUND_DBLCLK.store(0, Ordering::Relaxed);

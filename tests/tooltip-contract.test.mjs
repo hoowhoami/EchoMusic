@@ -42,7 +42,8 @@ test('native controls cannot reintroduce browser title tooltips; business title 
 
 test('tooltips preserve the rendered control, accessible label and disabled semantics', async () => {
   const { build } = await import('esbuild');
-  const { createSSRApp, h } = await import('vue');
+  const { createSSRApp, defineComponent, h } = await import('vue');
+  const { TooltipProvider, injectTooltipRootContext } = await import('reka-ui');
   const { renderToString } = await import('@vue/server-renderer');
   const result = await build({
     stdin: {
@@ -124,6 +125,18 @@ test('tooltips preserve the rendered control, accessible label and disabled sema
     h(Tooltip, { content: '插件提示' }, { trigger: () => h('button', '插件') }),
   );
   assert.match(standalone, /<button\b/);
+  const DisabledProbe = defineComponent({
+    setup() {
+      const context = injectTooltipRootContext();
+      return () => h('button', String(context.disabled.value));
+    },
+  });
+  const inheritedDisabled = await render(
+    h(TooltipProvider, { disabled: true }, () =>
+      h(Tooltip, { content: '父级禁用' }, { trigger: () => h(DisabledProbe) }),
+    ),
+  );
+  assert.match(inheritedDisabled, /<button\b[^>]*>true<\/button>/);
 });
 
 test('hover panels and the mini volume slider do not have redundant trigger tooltips', () => {

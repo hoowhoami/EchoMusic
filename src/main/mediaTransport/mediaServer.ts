@@ -16,7 +16,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { PassThrough, type Readable } from 'node:stream';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 export type MediaSource =
   | {
@@ -129,6 +130,7 @@ export function parseRange(
   if (!Number.isFinite(start) || start < 0) return { range: null, unsatisfiable: false };
   if (start >= length) return { range: null, unsatisfiable: true };
   const end = endRaw === '' ? length - 1 : Math.min(Number(endRaw), length - 1);
+  if (end < start) return { range: null, unsatisfiable: true };
   return { range: { start, end }, unsatisfiable: false };
 }
 
@@ -142,6 +144,7 @@ export function writeRangeError(res: http.ServerResponse, length: number | null)
 async function fetchUpstream(
   url: string,
   headers: Record<string, string>,
+  signal: AbortSignal,
 ): Promise<http.IncomingMessage> {
   const lib = url.startsWith('https:') ? await import('node:https') : await import('node:http');
   const parsed = new URL(url);
@@ -154,6 +157,7 @@ async function fetchUpstream(
         path: parsed.pathname + parsed.search,
         method: 'GET',
         headers,
+        signal,
       },
       resolve,
     );
@@ -167,33 +171,41 @@ async function fetchUpstream(
  * 字节并立即结束（上游忽略 Range 时回落到本机前端以满足请求）。
  */
 function sliceBytes(stream: Readable, skip: number, length: number): Readable {
-  const out = new PassThrough();
-  let toSkip = skip;
-  let remaining = length;
-  stream.on('data', (chunk: Buffer) => {
-    if (toSkip > 0) {
-      if (chunk.length <= toSkip) {
-        toSkip -= chunk.length;
-        return;
+  const iterator = (async function* () {
+    let toSkip = skip;
+    let remaining = length;
+    for await (const value of stream) {
+      let chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+      if (toSkip > 0) {
+        const skipped = Math.min(chunk.length, toSkip);
+        toSkip -= skipped;
+        chunk = chunk.subarray(skipped);
       }
-      chunk = chunk.subarray(toSkip);
-      toSkip = 0;
+      if (chunk.length === 0) continue;
+      const count = Math.min(chunk.length, remaining);
+      remaining -= count;
+      yield chunk.subarray(0, count);
+      if (remaining === 0) return;
     }
-    if (remaining <= 0) return;
-    if (chunk.length <= remaining) {
-      out.write(chunk);
-      remaining -= chunk.length;
-      return;
-    }
-    out.write(chunk.subarray(0, remaining));
-    remaining = 0;
-  });
-  stream.on('end', () => out.end());
-  stream.on('error', (err) => out.destroy(err));
-  // 放行完目标区间后立即终止上游读取，避免多余流量与悬挂连接。
-  out.on('close', () => {
-    if (remaining <= 0) stream.destroy();
-  });
+    if (remaining > 0) throw new Error('Upstream ended before the requested range was complete');
+  })();
+  const cancellableIterator: AsyncIterableIterator<Buffer> = {
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+    next: () => iterator.next(),
+    return: () => {
+      stream.destroy();
+      return iterator.return(undefined);
+    },
+    throw: (error: unknown) => {
+      stream.destroy();
+      return iterator.throw(error);
+    },
+  };
+  const out = Readable.from(cancellableIterator, { objectMode: false });
+  // Cancel a pending iterator read as well as reads paused by downstream backpressure.
+  out.once('close', () => stream.destroy());
   return out;
 }
 
@@ -205,6 +217,9 @@ export class MediaServer {
   private readonly resources = new Map<string, MediaResource>();
   private readonly tokens = new Map<string, string>();
   private server: http.Server | null = null;
+  private startFlight: Promise<number> | null = null;
+  private stopFlight: Promise<void> | null = null;
+  private readonly activeResponses = new Map<string, Set<http.ServerResponse>>();
   private boundPort = 0;
   private readonly bindHost: string;
 
@@ -234,19 +249,29 @@ export class MediaServer {
   }
 
   async start(port = 0): Promise<number> {
+    if (this.stopFlight) await this.stopFlight;
+    if (this.startFlight) return this.startFlight;
     if (this.server) return this.boundPort;
-    this.server = http.createServer((req, res) => {
+    const server = http.createServer((req, res) => {
       void this.handleRequest(req, res).catch((error) => {
+        if (
+          res.destroyed &&
+          (error?.code === 'ABORT_ERR' || error?.code === 'ERR_STREAM_PREMATURE_CLOSE')
+        )
+          return;
         this.log('error', `[MediaServer] serve failed: ${String(error)}`);
         if (!res.headersSent) {
           res.statusCode = 500;
+          res.removeHeader('Content-Range');
+          res.setHeader('Content-Length', '0');
           res.end();
         } else {
           res.destroy();
         }
       });
     });
-    this.server.on('clientError', (_err, socket) => {
+    this.server = server;
+    server.on('clientError', (_err, socket) => {
       try {
         socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
       } catch {
@@ -254,24 +279,54 @@ export class MediaServer {
       }
     });
     // 短 keep-alive：设备一般每次请求新连接；也让 stop() 不再被空闲连接拖住。
-    this.server.keepAliveTimeout = 2000;
-    this.server.headersTimeout = 10_000;
-    await new Promise<void>((resolve, reject) => {
-      this.server!.once('error', reject);
-      this.server!.listen(port, this.bindHost, () => resolve());
+    server.keepAliveTimeout = 2000;
+    server.headersTimeout = 10_000;
+    this.startFlight = new Promise<number>((resolve, reject) => {
+      const onError = (error: Error) => {
+        this.server = null;
+        this.boundPort = 0;
+        reject(error);
+      };
+      server.once('error', onError);
+      try {
+        server.listen(port, this.bindHost, () => {
+          server.removeListener('error', onError);
+          const address = server.address();
+          this.boundPort = typeof address === 'object' && address ? address.port : 0;
+          resolve(this.boundPort);
+        });
+      } catch (error) {
+        server.removeListener('error', onError);
+        onError(error as Error);
+      }
+    }).finally(() => {
+      this.startFlight = null;
     });
-    const address = this.server.address();
-    this.boundPort = typeof address === 'object' && address ? address.port : 0;
-    return this.boundPort;
+    return this.startFlight;
   }
 
   async stop(): Promise<void> {
-    if (!this.server) return;
-    const server = this.server;
-    this.server = null;
-    this.tokens.clear();
-    this.resources.clear();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (this.stopFlight) return this.stopFlight;
+    this.stopFlight = (async () => {
+      await this.startFlight?.catch(() => undefined);
+      const server = this.server;
+      this.server = null;
+      this.boundPort = 0;
+      this.tokens.clear();
+      this.resources.clear();
+      for (const responses of this.activeResponses.values()) {
+        for (const response of responses) response.destroy();
+      }
+      this.activeResponses.clear();
+      if (!server) return;
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      });
+    })().finally(() => {
+      this.stopFlight = null;
+    });
+    return this.stopFlight;
   }
 
   /** 登记资源，返回受控 token 与 URL；会话结束/撤销后立即失效。 */
@@ -301,6 +356,7 @@ export class MediaServer {
     if (!resourceId) return;
     this.tokens.delete(token);
     this.resources.delete(resourceId);
+    this.cancelResourceRequests(resourceId);
     this.log('info', `[MediaServer] revoke token=${token.slice(0, 8)}…`);
   }
 
@@ -312,11 +368,17 @@ export class MediaServer {
       if (resource && resource.sessionId === sessionId) {
         this.tokens.delete(token);
         this.resources.delete(resourceId);
+        this.cancelResourceRequests(resourceId);
         cleared += 1;
       }
     }
     if (cleared > 0)
       this.log('info', `[MediaServer] revoke session ${sessionId} (${cleared} resources)`);
+  }
+
+  private cancelResourceRequests(resourceId: string): void {
+    for (const response of this.activeResponses.get(resourceId) ?? []) response.destroy();
+    this.activeResponses.delete(resourceId);
   }
 
   async statResource(
@@ -350,6 +412,14 @@ export class MediaServer {
       res.end();
       return;
     }
+    const responses = this.activeResponses.get(resource.resourceId) ?? new Set();
+    this.activeResponses.set(resource.resourceId, responses);
+    responses.add(res);
+    const release = () => {
+      responses.delete(res);
+      if (responses.size === 0) this.activeResponses.delete(resource.resourceId);
+    };
+    res.once('close', release);
     await this.serveResource(req, res, resource);
   }
 
@@ -359,6 +429,7 @@ export class MediaServer {
     resource: MediaResource,
   ): Promise<void> {
     const { length, mime } = await this.statResource(resource);
+    if (res.destroyed) return;
     const parsed = parseRange(req.headers.range, length);
     if (parsed.unsatisfiable) {
       writeRangeError(res, length);
@@ -394,6 +465,8 @@ export class MediaServer {
     }
     if (req.method !== 'GET') {
       res.statusCode = 405;
+      res.removeHeader('Content-Range');
+      res.setHeader('Content-Length', '0');
       res.end();
       return;
     }
@@ -435,33 +508,40 @@ export class MediaServer {
     if (range) {
       upstreamHeaders['Range'] = `bytes=${range.start}-${range.end}`;
     }
-    const upstream = await fetchUpstream(url, upstreamHeaders);
-    const status = upstream.statusCode ?? 0;
-    if (status >= 500 && status < 600) {
-      res.statusCode = status;
-      res.end();
-      return;
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    res.once('close', cancel);
+    try {
+      if (res.destroyed) return;
+      const upstream = await fetchUpstream(url, upstreamHeaders, controller.signal);
+      const status = upstream.statusCode ?? 0;
+      if (status >= 500 && status < 600) {
+        res.statusCode = status;
+        res.removeHeader('Content-Range');
+        res.setHeader('Content-Length', '0');
+        upstream.destroy();
+        res.end();
+        return;
+      }
+      if (status !== 200 && status !== 206) {
+        if (status === 401 || status === 403 || status === 410)
+          this.onUpstreamStatus?.(status, url);
+        res.statusCode = 502;
+        res.removeHeader('Content-Range');
+        res.setHeader('Content-Length', '0');
+        upstream.destroy();
+        res.end();
+        return;
+      }
+      let stream: Readable = upstream;
+      // 上游忽略 Range 时（200 全量）回落到本机前端以满足请求：跳过前缀并只放行目标宽度。
+      if (range && status === 200) {
+        stream = sliceBytes(upstream, range.start, range.end - range.start + 1);
+      }
+      await pipeline(stream, res);
+    } finally {
+      res.removeListener('close', cancel);
     }
-    if (status !== 200 && status !== 206) {
-      if (status === 401 || status === 403 || status === 410) this.onUpstreamStatus?.(status, url);
-      res.statusCode = 502;
-      res.end();
-      return;
-    }
-    let stream: Readable = upstream;
-    // 上游忽略 Range 时（200 全量）回落到本机前端以满足请求：跳过前缀并只放行目标宽度。
-    if (range && status === 200) {
-      stream = sliceBytes(upstream, range.start, range.end - range.start + 1);
-    }
-    await new Promise<void>((resolve, reject) => {
-      stream.on('error', reject);
-      res.on('close', () => {
-        stream.destroy();
-        resolve();
-      });
-      stream.pipe(res);
-      stream.on('end', () => resolve());
-    });
   }
 }
 

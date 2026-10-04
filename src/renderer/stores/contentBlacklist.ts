@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { toRaw } from 'vue';
 import {
   addSingerToBlacklist,
   addSongToBlacklist,
@@ -11,6 +12,7 @@ import {
   type BlacklistSongTarget,
 } from '@/api/blacklist';
 import { useUserStore } from '@/stores/user';
+import { captureUserSession } from '@/utils/userSession';
 import logger from '@/utils/logger';
 
 export interface ContentBlacklistBucket {
@@ -33,6 +35,8 @@ export type ContentBlacklistStatus = 'unknown' | 'present' | 'absent';
 const fetchRequests = new WeakMap<object, Map<string, Promise<boolean>>>();
 const fullLoadRequests = new WeakMap<object, Map<string, Promise<boolean>>>();
 const mutationRequests = new WeakMap<object, Map<string, Promise<boolean>>>();
+const sessionChecks = new WeakMap<object, () => boolean>();
+const entryScopes = new WeakMap<object, { state: object; generation: number }>();
 const FULL_LOAD_PAGE_SIZE = 500;
 const MAX_BLACKLIST_PAGES = 1000;
 
@@ -67,13 +71,14 @@ const currentAccountKey = (): string => {
 };
 
 const isCurrentRequest = (
-  store: { accountKey: string; generation: number },
+  store: { accountKey: string; generation: number; buckets: ContentBlacklistBuckets },
   accountKey: string,
   generation: number,
 ): boolean =>
   store.accountKey === accountKey &&
   store.generation === generation &&
-  currentAccountKey() === accountKey;
+  currentAccountKey() === accountKey &&
+  Boolean(sessionChecks.get(toRaw(store.buckets))?.());
 
 const pendingMap = (
   requests: WeakMap<object, Map<string, Promise<boolean>>>,
@@ -99,6 +104,11 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
     hasMore:
       (state) =>
       (label: BlacklistLabel): boolean => {
+        if (
+          state.accountKey !== currentAccountKey() ||
+          !sessionChecks.get(toRaw(state.buckets))?.()
+        )
+          return false;
         const bucket = state.buckets[label];
         return (
           bucket.loaded &&
@@ -110,7 +120,11 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
     status:
       (state) =>
       (label: BlacklistLabel, key: string | number): ContentBlacklistStatus => {
-        if (state.accountKey !== currentAccountKey()) return 'unknown';
+        if (
+          state.accountKey !== currentAccountKey() ||
+          !sessionChecks.get(toRaw(state.buckets))?.()
+        )
+          return 'unknown';
         const bucket = state.buckets[label];
         if (bucket.keys.has(normalizeKey(label, key))) return 'present';
         return bucket.fullyLoaded ? 'absent' : 'unknown';
@@ -119,10 +133,8 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
   actions: {
     syncAccount() {
       const nextAccountKey = currentAccountKey();
-      if (nextAccountKey === this.accountKey) return;
-      this.generation++;
-      this.accountKey = nextAccountKey;
-      this.buckets = createBuckets();
+      if (nextAccountKey === this.accountKey && sessionChecks.get(toRaw(this.buckets))?.()) return;
+      this.reset();
     },
 
     async fetchPage(
@@ -132,6 +144,7 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
       readEpoch?: number,
     ): Promise<boolean> {
       this.syncAccount();
+      if (!this.accountKey) return false;
       const bucket = this.buckets[label];
       const accountKey = this.accountKey;
       const generation = this.generation;
@@ -167,7 +180,10 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
           }
           const entries = page === 1 ? [] : [...currentBucket.entries];
           const byKey = new Map(entries.map((entry) => [entry.key, entry]));
-          for (const entry of result.entries) byKey.set(entry.key, entry);
+          for (const entry of result.entries) {
+            entryScopes.set(toRaw(entry), { state: this.$state, generation });
+            byKey.set(entry.key, entry);
+          }
           currentBucket.entries = Array.from(byKey.values());
           currentBucket.keys = new Set(currentBucket.entries.map((entry) => entry.key));
           currentBucket.page = result.page;
@@ -212,6 +228,7 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
 
     loadNextPage(label: BlacklistLabel): Promise<boolean> {
       this.syncAccount();
+      if (!this.accountKey) return Promise.resolve(false);
       const bucket = this.buckets[label];
       const fullLoad = pendingMap(fullLoadRequests, this).get(
         `${this.generation}:${label}:${bucket.readEpoch}`,
@@ -223,6 +240,7 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
 
     async ensureFullyLoaded(label: BlacklistLabel): Promise<boolean> {
       this.syncAccount();
+      if (!this.accountKey) return false;
       const bucket = this.buckets[label];
       const accountKey = this.accountKey;
       const generation = this.generation;
@@ -284,13 +302,25 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
     },
 
     async remove(entry: BlacklistEntry): Promise<boolean> {
+      this.syncAccount();
+      const scope = entryScopes.get(toRaw(entry));
+      if (
+        !this.accountKey ||
+        scope?.state !== this.$state ||
+        scope.generation !== this.generation
+      ) {
+        return false;
+      }
+      const accountKey = this.accountKey;
+      const generation = this.generation;
       const bucketBeforeMutation = this.buckets[entry.label];
       const needsPageRealignment = bucketBeforeMutation.loaded && !bucketBeforeMutation.fullyLoaded;
       const removed = await this.mutate(entry.label, entry.key, async () => {
         await removeBlacklistEntry(entry);
         return null;
       });
-      if (!removed || !needsPageRealignment) return removed;
+      if (!removed || !isCurrentRequest(this, accountKey, generation)) return false;
+      if (!needsPageRealignment) return true;
 
       // Offset 分页在删除后会整体前移；从第一页重新对齐，避免继续翻页时漏掉一项。
       const bucket = this.buckets[entry.label];
@@ -298,7 +328,7 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
       bucket.fullyLoaded = false;
       const readEpoch = ++bucket.readEpoch;
       await this.fetchPage(entry.label, 1, bucket.pageSize, readEpoch);
-      return true;
+      return isCurrentRequest(this, accountKey, generation);
     },
 
     async mutate(
@@ -307,6 +337,7 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
       operation: () => Promise<BlacklistEntry | null>,
     ): Promise<boolean> {
       this.syncAccount();
+      if (!this.accountKey) return false;
       const normalizedKey = normalizeKey(label, key);
       const accountKey = this.accountKey;
       const generation = this.generation;
@@ -322,6 +353,7 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
           if (!isCurrentRequest(this, accountKey, generation)) return false;
           const bucket = this.buckets[label];
           if (entry) {
+            entryScopes.set(toRaw(entry), { state: this.$state, generation });
             const existed = bucket.keys.has(entry.key);
             bucket.entries = [entry, ...bucket.entries.filter((item) => item.key !== entry.key)];
             bucket.keys = new Set([...bucket.keys, entry.key]);
@@ -357,6 +389,7 @@ export const useContentBlacklistStore = defineStore('contentBlacklist', {
       this.generation++;
       this.accountKey = currentAccountKey();
       this.buckets = createBuckets();
+      sessionChecks.set(toRaw(this.buckets), captureUserSession(useUserStore()));
       fetchRequests.delete(this);
       fullLoadRequests.delete(this);
       mutationRequests.delete(this);

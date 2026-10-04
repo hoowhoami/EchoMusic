@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, shallowRef } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch, shallowRef } from 'vue';
 import { useRouter } from 'vue-router';
 import type { Song } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
@@ -113,10 +113,10 @@ const getSongIdText = (song: Song) => readString(song.id);
 const isPlaying = ref(playerStore.isPlaying);
 let playingStateTimer = 0;
 const updatePlayingState = () => {
-  if (playingStateTimer) return;
+  if (!measurementActive.value || playingStateTimer) return;
   playingStateTimer = window.setTimeout(() => {
     playingStateTimer = 0;
-    isPlaying.value = playerStore.isPlaying;
+    if (measurementActive.value) isPlaying.value = playerStore.isPlaying;
   }, 100);
 };
 
@@ -183,6 +183,7 @@ const overscan = 10;
 const scrollContainerRef = useScrollContainer();
 const {
   containerRef,
+  measurementActive,
   visibleStart,
   visibleEnd,
   totalSize: totalHeight,
@@ -355,17 +356,17 @@ const getStickyOffset = (scrollContainer: HTMLElement): number => {
 
 const scheduleStickyOffsetRefresh = () => {
   stickyOffsetDirty = true;
-  if (stickyOffsetFrame) return;
+  if (!measurementActive.value || stickyOffsetFrame) return;
   stickyOffsetFrame = requestAnimationFrame(() => {
     stickyOffsetFrame = 0;
     stickyOffsetDirty = true;
   });
 };
 
-const adjustActiveIntoView = (smooth = false) => {
+const adjustActiveIntoView = () => {
   const scrollContainer = getScrollContainer();
-  if (!scrollContainer || !activeIdText.value) return;
-  const row = scrollContainer.querySelector<HTMLElement>(
+  if (!measurementActive.value || props.loading || !scrollContainer || !activeIdText.value) return;
+  const row = containerRef.value?.querySelector<HTMLElement>(
     `[data-song-row][data-song-id="${activeIdText.value}"]`,
   );
   if (!row) return;
@@ -376,19 +377,25 @@ const adjustActiveIntoView = (smooth = false) => {
   const bottomLimit = containerRect.bottom - 12;
   if (rowRect.top < topLimit) {
     const target = scrollContainer.scrollTop - (topLimit - rowRect.top);
-    scrollContainer.scrollTo({ top: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto' });
+    scrollContainer.scrollTo({
+      top: Math.max(0, target),
+      behavior: 'instant',
+    });
     return;
   }
   if (rowRect.bottom > bottomLimit) {
     const target = scrollContainer.scrollTop + (rowRect.bottom - bottomLimit);
-    scrollContainer.scrollTo({ top: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto' });
+    scrollContainer.scrollTo({
+      top: Math.max(0, target),
+      behavior: 'instant',
+    });
   }
 };
 
 const isActiveVisible = (): boolean => {
   const scrollContainer = getScrollContainer();
   if (!scrollContainer || !activeIdText.value) return false;
-  const row = scrollContainer.querySelector<HTMLElement>(
+  const row = containerRef.value?.querySelector<HTMLElement>(
     `[data-song-row][data-song-id="${activeIdText.value}"]`,
   );
   if (!row) return false;
@@ -400,27 +407,65 @@ const isActiveVisible = (): boolean => {
   return rowRect.top >= topLimit && rowRect.bottom <= bottomLimit;
 };
 
+let locationRevision = 0;
+let locationFrame = 0;
+const cancelLocation = () => {
+  locationRevision++;
+  if (locationFrame) cancelAnimationFrame(locationFrame);
+  locationFrame = 0;
+};
+
+watch(
+  [
+    measurementActive,
+    () => props.loading,
+    activeIdText,
+    () => props.songs,
+    () => props.searchQuery,
+    filteredSongsRef,
+    scrollContainerRef,
+    containerRef,
+  ],
+  cancelLocation,
+  { flush: 'sync' },
+);
+
 const scrollToActive = async () => {
-  if (!activeIdText.value) return;
+  cancelLocation();
+  if (!measurementActive.value || props.loading || !activeIdText.value) return;
   if (isActiveVisible()) return;
-  const index = filteredSongIndexMap.value.get(activeIdText.value);
-  if (index === undefined) return;
-  scrollToIndex(index);
-  await nextTick();
+  const songId = activeIdText.value;
+  const index = filteredSongIndexMap.value.get(songId);
   const scrollContainer = getScrollContainer();
   const scrollerEl = containerRef.value;
-  if (scrollContainer && scrollerEl) {
-    const containerRect = scrollContainer.getBoundingClientRect();
-    const scrollerRect = scrollerEl.getBoundingClientRect();
-    const scrollerOffset = scrollerRect.top - containerRect.top;
-    const stickyOffset = getStickyOffset(scrollContainer);
-    const targetTop =
-      index * itemHeight + scrollContainer.scrollTop + scrollerOffset - stickyOffset - 8;
-    scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
-    requestAnimationFrame(() => adjustActiveIntoView(true));
-    return;
-  }
-  requestAnimationFrame(() => adjustActiveIntoView(true));
+  if (index === undefined || !scrollContainer || !scrollerEl) return;
+  const revision = locationRevision;
+  const isCurrent = () =>
+    revision === locationRevision &&
+    measurementActive.value &&
+    !props.loading &&
+    activeIdText.value === songId &&
+    filteredSongIndexMap.value.get(songId) === index &&
+    getScrollContainer() === scrollContainer &&
+    containerRef.value === scrollerEl;
+
+  scrollToIndex(index, 'instant');
+  await nextTick();
+  if (!isCurrent()) return;
+  const containerRect = scrollContainer.getBoundingClientRect();
+  const scrollerRect = scrollerEl.getBoundingClientRect();
+  const scrollerOffset = scrollerRect.top - containerRect.top;
+  const stickyOffset = getStickyOffset(scrollContainer);
+  const targetTop =
+    index * itemHeight + scrollContainer.scrollTop + scrollerOffset - stickyOffset - 8;
+  scrollContainer.scrollTo({
+    top: Math.max(0, targetTop),
+    behavior: 'instant',
+  });
+  locationFrame = requestAnimationFrame(() => {
+    locationFrame = 0;
+    if (isCurrent()) adjustActiveIntoView();
+  });
 };
 
 watch(
@@ -432,6 +477,7 @@ watch(
 isPlaying.value = playerStore.isPlaying;
 
 onBeforeUnmount(() => {
+  cancelLocation();
   if (playingStateTimer) clearTimeout(playingStateTimer);
   if (stickyOffsetFrame) cancelAnimationFrame(stickyOffsetFrame);
   clearStickyOffsetCache();
@@ -539,7 +585,7 @@ const estimateContextMenuHeight = () => {
 };
 
 const updateContextMenuPosition = () => {
-  if (!contextMenuPoint) return;
+  if (!measurementActive.value || !contextMenuOpen.value || !contextMenuPoint) return;
   const menu = contextMenuRef.value;
   const width = menu?.offsetWidth || 172;
   const height = menu?.offsetHeight || estimateContextMenuHeight();
@@ -554,6 +600,7 @@ const updateContextMenuPosition = () => {
 };
 
 const handleContextMenu = (event: MouseEvent) => {
+  if (!measurementActive.value) return;
   const target = (event.target as HTMLElement)?.closest<HTMLElement>('[data-song-row]');
   if (!target) {
     event.preventDefault();
@@ -610,18 +657,30 @@ const handleWindowViewportChange = () => {
   if (contextMenuOpen.value) closeContextMenu();
 };
 
-onMounted(() => {
+let releaseContextMenuResources: (() => void) | undefined;
+const bindContextMenuResources = () => {
+  const scrollContainer = scrollContainerRef.value;
+  const previousOverflow = scrollContainer?.style.overflow ?? '';
+  if (scrollContainer) scrollContainer.style.overflow = 'hidden';
   document.addEventListener('pointerdown', handleDocumentPointerDown, true);
   document.addEventListener('keydown', handleDocumentKeydown, true);
   window.addEventListener('resize', handleWindowViewportChange);
   window.addEventListener('scroll', handleWindowViewportChange, true);
-});
+  return () => {
+    document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+    document.removeEventListener('keydown', handleDocumentKeydown, true);
+    window.removeEventListener('resize', handleWindowViewportChange);
+    window.removeEventListener('scroll', handleWindowViewportChange, true);
+    if (scrollContainer?.style.overflow === 'hidden') {
+      scrollContainer.style.overflow = previousOverflow;
+    }
+  };
+};
 
 onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
-  document.removeEventListener('keydown', handleDocumentKeydown, true);
-  window.removeEventListener('resize', handleWindowViewportChange);
-  window.removeEventListener('scroll', handleWindowViewportChange, true);
+  closeContextMenu();
+  releaseContextMenuResources?.();
+  releaseContextMenuResources = undefined;
 });
 
 const ctxPlayNow = async () => {
@@ -765,21 +824,44 @@ const ctxPageContextAction = async (item: SongListContextMenuItem) => {
   }
 };
 
-// 右键菜单关闭后移除行高亮；保留 target，添加到歌单弹窗还需要它。
-watch(contextMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    contextMenuTargetId.value = null;
-  }
-  // 菜单打开时禁止滚动容器滚动
-  const scrollContainer = scrollContainerRef.value;
-  if (scrollContainer) {
-    if (isOpen) {
-      scrollContainer.style.overflow = 'hidden';
-    } else {
-      scrollContainer.style.overflow = '';
+// 仅菜单打开时订阅全局事件，并始终向原容器归还滚动样式。
+watch(
+  contextMenuOpen,
+  (isOpen) => {
+    releaseContextMenuResources?.();
+    releaseContextMenuResources = undefined;
+    if (!isOpen) {
+      // 添加到歌单弹窗仍需要 target，仅移除行高亮。
+      contextMenuTargetId.value = null;
+      return;
     }
-  }
-});
+    if (!measurementActive.value) {
+      closeContextMenu();
+      return;
+    }
+    releaseContextMenuResources = bindContextMenuResources();
+  },
+  { flush: 'sync' },
+);
+
+watch(scrollContainerRef, closeContextMenu, { flush: 'sync' });
+watch(
+  measurementActive,
+  (active) => {
+    if (playingStateTimer) clearTimeout(playingStateTimer);
+    playingStateTimer = 0;
+    if (stickyOffsetFrame) cancelAnimationFrame(stickyOffsetFrame);
+    stickyOffsetFrame = 0;
+    clearStickyOffsetCache();
+    if (active) {
+      isPlaying.value = playerStore.isPlaying;
+    } else {
+      closeContextMenu();
+      showPlaylistDialog.value = false;
+    }
+  },
+  { flush: 'sync' },
+);
 
 watch([() => props.stickySelector, scrollContainerRef], () => {
   clearStickyOffsetCache();
@@ -798,15 +880,12 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 </script>
 
 <template>
-  <div
-    ref="containerRef"
-    class="song-list-container scroll-smooth"
-    @contextmenu="handleContextMenu"
-  >
+  <div ref="containerRef" class="song-list-container" @contextmenu="handleContextMenu">
     <div
       v-if="!props.loading && filteredSongsRef.length > 0"
       :style="wrapperStyle"
       class="song-list-inner"
+      :class="{ 'motion-content-enter': props.active }"
     >
       <div :style="visibleBlockStyle" class="will-change-transform">
         <div

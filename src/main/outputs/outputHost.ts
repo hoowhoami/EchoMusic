@@ -4,6 +4,7 @@
  * 断线暂停并保留队列，不自动改回本机外放。
  */
 import { EventEmitter } from 'node:events';
+import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import type {
   OutputSessionSnapshot,
@@ -114,6 +115,7 @@ export interface GenaPort {
   stop(): Promise<void>;
   callbackUrl(instance: string, token?: string): string;
   armToken(token: string): void;
+  disarmToken(token: string): void;
   trackSubscription(sid: string): void;
   untrackSubscription(sid: string): void;
 }
@@ -368,6 +370,9 @@ export class OutputHost {
   private readonly now: () => number;
   private readonly log: (level: 'info' | 'warn' | 'error', message: string) => void;
   private readonly commands = new CommandGate();
+  private routeTail: Promise<void> = Promise.resolve();
+  private shuttingDown = false;
+  private shutdownFlight: Promise<void> | null = null;
   private readonly volumes = new Map<string, number>();
   private readonly dlnaTargets = new Map<string, DlnaTarget>();
   private readonly airplayTargets = new Map<string, AirplayTarget>();
@@ -399,7 +404,9 @@ export class OutputHost {
   private diagnostics = '网络播放未开启';
   private pollTimer: { cancel(): void } | null = null;
   private renewTimer: { cancel(): void } | null = null;
+  private readonly tapStatsTimers = new Set<{ cancel(): void }>();
   private subscription: { sid: string; url: string; host: string } | null = null;
+  private pendingCallbackToken: string | null = null;
   private airplayFormat = '';
   private airplayPaused = false;
   private sourceStale = false;
@@ -426,11 +433,11 @@ export class OutputHost {
   }
 
   get airplayActive(): boolean {
-    return this.mode === 'airplay' && this.link === 'up';
+    return !this.shuttingDown && this.mode === 'airplay' && this.link === 'up';
   }
 
   get wantsScan(): boolean {
-    return this.enabled || this.browsing || this.mode !== 'local';
+    return !this.shuttingDown && (this.enabled || this.browsing || this.mode !== 'local');
   }
 
   get diagnosticMessage(): string {
@@ -438,6 +445,7 @@ export class OutputHost {
   }
 
   setEnabled(enabled: boolean): void {
+    if (this.shuttingDown) return;
     this.enabled = enabled;
     if (!enabled && !this.browsing && this.mode === 'local') {
       this.diagnostics = '网络播放未开启';
@@ -446,16 +454,19 @@ export class OutputHost {
   }
 
   setBrowsing(open: boolean): void {
+    if (this.shuttingDown) return;
     this.browsing = open;
     this.publish();
   }
 
   setTrackMeta(meta: HostTrackMeta): void {
+    if (this.shuttingDown) return;
     this.trackMeta = { ...meta };
     if (this.backend) void this.backend.setTrackMeta(this.trackMeta);
   }
 
   noteDlnaDevices(entries: DlnaDeviceEntry[]): void {
+    if (this.shuttingDown) return;
     const seen = new Set<string>();
     for (const entry of entries) {
       if (!entry.usn || !hostOf(entry.location)) continue;
@@ -506,6 +517,7 @@ export class OutputHost {
   }
 
   removeDlnaDevice(usn: string): void {
+    if (this.shuttingDown) return;
     const removed = this.dlnaTargets.get(usn);
     if (!this.dlnaTargets.delete(usn)) return;
     if (removed) this.log('info', `DLNA 设备离线: ${formatDlnaTarget(removed)}`);
@@ -519,6 +531,7 @@ export class OutputHost {
     devices: AirplayDeviceInfo[],
     options: { pruneMissing?: boolean } = {},
   ): AirplayScanStats {
+    if (this.shuttingDown) return { found: devices.length, accepted: 0, filteredLocal: 0 };
     const pruneMissing = options.pruneMissing ?? true;
     const seen = new Set<string>();
     let filteredLocal = 0;
@@ -580,6 +593,7 @@ export class OutputHost {
     if (this.deps.local.getAudioDevices) {
       try {
         const devices = await this.deps.local.getAudioDevices();
+        if (this.shuttingDown) return this.targets();
         this.localDevices = devices.map((device) => ({
           targetId: `local:${device.name}`,
           protocol: 'local' as const,
@@ -591,6 +605,7 @@ export class OutputHost {
         this.log('warn', `读取本机设备失败: ${String(error)}`);
       }
     }
+    if (this.shuttingDown) return this.targets();
     if (this.wantsScan && this.deps.airplay?.available) {
       this.startAirplayScan();
     } else if (
@@ -615,6 +630,7 @@ export class OutputHost {
   }
 
   private startAirplayScan(): void {
+    if (this.shuttingDown) return;
     if (this.airplayConnecting) return;
     if (this.airplayScanFlight || !this.deps.airplay?.available) return;
     this.diagnostics = '正在搜索投放设备...';
@@ -626,7 +642,7 @@ export class OutputHost {
   }
 
   private isCurrentAirplayScan(token: number): boolean {
-    return this.airplayScanToken === token && !this.airplayConnecting;
+    return !this.shuttingDown && this.airplayScanToken === token && !this.airplayConnecting;
   }
 
   private async scanAirplayDevices(token: number): Promise<void> {
@@ -769,11 +785,36 @@ export class OutputHost {
     };
   }
 
-  async connect(targetId: string, pin?: string): Promise<{ ok: boolean; error?: string }> {
+  /** 连接和释放共享原生发送器，按请求顺序交接，失败不能阻塞后续切换。 */
+  private runRoute<T>(task: () => Promise<T>): Promise<T> {
+    const flight = this.routeTail.then(task);
+    this.routeTail = flight.then(
+      () => undefined,
+      () => undefined,
+    );
+    return flight;
+  }
+
+  private canceledConnection(): { ok: false; error: string } {
+    return { ok: false, error: '应用正在退出，连接已取消' };
+  }
+
+  connect(targetId: string, pin?: string): Promise<{ ok: boolean; error?: string }> {
+    if (this.shuttingDown) return Promise.resolve(this.canceledConnection());
+    return this.runRoute(() => this.connectBody(targetId, pin));
+  }
+
+  private async connectBody(
+    targetId: string,
+    pin?: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (this.shuttingDown) return this.canceledConnection();
     if (targetId.startsWith('local:')) {
       const name = targetId.slice('local:'.length);
-      await this.activateLocal('user');
+      await this.activateLocalBody('user');
+      if (this.shuttingDown) return this.canceledConnection();
       await this.deps.local.setAudioOutput?.(name, false);
+      if (this.shuttingDown) return this.canceledConnection();
       this.diagnostics = '已切回本机';
       this.publish();
       return { ok: true };
@@ -803,6 +844,7 @@ export class OutputHost {
       );
       return { ok: false, error: dlnaConnectErrorMessage(error, '读取设备描述失败') };
     }
+    if (this.shuttingDown) return this.canceledConnection();
     const av = findService(loaded.services, 'AVTransport');
     const rc = findService(loaded.services, 'RenderingControl');
     if (!av) return { ok: false, error: '设备没有 AVTransport，不能播放' };
@@ -821,6 +863,7 @@ export class OutputHost {
         this.log('warn', `GetProtocolInfo 失败，按未知能力继续: ${String(error)}`);
       }
     }
+    if (this.shuttingDown) return this.canceledConnection();
     let volume: number | null = null;
     if (rc) {
       try {
@@ -839,7 +882,9 @@ export class OutputHost {
         this.log('warn', `读取设备音量失败: ${String(error)}`);
       }
     }
+    if (this.shuttingDown) return this.canceledConnection();
     await this.stopRemote(false);
+    if (this.shuttingDown) return this.canceledConnection();
     const localState = this.deps.local.getState();
     const handoffUrl = String(localState?.path ?? '').trim();
     const handoffPosition =
@@ -853,6 +898,7 @@ export class OutputHost {
     } catch (error) {
       this.log('warn', `暂停本机失败: ${String(error)}`);
     }
+    if (this.shuttingDown) return this.canceledConnection();
     this.routeEpoch += 1;
     this.sessionToken += 1;
     this.mode = 'dlna';
@@ -916,6 +962,7 @@ export class OutputHost {
     this.diagnostics =
       volume == null ? '已连接，未能读取设备音量' : '已连接。本机音效不会作用在 DLNA 原曲上';
     await this.startObserve(loaded, av.eventSubUrl, allowed, token);
+    if (this.shuttingDown) return this.canceledConnection();
     if (handoffUrl) {
       const generation = this.commands.bump();
       const handoffTrackSeq =
@@ -923,25 +970,36 @@ export class OutputHost {
           ? Number(localState?.trackSeq)
           : null;
       try {
-        const handoff = await this.loadBody(
-          handoffUrl,
-          generation,
-          generation,
-          undefined,
-          handoffTrackSeq,
-        );
-        if (handoff && handoffPosition > 0) await this.seekBody(handoffPosition, generation);
-        if (handoff && handoffWasPlaying && !this.takenOver) await this.playBody(generation);
-        this.diagnostics = handoffWasPlaying
-          ? '已连接并开始投放当前歌曲'
-          : '已连接，当前歌曲已发送到设备';
+        const handoff = await this.commands.run(async () => {
+          const loaded = await this.loadBody(
+            handoffUrl,
+            generation,
+            generation,
+            undefined,
+            handoffTrackSeq,
+          );
+          if (!loaded || this.shuttingDown || generation !== this.commands.current) return null;
+          if (handoffPosition > 0) await this.seekBody(handoffPosition, generation);
+          if (this.shuttingDown || generation !== this.commands.current) return null;
+          if (handoffWasPlaying && !this.takenOver) await this.playBody(generation);
+          return loaded;
+        });
+        if (this.shuttingDown) return this.canceledConnection();
+        this.diagnostics = handoff
+          ? handoffWasPlaying
+            ? '已连接并开始投放当前歌曲'
+            : '已连接，当前歌曲已发送到设备'
+          : '已连接';
       } catch (error) {
+        if (this.shuttingDown) return this.canceledConnection();
+        if (generation !== this.commands.current) return { ok: true };
         const message = error instanceof Error ? error.message : String(error);
         this.log(
           'warn',
           `DLNA 接管当前音源失败: target=${this.targetName || this.targetId || '-'}, error=${message}`,
         );
         await this.stopRemote(false);
+        if (this.shuttingDown) return this.canceledConnection();
         this.mode = 'local';
         this.link = 'up';
         this.targetId = null;
@@ -951,7 +1009,7 @@ export class OutputHost {
         this.diagnostics = `投放失败：${message}，已继续本机播放`;
         try {
           if (handoffPosition > 0) await this.deps.local.seek(handoffPosition);
-          if (handoffWasPlaying) await this.deps.local.play();
+          if (!this.shuttingDown && handoffWasPlaying) await this.deps.local.play();
         } catch (restoreError) {
           this.log('warn', `恢复本机播放失败: ${String(restoreError)}`);
         }
@@ -983,6 +1041,7 @@ export class OutputHost {
         : (this.savedLocalVolume ?? DEFAULT_PLAYER_VOLUME),
     );
     await this.stopRemote(false);
+    if (this.shuttingDown) return this.canceledConnection();
     const startedAt = this.now();
     const protocol =
       target.supportsRaop && target.supportsAirplay2 === false ? 'AirPlay 1/RAOP' : 'AirPlay 2';
@@ -1025,6 +1084,10 @@ export class OutputHost {
       if (elapsedTimer) clearInterval(elapsedTimer);
       this.airplayConnecting = false;
     }
+    if (this.shuttingDown) {
+      if (result.ok) await airplay.disconnect().catch(() => undefined);
+      return this.canceledConnection();
+    }
     if (!result.ok) {
       const message = airplayConnectErrorMessage(result.error);
       const elapsedMs = Math.max(0, this.now() - startedAt);
@@ -1044,11 +1107,16 @@ export class OutputHost {
     }
     try {
       await this.deps.local.setAirplayTap(port, true);
-      await this.deps.local.setAirplayEpoch?.(1);
+      if (!this.shuttingDown) await this.deps.local.setAirplayEpoch?.(1);
     } catch (error) {
       await this.deps.local.setAirplayTap(0, false).catch(() => undefined);
       await airplay.disconnect().catch(() => undefined);
       return { ok: false, error: error instanceof Error ? error.message : '无法接上本机音频出口' };
+    }
+    if (this.shuttingDown) {
+      await this.deps.local.setAirplayTap(0, false).catch(() => undefined);
+      await airplay.disconnect().catch(() => undefined);
+      return this.canceledConnection();
     }
     this.log(
       'info',
@@ -1066,21 +1134,24 @@ export class OutputHost {
     this.deviceVolume = initialVolume;
     this.diagnostics =
       'AirPlay 发送已连接。传输是 16-bit，不会保留 24-bit 源；歌词延迟只按发送缓冲估算';
-    this.scheduleAirplayTapStats('连接后 2s', 2000);
     this.startAirplayWatch(this.sessionToken + 1);
     this.sessionToken += 1;
+    this.scheduleAirplayTapStats('连接后 2s', 2000);
     this.publish();
     return { ok: true };
   }
 
   private scheduleAirplayTapStats(label: string, delayMs: number): void {
+    const token = this.sessionToken;
     let timer: { cancel(): void } | null = null;
     timer = this.schedule(() => {
       timer?.cancel();
+      if (timer) this.tapStatsTimers.delete(timer);
       timer = null;
-      if (!this.airplayActive) return;
+      if (this.shuttingDown || token !== this.sessionToken || !this.airplayActive) return;
       this.logAirplayTapStats(label);
     }, delayMs);
+    this.tapStatsTimers.add(timer);
   }
 
   probeAirplayPlayback(label: string): void {
@@ -1104,13 +1175,21 @@ export class OutputHost {
     );
   }
 
-  async activateLocal(reason: 'user' | 'switch' = 'user'): Promise<void> {
+  activateLocal(reason: 'user' | 'switch' = 'user'): Promise<void> {
+    if (this.shuttingDown) return Promise.resolve();
+    return this.runRoute(async () => {
+      if (!this.shuttingDown) await this.activateLocalBody(reason);
+    });
+  }
+
+  private async activateLocalBody(reason: 'user' | 'switch'): Promise<void> {
     const resume = reason === 'user' && this.mode !== 'local';
     const url = this.originalUrl;
     const position = this.position;
     const wasPlaying = this.playing;
     const volume = this.savedLocalVolume;
     await this.stopRemote(true);
+    if (this.shuttingDown) return;
     this.mode = 'local';
     this.link = 'up';
     this.targetId = null;
@@ -1123,10 +1202,11 @@ export class OutputHost {
         this.log('warn', `恢复本机音量失败: ${String(error)}`);
       }
     }
-    if (resume && url) {
+    if (!this.shuttingDown && resume && url) {
       const loaded = await this.deps.local.loadFile(url);
+      if (this.shuttingDown) return;
       if (loaded && position > 0) await this.deps.local.seek(position);
-      if (wasPlaying) await this.deps.local.play();
+      if (!this.shuttingDown && wasPlaying) await this.deps.local.play();
     }
     this.diagnostics = '本机播放';
     this.publish();
@@ -1143,7 +1223,7 @@ export class OutputHost {
   }
 
   load(url: string, requestId?: number, trackId?: number | null) {
-    if (!this.ownsTransport) return Promise.resolve(null);
+    if (this.shuttingDown || !this.ownsTransport) return Promise.resolve(null);
     if (requestId != null && requestId !== this.commands.current) return Promise.resolve(null);
     return this.commands.run((generation) => this.loadBody(url, generation, requestId, trackId));
   }
@@ -1152,7 +1232,7 @@ export class OutputHost {
     url: string,
     trackId?: number | null,
   ): Promise<[number, number, number] | null> {
-    if (!this.ownsTransport) return null;
+    if (this.shuttingDown || !this.ownsTransport) return null;
     this.commands.bump();
     return this.commands.run(async (generation) => {
       const position = this.position;
@@ -1166,30 +1246,35 @@ export class OutputHost {
   }
 
   play() {
+    if (this.shuttingDown) return Promise.resolve();
     if (this.airplayActive) return this.resumeAirplay();
     if (!this.ownsTransport) return Promise.resolve();
     return this.commands.run((generation) => this.playBody(generation));
   }
 
   pause() {
+    if (this.shuttingDown) return Promise.resolve();
     if (this.airplayActive) return this.pauseAirplay();
     if (!this.ownsTransport) return Promise.resolve();
     return this.commands.run((generation) => this.pauseBody(generation));
   }
 
   stop() {
+    if (this.shuttingDown) return Promise.resolve();
     if (this.airplayActive) return this.stopAirplay();
     if (!this.ownsTransport) return Promise.resolve();
     return this.commands.run((generation) => this.stopBody(generation));
   }
 
   seek(time: number) {
+    if (this.shuttingDown) return Promise.resolve();
     if (this.airplayActive) return this.seekAirplay(time);
     if (!this.ownsTransport) return Promise.resolve();
     return this.commands.run((generation) => this.seekBody(time, generation));
   }
 
   setVolume(volume: number) {
+    if (this.shuttingDown) return Promise.resolve();
     if (this.airplayActive) return this.setAirplayVolume(volume);
     if (!this.ownsTransport) return Promise.resolve();
     return this.commands.run((generation) => this.volumeBody(volume, generation));
@@ -1206,50 +1291,62 @@ export class OutputHost {
   }
 
   async prepareAirplayTrack(): Promise<void> {
-    if (!this.airplayActive) return;
+    if (this.shuttingDown || !this.airplayActive) return;
+    const token = this.sessionToken;
     const epoch = await this.requireAirplay().flushTrack();
+    if (this.shuttingDown || token !== this.sessionToken) return;
     await this.deps.local.setAirplayEpoch?.(epoch);
   }
 
   async resumeAirplay(): Promise<void> {
+    const token = this.sessionToken;
     if (!this.airplayPaused) return;
     try {
       await this.requireAirplay().resume();
+      if (this.shuttingDown || token !== this.sessionToken) return;
       this.airplayPaused = false;
     } catch (error) {
-      await this.loseAirplay(`resume-failed: ${String(error)}`);
+      await this.loseAirplay(`resume-failed: ${String(error)}`, token);
       throw error;
     }
   }
 
   async pauseAirplay(): Promise<void> {
+    const token = this.sessionToken;
     try {
       await this.requireAirplay().pause();
+      if (this.shuttingDown || token !== this.sessionToken) return;
       this.airplayPaused = true;
     } catch (error) {
       this.log('warn', `AirPlay 连接已断开，暂停命令已忽略: ${String(error)}`);
-      await this.loseAirplay(`pause-failed: ${String(error)}`);
+      await this.loseAirplay(`pause-failed: ${String(error)}`, token);
     }
   }
 
   async stopAirplay(): Promise<void> {
+    const token = this.sessionToken;
     try {
       await this.requireAirplay().stop();
+      if (this.shuttingDown || token !== this.sessionToken) return;
       this.airplayPaused = true;
     } catch (error) {
       this.log('warn', `AirPlay 连接已断开，停止命令已忽略: ${String(error)}`);
-      await this.loseAirplay(`stop-failed: ${String(error)}`);
+      await this.loseAirplay(`stop-failed: ${String(error)}`, token);
     }
   }
 
   async seekAirplay(seconds: number): Promise<void> {
+    const token = this.sessionToken;
     const epoch = await this.requireAirplay().seek(seconds);
+    if (this.shuttingDown || token !== this.sessionToken) return;
     await this.deps.local.setAirplayEpoch?.(epoch);
   }
 
   async setAirplayVolume(volume: number): Promise<void> {
+    const token = this.sessionToken;
     const clamped = clampVolume(volume);
     await this.requireAirplay().setVolume(clamped);
+    if (this.shuttingDown || token !== this.sessionToken) return;
     if (this.targetId) this.volumes.set(this.targetId, clamped);
     this.deviceVolume = clamped;
   }
@@ -1261,9 +1358,18 @@ export class OutputHost {
   /** GENA 通知。旧会话的回调在替换 backend 后自然落到新门上会被拒绝。 */
   ingestLastChange(xml: string): void {
     if (!this.backend || this.mode !== 'dlna' || this.link !== 'up' || !xml) return;
-    this.backend.handleLastChange(xml);
-    void this.backend.getState().then((state) => {
-      if (this.mode !== 'dlna' || this.link !== 'up') return;
+    const backend = this.backend;
+    const token = this.sessionToken;
+    backend.handleLastChange(xml);
+    void backend.getState().then((state) => {
+      if (
+        this.shuttingDown ||
+        token !== this.sessionToken ||
+        backend !== this.backend ||
+        this.mode !== 'dlna' ||
+        this.link !== 'up'
+      )
+        return;
       this.position = state.positionSec;
       this.duration = state.durationSec ?? this.duration;
       this.trackSeq = state.trackGeneration;
@@ -1279,12 +1385,22 @@ export class OutputHost {
   }
 
   /** 退出时只停止远端，不恢复本机外放。 */
-  async shutdown(): Promise<void> {
-    await this.stopRemote(true);
-    this.mode = 'local';
-    this.link = 'up';
-    this.targetId = null;
-    this.targetName = '';
+  shutdown(): Promise<void> {
+    if (this.shutdownFlight) return this.shutdownFlight;
+    this.shuttingDown = true;
+    this.airplayScanToken += 1;
+    this.sessionToken += 1;
+    this.commands.bump();
+    this.stopTimers();
+    this.disarmPendingCallback();
+    this.shutdownFlight = this.runRoute(async () => {
+      await this.stopRemote(true);
+      this.mode = 'local';
+      this.link = 'up';
+      this.targetId = null;
+      this.targetName = '';
+    });
+    return this.shutdownFlight;
   }
 
   async clearRecords(): Promise<void> {
@@ -1297,6 +1413,7 @@ export class OutputHost {
   /** 测试和运行时共用的一次状态轮询。 */
   async pollOnce(): Promise<void> {
     if (
+      this.shuttingDown ||
       this.mode !== 'dlna' ||
       this.link !== 'up' ||
       !this.backend ||
@@ -1306,30 +1423,34 @@ export class OutputHost {
       return;
     }
     const token = this.sessionToken;
-    const av = findService(this.device.services, 'AVTransport');
+    const backend = this.backend;
+    const device = this.device;
+    const av = findService(device.services, 'AVTransport');
     if (!av) return;
     try {
       const transport = await this.deps.native.action(
-        this.device.descriptionUrl,
+        device.descriptionUrl,
         av.serviceId,
         'GetTransportInfo',
         { InstanceID: '0' },
       );
+      if (this.shuttingDown || token !== this.sessionToken) return;
       const position = await this.deps.native.action(
-        this.device.descriptionUrl,
+        device.descriptionUrl,
         av.serviceId,
         'GetPositionInfo',
         { InstanceID: '0' },
       );
       if (token !== this.sessionToken || this.link !== 'up') return;
       this.offlineStreak = 0;
-      this.backend.observeTransport({
+      backend.observeTransport({
         transportState: transport.CurrentTransportState,
         positionSec: parseUpnpTime(position.RelTime),
         durationSec: parseUpnpTime(position.TrackDuration),
         trackUri: position.TrackURI ?? null,
       });
-      const state = await this.backend.getState();
+      const state = await backend.getState();
+      if (this.shuttingDown || token !== this.sessionToken || backend !== this.backend) return;
       this.position = state.positionSec;
       this.duration = state.durationSec ?? this.duration;
       this.trackSeq = state.trackGeneration;
@@ -1362,10 +1483,12 @@ export class OutputHost {
     trackId?: number | null,
     playerTrackSeqOverride?: number | null,
   ): Promise<{ seq: number; duration: number } | null> {
+    if (this.shuttingDown || generation !== this.commands.current) return null;
     if (this.link !== 'up' || !this.backend) {
       throw new Error('设备已断开，已暂停。请重连或切回本机');
     }
     if (requestId != null && requestId !== generation) return null;
+    const backend = this.backend;
     const plan = decideMediaDelivery({
       url,
       headers: this.trackMeta.headers,
@@ -1373,17 +1496,26 @@ export class OutputHost {
       sinkProtocolInfo: this.sinkInfo,
     });
     if (!plan.ok) throw new Error(plan.reason);
-    let deliveryUrl = plan.mode === 'direct' ? plan.url : await this.relay(plan.source, plan.mime);
-    if (generation !== this.commands.current) return null;
+    const deliveryUrl =
+      plan.mode === 'direct' ? plan.url : await this.relay(plan.source, plan.mime, generation);
+    if (
+      !deliveryUrl ||
+      this.shuttingDown ||
+      generation !== this.commands.current ||
+      backend !== this.backend
+    )
+      return null;
     this.takenOver = false;
-    await this.backend.setTrackMeta(this.trackMeta);
-    this.backend.setSourceHint({ mime: plan.mime, relayed: plan.mode === 'relay' });
+    await backend.setTrackMeta(this.trackMeta);
+    if (this.shuttingDown || generation !== this.commands.current || backend !== this.backend)
+      return null;
+    backend.setSourceHint({ mime: plan.mime, relayed: plan.mode === 'relay' });
     const loaded =
       trackId != null && trackId > 0
-        ? await this.backend.loadMkv(deliveryUrl, trackId)
-        : await this.backend.load(deliveryUrl);
+        ? await backend.loadMkv(deliveryUrl, trackId)
+        : await backend.load(deliveryUrl);
     if (!loaded || generation !== this.commands.current) {
-      await this.backend.stop().catch(() => undefined);
+      await backend.stop().catch(() => undefined);
       return null;
     }
     this.originalUrl = url;
@@ -1399,13 +1531,18 @@ export class OutputHost {
     return loaded;
   }
 
-  private async relay(source: RelaySource, mime: string | null): Promise<string> {
+  private async relay(
+    source: RelaySource,
+    mime: string | null,
+    generation: number,
+  ): Promise<string | null> {
     const media = this.deps.media;
     if (!media) throw new Error('媒体中转不可用');
     if (!this.deps.allowLoopbackRelay && media.host === '127.0.0.1') {
       throw new Error('没有可用的局域网地址，无法把音源中转给设备');
     }
     if (!media.port) await media.start(0);
+    if (this.shuttingDown || generation !== this.commands.current) return null;
     if (this.activeToken) media.revokeToken(this.activeToken);
     const registered = media.registerResource(
       {
@@ -1425,6 +1562,7 @@ export class OutputHost {
   }
 
   private async playBody(generation: number): Promise<void> {
+    if (this.shuttingDown || generation !== this.commands.current) return;
     if (this.link !== 'up' || !this.backend)
       throw new Error('设备已断开，已暂停。请重连或切回本机');
     if (this.takenOver) throw new Error('播放已被其他控制端接管');
@@ -1452,6 +1590,7 @@ export class OutputHost {
   }
 
   private async pauseBody(generation: number): Promise<void> {
+    if (this.shuttingDown || generation !== this.commands.current) return;
     if (!this.backend || this.link !== 'up') return;
     await this.backend.pause();
     if (generation !== this.commands.current) return;
@@ -1460,6 +1599,7 @@ export class OutputHost {
   }
 
   private async stopBody(generation: number): Promise<void> {
+    if (this.shuttingDown || generation !== this.commands.current) return;
     if (!this.backend) return;
     await this.backend.stop();
     if (generation !== this.commands.current) return;
@@ -1469,6 +1609,7 @@ export class OutputHost {
   }
 
   private async seekBody(time: number, generation: number): Promise<void> {
+    if (this.shuttingDown || generation !== this.commands.current) return;
     if (this.link !== 'up' || !this.backend)
       throw new Error('设备已断开，已暂停。请重连或切回本机');
     try {
@@ -1491,6 +1632,7 @@ export class OutputHost {
   }
 
   private async volumeBody(volume: number, generation: number): Promise<void> {
+    if (this.shuttingDown || generation !== this.commands.current) return;
     if (!this.backend || this.link !== 'up') return;
     const clamped = clampVolume(volume);
     if (
@@ -1527,18 +1669,27 @@ export class OutputHost {
       try {
         if (!this.deps.gena) return;
         await this.deps.gena.start(0);
-        const callbackToken = `echo${this.routeEpoch.toString(16)}`;
+        if (this.shuttingDown || token !== this.sessionToken) return;
+        const callbackToken = randomBytes(16).toString('hex');
         this.deps.gena.armToken(callbackToken);
-        const callback = this.deps.gena.callbackUrl('avt', callbackToken);
-        const subscribed = await this.deps.subscribe(eventUrl, callback, allowedHost);
+        this.pendingCallbackToken = callbackToken;
+        let subscribed: Awaited<ReturnType<typeof subscribeEvent>>;
+        try {
+          const callback = this.deps.gena.callbackUrl('avt', callbackToken);
+          subscribed = await this.deps.subscribe(eventUrl, callback, allowedHost);
+          if (token === this.sessionToken) this.deps.gena.trackSubscription(subscribed.sid);
+        } finally {
+          this.deps.gena.disarmToken(callbackToken);
+          if (this.pendingCallbackToken === callbackToken) this.pendingCallbackToken = null;
+        }
         if (token !== this.sessionToken) {
           await this.deps.unsubscribe?.(eventUrl, subscribed.sid, allowedHost);
           return;
         }
-        this.deps.gena.trackSubscription(subscribed.sid);
         this.subscription = { sid: subscribed.sid, url: eventUrl, host: allowedHost };
         const renew = this.deps.renew ?? renewEvent;
         this.renewTimer = this.schedule(() => {
+          if (this.shuttingDown || token !== this.sessionToken) return;
           void renew(eventUrl, subscribed.sid, allowedHost).catch((error) => {
             this.log('warn', `GENA 续订失败: ${String(error)}`);
           });
@@ -1547,6 +1698,7 @@ export class OutputHost {
         this.log('warn', `GENA 不可用，改为轮询: ${String(error)}`);
       }
     }
+    if (this.shuttingDown || token !== this.sessionToken) return;
     this.pollTimer = this.schedule(() => {
       void this.pollOnce();
     }, 2000);
@@ -1562,11 +1714,19 @@ export class OutputHost {
     }, 2000);
   }
 
-  private async loseLink(reason: string): Promise<void> {
+  private loseLink(reason: string): Promise<void> {
+    const token = this.sessionToken;
+    return this.runRoute(async () => {
+      if (!this.shuttingDown && token === this.sessionToken) await this.loseLinkBody(reason);
+    });
+  }
+
+  private async loseLinkBody(reason: string): Promise<void> {
     if (this.mode !== 'dlna' || this.link === 'lost') return;
     this.link = 'lost';
     this.playing = false;
     this.sessionToken += 1;
+    this.commands.bump();
     this.stopTimers();
     await this.dropSubscription();
     this.deps.media?.revokeSession(this.mediaSessionId);
@@ -1580,17 +1740,30 @@ export class OutputHost {
     this.publish();
   }
 
-  private async loseAirplay(reason: string): Promise<void> {
+  private loseAirplay(reason: string, token = this.sessionToken): Promise<void> {
+    return this.runRoute(async () => {
+      if (!this.shuttingDown && token === this.sessionToken) await this.loseAirplayBody(reason);
+    });
+  }
+
+  private async loseAirplayBody(reason: string): Promise<void> {
     if (this.mode !== 'airplay' || this.link === 'lost') return;
     this.link = 'lost';
     this.playing = false;
     this.airplayPaused = true;
+    this.sessionToken += 1;
+    this.commands.bump();
+    this.stopTimers();
     this.diagnostics = 'AirPlay 已断开，已暂停。不会自动改从本机扬声器播出';
-    try {
-      await this.deps.local.setAirplayTap?.(0, false);
-      await this.deps.local.pause();
-    } catch (error) {
-      this.log('warn', `断开时暂停本机失败: ${String(error)}`);
+    for (const stop of [
+      () => this.deps.local.setAirplayTap?.(0, false),
+      () => this.deps.local.pause(),
+    ]) {
+      try {
+        await stop();
+      } catch (error) {
+        this.log('warn', `断开时暂停本机失败: ${String(error)}`);
+      }
     }
     try {
       await this.deps.airplay?.disconnect();
@@ -1606,6 +1779,7 @@ export class OutputHost {
   }
 
   private async stopRemote(clearUrl: boolean): Promise<void> {
+    this.commands.bump();
     this.sessionToken += 1;
     this.stopTimers();
     await this.dropSubscription();
@@ -1617,14 +1791,19 @@ export class OutputHost {
       }
     }
     if (this.mode === 'airplay') {
-      try {
-        await this.deps.local.setAirplayTap?.(0, false);
-        await this.deps.local.pause();
-        await this.deps.airplay?.disconnect();
-        this.airplayPaused = false;
-      } catch (error) {
-        this.log('warn', `停止 AirPlay 失败: ${String(error)}`);
+      // 每个资源独立释放；音频出口失败也必须断开发送器。
+      for (const stop of [
+        () => this.deps.local.setAirplayTap?.(0, false),
+        () => this.deps.local.pause(),
+        () => this.deps.airplay?.disconnect(),
+      ]) {
+        try {
+          await stop();
+        } catch (error) {
+          this.log('warn', `停止 AirPlay 失败: ${String(error)}`);
+        }
       }
+      this.airplayPaused = false;
     }
     this.deps.media?.revokeSession(this.mediaSessionId);
     this.backend = null;
@@ -1635,14 +1814,20 @@ export class OutputHost {
     this.playerTrackSeq = 0;
     this.lastDlnaPollLogAt = 0;
     this.lastDlnaPollLogKey = '';
+    this.mode = 'local';
+    this.link = 'up';
+    this.targetId = null;
+    this.targetName = '';
     if (clearUrl) this.originalUrl = '';
   }
 
   private async dropSubscription(): Promise<void> {
+    this.disarmPendingCallback();
     const current = this.subscription;
     this.subscription = null;
-    if (!current || !this.deps.unsubscribe) return;
+    if (!current) return;
     this.deps.gena?.untrackSubscription(current.sid);
+    if (!this.deps.unsubscribe) return;
     try {
       await this.deps.unsubscribe(current.url, current.sid, current.host);
     } catch (error) {
@@ -1650,7 +1835,15 @@ export class OutputHost {
     }
   }
 
+  private disarmPendingCallback(): void {
+    if (!this.pendingCallbackToken) return;
+    this.deps.gena?.disarmToken(this.pendingCallbackToken);
+    this.pendingCallbackToken = null;
+  }
+
   private stopTimers(): void {
+    for (const timer of this.tapStatsTimers) timer.cancel();
+    this.tapStatsTimers.clear();
     this.pollTimer?.cancel();
     this.renewTimer?.cancel();
     this.pollTimer = null;
@@ -1708,14 +1901,17 @@ export class OutputHost {
   }
 
   private emitPlayer(event: string, ...args: unknown[]): void {
+    if (this.shuttingDown) return;
     this.deps.emitPlayer?.(event, ...args);
   }
 
   private emitOutput(event: { type: string; payload?: unknown }): void {
+    if (this.shuttingDown) return;
     this.deps.emitOutput?.(event);
   }
 
   private publish(): void {
+    if (this.shuttingDown) return;
     this.emitOutput({
       type: 'session-changed',
       payload: {

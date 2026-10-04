@@ -1527,6 +1527,7 @@ watch(total, (value) => {
                   <div class="comment-list-wrap">
                     <div v-if="singerComments.length" class="comment-section-title">歌手说</div>
                     <CommentList
+                      :resource-id="id"
                       v-if="singerComments.length"
                       :comments="singerComments"
                       :loading="false"
@@ -1538,6 +1539,7 @@ watch(total, (value) => {
                     />
                     <div v-if="singerComments.length" class="comment-singer-divider"></div>
                     <CommentList
+                      :resource-id="id"
                       :comments="comments"
                       :loading="isLoadingComments"
                       :resourceType="type"
@@ -1575,6 +1577,7 @@ watch(total, (value) => {
                       </Button>
                     </div>
                     <CommentList
+                      :resource-id="id"
                       :comments="classifyComments"
                       :loading="isLoadingClassify"
                       :resourceType="type"
@@ -1613,6 +1616,7 @@ watch(total, (value) => {
                       </Button>
                     </div>
                     <CommentList
+                      :resource-id="id"
                       :comments="hotwordComments"
                       :loading="isLoadingHotword"
                       :resourceType="type"
@@ -1644,6 +1648,7 @@ watch(total, (value) => {
         <template v-else>
           <div v-if="hotComments.length" class="comment-section-title">热门评论</div>
           <CommentList
+            :resource-id="id"
             :comments="hotComments"
             :loading="isLoadingComments"
             :resourceType="type"
@@ -1653,6 +1658,7 @@ watch(total, (value) => {
             @deleted="fetchComments(true)"
           />
           <CommentList
+            :resource-id="id"
             :comments="comments"
             :loading="isLoadingComments"
             :resourceType="type"

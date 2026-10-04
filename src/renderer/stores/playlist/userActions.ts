@@ -3,8 +3,12 @@ import type { PlaylistMeta } from '@/models/playlist';
 import logger from '@/utils/logger';
 import { mapPlaylistMeta } from '@/utils/mappers';
 import { getPlaylistIdentityValues, includesPlaylistIdentity } from './helpers';
+import { captureCollectionScope } from './accountScope';
 
-const userPlaylistsRequests = new WeakMap<object, { generation: number; request: Promise<void> }>();
+const userPlaylistsRequests = new WeakMap<
+  object,
+  { isCurrent: () => boolean; request: Promise<void> }
+>();
 
 type UserActionsStoreShape = {
   fetchLikedPlaylistSongs: () => Promise<boolean>;
@@ -54,9 +58,9 @@ export const userActions = {
     return matched.listid || matched.id || id;
   },
   async fetchUserPlaylists(this: UserActionsStoreShape) {
-    const requestGeneration = this.userCollectionsGeneration;
+    const isCurrent = captureCollectionScope(this);
     const activeRequest = userPlaylistsRequests.get(this);
-    if (activeRequest?.generation === requestGeneration) {
+    if (activeRequest?.isCurrent()) {
       return activeRequest.request.catch(() => undefined);
     }
 
@@ -66,7 +70,7 @@ export const userActions = {
       let allPlaylists: PlaylistMeta[] = [];
       while (true) {
         const res = await getUserPlaylists(page, PAGE_SIZE);
-        if (requestGeneration !== this.userCollectionsGeneration) return;
+        if (!isCurrent()) return;
         if (!res || typeof res !== 'object' || !('status' in res) || res.status !== 1) break;
         const data = 'data' in res ? (res as { data?: { info?: unknown } }).data : undefined;
         const info = 'info' in res ? (res as { info?: unknown }).info : undefined;
@@ -76,11 +80,11 @@ export const userActions = {
         if (raw.length < PAGE_SIZE) break;
         page++;
       }
-      if (requestGeneration !== this.userCollectionsGeneration) return;
+      if (!isCurrent()) return;
       this.userPlaylists = allPlaylists;
       await this.fetchLikedPlaylistSongs();
     })();
-    userPlaylistsRequests.set(this, { generation: requestGeneration, request });
+    userPlaylistsRequests.set(this, { isCurrent, request });
 
     try {
       await request;
@@ -99,6 +103,7 @@ export const userActions = {
     currentUserId?: number,
   ) {
     if (!currentUserId) return false;
+    const isCurrent = captureCollectionScope(this);
     try {
       const res = await addPlaylist(name, {
         is_pri: isPrivate ? 1 : 0,
@@ -106,9 +111,9 @@ export const userActions = {
         list_create_userid: currentUserId,
         source: 1,
       });
-      if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+      if (isCurrent() && res && typeof res === 'object' && 'status' in res && res.status === 1) {
         await this.fetchUserPlaylists();
-        return true;
+        return isCurrent();
       }
     } catch (e) {
       logger.error('PlaylistStore', 'Create playlist error:', e);
@@ -122,6 +127,7 @@ export const userActions = {
     currentUserId?: number,
   ): Promise<number | null> {
     if (!currentUserId) return null;
+    const isCurrent = captureCollectionScope(this);
     try {
       const existingPlaylistIds = new Set(
         this.userPlaylists.flatMap((playlist) => getPlaylistIdentityValues(playlist)),
@@ -132,7 +138,13 @@ export const userActions = {
         list_create_userid: currentUserId,
         source: 1,
       });
-      if (!res || typeof res !== 'object' || !('status' in res) || res.status !== 1) {
+      if (
+        !isCurrent() ||
+        !res ||
+        typeof res !== 'object' ||
+        !('status' in res) ||
+        res.status !== 1
+      ) {
         return null;
       }
       const data = (res as { data?: unknown }).data;
@@ -141,6 +153,7 @@ export const userActions = {
           ? Number((data as { listid?: unknown }).listid)
           : NaN;
       await this.fetchUserPlaylists();
+      if (!isCurrent()) return null;
       if (Number.isFinite(directId) && directId > 0) {
         return directId;
       }
@@ -176,13 +189,14 @@ export const userActions = {
     listId: string | number | null | undefined,
   ) {
     if (listId === undefined || listId === null || String(listId) === '') return false;
+    const isCurrent = captureCollectionScope(this);
     try {
       const targetId = this.resolveNumericListId(listId);
       if (targetId === null) return false;
       const res = await deletePlaylist(targetId);
-      if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+      if (isCurrent() && res && typeof res === 'object' && 'status' in res && res.status === 1) {
         await this.fetchUserPlaylists();
-        return true;
+        return isCurrent();
       }
     } catch (e) {
       logger.error('PlaylistStore', 'Delete owned playlist error:', e);
@@ -191,6 +205,7 @@ export const userActions = {
   },
   async favoritePlaylist(this: UserActionsStoreShape, meta: PlaylistMeta, currentUserId?: number) {
     if (currentUserId && meta.listCreateUserid === currentUserId) return false;
+    const isCurrent = captureCollectionScope(this);
     try {
       const res = await addPlaylist(meta.name, {
         type: 1,
@@ -199,9 +214,9 @@ export const userActions = {
         list_create_gid: meta.listCreateGid ?? meta.globalCollectionId,
         source: meta.source ?? 1,
       });
-      if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+      if (isCurrent() && res && typeof res === 'object' && 'status' in res && res.status === 1) {
         await this.fetchUserPlaylists();
-        return true;
+        return isCurrent();
       }
     } catch (e) {
       logger.error('PlaylistStore', 'Favorite playlist error:', e);
@@ -212,6 +227,7 @@ export const userActions = {
     this: UserActionsStoreShape,
     meta: { id: string | number; name: string; singerId?: number },
   ) {
+    const isCurrent = captureCollectionScope(this);
     try {
       const res = await addPlaylist(meta.name, {
         type: 1,
@@ -219,9 +235,9 @@ export const userActions = {
         list_create_listid: Number(meta.id),
         source: 2,
       });
-      if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+      if (isCurrent() && res && typeof res === 'object' && 'status' in res && res.status === 1) {
         await this.fetchUserPlaylists();
-        return true;
+        return isCurrent();
       }
     } catch (e) {
       logger.error('PlaylistStore', 'Favorite album error:', e);
@@ -229,6 +245,7 @@ export const userActions = {
     return false;
   },
   async unfavoriteAlbum(this: UserActionsStoreShape, albumId: string | number) {
+    const isCurrent = captureCollectionScope(this);
     try {
       const targetId = String(albumId);
       const target = this.userPlaylists.find(
@@ -237,9 +254,9 @@ export const userActions = {
       const listId = target?.listid ?? target?.id;
       if (!listId) return false;
       const res = await deletePlaylist(listId);
-      if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+      if (isCurrent() && res && typeof res === 'object' && 'status' in res && res.status === 1) {
         await this.fetchUserPlaylists();
-        return true;
+        return isCurrent();
       }
     } catch (e) {
       logger.error('PlaylistStore', 'Unfavorite album error:', e);
@@ -251,6 +268,7 @@ export const userActions = {
     meta: PlaylistMeta,
     currentUserId?: number,
   ) {
+    const isCurrent = captureCollectionScope(this);
     try {
       const target = this.userPlaylists.find((playlist) => {
         if (playlist.source === 2) return false;
@@ -275,9 +293,9 @@ export const userActions = {
       const listId = target?.listid ?? target?.id;
       if (!listId) return false;
       const res = await deletePlaylist(listId);
-      if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+      if (isCurrent() && res && typeof res === 'object' && 'status' in res && res.status === 1) {
         await this.fetchUserPlaylists();
-        return true;
+        return isCurrent();
       }
     } catch (e) {
       logger.error('PlaylistStore', 'Unfavorite playlist error:', e);

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, useSlots, watch } from 'vue';
+import { computed, ref, useSlots, watch, onActivated, onDeactivated, onBeforeUnmount } from 'vue';
 import TooltipScope from './TooltipScope.vue';
+import TooltipLifecycle from './TooltipLifecycle.vue';
 import {
   Primitive,
   useForwardExpose,
@@ -39,9 +40,11 @@ const slots = useSlots();
 const inactive = computed(() => props.disabled || (!props.content?.trim() && !slots.default));
 const { forwardRef, currentElement } = useForwardExpose();
 const open = ref(false);
+const suspended = ref(false);
+let disposed = false;
 const updateOpen = (value: boolean) => {
   const trigger = currentElement.value as HTMLElement | undefined;
-  if (value && inactive.value) value = false;
+  if (value && (inactive.value || suspended.value || disposed)) value = false;
   // The open control panel already describes its trigger (speed, quality, select, etc.).
   if (value && trigger?.closest('.echo-popover-trigger[data-state="open"]')) value = false;
   if (value && props.overflowOnly) {
@@ -59,6 +62,17 @@ watch(
     open.value = false;
   },
 );
+onDeactivated(() => {
+  suspended.value = true;
+  open.value = false;
+});
+onActivated(() => {
+  if (!disposed) suspended.value = false;
+});
+onBeforeUnmount(() => {
+  disposed = true;
+  open.value = false;
+});
 </script>
 
 <template>
@@ -68,10 +82,12 @@ watch(
   <TooltipScope v-else>
     <TooltipRoot
       :open="open"
+      :disabled="suspended || undefined"
       :delay-duration="props.delayDuration"
       :ignore-non-keyboard-focus="props.ignoreNonKeyboardFocus"
       @update:open="updateOpen"
     >
+      <TooltipLifecycle />
       <TooltipTrigger :ref="forwardRef" as-child v-bind="$attrs">
         <slot name="trigger" />
       </TooltipTrigger>
@@ -118,5 +134,15 @@ watch(
   display: block;
   fill: var(--floating-surface-bg);
   stroke: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :global(.app-tooltip-content[data-state='delayed-open']),
+  :global(.app-tooltip-content[data-state='instant-open']) {
+    animation: motion-fade-in var(--motion-duration-fast) var(--motion-ease-enter);
+  }
+  :global(.app-tooltip-content[data-state='closed']) {
+    pointer-events: none;
+    animation: motion-fade-out var(--motion-duration-fast) var(--motion-ease-exit);
+  }
 }
 </style>

@@ -506,7 +506,7 @@ onUnmounted(() => {
 });
 
 watch(
-  () => [isLoggedIn.value, currentUserKey.value] as const,
+  () => [isLoggedIn.value, currentUserKey.value, userStore.accountRevision] as const,
   ([loggedIn]) => {
     accountGeneration += 1;
     if (!loggedIn) {

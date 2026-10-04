@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
 
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { useCachedOverlayOpen } from '@/composables/useCachedOverlayOpen';
 import type { HTMLAttributes } from 'vue';
 import { parseDate, type CalendarDate, type DateValue } from '@internationalized/date';
 import {
@@ -58,6 +59,23 @@ const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void;
 }>();
 
+const open = useCachedOverlayOpen(ref(false));
+const handleOpenChange = (value: boolean) => {
+  open.value = value && !props.disabled;
+};
+watch(
+  () => props.disabled,
+  (disabled) => {
+    if (disabled) open.value = false;
+  },
+  { flush: 'sync' },
+);
+const handleEscapeKeyDown = (event: KeyboardEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+  open.value = false;
+};
+
 const parseIsoDate = (value?: string): CalendarDate | undefined => {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
   try {
@@ -69,7 +87,9 @@ const parseIsoDate = (value?: string): CalendarDate | undefined => {
 
 const selectedDate = computed<CalendarDate | undefined>({
   get: () => parseIsoDate(props.modelValue),
-  set: (value) => emit('update:modelValue', value?.toString() ?? ''),
+  set: (value) => {
+    if (!props.disabled) emit('update:modelValue', value?.toString() ?? '');
+  },
 });
 
 const minValue = computed(() => parseIsoDate(props.min));
@@ -82,6 +102,8 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
 <template>
   <DatePickerRoot
     v-model="selectedDate"
+    :open="open"
+    @update:open="handleOpenChange"
     :locale="locale"
     :min-value="minValue"
     :max-value="maxValue"
@@ -116,6 +138,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
           type="button"
           class="echo-date-picker-action"
           aria-label="清除日期"
+          :disabled="disabled"
           @click.stop="selectedDate = undefined"
         >
           <Icon :icon="iconX" width="14" height="14" />
@@ -133,6 +156,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
       align="start"
       :side-offset="7"
       :collision-padding="12"
+      @escape-key-down="handleEscapeKeyDown"
     >
       <DatePickerCalendar v-slot="{ weekDays, grid }">
         <DatePickerHeader class="echo-date-picker-header">
@@ -324,10 +348,14 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
     background-color 0.16s ease;
 }
 
-.echo-date-picker-action:hover,
+.echo-date-picker-action:not(:disabled):hover,
 .echo-date-picker-action:focus-visible {
   color: var(--color-text-main);
   background: var(--control-hover-bg);
+}
+
+.echo-date-picker-action:disabled {
+  cursor: not-allowed;
 }
 </style>
 
@@ -346,7 +374,10 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   box-shadow: var(--shadow-elevated);
   outline: none;
   transform-origin: var(--reka-popover-content-transform-origin);
-  animation: echo-date-picker-in 0.16s ease-out;
+}
+
+.echo-date-picker-content[data-state='closed'] {
+  pointer-events: none;
 }
 
 .echo-date-picker-header {
@@ -471,14 +502,12 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   pointer-events: none;
 }
 
-@keyframes echo-date-picker-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.98);
+@media (prefers-reduced-motion: no-preference) {
+  .echo-date-picker-content[data-state='open'] {
+    animation: motion-popover-in var(--motion-duration-normal) var(--motion-ease-enter);
   }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+  .echo-date-picker-content[data-state='closed'] {
+    animation: motion-fade-out var(--motion-duration-fast) var(--motion-ease-exit);
   }
 }
 </style>

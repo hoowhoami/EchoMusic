@@ -25,9 +25,13 @@ export const updateKey = (plugin: PluginMarketplacePlugin) =>
 const installs = new Map<string, Promise<boolean>>();
 let queue: Promise<unknown> = Promise.resolve();
 let catalogRevision = 0;
+let disposeStartupCheck: (() => void) | null = null;
 export const getMarketplaceRevision = () => catalogRevision;
 
 export const pluginUpdateEntries = computed(() => {
+  const latestByKey = new Map(
+    marketplacePlugins.value.map((plugin) => [marketplaceKey(plugin), plugin]),
+  );
   const entries = new Map<
     string,
     {
@@ -41,9 +45,7 @@ export const pluginUpdateEntries = computed(() => {
       entries.set(updateKey(plugin), { plugin, status: 'pending' });
   }
   for (const [key, job] of Object.entries(pluginUpdateJobs.value)) {
-    const latest = marketplacePlugins.value.find(
-      (plugin) => marketplaceKey(plugin) === marketplaceKey(job.plugin),
-    );
+    const latest = latestByKey.get(marketplaceKey(job.plugin));
     if (job.status === 'running' || (latest?.installed && latest.version === job.plugin.version))
       entries.set(key, job);
   }
@@ -57,8 +59,9 @@ export const acceptMarketplaceCatalog = (
   revision = catalogRevision,
 ) => {
   // Ignore a list response started before a completed installation.
-  if (revision !== catalogRevision) return;
+  if (revision !== catalogRevision) return false;
   marketplacePlugins.value = plugins;
+  return true;
 };
 
 export const dismissPluginUpdates = () => {
@@ -68,7 +71,14 @@ export const dismissPluginUpdates = () => {
   ]);
 };
 
-export const installMarketplaceUpdate = (plugin: PluginMarketplacePlugin): Promise<boolean> => {
+const snapshotMarketplacePlugin = (plugin: PluginMarketplacePlugin): PluginMarketplacePlugin => ({
+  ...plugin,
+  tags: [...(plugin.tags ?? [])],
+  compatibility: { ...plugin.compatibility },
+});
+
+export const installMarketplaceUpdate = (target: PluginMarketplacePlugin): Promise<boolean> => {
+  const plugin = snapshotMarketplacePlugin(target);
   const existing = installs.get(plugin.id);
   if (existing) return existing;
   if (!plugin.compatibility.compatible) return Promise.resolve(false);
@@ -103,9 +113,28 @@ export const installMarketplaceUpdate = (plugin: PluginMarketplacePlugin): Promi
             }
           : item,
       );
-      await refreshPlugins({ reloadActive: true });
-      await reloadOtherPluginRuntimes();
-      if (showTask) pluginUpdateJobs.value[jobKey] = { plugin, status: 'completed' };
+      // Installation is already committed. Runtime refresh failures must not offer a reinstall.
+      let refreshFailed = false;
+      for (const refresh of [
+        () => refreshPlugins({ reloadActive: true }),
+        reloadOtherPluginRuntimes,
+      ]) {
+        try {
+          await refresh();
+        } catch (error) {
+          refreshFailed = true;
+          logger.warn('PluginUpdates', 'Installed plugin runtime refresh failed', {
+            pluginId: plugin.id,
+            error,
+          });
+        }
+      }
+      if (showTask)
+        pluginUpdateJobs.value[jobKey] = {
+          plugin,
+          status: 'completed',
+          ...(refreshFailed ? { error: '插件已更新，但运行时刷新失败，请重启 EchoMusic' } : {}),
+        };
       return true;
     } catch (error) {
       if (showTask)
@@ -131,7 +160,11 @@ export const installMarketplaceUpdate = (plugin: PluginMarketplacePlugin): Promi
 export const updateMarketplaceBatch = async (plugins: PluginMarketplacePlugin[]) => {
   if (isUpdatingAllMarketplace.value) return;
   const targets = [
-    ...new Map(plugins.filter((p) => p.compatibility.compatible).map((p) => [p.id, p])).values(),
+    ...new Map(
+      plugins
+        .filter((p) => p.compatibility.compatible)
+        .map((p) => [p.id, snapshotMarketplacePlugin(p)]),
+    ).values(),
   ];
   if (!targets.length) return;
   isUpdatingAllMarketplace.value = true;
@@ -139,7 +172,15 @@ export const updateMarketplaceBatch = async (plugins: PluginMarketplacePlugin[])
   updateAllTotal.value = targets.length;
   try {
     for (const plugin of targets) {
-      await installMarketplaceUpdate(plugin);
+      try {
+        await installMarketplaceUpdate(plugin);
+      } catch (error) {
+        // A first installation rejects for its page caller; a batch still attempts later items.
+        logger.warn('PluginUpdates', 'Batch plugin installation failed', {
+          pluginId: plugin.id,
+          error,
+        });
+      }
       updateAllProgress.value += 1;
     }
   } finally {
@@ -149,6 +190,7 @@ export const updateMarketplaceBatch = async (plugins: PluginMarketplacePlugin[])
 
 /** Called once from main-window startup. A failed/offline check retries on the next online event. */
 export const setupStartupPluginUpdateCheck = () => {
+  disposeStartupCheck?.();
   let disposed = false;
   let checked = false;
   let checking = false;
@@ -165,8 +207,11 @@ export const setupStartupPluginUpdateCheck = () => {
         githubProxyUrl: useSettingStore().githubProxyUrl,
       });
       if (!disposed && result) {
-        acceptMarketplaceCatalog(result.plugins, revision);
-        checked = result.ok && !result.sources.some((source) => source.enabled && source.lastError);
+        const accepted = acceptMarketplaceCatalog(result.plugins, revision);
+        checked =
+          accepted &&
+          result.ok &&
+          !result.sources.some((source) => source.enabled && source.lastError);
         logger.info('PluginUpdates', 'Startup update check finished', {
           ok: checked,
           updates: result.plugins.filter((plugin) => plugin.installed && plugin.updateAvailable)
@@ -174,7 +219,8 @@ export const setupStartupPluginUpdateCheck = () => {
         });
       }
     } catch (error) {
-      logger.warn('PluginUpdates', 'Startup update check failed; retry on reconnection', error);
+      if (!disposed)
+        logger.warn('PluginUpdates', 'Startup update check failed; retry on reconnection', error);
     } finally {
       checking = false;
       if (!disposed) isCheckingPluginUpdates.value = false;
@@ -182,10 +228,16 @@ export const setupStartupPluginUpdateCheck = () => {
   };
   const timer = window.setTimeout(() => void check(), 5000);
   window.addEventListener('online', check);
-  return () => {
+  const dispose = () => {
+    if (disposed) return;
     disposed = true;
-    isCheckingPluginUpdates.value = false;
+    if (disposeStartupCheck === dispose) {
+      disposeStartupCheck = null;
+      isCheckingPluginUpdates.value = false;
+    }
     window.clearTimeout(timer);
     window.removeEventListener('online', check);
   };
+  disposeStartupCheck = dispose;
+  return dispose;
 };

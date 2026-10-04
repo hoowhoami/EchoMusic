@@ -9,6 +9,7 @@ import { usePlaylistCoversStore } from '@/stores/playlistCovers';
 import { isSameSong } from '@/utils/song';
 import logger from '@/utils/logger';
 import { FAVORITES_PAGE_SIZE } from './constants';
+import { captureCollectionScope } from './accountScope';
 import {
   buildPlaylistTrackPayload,
   dedupeSongs,
@@ -39,11 +40,16 @@ const waitForStableFavorites = async (
   return fallback();
 };
 
-const loadPlaylistSongsForDuplicateCheck = async (targetId: string): Promise<Song[] | null> => {
+const loadPlaylistSongsForDuplicateCheck = async (
+  targetId: string,
+  isCurrent: () => boolean,
+): Promise<Song[] | null> => {
   const songs: Song[] = [];
   try {
     for (let page = 1; page <= DUPLICATE_CHECK_MAX_PAGES; page += 1) {
+      if (!isCurrent()) return null;
       const res = await getPlaylistTracksNew(targetId, page, DUPLICATE_CHECK_PAGE_SIZE);
+      if (!isCurrent()) return null;
       if (!res || typeof res !== 'object') return songs.length > 0 ? songs : null;
       const hasStatus = 'status' in res;
       const statusOk = hasStatus && (res as { status?: number }).status === 1;
@@ -58,9 +64,9 @@ const loadPlaylistSongsForDuplicateCheck = async (targetId: string): Promise<Son
             : res;
       const { songs: pageSongs, filteredCount } = parsePlaylistTracks(payload ?? res);
       songs.push(...pageSongs);
-      if (pageSongs.length + filteredCount < DUPLICATE_CHECK_PAGE_SIZE) break;
+      if (pageSongs.length + filteredCount < DUPLICATE_CHECK_PAGE_SIZE) return dedupeSongs(songs);
     }
-    return dedupeSongs(songs);
+    return null;
   } catch (e) {
     logger.error('PlaylistStore', 'Load playlist songs for duplicate check error:', e);
     return null;
@@ -103,6 +109,8 @@ type FavoritesStoreShape = {
   ) => void;
   userCollectionsGeneration: number;
   userPlaylists: PlaylistMeta[];
+  playlistContentVersions: Record<string, number>;
+  playlistContentChanges: Record<string, unknown>;
 };
 
 type FavoriteChange = { action: 'add' | 'remove'; songs: readonly Song[] };
@@ -162,7 +170,7 @@ const syncPlaylistFavorites = (
 
 const beginFavoriteChange = (store: FavoritesStoreShape, change: FavoriteChange) => {
   const runtime = getFavoritesRuntime(store);
-  const generation = store.userCollectionsGeneration;
+  const isCurrent = captureCollectionScope(store);
   const listId = store.likedPlaylistListId;
   const base = runtime.base ?? store.favorites;
   runtime.pending.add(change);
@@ -170,7 +178,7 @@ const beginFavoriteChange = (store: FavoritesStoreShape, change: FavoriteChange)
   return (success: boolean): boolean => {
     if (
       favoritesRuntimes.get(store) !== runtime ||
-      store.userCollectionsGeneration !== generation ||
+      !isCurrent() ||
       store.likedPlaylistListId !== listId
     )
       return false;
@@ -198,6 +206,8 @@ export const favoritesActions = {
     this.favoritesLoaded = false;
     this.favoritesLoading = false;
     this.userPlaylists = [];
+    this.playlistContentVersions = {};
+    this.playlistContentChanges = {};
   },
   async ensureLikedPlaylistReady(this: FavoritesStoreShape) {
     if (this.likedPlaylistQueryId || this.likedPlaylistListId) {
@@ -296,6 +306,7 @@ export const favoritesActions = {
     }
 
     const requestGeneration = this.userCollectionsGeneration;
+    const isCurrentScope = captureCollectionScope(this);
     const user = useUserStore();
     const accountId = user.info?.userid;
     const covers = usePlaylistCoversStore();
@@ -310,8 +321,10 @@ export const favoritesActions = {
     this.favoritesLoading = true;
     const loader = new PagedSongLoader<Song>(
       async (page, pageSize) => {
+        if (!isCurrentLoader()) return { items: [], hasMore: false };
         const response = await getPlaylistTracksNew(likedListId, page, pageSize);
-        if (isCurrentLoader()) coverPages.set(page, response);
+        if (!isCurrentLoader()) return { items: [], hasMore: false };
+        coverPages.set(page, response);
         const { songs: pageSongs, filteredCount } = parsePlaylistTracks(response);
         const hasMore = pageSongs.length + filteredCount >= pageSize;
         return { items: pageSongs, hasMore };
@@ -354,10 +367,7 @@ export const favoritesActions = {
     );
 
     const isCurrentLoader = () =>
-      favoritesLoader === loader &&
-      this.userCollectionsGeneration === requestGeneration &&
-      user.info?.userid === accountId &&
-      this.likedPlaylistListId === likedListId;
+      favoritesLoader === loader && isCurrentScope() && this.likedPlaylistListId === likedListId;
 
     const updateFavorites = (items: readonly Song[], complete: boolean) => {
       if (!isCurrentLoader()) return;
@@ -394,6 +404,7 @@ export const favoritesActions = {
     listId: string | number,
     song: Song,
   ): Promise<AddToPlaylistResult> {
+    const isCurrent = captureCollectionScope(this);
     const targetId = String(listId ?? '');
     if (!targetId) return 'failed';
 
@@ -418,7 +429,8 @@ export const favoritesActions = {
           this.rememberPlaylistSongs(targetId, [], true);
           existingSongs = [];
         } else {
-          const loadedSongs = await loadPlaylistSongsForDuplicateCheck(targetId);
+          const loadedSongs = await loadPlaylistSongsForDuplicateCheck(targetId, isCurrent);
+          if (!isCurrent()) return 'failed';
           if (loadedSongs) {
             this.rememberPlaylistSongs(targetId, loadedSongs, true);
             existingSongs = loadedSongs;
@@ -439,11 +451,17 @@ export const favoritesActions = {
         }
       }
 
+      if (!isCurrent()) return 'failed';
       const res = await addPlaylistTrack(targetId, buildPlaylistTrackPayload(song));
+      if (!isCurrent()) return 'failed';
       if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
         syncPlaylistFavorites(this, targetId, 'add', [song]);
         if (this.hasCompleteKnownPlaylistSongs(targetId)) {
-          this.rememberPlaylistSongs(targetId, [...existingSongs, song], true);
+          this.rememberPlaylistSongs(
+            targetId,
+            [...this.getKnownPlaylistSongs(targetId), song],
+            true,
+          );
         }
         this.markPlaylistContentChanged(targetId, 'add', [song]);
         logger.info('PlaylistStore', `Song ${song.name} added to playlist ${targetId}`);
@@ -455,12 +473,14 @@ export const favoritesActions = {
     return 'failed';
   },
   async removeFromPlaylist(this: FavoritesStoreShape, listId: string | number, song: Song) {
+    const isCurrent = captureCollectionScope(this);
     const targetId = String(listId ?? '');
     if (!targetId) return false;
 
     try {
       const fileId = String(song.fileId ?? song.mixSongId ?? '');
       const res = await deletePlaylistTrack(targetId, fileId);
+      if (!isCurrent()) return false;
       if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
         syncPlaylistFavorites(this, targetId, 'remove', [song]);
         this.forgetPlaylistSongs(targetId, [song]);
@@ -479,6 +499,7 @@ export const favoritesActions = {
     songs: Song[],
     onProgress?: (done: number, total: number) => void,
   ): Promise<{ successCount: number; failedCount: number }> {
+    const isCurrent = captureCollectionScope(this);
     const targetId = String(listId ?? '');
     const total = songs.length;
     if (!targetId || total === 0) return { successCount: 0, failedCount: total };
@@ -536,11 +557,13 @@ export const favoritesActions = {
     done = skippedCount;
 
     for (const batch of batches) {
+      if (!isCurrent()) return { successCount, failedCount: dedupedSongs.length - successCount };
       try {
         const res = await addPlaylistTrack(
           targetId,
           batch.map((song) => buildPlaylistTrackPayload(song)).join(','),
         );
+        if (!isCurrent()) return { successCount, failedCount: dedupedSongs.length - successCount };
         if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
           successCount += batch.length;
           syncPlaylistFavorites(this, targetId, 'add', batch);
@@ -550,6 +573,7 @@ export const favoritesActions = {
           logger.warn('PlaylistStore', 'Batch add partial failure:', res);
         }
       } catch (e) {
+        if (!isCurrent()) return { successCount, failedCount: dedupedSongs.length - successCount };
         failedCount += batch.length;
         logger.error('PlaylistStore', 'Batch add error:', e);
       }
@@ -557,9 +581,13 @@ export const favoritesActions = {
       onProgress?.(done, total);
     }
 
-    if (addedSongs.length > 0) {
+    if (isCurrent() && addedSongs.length > 0) {
       if (this.hasCompleteKnownPlaylistSongs(targetId)) {
-        this.rememberPlaylistSongs(targetId, [...existingSongs, ...addedSongs], true);
+        this.rememberPlaylistSongs(
+          targetId,
+          [...this.getKnownPlaylistSongs(targetId), ...addedSongs],
+          true,
+        );
       }
       this.markPlaylistContentChanged(targetId, 'add', addedSongs);
     }
@@ -572,6 +600,7 @@ export const favoritesActions = {
     songs: Song[],
     onProgress?: (done: number, total: number) => void,
   ): Promise<{ successCount: number; failedCount: number }> {
+    const isCurrent = captureCollectionScope(this);
     const targetId = String(listId ?? '');
     const total = songs.length;
     if (!targetId || total === 0) return { successCount: 0, failedCount: total };
@@ -611,11 +640,13 @@ export const favoritesActions = {
     onProgress?.(0, total);
 
     for (const batch of batches) {
+      if (!isCurrent()) return { successCount, failedCount: total - successCount };
       try {
         const res = await deletePlaylistTrack(
           targetId,
           batch.map((song) => String(song.fileId ?? song.mixSongId ?? '')).join(','),
         );
+        if (!isCurrent()) return { successCount, failedCount: total - successCount };
         if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
           successCount += batch.length;
           syncPlaylistFavorites(this, targetId, 'remove', batch);
@@ -625,6 +656,7 @@ export const favoritesActions = {
           logger.warn('PlaylistStore', 'Batch remove partial failure:', res);
         }
       } catch (e) {
+        if (!isCurrent()) return { successCount, failedCount: total - successCount };
         failedCount += batch.length;
         logger.error('PlaylistStore', 'Batch remove error:', e);
       }
@@ -632,7 +664,7 @@ export const favoritesActions = {
       onProgress?.(done, total);
     }
 
-    if (removedSongs.length > 0) {
+    if (isCurrent() && removedSongs.length > 0) {
       this.forgetPlaylistSongs(targetId, removedSongs);
       this.markPlaylistContentChanged(targetId, 'remove', removedSongs);
     }
@@ -640,7 +672,9 @@ export const favoritesActions = {
     return { successCount, failedCount };
   },
   async addToFavorites(this: FavoritesStoreShape, song: Song) {
+    const isCurrent = captureCollectionScope(this);
     const likedPlaylist = await this.ensureLikedPlaylistReady();
+    if (!isCurrent()) return false;
     const listId = likedPlaylist.listId;
     const alreadyFavorited = this.isFavoriteSong(song);
     if (!listId) return false;
@@ -681,6 +715,7 @@ export const favoritesActions = {
     return favoritesActions.removeFavoriteSong.call(this, song);
   },
   async removeFavoriteSong(this: FavoritesStoreShape, song: Song) {
+    const isCurrent = captureCollectionScope(this);
     const matched = this.favorites.find(
       (item) => isSameSong(item, song) || String(item.id) === String(song.id),
     );
@@ -690,6 +725,7 @@ export const favoritesActions = {
     );
 
     const likedPlaylist = await this.ensureLikedPlaylistReady();
+    if (!isCurrent()) return false;
     const listId = likedPlaylist.listId;
     if (!listId) return false;
     const removedSong = matched ?? song;

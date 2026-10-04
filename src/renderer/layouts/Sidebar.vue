@@ -750,13 +750,16 @@ onMounted(() => {
   syncCloudData();
 });
 
-watch(isLoggedIn, (value) => {
-  if (value) {
-    syncCloudData();
-  } else {
-    playlistStore.userPlaylists = [];
-  }
-});
+watch(
+  () => [isLoggedIn.value, currentUserId.value, userStore.accountRevision] as const,
+  ([loggedIn]) => {
+    if (loggedIn) {
+      syncCloudData();
+    } else {
+      playlistStore.userPlaylists = [];
+    }
+  },
+);
 
 watch(
   () => [route.name, route.params.id, playlistStore.userPlaylists.length, currentUserId.value],

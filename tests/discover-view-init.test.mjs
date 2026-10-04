@@ -62,6 +62,7 @@ function fixture() {
       onBeforeUnmount: (fn) => unmounted.push(fn),
     },
     '@/components/ui/Button.vue': {},
+    '@/components/ui/Tooltip.vue': {},
     '@/components/ui/RefreshIcon.vue': {},
     '@/components/ui/Cover.vue': {},
     '@/components/music/DetailPageError.vue': {},

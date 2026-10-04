@@ -121,7 +121,6 @@ const currentCoverColorUrls = computed(() =>
 const currentUserKey = computed(() =>
   String(userStore.info?.userid ?? userStore.info?.userId ?? ''),
 );
-let loadedCloudUserKey = '';
 
 const updateTheme = () => themeStore.onThemeChange();
 
@@ -457,25 +456,19 @@ watch(
   },
 );
 watch(
-  () => [userStore.isLoggedIn, currentUserKey.value] as const,
-  ([loggedIn, userKey]) => {
+  [() => userStore.isLoggedIn, () => currentUserKey.value, () => userStore.accountRevision],
+  ([loggedIn], previous) => {
     contentBlacklistStore.reset();
+    if (previous?.length) playlistStore.resetUserCollections();
     if (loggedIn) {
-      if (userKey && loadedCloudUserKey && loadedCloudUserKey !== userKey) {
-        playlistStore.resetUserCollections();
-      }
-      if (userKey) {
-        loadedCloudUserKey = userKey;
-      }
       scheduleCloudAudioIndexWarmup();
     } else {
-      loadedCloudUserKey = '';
-      playlistStore.resetUserCollections();
+      if (!previous?.length) playlistStore.resetUserCollections();
       clearCloudAudioIndexWarmupTimer();
       clearCloudAudioIndex();
     }
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 );
 watch(
   () => player.value?.playMode,

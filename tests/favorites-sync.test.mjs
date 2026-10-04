@@ -56,6 +56,10 @@ function setup(overrides = {}) {
     ...overrides,
   };
   const { favoritesActions } = compile('../src/renderer/stores/playlist/favoritesActions.ts', {
+    './accountScope': compile('../src/renderer/stores/playlist/accountScope.ts', {
+      '@/utils/userSession': compile('../src/renderer/utils/userSession.ts'),
+      '@/stores/user': { useUserStore: () => ({ info: { userid: 7 } }) },
+    }),
     '@/api/playlist': api,
     '@/utils/playlistOrder': order,
     '@/utils/mappers': {
@@ -75,6 +79,10 @@ function setup(overrides = {}) {
     './helpers': helpers,
   });
   const { userActions } = compile('../src/renderer/stores/playlist/userActions.ts', {
+    './accountScope': compile('../src/renderer/stores/playlist/accountScope.ts', {
+      '@/utils/userSession': compile('../src/renderer/utils/userSession.ts'),
+      '@/stores/user': { useUserStore: () => ({ info: { userid: 7 } }) },
+    }),
     '@/api/playlist': api,
     '@/utils/logger': logger,
     '@/utils/mappers': {},
@@ -88,6 +96,7 @@ function setup(overrides = {}) {
     './favoritesActions': { favoritesActions },
     './userActions': { userActions },
     './personalFmActions': { personalFmActions: {} },
+    './discoverActions': { discoverActions: {} },
     './queueActions': { queueActions: {} },
   });
   const store = usePlaylistStore(pinia.createPinia());

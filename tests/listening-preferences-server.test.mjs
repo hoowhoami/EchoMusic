@@ -46,5 +46,10 @@ test('copied preference modules use encrypted auth and preserve selective update
     lang: '',
     style: '{"1":100}',
   });
-  await assert.rejects(update({ cookie }, capture), /至少需要/);
+  await assert.rejects(update({ cookie }, capture), (error) => {
+    assert.equal(error.status, 400);
+    assert.equal(error.body.status, 0);
+    assert.match(error.body.msg, /至少需要/);
+    return true;
+  });
 });

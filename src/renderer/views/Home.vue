@@ -364,12 +364,12 @@ const handleRejectAgreement = () => {
 <template>
   <PageScrollContainer class="home-view-container">
     <div class="home-view px-10 pt-4 pb-10">
-      <div class="home-header">
+      <div class="home-header motion-section-enter">
         <div class="text-[22px] font-semibold tracking-tight text-text-main">{{ greeting }}</div>
         <div class="text-[12px] text-text-secondary/80 mt-1">由此开启好心情 ~</div>
       </div>
 
-      <div class="home-feature-row">
+      <div class="home-feature-row motion-section-enter" style="--motion-order: 1">
         <Button variant="unstyled" size="none" class="home-feature-card" @click="openRecommend">
           <div class="feature-icon gradient-primary">{{ todayLabel }}</div>
           <div class="feature-meta">
@@ -392,7 +392,10 @@ const handleRejectAgreement = () => {
         </Button>
       </div>
 
-      <section class="home-section style-recommend-section">
+      <section
+        class="home-section style-recommend-section motion-section-enter"
+        style="--motion-order: 2"
+      >
         <div class="section-header">
           <div>
             <div class="section-title">风格推荐</div>
@@ -491,7 +494,7 @@ const handleRejectAgreement = () => {
         </div>
       </section>
 
-      <section class="home-section">
+      <section class="home-section motion-section-enter" style="--motion-order: 3">
         <div class="section-header">
           <div class="section-title">推荐歌单</div>
           <div class="playlist-source-tabs">
@@ -530,7 +533,7 @@ const handleRejectAgreement = () => {
         </VirtualGrid>
       </section>
 
-      <section class="home-section">
+      <section class="home-section motion-section-enter" style="--motion-order: 3">
         <div class="section-header">
           <div class="section-title">编辑精选</div>
         </div>
@@ -588,7 +591,9 @@ const handleRejectAgreement = () => {
   border-radius: 16px;
   background: var(--content-panel-bg);
   border: 1px solid var(--content-panel-border);
-  transition: all 0.2s ease;
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .home-feature-card:hover {
@@ -866,6 +871,14 @@ const handleRejectAgreement = () => {
   .style-category-tabs {
     width: 100%;
     overflow-x: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-feature-card {
+    transition: none;
+  }
+  .home-feature-card:hover {
+    transform: none;
   }
 }
 </style>

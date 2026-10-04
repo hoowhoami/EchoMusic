@@ -43,7 +43,7 @@ test('v_type 51 requires an APP appeal and cannot be submitted as a captcha', as
     assert.equal(api.KUGOU_CAPTCHA_PROVIDER_NAMES.ACCOUNT_RISK, '账号风控');
     for (const code of ['', 'captcha-code']) {
       assert.equal(await api.submitKugouVerification(code), false);
-      assert.match(api.kugouVerificationState.error, /风控.*酷狗 APP.*申诉/);
+      assert.match(api.kugouVerificationState.error, /风控.*酷狗(?: APP|客户端).*申诉/);
     }
     assert.deepEqual(paths, ['/get/verify/info']);
     assert.equal(resolved, false);

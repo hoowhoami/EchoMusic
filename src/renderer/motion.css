@@ -1,0 +1,115 @@
+/* Shared motion vocabulary. Keep durations short and leave faster than enter. */
+:root {
+  --motion-duration-fast: 120ms;
+  --motion-duration-normal: 180ms;
+  --motion-duration-page: 220ms;
+  --motion-duration-panel: 240ms;
+  --motion-duration-exit: 140ms;
+  --motion-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --motion-stagger: 32ms;
+}
+
+/* Opt in per content section, never per virtualized row. No forwards fill or
+   persistent will-change: text returns to normal rasterization after entry. */
+@media (prefers-reduced-motion: no-preference) {
+  .motion-section-enter {
+    animation: motion-section-enter var(--motion-duration-page) var(--motion-ease-enter) backwards;
+    animation-delay: clamp(0ms, calc(var(--motion-order, 0) * var(--motion-stagger)), 96ms);
+  }
+}
+
+/* Content arrives as a group. Opacity keeps sticky and virtual-list geometry intact.
+   Do not add leave animations: old panels must hide immediately on tab changes. */
+@media (prefers-reduced-motion: no-preference) {
+  .motion-content-enter,
+  .motion-tab-panel[data-state='active'] {
+    animation: motion-fade-in var(--motion-duration-normal) var(--motion-ease-standard);
+  }
+}
+
+@keyframes motion-section-enter {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+/* Reka owns positioning transforms; individual translate keeps that geometry intact. */
+.echo-popover-content,
+.echo-date-picker-content {
+  --motion-popover-x: 0px;
+  --motion-popover-y: -4px;
+}
+:is(.echo-popover-content, .echo-date-picker-content)[data-side='top'] {
+  --motion-popover-y: 4px;
+}
+:is(.echo-popover-content, .echo-date-picker-content)[data-side='left'] {
+  --motion-popover-x: 4px;
+  --motion-popover-y: 0px;
+}
+:is(.echo-popover-content, .echo-date-picker-content)[data-side='right'] {
+  --motion-popover-x: -4px;
+  --motion-popover-y: 0px;
+}
+
+@keyframes motion-popover-in {
+  from {
+    opacity: 0;
+    translate: var(--motion-popover-x) var(--motion-popover-y);
+  }
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+@keyframes motion-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes motion-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-fast: 0ms;
+    --motion-duration-normal: 0ms;
+    --motion-duration-page: 0ms;
+    --motion-duration-panel: 0ms;
+    --motion-duration-exit: 0ms;
+    --motion-stagger: 0ms;
+  }
+}
+
+/* State feedback must not interpolate control dimensions or positioning. */
+@layer components {
+  .motion-control-feedback {
+    transition-property: background-color, border-color, color, opacity, box-shadow;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
+  }
+}
+
+/* Loading completion fades briefly; do not animate image geometry. */
+@layer components {
+  .motion-image-feedback {
+    transition: opacity var(--motion-duration-normal) var(--motion-ease-standard);
+  }
+}

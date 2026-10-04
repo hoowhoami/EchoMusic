@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onBeforeUnmount } from 'vue';
+import { computed, ref, watch, onActivated, onDeactivated, onBeforeUnmount } from 'vue';
 import { iconChevronUp, iconChevronDown } from '@/icons';
 
 interface Props {
@@ -32,41 +32,66 @@ const emit = defineEmits<{
 const inputRef = ref<HTMLInputElement | null>(null);
 const isEditing = ref(false);
 const editingValue = ref('');
+const suspended = ref(false);
+const disposed = ref(false);
+const canInteract = computed(() => !props.disabled && !suspended.value && !disposed.value);
 let pressTimer: ReturnType<typeof setTimeout> | null = null;
 let pressInterval: ReturnType<typeof setInterval> | null = null;
 
 const numericValue = computed(() => {
   const parsed = Number(props.modelValue);
-  return Number.isNaN(parsed) ? undefined : parsed;
+  return Number.isFinite(parsed) ? parsed : undefined;
 });
+const validStep = computed(() => Number.isFinite(props.step) && props.step > 0);
 
 const clamp = (val: number) => Math.max(props.min, Math.min(props.max, val));
 
+const decimalPlaces = (value: number) => {
+  const [coefficient, exponent = '0'] = String(value).split('e');
+  return Math.max(0, (coefficient.split('.')[1]?.length ?? 0) - Number(exponent));
+};
+
+const addStep = (base: number, delta: number) => {
+  const scale = 10 ** Math.max(decimalPlaces(base), decimalPlaces(delta));
+  const scaledBase = Math.round(base * scale);
+  const scaledDelta = Math.round(delta * scale);
+  const sum = scaledBase + scaledDelta;
+  // Calculate decimal steps as integers when safe, without rounding away a
+  // manually entered value that has finer precision than the configured step.
+  if ([scaledBase, scaledDelta, sum].every(Number.isSafeInteger)) return sum / scale;
+  return base + delta;
+};
+
+const emitFiniteValue = (value: number) => {
+  if (Number.isFinite(value)) emit('update:modelValue', String(value));
+};
+
 const canIncrement = computed(() => {
-  if (props.disabled) return false;
+  if (!canInteract.value || !validStep.value) return false;
   return numericValue.value === undefined || numericValue.value < props.max;
 });
 
 const canDecrement = computed(() => {
-  if (props.disabled) return false;
+  if (!canInteract.value || !validStep.value) return false;
   return numericValue.value === undefined || numericValue.value > props.min;
 });
 
 const increment = () => {
   if (!canIncrement.value) return;
   isEditing.value = false;
-  const base = numericValue.value ?? props.min;
-  emit('update:modelValue', String(clamp(base + props.step)));
+  const base = numericValue.value ?? (Number.isFinite(props.min) ? props.min : 0);
+  emitFiniteValue(clamp(addStep(base, props.step)));
 };
 
 const decrement = () => {
   if (!canDecrement.value) return;
   isEditing.value = false;
-  const base = numericValue.value ?? props.max;
-  emit('update:modelValue', String(clamp(base - props.step)));
+  const base = numericValue.value ?? (Number.isFinite(props.max) ? props.max : 0);
+  emitFiniteValue(clamp(addStep(base, -props.step)));
 };
 
 const handleInput = (e: Event) => {
+  if (!canInteract.value) return;
   const raw = (e.target as HTMLInputElement).value;
   // 允许数字、小数点、负号和空值；只保留第一个小数点和第一个负号
   let filtered = raw.replace(/[^\d.-]/g, '');
@@ -85,51 +110,107 @@ const handleInput = (e: Event) => {
 };
 
 const handleFocus = () => {
+  if (!canInteract.value) return;
   isEditing.value = true;
   editingValue.value = String(props.modelValue ?? '');
 };
 
 const handleBlur = () => {
+  if (!isEditing.value || !canInteract.value) return;
   isEditing.value = false;
   const parsed = Number(editingValue.value);
-  if (editingValue.value === '' || Number.isNaN(parsed)) {
+  if (editingValue.value === '' || !Number.isFinite(parsed)) {
     // 空值或无效值，恢复原值
     editingValue.value = '';
     return;
   }
   const clamped = clamp(parsed);
-  emit('update:modelValue', String(clamped));
+  emitFiniteValue(clamped);
 };
 
 const handleKeydown = (e: KeyboardEvent) => {
+  if (!canInteract.value || e.isComposing || e.keyCode === 229) return;
   if (e.key === 'ArrowUp') {
     e.preventDefault();
     increment();
   } else if (e.key === 'ArrowDown') {
     e.preventDefault();
     decrement();
+  } else if (e.key === 'Enter') {
+    // Commit before a parent handles Enter (for example, moving a playlist row).
+    handleBlur();
+  }
+};
+
+let pressGeneration = 0;
+let listening = false;
+let pressAction: (() => void) | null = null;
+const stopPress = () => {
+  pressGeneration++;
+  pressAction = null;
+  if (pressTimer !== null) {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+  if (pressInterval !== null) {
+    clearInterval(pressInterval);
+    pressInterval = null;
+  }
+  if (listening) {
+    window.removeEventListener('mouseup', stopPress);
+    window.removeEventListener('blur', stopPress);
+    listening = false;
   }
 };
 
 const startPress = (action: () => void) => {
+  stopPress();
+  if (!canInteract.value) return;
+  const generation = pressGeneration;
+  pressAction = action;
   action();
+  // A parent can disable or remove this control in response to the first step.
+  if (!canInteract.value || generation !== pressGeneration) return;
+  listening = true;
+  window.addEventListener('mouseup', stopPress);
+  window.addEventListener('blur', stopPress);
   pressTimer = setTimeout(() => {
-    pressInterval = setInterval(action, 80);
+    if (!canInteract.value || generation !== pressGeneration) return;
+    pressTimer = null;
+    pressInterval = setInterval(() => {
+      if (canInteract.value && generation === pressGeneration) action();
+    }, 80);
   }, 400);
 };
 
-const stopPress = () => {
-  if (pressTimer) {
-    clearTimeout(pressTimer);
-    pressTimer = null;
-  }
-  if (pressInterval) {
-    clearInterval(pressInterval);
-    pressInterval = null;
-  }
-};
+watch(
+  [canIncrement, canDecrement],
+  ([up, down]) => {
+    if ((pressAction === increment && !up) || (pressAction === decrement && !down)) stopPress();
+  },
+  { flush: 'sync' },
+);
 
-onBeforeUnmount(stopPress);
+watch(
+  canInteract,
+  (available) => {
+    if (available) return;
+    stopPress();
+    isEditing.value = false;
+    editingValue.value = '';
+  },
+  { flush: 'sync' },
+);
+onDeactivated(() => {
+  suspended.value = true;
+});
+onActivated(() => {
+  suspended.value = false;
+});
+onBeforeUnmount(() => {
+  disposed.value = true;
+  stopPress();
+});
 </script>
 
 <template>
@@ -162,7 +243,8 @@ onBeforeUnmount(stopPress);
         class="input-number-btn"
         :class="{ 'is-disabled': !canIncrement }"
         :disabled="!canIncrement"
-        @mousedown.prevent="startPress(increment)"
+        aria-label="增加数值"
+        @mousedown.left.prevent="startPress(increment)"
         @mouseup="stopPress"
         @mouseleave="stopPress"
       >
@@ -174,7 +256,8 @@ onBeforeUnmount(stopPress);
         class="input-number-btn"
         :class="{ 'is-disabled': !canDecrement }"
         :disabled="!canDecrement"
-        @mousedown.prevent="startPress(decrement)"
+        aria-label="减少数值"
+        @mousedown.left.prevent="startPress(decrement)"
         @mouseup="stopPress"
         @mouseleave="stopPress"
       >

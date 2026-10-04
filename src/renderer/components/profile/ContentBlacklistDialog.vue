@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
 
-import { computed, nextTick, ref, useId, watch } from 'vue';
+import { computed, nextTick, ref, useId, watch, onBeforeUnmount } from 'vue';
 import type { BlacklistEntry, BlacklistLabel } from '@/api/blacklist';
 import Button from '@/components/ui/Button.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
@@ -10,6 +10,8 @@ import Scrollbar from '@/components/ui/Scrollbar.vue';
 import { iconEyeOff, iconHeartOff, iconRefreshCw, iconRotateCcw } from '@/icons';
 import { useContentBlacklistStore } from '@/stores/contentBlacklist';
 import { useToastStore } from '@/stores/toast';
+import { useUserStore } from '@/stores/user';
+import { captureUserSession } from '@/utils/userSession';
 
 interface Props {
   open?: boolean;
@@ -25,6 +27,9 @@ const emit = defineEmits<{
 
 const blacklistStore = useContentBlacklistStore();
 const toastStore = useToastStore();
+const userStore = useUserStore();
+let generation = 0;
+let disposed = false;
 const activeTab = ref<BlacklistLabel>('song');
 const removingKey = ref('');
 const pendingRemoval = ref<BlacklistEntry | null>(null);
@@ -107,28 +112,41 @@ const formatTime = (value: string) => {
 };
 
 const loadCurrentTab = async (refresh = false) => {
-  if (bucket.value.loading) return;
+  if (disposed || !props.open || !userStore.isLoggedIn || bucket.value.loading) return;
   if (refresh || !bucket.value.loaded) await blacklistStore.refresh(activeTab.value);
 };
 
 const refreshCurrentTab = () => loadCurrentTab(true);
 
 const loadMore = async () => {
-  if (bucket.value.loading || !hasMore.value) return;
+  if (disposed || !props.open || !userStore.isLoggedIn || bucket.value.loading || !hasMore.value)
+    return;
   await blacklistStore.loadNextPage(activeTab.value);
 };
 
 const requestRemoval = (entry: BlacklistEntry) => {
-  if (!removingKey.value) pendingRemoval.value = entry;
+  if (disposed || !props.open || !userStore.isLoggedIn || removingKey.value) return;
+  blacklistStore.syncAccount();
+  if (!blacklistStore.buckets[entry.label].entries.includes(entry)) return;
+  pendingRemoval.value = entry;
 };
 
 const confirmRemoval = async () => {
   const entry = pendingRemoval.value;
-  if (!entry || removingKey.value) return;
+  if (disposed || !props.open || !userStore.isLoggedIn || !entry || removingKey.value) return;
+  const token = ++generation;
+  const isSessionCurrent = captureUserSession(userStore);
+  const isCurrent = () =>
+    !disposed &&
+    props.open &&
+    token === generation &&
+    isSessionCurrent() &&
+    pendingRemoval.value === entry;
 
   removingKey.value = entryRequestKey(entry);
   try {
     const removed = await blacklistStore.remove(entry);
+    if (!isCurrent()) return;
     if (removed) {
       toastStore.success(
         entry.label === 'song'
@@ -143,9 +161,30 @@ const confirmRemoval = async () => {
       );
     }
   } finally {
-    removingKey.value = '';
+    if (!disposed && token === generation && isSessionCurrent()) removingKey.value = '';
   }
 };
+
+const sessionSources = [
+  () => userStore.isLoggedIn,
+  () => userStore.accountRevision,
+  () => userStore.info?.userid ?? userStore.info?.userId,
+  () => userStore.info?.token,
+];
+const invalidateRemoval = () => {
+  generation++;
+  pendingRemoval.value = null;
+  removingKey.value = '';
+};
+watch([() => props.open, ...sessionSources], invalidateRemoval, { flush: 'sync' });
+watch(sessionSources, () => {
+  blacklistStore.syncAccount();
+  if (props.open) void loadCurrentTab(true);
+});
+onBeforeUnmount(() => {
+  disposed = true;
+  invalidateRemoval();
+});
 
 watch(
   () => props.open,

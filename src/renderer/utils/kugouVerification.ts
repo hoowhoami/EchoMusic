@@ -218,31 +218,51 @@ const normalizeChallenge = (
 export const requestKugouVerification = (
   challenge: string | KugouVerificationChallenge,
   request: VerifyApiRequest,
+  options: { signal?: AbortSignal } = {},
 ) => {
   const challengeInfo = normalizeChallenge(challenge);
   const normalizedEventId = String(challengeInfo.eventId || '').trim();
   if (!normalizedEventId) {
     return Promise.reject(new Error('缺少安全验证事件标识'));
   }
+  const cancellationError = () =>
+    options.signal?.reason instanceof Error ? options.signal.reason : new Error('已取消安全验证');
+  if (options.signal?.aborted) return Promise.reject(cancellationError());
 
   const existingPromise = challengePromises.get(normalizedEventId);
   if (existingPromise) return existingPromise;
 
+  let pending: PendingChallenge;
   const promise = new Promise<void>((resolve, reject) => {
-    challengeQueue.push({
+    pending = {
       eventId: normalizedEventId,
       request,
       resolve,
       reject,
-    });
-    void startNextChallenge();
+    };
+    challengeQueue.push(pending);
   });
 
   challengePromises.set(normalizedEventId, promise);
-  void promise.then(
-    () => challengePromises.delete(normalizedEventId),
-    () => challengePromises.delete(normalizedEventId),
-  );
+  const cancel = () => {
+    if (challengePromises.get(normalizedEventId) === promise)
+      challengePromises.delete(normalizedEventId);
+    if (activeChallenge === pending) {
+      finishActiveChallenge(cancellationError());
+    } else {
+      const index = challengeQueue.indexOf(pending);
+      if (index !== -1) challengeQueue.splice(index, 1);
+      pending.reject(cancellationError());
+    }
+  };
+  options.signal?.addEventListener('abort', cancel, { once: true });
+  void startNextChallenge();
+  const cleanup = () => {
+    options.signal?.removeEventListener('abort', cancel);
+    if (challengePromises.get(normalizedEventId) === promise)
+      challengePromises.delete(normalizedEventId);
+  };
+  void promise.then(cleanup, cleanup);
 
   return promise;
 };

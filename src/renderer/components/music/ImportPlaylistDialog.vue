@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { captureUserSession } from '@/utils/userSession';
 import { useVModel } from '@vueuse/core';
 import { Icon } from '@iconify/vue';
 import Checkbox from '@/components/ui/Checkbox.vue';
@@ -52,6 +53,23 @@ const importTaskStore = useImportTaskStore();
 let currentDialogRun: ImportTaskRun | null = null;
 const canContinueTask = (run: ImportTaskRun) => run.active && !run.signal.aborted;
 const settingStore = useSettingStore();
+let disposed = false;
+let uiRevision = 0;
+let resetTimer: number | null = null;
+const canUpdateUi = (run: ImportTaskRun) => !disposed && open.value && currentDialogRun === run;
+const cancelReset = () => {
+  if (resetTimer !== null) window.clearTimeout(resetTimer);
+  resetTimer = null;
+};
+const refreshPlaylists = async () => {
+  // A post-import refresh is supplementary and cannot turn a completed import
+  // into a failed task. The playlist store itself owns account-scoped results.
+  try {
+    await playlistStore.fetchUserPlaylists();
+  } catch {
+    /* Allow later refresh. */
+  }
+};
 
 const step = ref<Step>('input');
 const mode = ref<ImportMode>('link');
@@ -71,14 +89,19 @@ const summary = ref<ImportSummary | null>(null);
 const backgroundTargetName = ref('外部歌单导入');
 const showBackgroundConfirm = ref(false);
 const neverShowBackgroundConfirm = ref(false);
-const isLocalFallback = ref(false);
+const isLocalFallback = computed(() => importTaskStore.phase === 'local');
 const showDuplicateNameConfirm = ref(false);
 const duplicatePlaylistName = ref('');
+let duplicateConfirmRun: ImportTaskRun | null = null;
 let resolveDuplicateNameConfirm: ((name: string | null) => void) | null = null;
 
 const currentUserId = computed<number | undefined>(() => {
-  const value = userStore.info?.userid ?? userStore.info?.userId;
-  return typeof value === 'number' && value > 0 ? value : undefined;
+  const value: unknown = userStore.info?.userid ?? userStore.info?.userId;
+  return (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
+    Number.isSafeInteger(Number(value)) &&
+    Number(value) > 0
+    ? Number(value)
+    : undefined;
 });
 
 const ownedPlaylists = computed<PlaylistMeta[]>(() => {
@@ -87,7 +110,7 @@ const ownedPlaylists = computed<PlaylistMeta[]>(() => {
   return playlistStore.userPlaylists.filter(
     (playlist) =>
       playlist.source !== 2 &&
-      (playlist.listCreateUserid === userid ||
+      (String(playlist.listCreateUserid) === String(userid) ||
         playlist.isDefault === true ||
         playlist.name === '默认收藏' ||
         playlist.name === '我喜欢的音乐'),
@@ -122,10 +145,20 @@ const confirmDuplicatePlaylistName = async (name: string, run: ImportTaskRun) =>
   if (!canContinueTask(run)) return null;
   const trimmedName = name.trim();
   if (!hasOwnedPlaylistWithName(trimmedName)) return trimmedName;
+  if (disposed) throw new Error('已有同名歌单，请重新打开导入弹窗后确认名称');
+  duplicateConfirmRun = run;
   duplicatePlaylistName.value = trimmedName;
   return new Promise<string | null>((resolve) => {
     resolveDuplicateNameConfirm?.(null);
-    resolveDuplicateNameConfirm = resolve;
+    const finish = (value: string | null) => {
+      run.signal.removeEventListener('abort', onAbort);
+      resolve(value);
+    };
+    const onAbort = () => {
+      if (duplicateConfirmRun === run) finishDuplicateNameConfirm(false);
+    };
+    resolveDuplicateNameConfirm = finish;
+    run.signal.addEventListener('abort', onAbort, { once: true });
     showDuplicateNameConfirm.value = true;
   });
 };
@@ -135,27 +168,40 @@ const finishDuplicateNameConfirm = (confirmed: boolean) => {
   showDuplicateNameConfirm.value = false;
   const resolve = resolveDuplicateNameConfirm;
   resolveDuplicateNameConfirm = null;
+  duplicateConfirmRun = null;
   resolve?.(confirmed ? name : null);
 };
 const cancelRunBeforePlaylistCreation = (run: ImportTaskRun) => {
+  const ownsUi = canUpdateUi(run);
   run.dismiss();
+  if (!ownsUi) return;
   if (currentDialogRun === run) currentDialogRun = null;
   isStarting.value = false;
   isImporting.value = false;
-  isLocalFallback.value = false;
   step.value = 'input';
   progressItems.value = [];
   summary.value = null;
 };
 
 const canStart = computed(() => {
-  if (isStarting.value || isImporting.value) return false;
+  if (
+    disposed ||
+    !open.value ||
+    !userStore.isLoggedIn ||
+    !currentUserId.value ||
+    isStarting.value ||
+    isImporting.value ||
+    importTaskStore.status === 'running'
+  )
+    return false;
   if (mode.value === 'link') return /^https?:\/\//i.test(inputText.value.trim());
   return (
     selectedFiles.value.length > 0 &&
+    selectedFiles.value.length <= 9 &&
+    selectedFiles.value.every((file) => file.size <= 10 * 1024 * 1024) &&
     (screenshotTarget.value === 'new'
       ? Boolean(newScreenshotPlaylistName.value.trim() && currentUserId.value)
-      : Boolean(existingListId.value))
+      : Boolean(existingListId.value && selectedPlaylist.value))
   );
 });
 
@@ -193,57 +239,121 @@ const reset = () => {
   progressTotal.value = 1;
   progressItems.value = [];
   summary.value = null;
-  isLocalFallback.value = false;
-  rootTrack.title = '准备导入';
-  rootTrack.artist = '正在准备';
+  showBackgroundConfirm.value = false;
+  neverShowBackgroundConfirm.value = false;
+  currentDialogRun = null;
 };
 
-const resumeFromStore = (completed = false) => {
+const resumeFromStore = () => {
+  currentDialogRun = importTaskStore.getCurrentRun();
   step.value = 'progress';
   progressItems.value = importTaskStore.items;
   progressDone.value = importTaskStore.done;
   progressTotal.value = importTaskStore.total || 1;
-  isImporting.value = !completed;
-  summary.value = completed ? importTaskStore.summary : null;
+  isStarting.value = importTaskStore.status === 'running' && importTaskStore.phase === 'preparing';
+  isImporting.value = importTaskStore.status === 'running';
+  summary.value = importTaskStore.summary;
+  backgroundTargetName.value = importTaskStore.playlistName;
 };
+if (open.value && importTaskStore.status === 'running') resumeFromStore();
 
-watch(open, (value) => {
-  if (!value) {
-    if (step.value === 'progress' && isImporting.value) {
-      if (settingStore.importBackgroundConfirmDismissed) {
-        importTaskStore.enterBackground(backgroundTargetName.value, () => {
-          abortFlag.value = true;
-        });
-        step.value = 'input';
+watch(
+  open,
+  (value) => {
+    if (disposed) return;
+    cancelReset();
+    if (!value) {
+      if (
+        step.value === 'progress' &&
+        isImporting.value &&
+        currentDialogRun &&
+        canContinueTask(currentDialogRun)
+      ) {
+        if (settingStore.importBackgroundConfirmDismissed) {
+          runInBackground();
+          return;
+        }
+        showBackgroundConfirm.value = true;
+        open.value = true;
         return;
       }
-      showBackgroundConfirm.value = true;
-      open.value = true;
+      if (isStarting.value) currentDialogRun?.dismiss();
+      if (step.value === 'progress' && importTaskStore.status === 'completed')
+        importTaskStore.dismiss();
+      uiRevision++;
+      const revision = uiRevision;
+      const isSessionCurrent = captureUserSession(userStore);
+      const timer = window.setTimeout(() => {
+        if (resetTimer !== timer) return;
+        resetTimer = null;
+        if (!disposed && !open.value && revision === uiRevision && isSessionCurrent()) reset();
+      }, 200);
+      resetTimer = timer;
       return;
     }
-    if (step.value === 'progress' && importTaskStore.status === 'completed') {
-      importTaskStore.dismiss();
+    uiRevision++;
+    if (importTaskStore.status === 'running') resumeFromStore();
+    if (currentUserId.value) void refreshPlaylists();
+  },
+  { flush: 'sync' },
+);
+
+watch(
+  [
+    () => userStore.isLoggedIn,
+    () => userStore.accountRevision,
+    () => userStore.info?.userid ?? userStore.info?.userId,
+    () => userStore.info?.token,
+  ],
+  () => {
+    currentDialogRun?.dismiss();
+    cancelReset();
+    uiRevision++;
+    reset();
+    open.value = false;
+    cancelReset();
+  },
+  { flush: 'sync' },
+);
+
+watch(
+  () => [
+    importTaskStore.progressRevision,
+    importTaskStore.status,
+    importTaskStore.phase,
+    importTaskStore.summary,
+  ],
+  () => {
+    if (!disposed && open.value && step.value === 'progress') {
+      if (importTaskStore.status !== 'running') showBackgroundConfirm.value = false;
+      if (importTaskStore.status !== 'idle') resumeFromStore();
+      else {
+        isStarting.value = false;
+        isImporting.value = false;
+      }
     }
-    window.setTimeout(reset, 200);
-    return;
-  }
-  if (importTaskStore.status === 'running') resumeFromStore();
-  if (value && currentUserId.value) void playlistStore.fetchUserPlaylists();
-});
-
-watch(currentUserId, (userid) => {
-  if (open.value && userid) void playlistStore.fetchUserPlaylists();
-});
-
+  },
+);
 let lastOpenRequested = 0;
 watch(
   () => importTaskStore.openRequested,
   (value) => {
-    if (value === lastOpenRequested || value <= 0) return;
+    if (disposed || value === lastOpenRequested || value <= 0) return;
     lastOpenRequested = value;
-    if (importTaskStore.status === 'completed') resumeFromStore(true);
+    if (importTaskStore.status === 'completed' || importTaskStore.status === 'running')
+      resumeFromStore();
   },
 );
+
+onBeforeUnmount(() => {
+  disposed = true;
+  uiRevision++;
+  cancelReset();
+  finishDuplicateNameConfirm(false);
+  // Pending input/confirmation work cannot continue without a dialog. Once in
+  // progress, the captured runner continues and owns its account independently.
+  if (step.value === 'input' && isStarting.value) currentDialogRun?.dismiss();
+});
 
 const responseTaskId = (response: unknown): string | number => {
   if (!response || typeof response !== 'object') throw new Error('创建导入任务失败');
@@ -284,96 +394,79 @@ const updateNativeProgress = (run: ImportTaskRun, task: NativeImportTask) => {
   ];
   const progressTotalValue = songs > 0 ? total : 4;
   const done = status === 3 ? progressTotalValue : songs > 0 ? Math.min(total - 1, imported) : 1;
-  progressDone.value = Math.max(0, done);
-  progressTotal.value = progressTotalValue;
-  progressItems.value = items;
-  items.forEach((item) => run.updateProgress(progressDone.value, progressTotalValue, item));
+  run.resetProgress(Math.max(0, done), progressTotalValue, items);
+  if (canUpdateUi(run)) resumeFromStore();
 };
 
 const runLocalFallback = async (url: string, run: ImportTaskRun) => {
-  isLocalFallback.value = true;
-  rootTrack.title = '正在换一种方式继续导入';
-  rootTrack.artist = '正在读取歌单信息';
-  progressItems.value = [{ external: rootTrack, status: 'matching' }];
-  progressDone.value = 0;
-  progressTotal.value = 1;
-
+  if (!canContinueTask(run)) return;
+  const userid = currentUserId.value;
+  if (!userid) throw new Error('请先登录');
+  run.setPhase('local');
+  const root: ExternalTrack = { title: '正在换一种方式继续导入', artist: '正在读取歌单信息' };
+  run.resetProgress(0, 1, [{ external: root, status: 'matching' }]);
+  if (canUpdateUi(run)) resumeFromStore();
   const resolved = await resolveExternalPlaylist({ input: url, provider: 'auto' });
   if (!canContinueTask(run)) return;
   if (!resolved.ok) throw new Error(resolved.error);
   if (!resolved.playlist.tracks.length) throw new Error('外部歌单没有可导入歌曲');
-  if (!currentUserId.value) throw new Error('请先登录');
-
   const playlistName = await confirmDuplicatePlaylistName(
     resolved.playlist.name || '导入的歌单',
     run,
   );
+  if (!canContinueTask(run)) return;
   if (!playlistName) {
     cancelRunBeforePlaylistCreation(run);
     return;
   }
-  backgroundTargetName.value = `${playlistName} · 自动导入`;
-  const listId = await playlistStore.createPlaylistAndReturnId(
-    playlistName,
-    false,
-    currentUserId.value,
-  );
+  const listId = await playlistStore.createPlaylistAndReturnId(playlistName, false, userid);
   if (!canContinueTask(run)) return;
   if (!listId) throw new Error('新歌单创建失败；如存在同名歌单，请换一个名称后重试');
-
+  run.enterBackground(`${playlistName} · 自动导入`, () => {});
   const tracks = resolved.playlist.tracks;
-  progressItems.value = tracks.map((track) => ({ external: track, status: 'pending' }));
-  progressDone.value = 0;
-  progressTotal.value = tracks.length;
+  run.resetProgress(
+    0,
+    tracks.length,
+    tracks.map((track) => ({ external: track, status: 'pending' })),
+  );
   const result = await runImport(tracks, listId, {
-    shouldAbort: () => run.signal.aborted || abortFlag.value || importTaskStore.abortRequested,
+    shouldAbort: () => !canContinueTask(run),
     onProgress: (done, total, item) => {
-      if (!canContinueTask(run)) return;
-      progressDone.value = done;
-      progressTotal.value = total;
-      const index = progressItems.value.findIndex(
-        (progressItem) => progressItem.external === item.external,
-      );
-      if (index >= 0) progressItems.value[index] = { ...item };
-      run.updateProgress(done, total, item);
+      if (canContinueTask(run)) run.updateProgress(done, total, item);
     },
   });
   if (!canContinueTask(run)) return;
-  summary.value = result;
-  run.complete(result);
-  if (!abortFlag.value && !importTaskStore.abortRequested) {
+  if (run.complete(result))
     toastStore.success(`导入完成：成功 ${result.success} / ${result.total}`);
-  }
-  await playlistStore.fetchUserPlaylists();
+  if (canContinueTask(run)) await refreshPlaylists();
 };
 
 const monitorTask = async (taskId: string | number, fallbackUrl: string, run: ImportTaskRun) => {
-  isStarting.value = false;
-  isImporting.value = true;
-  step.value = 'progress';
+  if (!canContinueTask(run)) return;
+  run.setPhase('cloud');
+  if (canUpdateUi(run)) {
+    isStarting.value = false;
+    isImporting.value = true;
+    step.value = 'progress';
+  }
   updateNativeProgress(run, { id: taskId, status: 0 });
-
   try {
     const result = await waitForNativeImport(taskId, {
-      shouldStop: () => run.signal.aborted || abortFlag.value || importTaskStore.abortRequested,
+      shouldStop: () => !canContinueTask(run),
       onProgress: (task) => updateNativeProgress(run, task),
     });
     if (!canContinueTask(run)) return;
     if (!result) {
-      if (importTaskStore.status === 'running') {
-        run.dismiss();
-        toastStore.warning('已停止查看进度，导入任务仍会继续处理');
-      }
+      run.dismiss();
       return;
     }
-
     const total = Math.max(
       1,
       Number(result.task.songs_num || 0),
       Number(result.task.imported_num || 0) + Number(result.task.missed_num || 0),
     );
-    const success = Number(result.task.imported_num || 0);
-    const skipped = Number(result.task.missed_num || 0);
+    const success = Number(result.task.imported_num || 0),
+      skipped = Number(result.task.missed_num || 0);
     const missedItems: ImportItemResult[] = result.missed.map((track) => ({
       external: {
         title: track.audio_name || '未识别歌曲',
@@ -383,17 +476,11 @@ const monitorTask = async (taskId: string | number, fallbackUrl: string, run: Im
       status: 'skipped',
       error: track.reason || '未匹配',
     }));
-    if (!canContinueTask(run)) return;
     updateNativeProgress(run, result.task);
-    progressItems.value = [...progressItems.value, ...missedItems];
-    progressDone.value = total;
-    progressTotal.value = total;
-    summary.value = { total, success, low: 0, skipped, failed: 0 };
     missedItems.forEach((item) => run.updateProgress(total, total, item));
-
-    run.complete(summary.value);
-    toastStore.success(`导入完成：成功 ${success} / ${total}`);
-    await playlistStore.fetchUserPlaylists();
+    const resultSummary = { total, success, low: 0, skipped, failed: 0 };
+    if (run.complete(resultSummary)) toastStore.success(`导入完成：成功 ${success} / ${total}`);
+    if (canContinueTask(run)) await refreshPlaylists();
   } catch (error: unknown) {
     if (!canContinueTask(run)) return;
     if (error instanceof NativeImportUnsupportedError && fallbackUrl) {
@@ -401,46 +488,81 @@ const monitorTask = async (taskId: string | number, fallbackUrl: string, run: Im
       await runLocalFallback(fallbackUrl, run);
       return;
     }
-    rootTrack.title = '导入失败';
     const item: ImportItemResult = {
-      external: rootTrack,
+      external: { title: '导入失败', artist: '' },
       status: 'failed',
       error: error instanceof Error ? error.message : '导入失败',
     };
-    progressItems.value = [item];
-    summary.value = { total: 1, success: 0, low: 0, skipped: 0, failed: 1 };
-    run.updateProgress(1, 1, item);
-    run.complete(summary.value);
+    run.resetProgress(1, 1, [item]);
+    run.complete({ total: 1, success: 0, low: 0, skipped: 0, failed: 1 });
     toastStore.actionFailed('导入');
   } finally {
-    if (currentDialogRun === run) isImporting.value = false;
+    if (canUpdateUi(run)) {
+      isStarting.value = false;
+      isImporting.value = false;
+    }
   }
 };
 
-const fileToBase64 = (file: File): Promise<string> =>
+const fileToBase64 = (file: File, run: ImportTaskRun): Promise<string> =>
   new Promise((resolve, reject) => {
+    if (!canContinueTask(run)) {
+      reject(new Error('已停止导入'));
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error || new Error(`读取图片失败：${file.name}`));
-    reader.readAsDataURL(file);
+    const cleanup = () => {
+      reader.onload = null;
+      reader.onerror = null;
+      reader.onabort = null;
+      run.signal.removeEventListener('abort', onAbort);
+    };
+    const fail = (error: unknown) => {
+      cleanup();
+      reject(error);
+    };
+    const onAbort = () => {
+      cleanup();
+      try {
+        if (reader.readyState === 1) reader.abort();
+      } catch {
+        // Cancellation still settles the read if the browser reader is gone.
+      } finally {
+        reject(new Error('已停止导入'));
+      }
+    };
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      if (!/^data:image\/[^;]+;base64,.+/i.test(result)) {
+        fail(new Error(`读取图片失败：${file.name}`));
+        return;
+      }
+      cleanup();
+      resolve(result);
+    };
+    reader.onerror = () => fail(reader.error || new Error(`读取图片失败：${file.name}`));
+    reader.onabort = () => fail(new Error('已停止读取截图'));
+    run.signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      reader.readAsDataURL(file);
+    } catch (error) {
+      fail(error);
+    }
   });
 
 const handleFiles = (event: Event) => {
+  if (isStarting.value || isImporting.value) return;
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files || []);
-  errorMessage.value = '';
-  if (files.length > 9) {
-    errorMessage.value = '一次最多选择 9 张截图';
-    selectedFiles.value = files.slice(0, 9);
-    return;
-  }
-  const oversized = files.find((file) => file.size > 10 * 1024 * 1024);
+  const selected = files.slice(0, 9);
+  const oversized = selected.find((file) => file.size > 10 * 1024 * 1024);
   if (oversized) {
     errorMessage.value = `${oversized.name} 超过 10 MB`;
     selectedFiles.value = [];
     return;
   }
-  selectedFiles.value = files;
+  errorMessage.value = files.length > 9 ? '一次最多选择 9 张截图' : '';
+  selectedFiles.value = selected;
 };
 
 const setExistingListId = (value: unknown) => {
@@ -449,91 +571,126 @@ const setExistingListId = (value: unknown) => {
 
 const startImport = async () => {
   if (!canStart.value) return;
+  const userid = currentUserId.value!;
+  const importMode = mode.value;
+  const url = inputText.value.trim();
+  const files = [...selectedFiles.value];
+  const targetName =
+    screenshotTarget.value === 'new'
+      ? newScreenshotPlaylistName.value.trim()
+      : selectedPlaylist.value?.name || '';
+  const targetListId = existingListId.value;
+  const isSessionCurrent = captureUserSession(userStore);
   abortFlag.value = false;
-  const run = importTaskStore.start('歌单导入', () => {
-    abortFlag.value = true;
-  });
+  const run = importTaskStore.start(
+    '歌单导入',
+    () => {
+      if (!disposed && currentDialogRun === run) {
+        abortFlag.value = true;
+        isStarting.value = false;
+        isImporting.value = false;
+      }
+    },
+    isSessionCurrent,
+  );
   currentDialogRun = run;
   isStarting.value = true;
   errorMessage.value = '';
   summary.value = null;
   progressItems.value = [{ external: rootTrack, status: 'pending' }];
-
   try {
-    if (mode.value === 'link') {
-      backgroundTargetName.value = '外部歌单导入';
-      const url = inputText.value.trim();
+    if (importMode === 'link') {
       const response = await createLinkImportTask(url);
       if (!canContinueTask(run)) return;
       await monitorTask(responseTaskId(response), url, run);
       return;
     }
-
-    if (!currentUserId.value) throw new Error('请先登录');
-    let playlistName =
-      screenshotTarget.value === 'new'
-        ? newScreenshotPlaylistName.value.trim()
-        : selectedPlaylist.value?.name || '';
-    let listId = existingListId.value;
+    let playlistName = targetName;
+    let listId = targetListId;
     if (screenshotTarget.value === 'new') {
       const confirmedName = await confirmDuplicatePlaylistName(playlistName, run);
+      if (!canContinueTask(run)) return;
       if (!confirmedName) {
         cancelRunBeforePlaylistCreation(run);
         return;
       }
       playlistName = confirmedName;
-      listId = await playlistStore.createPlaylistAndReturnId(
-        playlistName,
-        false,
-        currentUserId.value,
-      );
+      listId = await playlistStore.createPlaylistAndReturnId(playlistName, false, userid);
       if (!canContinueTask(run)) return;
       if (!listId) throw new Error('新歌单创建失败；如存在同名歌单，请换一个名称后重试');
     }
     if (!listId || !playlistName) throw new Error('请选择或创建目标歌单');
-    backgroundTargetName.value = playlistName;
-    const taskSn = `${currentUserId.value}${Date.now()}`;
-    for (let index = 0; index < selectedFiles.value.length; index++) {
-      if (!canContinueTask(run)) return;
-      rootTrack.title = `正在上传截图 ${index + 1} / ${selectedFiles.value.length}`;
-      progressDone.value = index;
-      progressTotal.value = selectedFiles.value.length + 1;
+    run.enterBackground(playlistName, () => {});
+    const taskSn = `${userid}${Date.now()}`;
+    if (canUpdateUi(run)) {
       step.value = 'progress';
-      const item: ImportItemResult = { external: rootTrack, status: 'adding' };
-      progressItems.value = [item];
-      run.updateProgress(index, progressTotal.value, item);
-      const imageBase64 = await fileToBase64(selectedFiles.value[index]);
+      isImporting.value = true;
+    }
+    const root: ExternalTrack = { title: '上传截图', artist: '' };
+    for (let index = 0; index < files.length; index++) {
+      if (!canContinueTask(run)) return;
+      root.title = `正在上传截图 ${index + 1} / ${files.length}`;
+      run.resetProgress(index, files.length + 1, [{ external: root, status: 'adding' }]);
+      const imageBase64 = await fileToBase64(files[index], run);
       if (!canContinueTask(run)) return;
       await submitImportScreenshot(taskSn, imageBase64);
       if (!canContinueTask(run)) return;
     }
     const response = await createScreenshotImportTask(taskSn, listId, playlistName);
     if (!canContinueTask(run)) return;
-    rootTrack.title = playlistName;
     await monitorTask(responseTaskId(response), '', run);
   } catch (error: unknown) {
     if (!canContinueTask(run)) return;
-    run.dismiss();
-    isStarting.value = false;
-    isImporting.value = false;
-    errorMessage.value = error instanceof Error ? error.message : '创建导入任务失败';
-    step.value = 'input';
+    if (importTaskStore.phase === 'local') {
+      const item: ImportItemResult = {
+        external: { title: '导入失败', artist: '' },
+        status: 'failed',
+        error: error instanceof Error ? error.message : '导入失败',
+      };
+      run.resetProgress(1, 1, [item]);
+      run.complete({ total: 1, success: 0, low: 0, skipped: 0, failed: 1 });
+      toastStore.actionFailed('导入');
+      return;
+    }
+    const ownsUi = canUpdateUi(run);
+    if (ownsUi) {
+      run.dismiss();
+      isStarting.value = false;
+      isImporting.value = false;
+      errorMessage.value = error instanceof Error ? error.message : '创建导入任务失败';
+      step.value = 'input';
+    } else {
+      const item: ImportItemResult = {
+        external: { title: '导入失败', artist: '' },
+        status: 'failed',
+        error: error instanceof Error ? error.message : '创建导入任务失败',
+      };
+      run.resetProgress(1, 1, [item]);
+      run.complete({ total: 1, success: 0, low: 0, skipped: 0, failed: 1 });
+    }
     toastStore.actionFailed('创建导入任务');
   }
 };
 
 const stopMonitoring = () => {
+  const run = currentDialogRun ?? importTaskStore.getCurrentRun();
+  const wasCloud = importTaskStore.phase === 'cloud';
+  run?.abort({ feedback: false });
+  finishDuplicateNameConfirm(false);
   abortFlag.value = true;
-  if (importTaskStore.status === 'running') {
-    importTaskStore.requestAbort({ feedback: false });
-  }
+  isStarting.value = false;
+  isImporting.value = false;
+  if (wasCloud) toastStore.warning('已停止查看进度，导入任务仍会继续处理');
 };
 
 const runInBackground = () => {
-  importTaskStore.enterBackground(backgroundTargetName.value, () => {
-    abortFlag.value = true;
-  });
+  const run = currentDialogRun;
+  if (!run || !canContinueTask(run)) return;
+  showBackgroundConfirm.value = false;
+  run.enterBackground(importTaskStore.playlistName, () => {});
   step.value = 'input';
+  isStarting.value = false;
+  isImporting.value = false;
   open.value = false;
 };
 
@@ -742,7 +899,11 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
         </div>
       </Scrollbar>
       <p v-if="isImporting" class="import-hint">
-        停止查看不会取消当前任务，稍后仍可在歌单列表中查看导入结果。
+        {{
+          importTaskStore.phase === 'cloud'
+            ? '停止查看不会取消当前任务，稍后仍可在歌单列表中查看导入结果。'
+            : '停止导入后将不再继续上传、匹配或添加歌曲，已提交的内容会保留。'
+        }}
       </p>
     </div>
 
@@ -776,9 +937,9 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
             {{ summary.failed }}</span
           >
         </div>
-        <Button v-if="isImporting" variant="secondary" size="sm" @click="stopMonitoring"
-          >停止查看</Button
-        >
+        <Button v-if="isImporting" variant="secondary" size="sm" @click="stopMonitoring">{{
+          importTaskStore.phase === 'cloud' ? '停止查看' : '停止导入'
+        }}</Button>
         <Button v-if="isImporting" variant="primary" size="sm" @click="runInBackground"
           >后台运行</Button
         >

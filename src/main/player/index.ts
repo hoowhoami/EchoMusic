@@ -23,12 +23,25 @@ export async function initPlayer(getWindow: () => Electron.BrowserWindow | null)
     log.warn('[Main] player engine addon not found');
     return null;
   }
-  registerEventForwarding(controller);
-  setupTaskbarProgress(controller);
-  if (!controller.start()) return null;
-  playerController = controller;
-  log.info('[Main] player engine started successfully');
-  return controller;
+  let initialized = false;
+  try {
+    registerEventForwarding(controller);
+    setupTaskbarProgress(controller);
+    if (!controller.start()) return null;
+    initialized = true;
+    playerController = controller;
+    log.info('[Main] player engine started successfully');
+    return controller;
+  } finally {
+    if (!initialized) {
+      try {
+        controller.destroy();
+      } catch (error) {
+        log.warn('[Main] Failed to clean up player after initialization failure:', error);
+      }
+      destroyTaskbarProgress();
+    }
+  }
 }
 
 export async function restartPlayer() {

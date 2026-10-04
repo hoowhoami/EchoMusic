@@ -81,8 +81,8 @@ test('DLNA snapshots use shared state values and source switching returns positi
   assert.equal(snapshot.volume, 35);
   assert.equal(snapshot.positionSec, 30);
   assert.deepEqual(
-    calls.slice(-3).map((call) => call[2]),
-    ['SetAVTransportURI', 'Seek', 'Play'],
+    calls.slice(-4).map((call) => call[2]),
+    ['SetAVTransportURI', 'SetPlayMode', 'Seek', 'Play'],
   );
 });
 

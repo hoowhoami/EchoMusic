@@ -31,13 +31,19 @@ const responseData = <T>(response: unknown): T | null => {
   return ((response as { data?: T }).data ?? null) as T | null;
 };
 
-const fetchMissedTracks = async (task: NativeImportTask): Promise<NativeImportMissedTrack[]> => {
+const fetchMissedTracks = async (
+  task: NativeImportTask,
+  shouldStop: () => boolean,
+): Promise<NativeImportMissedTrack[] | null> => {
+  if (shouldStop()) return null;
   if (!task.listid || !task.missed_num) return [];
   const pageSize = 100;
   const pageCount = Math.ceil(Number(task.missed_num) / pageSize);
   const missed: NativeImportMissedTrack[] = [];
   for (let page = 1; page <= pageCount; page++) {
+    if (shouldStop()) return null;
     const response = await getImportTaskResult(task.listid, page, pageSize);
+    if (shouldStop()) return null;
     const result = responseData<NativeImportTaskResult>(response);
     if (!result?.missed?.length) break;
     missed.push(...result.missed);
@@ -50,18 +56,36 @@ export const waitForNativeImport = async (
   taskId: string | number,
   callbacks: NativeImportCallbacks = {},
 ): Promise<NativeImportResult | null> => {
-  const intervalMs = Math.max(500, callbacks.intervalMs ?? 1500);
+  const intervalMs = Number.isFinite(callbacks.intervalMs)
+    ? Math.max(500, callbacks.intervalMs!)
+    : 1500;
+  const shouldStop = () => Boolean(callbacks.shouldStop?.());
 
-  while (!callbacks.shouldStop?.()) {
-    const response = await getImportTaskStatuses([taskId]);
+  while (!shouldStop()) {
+    let response: unknown;
+    try {
+      response = await getImportTaskStatuses([taskId]);
+    } catch (error) {
+      if (shouldStop()) return null;
+      throw error;
+    }
+    if (shouldStop()) return null;
     const data = responseData<NativeImportTask[] | NativeImportTask>(response);
     const task = Array.isArray(data) ? data[0] : data;
     if (!task) throw new Error('未查询到导入任务');
-    callbacks.onProgress?.(task);
-
     const status = Number(task.status);
+    callbacks.onProgress?.(task);
+    if (shouldStop()) return null;
+
     if (status === 3) {
-      return { task, missed: await fetchMissedTracks(task) };
+      try {
+        const missed = await fetchMissedTracks(task, shouldStop);
+        if (shouldStop() || missed === null) return null;
+        return { task, missed };
+      } catch (error) {
+        if (shouldStop()) return null;
+        throw error;
+      }
     }
     if (status >= 10) {
       const taskType = Number(task.task_type ?? task.type ?? 0);

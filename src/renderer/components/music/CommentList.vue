@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch, onBeforeUnmount } from 'vue';
 import { iconMessageCircle, iconThumbsUp, iconChevronUp, iconTrash } from '@/icons';
 import type { Comment } from '@/models/comment';
 import type { CommentResourceType } from '@/composables/useComments';
@@ -12,6 +12,8 @@ import { mapCommentItem } from '@/utils/mappers';
 import { enrichCommentsWithYoungVip } from '@/utils/commentVipCache';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
+import { captureUserSession } from '@/utils/userSession';
+import { toRecord } from '../../../shared/object';
 import {
   groupCommentRelations,
   mainCommentParentId,
@@ -28,6 +30,7 @@ interface Props {
   compact?: boolean;
   hideEmpty?: boolean;
   resourceType?: CommentResourceType;
+  resourceId?: string | number;
   fallbackMixSongId?: string;
   inlineReplies?: boolean;
   loadingSkeletonCount?: number;
@@ -105,14 +108,17 @@ const replyTarget = ref<Comment | null>(null);
 const deletingCommentIds = reactive<Set<string | number>>(new Set());
 const DELETE_REFRESH_DELAY_MS = 450;
 function startReply(root: Comment, target = root) {
-  if (replyBusy.value) return;
+  if (disposed || replyBusy.value || !isRootAvailable(root) || !isVisibleComment(target)) return;
   replyRoot.value = root;
   replyTarget.value = target;
 }
 async function submitFloorReply(content: string) {
   const root = replyRoot.value;
   const target = replyTarget.value;
-  if (!root || !target) throw new Error('回复暂不可用');
+  if (!root || !target || disposed || !isRootAvailable(root) || !isVisibleComment(target)) {
+    throw new Error('回复暂不可用');
+  }
+  const isCurrent = captureScope();
   await (props.sendFloorReply ?? sendFloorComment)({
     root,
     target,
@@ -120,8 +126,15 @@ async function submitFloorReply(content: string) {
     resourceType: props.resourceType,
     mixSongId: props.fallbackMixSongId,
   });
-  // 刷新会先清空楼层列表并卸载输入框，不能依赖子组件稍后的 sent 事件收起。
-  // 发送已成功即结束编辑；列表刷新慢或失败都不应保留已提交的草稿。
+  if (
+    !isCurrent() ||
+    !isRootAvailable(root) ||
+    replyRoot.value !== root ||
+    replyTarget.value !== target
+  )
+    return;
+  toastStore.show('回复已提交，展示结果以平台审核为准', 'success');
+  // 成功后立即结束原编辑，再刷新楼层；刷新失败不重新展示已提交的草稿。
   replyRoot.value = null;
   replyTarget.value = null;
   replyBusy.value = false;
@@ -152,11 +165,16 @@ interface FloorState {
   message: string;
   loadMoreMessage: string;
   initialized: boolean;
+  requestGeneration: number;
+  contentGeneration: number;
+  receivedCount: number;
+  rootKey: string;
 }
 
 const floorStates = reactive<Map<string | number, FloorState>>(new Map());
 
 const getFloorState = (commentId: string | number): FloorState => {
+  commentId = String(commentId);
   if (!floorStates.has(commentId)) {
     floorStates.set(commentId, {
       expanded: false,
@@ -168,31 +186,126 @@ const getFloorState = (commentId: string | number): FloorState => {
       message: '',
       loadMoreMessage: '',
       initialized: false,
+      requestGeneration: 0,
+      contentGeneration: 0,
+      receivedCount: 0,
+      rootKey: '',
     });
   }
   return floorStates.get(commentId)!;
 };
 
+const rootKey = (comment: Comment) =>
+  JSON.stringify([
+    String(comment.id),
+    comment.specialId ??
+      comment.specialChildId ??
+      comment.special_id ??
+      comment.special_child_id ??
+      '',
+    comment.code ?? '',
+    comment.mixSongId ?? '',
+  ]);
+const isRootAvailable = (comment: Comment) =>
+  props.comments.some((item) => rootKey(contextRoot(item)) === rootKey(comment));
+const isVisibleComment = (comment: Comment) =>
+  props.comments.some((item) => rootKey(item) === rootKey(comment)) ||
+  Array.from(floorStates.values()).some((state) =>
+    state.replies.some((item) => rootKey(item) === rootKey(comment)),
+  );
+let generation = 0;
+let disposed = false;
+const refreshTimers = new Set<number>();
+const captureScope = () => {
+  const token = generation;
+  const isSessionCurrent = captureUserSession(userStore);
+  return () => !disposed && token === generation && isSessionCurrent();
+};
+const invalidate = () => {
+  generation++;
+  floorStates.clear();
+  expandedContents.clear();
+  deletingCommentIds.clear();
+  replyRoot.value = null;
+  replyTarget.value = null;
+  replyBusy.value = false;
+  refreshTimers.forEach((timer) => window.clearTimeout(timer));
+  refreshTimers.clear();
+};
+watch(
+  [
+    () => props.resourceType,
+    () => props.resourceId,
+    () => props.fallbackMixSongId,
+    () => userStore.isLoggedIn,
+    () => userStore.accountRevision,
+    () => userStore.info?.userid ?? userStore.info?.userId,
+    () => userStore.info?.token,
+  ],
+  invalidate,
+  { flush: 'sync' },
+);
+watch(
+  () => props.comments,
+  () => {
+    const roots = new Map<string, Set<string>>();
+    for (const comment of props.comments) {
+      const root = contextRoot(comment);
+      const keys = roots.get(String(root.id)) ?? new Set<string>();
+      keys.add(rootKey(root));
+      roots.set(String(root.id), keys);
+    }
+    for (const [id, state] of floorStates) {
+      if (!roots.has(String(id)) || (state.rootKey && !roots.get(String(id))?.has(state.rootKey))) {
+        floorStates.delete(id);
+      }
+    }
+    if (
+      replyRoot.value &&
+      (!isRootAvailable(replyRoot.value) ||
+        (replyTarget.value && !isVisibleComment(replyTarget.value)))
+    ) {
+      replyRoot.value = null;
+      replyTarget.value = null;
+      replyBusy.value = false;
+    }
+  },
+  { flush: 'sync' },
+);
+onBeforeUnmount(() => {
+  disposed = true;
+  invalidate();
+});
+
 const fetchFloorReplies = async (comment: Comment, reset = false) => {
+  if (disposed || !isRootAvailable(comment)) return;
   const state = getFloorState(comment.id);
-  if (state.loading) return;
+  if (state.loading && !reset) return;
   if (!state.hasMore && !reset) return;
-  if (reset) {
-    state.page = 1;
-    state.replies = [];
-    state.hasMore = true;
-    state.message = '';
-    state.loadMoreMessage = '';
-  }
+  const requestGeneration = ++state.requestGeneration;
+  if (reset) state.contentGeneration++;
+  const contentGeneration = state.contentGeneration;
+  const isScopeCurrent = captureScope();
+  const isContentCurrent = () =>
+    isScopeCurrent() &&
+    isRootAvailable(comment) &&
+    floorStates.get(String(comment.id)) === state &&
+    state.contentGeneration === contentGeneration;
+  const isCurrent = () => isContentCurrent() && state.requestGeneration === requestGeneration;
+  const page = reset ? 1 : state.page;
+  state.rootKey = rootKey(comment);
   state.loading = true;
+  state.loadMoreMessage = '';
   try {
-    const specialId = comment.specialId ?? '';
-    const tid = comment.tid ?? String(comment.id);
+    const specialId =
+      comment.specialId || comment.specialChildId || comment.special_id || comment.special_child_id;
+    const tid = comment.tid || String(comment.id);
     const mixSongId =
       comment.mixSongId ?? (props.resourceType === 'music' ? props.fallbackMixSongId : undefined);
     if (!specialId || !tid) {
       state.message = '楼层评论暂不可用';
       state.hasMore = false;
+      state.initialized = true;
       return;
     }
     const res = await getFloorComments({
@@ -201,32 +314,69 @@ const fetchFloorReplies = async (comment: Comment, reset = false) => {
       mixSongId,
       code: comment.code,
       resourceType: props.resourceType,
-      page: state.page,
+      page,
       pagesize: 30,
     });
-    if (res && typeof res === 'object') {
-      const payload = (res as { data?: unknown }).data ?? res;
-      const listCandidate = (payload as Record<string, unknown>).list ?? [];
-      const errCode = Number((payload as Record<string, unknown>).err_code ?? 0) || 0;
-      const message = String((payload as Record<string, unknown>).message ?? '');
-      const list = Array.isArray(listCandidate) ? listCandidate : [];
-      const mapped = await enrichCommentsWithYoungVip(list.map(mapCommentItem));
-      state.replies = mergeFloorReplies([], reset ? mapped : [...state.replies, ...mapped]);
-      const totalCount = Number((payload as Record<string, unknown>).comments_num ?? 0) || 0;
-      state.total = totalCount;
-      state.hasMore = totalCount > 0 ? state.replies.length < totalCount : mapped.length >= 30;
-      if (state.hasMore) state.page += 1;
-      if (state.replies.length === 0) {
-        state.message = errCode !== 0 ? '楼层评论暂不可用' : message || '暂无回复';
-      }
-    }
+    if (!isCurrent()) return;
+
+    const payload = toRecord(toRecord(res).data ?? res);
+    const list = Array.isArray(payload.list) ? payload.list : [];
+    const errCode = Number(payload.err_code ?? 0) || 0;
+    const mapped = list.map(mapCommentItem);
+    state.replies = mergeFloorReplies([], reset ? mapped : [...state.replies, ...mapped]);
+    const totalCount = Number(payload.comments_num ?? payload.total ?? payload.count);
+    if (Number.isFinite(totalCount) && totalCount >= 0) state.total = totalCount;
+    else if (reset) state.total = 0;
+    state.receivedCount = (reset ? 0 : state.receivedCount) + list.length;
+    state.hasMore =
+      list.length > 0 && (state.total > 0 ? state.receivedCount < state.total : list.length >= 30);
+    state.page = state.hasMore ? page + 1 : page;
+    state.message =
+      state.replies.length === 0
+        ? errCode !== 0
+          ? '楼层评论暂不可用'
+          : String(payload.message || '暂无回复')
+        : '';
+    state.initialized = true;
+    void enrichCommentsWithYoungVip(mapped)
+      .then((enriched) => {
+        if (!isContentCurrent()) return;
+        const byId = new Map(enriched.map((item) => [String(item.id), item]));
+        state.replies = state.replies.map((item) => {
+          const patch = byId.get(String(item.id));
+          return patch
+            ? {
+                ...item,
+                badges: patch.badges,
+                talentIcon: patch.talentIcon,
+                userId: patch.userId ?? item.userId,
+                raw: patch.raw ? { ...item.raw, busi_vip: patch.raw.busi_vip } : item.raw,
+              }
+            : item;
+        });
+      })
+      .catch(() => undefined);
   } catch {
+    if (!isCurrent()) return;
     toastStore.loadFailed('楼层评论');
     state.loadMoreMessage = '加载更多失败，点击重试';
   } finally {
-    state.loading = false;
-    state.initialized = true;
+    if (isCurrent()) state.loading = false;
   }
+};
+
+const canLoadMoreFloor = (comment: Comment) => {
+  const state = floorStateFor(comment);
+  return (
+    !state.loading && Boolean(state.loadMoreMessage || (state.hasMore && state.replies.length > 0))
+  );
+};
+const loadMoreFloor = (comment: Comment) => {
+  const state = floorStateFor(comment);
+  return fetchFloorReplies(
+    contextRoot(comment),
+    Boolean(state.loadMoreMessage && (!state.initialized || !state.hasMore)),
+  );
 };
 
 const toggleFloor = (comment: Comment) => {
@@ -250,7 +400,14 @@ const formatLike = (value: number) => {
 const commentIpText = (comment: Comment) => comment.ipLocation || '';
 const canDeleteComment = (comment: Comment) => {
   const currentUserId = String(userStore.info?.userid ?? userStore.info?.userId ?? '');
-  return Boolean(currentUserId && comment.userId && String(comment.userId) === currentUserId);
+  return Boolean(
+    !disposed &&
+    userStore.isLoggedIn &&
+    isVisibleComment(comment) &&
+    currentUserId &&
+    comment.userId &&
+    String(comment.userId) === currentUserId,
+  );
 };
 const isDeletingComment = (comment: Comment) => deletingCommentIds.has(comment.id);
 const refreshDeletedFloor = (comment: Comment) => {
@@ -258,11 +415,15 @@ const refreshDeletedFloor = (comment: Comment) => {
   if (!tid) return false;
   const state = getFloorState(tid);
   if (!state.initialized && state.replies.length === 0) return false;
-  void fetchFloorReplies({ ...comment, id: tid, tid }, true);
+  const root = props.comments.map(contextRoot).find((item) => String(item.id) === String(tid));
+  if (!root) return false;
+  void fetchFloorReplies(root, true);
   return true;
 };
 const handleDeleteComment = async (comment: Comment) => {
   if (!canDeleteComment(comment) || isDeletingComment(comment)) return;
+  const isScopeCurrent = captureScope();
+  const isCurrent = () => isScopeCurrent() && isVisibleComment(comment);
   deletingCommentIds.add(comment.id);
   try {
     await deleteComment({
@@ -270,14 +431,19 @@ const handleDeleteComment = async (comment: Comment) => {
       resourceType: props.resourceType,
       mixSongId: props.fallbackMixSongId,
     });
+    if (!isCurrent()) return;
     toastStore.actionCompleted('评论已删除');
     refreshDeletedFloor(comment);
-    window.setTimeout(() => emit('deleted', comment), DELETE_REFRESH_DELAY_MS);
+    const timer = window.setTimeout(() => {
+      refreshTimers.delete(timer);
+      if (isCurrent()) emit('deleted', comment);
+    }, DELETE_REFRESH_DELAY_MS);
+    refreshTimers.add(timer);
   } catch (error) {
     const message = error instanceof Error && error.message ? error.message : '删除评论失败';
-    toastStore.warning(message);
+    if (isCurrent()) toastStore.warning(message);
   } finally {
-    deletingCommentIds.delete(comment.id);
+    if (isScopeCurrent()) deletingCommentIds.delete(comment.id);
   }
 };
 </script>
@@ -435,6 +601,7 @@ const handleDeleteComment = async (comment: Comment) => {
           </div>
 
           <FloorReplyComposer
+            :notify-success="false"
             v-if="replyRoot?.id === comment.id && replyTarget?.id === comment.id"
             :key="`${comment.id}:${replyTarget.id}`"
             :target="replyTarget"
@@ -547,6 +714,7 @@ const handleDeleteComment = async (comment: Comment) => {
                   </Popconfirm>
                 </div>
                 <FloorReplyComposer
+                  :notify-success="false"
                   v-if="replyRoot?.id === contextRoot(comment).id && replyTarget?.id === reply.id"
                   :key="`${comment.id}:${replyTarget.id}`"
                   :target="reply"
@@ -577,20 +745,13 @@ const handleDeleteComment = async (comment: Comment) => {
             >
               {{ floorStateFor(comment).message || '暂无回复' }}
             </div>
-            <div
-              v-if="
-                floorStateFor(comment).hasMore &&
-                !floorStateFor(comment).loading &&
-                floorStateFor(comment).replies.length > 0
-              "
-              class="comment-floor-more"
-            >
+            <div v-if="canLoadMoreFloor(comment)" class="comment-floor-more">
               <Button
                 variant="unstyled"
                 size="none"
                 type="button"
                 class="comment-floor-more-btn"
-                @click="fetchFloorReplies(contextRoot(comment))"
+                @click="loadMoreFloor(comment)"
               >
                 {{ floorStateFor(comment).loadMoreMessage || '加载更多回复' }}
               </Button>
@@ -598,6 +759,7 @@ const handleDeleteComment = async (comment: Comment) => {
             <div
               v-if="
                 !floorStateFor(comment).hasMore &&
+                !floorStateFor(comment).loadMoreMessage &&
                 !floorStateFor(comment).loading &&
                 floorStateFor(comment).replies.length > 0
               "

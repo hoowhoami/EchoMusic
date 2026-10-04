@@ -1,6 +1,7 @@
 import { useAuthStore } from '@/stores/auth';
 import { useUserStore } from '@/stores/user';
 import { useDeviceStore } from '@/stores/device';
+import { watch } from 'vue';
 import { logger } from './logger';
 import {
   getCurrentRequestOrigin,
@@ -10,6 +11,7 @@ import {
 import type { PluginServerRequest } from '../../shared/plugins';
 import { getPayloadSize, maskSensitiveText, stringifyForLog } from '../../shared/logging';
 import { requestKugouVerification, type KugouVerificationChallenge } from './kugouVerification';
+import { captureUserSession } from './userSession';
 
 // --- 类型定义 ---
 
@@ -39,6 +41,7 @@ interface RequestConfig {
 }
 
 interface InternalRequestOptions {
+  isCurrentSession?: () => boolean;
   retriedAfterKugouVerification?: boolean;
   /** 显式指定的请求来源；验证重试等异步续体必须传此值，不能依赖 ambient 标记 */
   origin?: PluginServerRequest['origin'];
@@ -46,7 +49,7 @@ interface InternalRequestOptions {
 
 // --- 拦截器逻辑（从原 axios 版本保留） ---
 
-let isAuthExpiredNotified = false;
+let authExpiredNotificationScope: (() => boolean) | null = null;
 
 const summarizeApiBody = (body: unknown): Record<string, unknown> => {
   if (!body || typeof body !== 'object') return { size: getPayloadSize(body) };
@@ -130,17 +133,22 @@ const handleAuthExpired = (path: string, responseStatus: number, data: unknown) 
   // 在 server/util/request.js 中会被包装成 status=502，仍需基于 body 判定。
   if (responseStatus === 0) return;
 
-  if (!userStore.isLoggedIn || isAuthExpiredNotified || !checkAuthExpiration(path, data)) {
+  if (
+    !userStore.isLoggedIn ||
+    authExpiredNotificationScope?.() ||
+    !checkAuthExpiration(path, data)
+  ) {
     return;
   }
 
-  isAuthExpiredNotified = true;
+  const notificationScope = captureUserSession(userStore);
+  authExpiredNotificationScope = notificationScope;
   logger.warn('API', `Auth expired (Path: ${path})`);
   // 不立即 logout，只弹窗让用户确认
   useAuthStore().showSessionExpiredDialog();
 
   window.setTimeout(() => {
-    isAuthExpiredNotified = false;
+    if (authExpiredNotificationScope === notificationScope) authExpiredNotificationScope = null;
   }, 5000);
 };
 
@@ -179,6 +187,10 @@ const ipcRequest = async (
   config?: RequestConfig,
   options?: InternalRequestOptions,
 ): Promise<any> => {
+  const isCurrentSession = options?.isCurrentSession ?? captureUserSession(useUserStore());
+  const requireCurrentSession = () => {
+    if (!isCurrentSession()) throw new Error('登录状态已变化，请重新发起操作');
+  };
   const skipAuth = config?.headers?.['X-Skip-Auth'] === '1';
   const headers: Record<string, string> = { ...(config?.headers || {}) };
   delete headers['X-Skip-Auth'];
@@ -317,7 +329,7 @@ const ipcRequest = async (
   }
 
   // 响应拦截：auth 过期检测。Mock 短路响应不是真实上游结果，不能据此弹登录过期。
-  if (!response.mocked) {
+  if (!response.mocked && isCurrentSession()) {
     handleAuthExpired(url, response.status, response.body);
   }
 
@@ -332,17 +344,42 @@ const ipcRequest = async (
   if (!skipKugouVerification && !options?.retriedAfterKugouVerification) {
     const verifyChallenge = getKugouVerificationChallenge(response);
     if (verifyChallenge) {
+      requireCurrentSession();
       logger.warn('API', `Kugou verification required (Path: ${url})`);
-      await requestKugouVerification(verifyChallenge, (verifyUrl, verifyParams) =>
-        ipcRequest('GET', verifyUrl, {
-          params: verifyParams,
-          skipKugouVerification: true,
-        }),
+      const controller = new AbortController();
+      const stopWatching = watch(
+        isCurrentSession,
+        (current) => {
+          if (!current) controller.abort(new Error('登录状态已变化，请重新发起操作'));
+        },
+        { flush: 'sync' },
       );
+      try {
+        await requestKugouVerification(
+          verifyChallenge,
+          (verifyUrl, verifyParams) => {
+            requireCurrentSession();
+            return ipcRequest(
+              'GET',
+              verifyUrl,
+              { params: verifyParams, skipKugouVerification: true },
+              { origin, isCurrentSession },
+            );
+          },
+          { signal: controller.signal },
+        );
+      } finally {
+        stopWatching();
+      }
+      requireCurrentSession();
       logger.info('API', `Kugou verification passed, retrying ${url}`);
       // 重试沿用原始请求的来源：此处已处于异步续体，ambient 标记早已恢复为 host，
       // 显式透传可避免插件来源请求被放进拦截链。
-      return ipcRequest(method, url, config, { retriedAfterKugouVerification: true, origin });
+      return ipcRequest(method, url, config, {
+        retriedAfterKugouVerification: true,
+        origin,
+        isCurrentSession,
+      });
     }
   }
 

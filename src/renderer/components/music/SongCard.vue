@@ -61,8 +61,8 @@ const settingStore = useSettingStore();
 
 const baseClass = computed(() =>
   props.variant === 'list'
-    ? 'song-card group flex items-center gap-3 p-0 rounded-none transition-all duration-200 bg-transparent hover:bg-transparent cursor-default'
-    : 'song-card song-card-surface group flex items-center gap-3 p-2 rounded-xl transition-all duration-200 cursor-pointer',
+    ? 'song-card group flex items-center gap-3 p-0 rounded-none motion-control-feedback bg-transparent hover:bg-transparent cursor-default'
+    : 'song-card song-card-surface group flex items-center gap-3 p-2 rounded-xl motion-control-feedback cursor-pointer',
 );
 
 const songPayload = computed(() => props.song);
@@ -420,7 +420,7 @@ const handleFavorite = () => {
     <!-- 时长 -->
     <div
       v-if="showDuration && songDuration"
-      class="text-[11px] text-text-secondary opacity-60 px-2 group-hover:opacity-80 transition-opacity"
+      class="text-[11px] text-text-secondary opacity-60 px-2 group-hover:opacity-80 motion-control-feedback"
     >
       {{ formatDuration(songDuration) }}
     </div>
@@ -450,7 +450,7 @@ const handleFavorite = () => {
   border-radius: inherit;
   background: rgba(0, 0, 0, 0.36);
   opacity: 0;
-  transition: opacity 0.18s ease;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
   pointer-events: none;
 }
 
@@ -477,8 +477,8 @@ const handleFavorite = () => {
   transform: scale(0.92);
   pointer-events: none;
   transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.55));
 }
 
@@ -591,12 +591,13 @@ const handleFavorite = () => {
 .song-action-hover-only {
   opacity: 0;
   transition:
-    opacity 0.2s ease,
-    color 0.2s ease,
-    transform 0.2s ease;
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.song-card:hover .song-action-hover-only {
+.song-card:hover .song-action-hover-only,
+.song-card:focus-within .song-action-hover-only {
   opacity: 1;
 }
 
@@ -608,7 +609,11 @@ const handleFavorite = () => {
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
-  transition: all 0.2s ease;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .song-action:hover {
@@ -665,7 +670,9 @@ const handleFavorite = () => {
   cursor: pointer;
   user-select: none;
   color: var(--color-text-main);
-  transition: all 0.2s ease;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 :deep(.song-context-item:hover) {
@@ -691,5 +698,12 @@ const handleFavorite = () => {
 
 .song-tag {
   margin-left: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .song-cover-play,
+  .song-cover-play:hover,
+  .song-action:hover {
+    transform: none;
+  }
 }
 </style>

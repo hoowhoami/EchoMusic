@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './motion.css';
 @import './theme/surfaces.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -18,8 +19,8 @@
   --surface-player-opacity: 100%;
   --surface-backdrop-filter: none;
   --surface-player-backdrop-filter: var(--surface-backdrop-filter);
-  --page-transition-duration: 0.45s;
-  --page-transition-easing: ease-out;
+  --page-transition-duration: var(--motion-duration-page);
+  --page-transition-easing: var(--motion-ease-standard);
   --page-transition-enter-opacity: 0;
   --page-transition-leave-opacity: 0;
   --page-transition-enter-x: 0px;

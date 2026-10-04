@@ -5,16 +5,20 @@ import {
   countCommentCharacters,
 } from '@/utils/commentLimits';
 import { handleComposerKeydown } from '@/utils/composerKeyboard';
-import { computed, watch } from 'vue';
-import { sendComment, type CommentSendResource } from '@/api/comment';
+import { computed } from 'vue';
+import type { CommentSendResource } from '@/api/comment';
 import { useUserStore } from '@/stores/user';
-import { useToastStore } from '@/stores/toast';
+import { useCommentSubmission } from '@/composables/useCommentSubmission';
 import Button from '@/components/ui/Button.vue';
 
-const props = defineProps<{ resource: CommentSendResource; label?: string; variant?: 'barrage' }>();
+const props = defineProps<{
+  resource: CommentSendResource;
+  label?: string;
+  variant?: 'barrage';
+  submitRequest?: () => Promise<void>;
+}>();
 const emit = defineEmits<{ sent: [content: string] }>();
 const user = useUserStore();
-const toast = useToastStore();
 const content = defineModel<string>('content', { default: '' });
 const sending = defineModel<boolean>('sending', { default: false });
 const limit = computed(() =>
@@ -22,36 +26,18 @@ const limit = computed(() =>
 );
 const count = computed(() => countCommentCharacters(content.value));
 const overLimit = computed(() => count.value > limit.value);
-const key = computed(
-  () => `${props.resource.type}:${props.resource.id || ''}:${props.resource.hash || ''}`,
-);
 const available = computed(() =>
   Boolean(props.resource.type.endsWith('-barrage') ? props.resource.hash : props.resource.id),
 );
-watch(key, () => {
-  content.value = '';
+const { submit: submitDefault } = useCommentSubmission({
+  resource: () => props.resource,
+  content,
+  sending,
+  sent: (text) => emit('sent', text),
 });
 async function submit() {
-  if (overLimit.value || sending.value || !content.value.trim() || !available.value) return;
-  if (!user.isLoggedIn) {
-    toast.show('请先登录后再发送', 'warning');
-    return;
-  }
-  const startedKey = key.value;
-  const text = content.value.trim();
-  sending.value = true;
-  try {
-    await sendComment({ ...props.resource }, text);
-    toast.show('已提交，展示结果以平台审核为准', 'success');
-    if (startedKey === key.value) {
-      content.value = '';
-      emit('sent', text);
-    }
-  } catch (error) {
-    toast.show(error instanceof Error ? error.message : '发送失败，请稍后重试', 'danger');
-  } finally {
-    sending.value = false;
-  }
+  if (props.submitRequest) await props.submitRequest();
+  else await submitDefault();
 }
 </script>
 

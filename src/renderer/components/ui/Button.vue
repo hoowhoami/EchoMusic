@@ -58,8 +58,8 @@ const sizes = {
         :disabled="disabled || loading"
         :class="[
           props.variant === 'unstyled' || props.size === 'none'
-            ? 'app-focus-ring-soft transition-all active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed'
-            : 'app-focus-ring-soft inline-flex items-center justify-center transition-all active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed',
+            ? 'app-focus-ring-soft echo-button-motion active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed'
+            : 'app-focus-ring-soft inline-flex items-center justify-center echo-button-motion active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed',
           variants[variant],
           sizes[size],
           props.class,
@@ -74,3 +74,23 @@ const sizes = {
     </template>
   </Tooltip>
 </template>
+
+<style>
+@layer components {
+  .echo-button-motion {
+    transition-property:
+      background-color, border-color, color, opacity, box-shadow, transform, scale;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .echo-button-motion {
+    transition: none;
+  }
+  .echo-button-motion:active {
+    scale: 1;
+  }
+}
+</style>

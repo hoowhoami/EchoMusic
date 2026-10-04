@@ -1,7 +1,21 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import type { EchoPluginDescriptor } from '../src/shared/plugins.ts';
-import { createPluginWebServerApi } from '../src/renderer/plugins/runtime/runtimeServices.ts';
+import { buildSync } from 'esbuild';
+// Bundle extensionless internal imports as the application build does.
+const runtimeCode = buildSync({
+  entryPoints: [
+    new URL('../src/renderer/plugins/runtime/runtimeServices.ts', import.meta.url).pathname,
+  ],
+  bundle: true,
+  format: 'cjs',
+  platform: 'node',
+  write: false,
+}).outputFiles[0].text;
+const runtimeModule = { exports: {} };
+new Function('module', 'exports', runtimeCode)(runtimeModule, runtimeModule.exports);
+const { createPluginWebServerApi } =
+  runtimeModule.exports as typeof import('../src/renderer/plugins/runtime/runtimeServices');
 
 const originalWindow = globalThis.window;
 afterEach(() =>
@@ -210,11 +224,7 @@ test('path-scoped handlers reject other upgrades', async () => {
     remoteAddress: '127.0.0.1',
   });
   await flush();
-  assert.deepEqual(calls.at(-1), [
-    'upgrade',
-    'rgb',
-    { connectionId: 'other', accept: false },
-  ]);
+  assert.deepEqual(calls.at(-1), ['upgrade', 'rgb', { connectionId: 'other', accept: false }]);
   dispose();
 });
 

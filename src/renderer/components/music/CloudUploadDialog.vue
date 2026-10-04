@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { captureUserSession } from '@/utils/userSession';
 import { Icon } from '@iconify/vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -48,6 +49,30 @@ const cloudUploadStore = useCloudUploadStore();
 
 type PickMode = 'file' | 'folder';
 
+let disposed = false;
+let uiGeneration = 0;
+let searchGeneration = 0;
+let resetTimer: number | null = null;
+let resultFrame: number | null = null;
+const runScopes = new WeakMap<CloudUploadRun, () => boolean>();
+const captureUiScope = () => {
+  const generation = uiGeneration;
+  const isSessionCurrent = captureUserSession(userStore);
+  return () => !disposed && open.value && generation === uiGeneration && isSessionCurrent();
+};
+const cancelUiSchedules = () => {
+  if (resetTimer !== null) window.clearTimeout(resetTimer);
+  resetTimer = null;
+  if (resultFrame !== null) cancelAnimationFrame(resultFrame);
+  resultFrame = null;
+};
+const invalidateUi = () => {
+  uiGeneration++;
+  searchGeneration++;
+  picking.value = false;
+  manualSearching.value = false;
+  cancelUiSchedules();
+};
 const step = ref<'pick' | 'manual-search' | 'uploading' | 'done'>('pick');
 const items = ref<CloudUploadItem[]>([]);
 const canceled = ref(false);
@@ -68,8 +93,18 @@ const progressRatio = computed(() => {
   return done / items.value.length;
 });
 const isUploading = computed(() => step.value === 'uploading');
-const shouldAbort = (run: CloudUploadRun) =>
-  run.signal.aborted || canceled.value || cloudUploadStore.abortRequested;
+const shouldAbort = (run: CloudUploadRun) => {
+  const isSessionCurrent = runScopes.get(run);
+  if (isSessionCurrent && !isSessionCurrent()) {
+    run.abort({ feedback: false });
+    return true;
+  }
+  return !run.active || run.signal.aborted || canceled.value || cloudUploadStore.abortRequested;
+};
+const ownRun = (run: CloudUploadRun) => {
+  runScopes.set(run, captureUserSession(userStore));
+  return run;
+};
 
 const formatBytes = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return '0 B';
@@ -89,6 +124,7 @@ const clearPickedUploadFiles = () => {
 };
 
 const reset = () => {
+  invalidateUi();
   step.value = 'pick';
   items.value = [];
   canceled.value = false;
@@ -111,43 +147,57 @@ const closeDialog = () => {
   open.value = false;
 };
 
-watch(open, (v) => {
-  if (!v) {
-    // 上传进行中：拦截关闭，弹出后台运行确认（除非已 dismiss）
-    if (step.value === 'uploading' && cloudUploadStore.status === 'running') {
-      if (settingStore.cloudUploadBackgroundConfirmDismissed) {
-        // 跳过确认弹窗时同样转入后台：与确认后行为一致，任务面板可查看/中止
-        enterBackgroundMode();
-        step.value = 'pick';
+watch(
+  open,
+  (v) => {
+    if (!v) {
+      // 上传进行中：拦截关闭，弹出后台运行确认（除非已 dismiss）
+      if (step.value === 'uploading' && cloudUploadStore.status === 'running') {
+        if (settingStore.cloudUploadBackgroundConfirmDismissed) {
+          // 跳过确认弹窗时同样转入后台：与确认后行为一致，任务面板可查看/中止
+          enterBackgroundMode();
+          step.value = 'pick';
+          invalidateUi();
+          return;
+        }
+        showBackgroundConfirm.value = true;
+        // 同步回弹，Vue 批量更新后不会渲染关闭态
+        open.value = true;
         return;
       }
-      showBackgroundConfirm.value = true;
-      // 同步回弹，Vue 批量更新后不会渲染关闭态
-      open.value = true;
-      return;
-    }
-    // 非上传中关闭：后台任务运行期间不清 allow-list，避免打断正在进行的读取
-    if (cloudUploadStore.status !== 'running') {
-      clearPickedUploadFiles();
-    }
-    // 查看结果页关闭（完成/X/遮罩）：同步清理任务中心条目
-    if (step.value === 'done' && cloudUploadStore.status === 'completed') {
-      cloudUploadStore.dismiss();
-    }
-    window.setTimeout(reset, 200);
-  } else {
-    if (cloudUploadStore.status === 'running') {
-      resumeFromStore();
-    } else if (
-      cloudUploadStore.status === 'completed' &&
-      cloudUploadStore.openRequestMode === 'detail'
-    ) {
-      resumeFromStoreCompleted();
+      // 非上传中关闭：后台任务运行期间不清 allow-list，避免打断正在进行的读取
+      if (cloudUploadStore.status !== 'running') {
+        clearPickedUploadFiles();
+      }
+      // 查看结果页关闭（完成/X/遮罩）：同步清理任务中心条目
+      if (step.value === 'done' && cloudUploadStore.status === 'completed') {
+        cloudUploadStore.dismiss();
+      }
+      invalidateUi();
+      const generation = uiGeneration;
+      const isSessionCurrent = captureUserSession(userStore);
+      const timer = window.setTimeout(() => {
+        if (resetTimer !== timer) return;
+        resetTimer = null;
+        if (!disposed && !open.value && generation === uiGeneration && isSessionCurrent()) reset();
+      }, 200);
+      resetTimer = timer;
     } else {
-      resetForNewUpload();
+      invalidateUi();
+      if (cloudUploadStore.status === 'running') {
+        resumeFromStore();
+      } else if (
+        cloudUploadStore.status === 'completed' &&
+        cloudUploadStore.openRequestMode === 'detail'
+      ) {
+        resumeFromStoreCompleted();
+      } else {
+        resetForNewUpload();
+      }
     }
-  }
-});
+  },
+  { flush: 'sync' },
+);
 
 // 任务面板「查看结果」触发的重开：仅在 openRequested 增量且已完成时恢复结果页，
 // 普通打开（如侧边栏发起新上传）仍进选择页
@@ -214,6 +264,7 @@ const handleBackgroundRun = () => {
  */
 const matchItem = async (item: CloudUploadItem, list: CloudUploadItem[], run: CloudUploadRun) => {
   const title = item.title || item.name.replace(/\.[^.]+$/, '');
+  if (shouldAbort(run)) return;
   item.status = 'matching';
   try {
     const matchInput = {
@@ -233,8 +284,10 @@ const matchItem = async (item: CloudUploadItem, list: CloudUploadItem[], run: Cl
         maxKeywords: 3,
         delayBetweenSearches: true,
         shouldStopEarly: isCloudUploadMatchAcceptable,
+        isCurrent: () => !shouldAbort(run),
       },
     );
+    if (shouldAbort(run)) return;
     if (!result) {
       item.matchStatus = 'not_found';
       item.matchReason = 'search returned no candidates';
@@ -290,6 +343,7 @@ const matchItem = async (item: CloudUploadItem, list: CloudUploadItem[], run: Cl
       }
     }
   } catch (error) {
+    if (shouldAbort(run)) return;
     item.matchStatus = 'failed';
     item.matchReason = String(error);
     logger.debug('CloudUpload', 'match failed', {
@@ -301,7 +355,9 @@ const matchItem = async (item: CloudUploadItem, list: CloudUploadItem[], run: Cl
     // 匹配失败不影响上传，降级为不关联
   }
   // 每个文件匹配后暂停一段抖动时间，避免稳定 QPS 触发风控
+  if (shouldAbort(run)) return;
   await matchThinkDelay();
+  if (shouldAbort(run)) return;
   item.status = 'pending';
   const done = list.filter((i) => i.matchStatus !== 'pending').length;
   run.updateProgress(done, list.length, { ...item });
@@ -309,6 +365,7 @@ const matchItem = async (item: CloudUploadItem, list: CloudUploadItem[], run: Cl
 
 /** 阶段一：并发匹配所有文件 */
 const runMatching = async (list: CloudUploadItem[], run: CloudUploadRun) => {
+  if (shouldAbort(run)) return;
   run.setPhase('matching');
   let nextIdx = 0;
   const worker = async () => {
@@ -323,11 +380,19 @@ const runMatching = async (list: CloudUploadItem[], run: CloudUploadRun) => {
 };
 
 const handlePick = async (mode: PickMode) => {
-  if (!userStore.isLoggedIn || picking.value) return;
+  if (
+    disposed ||
+    !open.value ||
+    !userStore.isLoggedIn ||
+    picking.value ||
+    cloudUploadStore.status === 'running'
+  )
+    return;
+  const isCurrent = captureUiScope();
   picking.value = true;
   try {
     const result = await window.electron.cloud.pickUploadFiles(mode);
-    if (result.canceled) return;
+    if (!isCurrent() || result.canceled) return;
 
     if (result.files.length === 0) {
       toastStore.warning(result.errors?.[0] || '没有可上传的音频文件');
@@ -350,10 +415,12 @@ const handlePick = async (mode: PickMode) => {
       matchStatus: 'pending',
     }));
     // 注册任务中心任务（name 参数预留，面板标题使用 total 展示）
-    const run = cloudUploadStore.start(items.value.length, () => {
-      canceled.value = true;
-      clearPickedUploadFiles();
-    });
+    const run = ownRun(
+      cloudUploadStore.start(items.value.length, () => {
+        canceled.value = true;
+        clearPickedUploadFiles();
+      }),
+    );
     step.value = 'uploading';
     canceled.value = false;
     // 捕获数组引用：转入后台后组件 reset() 不会影响正在运行的上传流程
@@ -363,9 +430,10 @@ const handlePick = async (mode: PickMode) => {
     // 阶段二：串行上传
     await runUpload(uploadItems, run);
   } catch (error) {
+    if (!isCurrent()) return;
     toastStore.danger(`选择文件失败：${(error as Error)?.message || String(error)}`);
   } finally {
-    picking.value = false;
+    if (isCurrent()) picking.value = false;
   }
 };
 
@@ -374,6 +442,7 @@ const uploadSingleItem = async (
   list: CloudUploadItem[],
   run: CloudUploadRun,
 ) => {
+  if (shouldAbort(run)) return;
   const title = item.title || item.name.replace(/\.[^.]+$/, '');
   item.status = 'uploading';
   try {
@@ -401,6 +470,7 @@ const uploadSingleItem = async (
       albumAudioId: item.albumAudioId ?? 0,
     });
   } catch (error) {
+    if (shouldAbort(run)) return;
     item.status = 'failed';
     item.error = (error as Error)?.message || String(error);
     logger.debug('CloudUpload', 'upload failed', {
@@ -418,7 +488,24 @@ const uploadSingleItem = async (
   run.updateProgress(done, list.length, { ...item });
 };
 
+const finishedAborts = new WeakSet<CloudUploadRun>();
+const finishAbortedUpload = (list: CloudUploadItem[], run: CloudUploadRun) => {
+  if (!runScopes.get(run)?.() || finishedAborts.has(run)) return;
+  finishedAborts.add(run);
+  // 中止后仍需刷新此前已成功上传的文件，但不能通知另一个账号。
+  if (list.some((item) => item.status === 'success')) cloudUploadStore.markChanged();
+  if (run.active && cloudUploadStore.status === 'aborted') {
+    if (!disposed && open.value) step.value = 'done';
+    clearPickedUploadFiles();
+    toastStore.info('已取消上传');
+  }
+};
+
 const runUpload = async (list: CloudUploadItem[], run: CloudUploadRun) => {
+  if (shouldAbort(run)) {
+    finishAbortedUpload(list, run);
+    return;
+  }
   run.setPhase('uploading');
   if (list.length > 0) {
     run.updateProgress(0, list.length, { ...list[0] });
@@ -427,20 +514,29 @@ const runUpload = async (list: CloudUploadItem[], run: CloudUploadRun) => {
     if (shouldAbort(run)) break;
     await uploadSingleItem(list[i], list, run);
   }
-  if (!run.active) return;
-  if (open.value) step.value = 'done';
+  if (shouldAbort(run)) {
+    finishAbortedUpload(list, run);
+    return;
+  }
+  if (!disposed && open.value) step.value = 'done';
   clearPickedUploadFiles();
 
-  const aborted = shouldAbort(run);
   const successCount = list.filter((i) => i.status === 'success').length;
   const failedCountNow = list.filter((i) => i.status === 'failed').length;
   const secondCount = list.filter((i) => i.isSecondUpload).length;
 
+  if (
+    !run.complete({
+      total: list.length,
+      success: successCount,
+      failed: failedCountNow,
+      secondUpload: secondCount,
+    })
+  )
+    return;
   if (successCount > 0) cloudUploadStore.markChanged();
 
-  if (aborted) {
-    toastStore.info('已取消上传');
-  } else if (failedCountNow === 0) {
+  if (failedCountNow === 0) {
     toastStore.success(
       secondCount > 0
         ? `上传完成：${successCount} 首（其中 ${secondCount} 首秒传）`
@@ -448,20 +544,6 @@ const runUpload = async (list: CloudUploadItem[], run: CloudUploadRun) => {
     );
   } else {
     toastStore.warning(`上传完成：成功 ${successCount} 首，失败 ${failedCountNow} 首`);
-  }
-
-  // 任务中心：完成/中止收敛
-  if (cloudUploadStore.status === 'running') {
-    if (aborted) {
-      run.dismiss();
-    } else {
-      run.complete({
-        total: list.length,
-        success: successCount,
-        failed: failedCountNow,
-        secondUpload: secondCount,
-      });
-    }
   }
 };
 
@@ -484,18 +566,30 @@ const manualResults = ref<ManualSearchResult[]>([]);
 const manualSearchDone = ref(false);
 const manualSearchResultList = ref<InstanceType<typeof Scrollbar> | null>(null);
 
-const scrollResultListToTop = () => {
-  requestAnimationFrame(() => {
-    manualSearchResultList.value?.scrollTo({ top: 0 });
+const scrollResultListToTop = (isCurrent: () => boolean) => {
+  if (resultFrame !== null) cancelAnimationFrame(resultFrame);
+  const frame = requestAnimationFrame(() => {
+    if (resultFrame !== frame) return;
+    resultFrame = null;
+    if (isCurrent()) manualSearchResultList.value?.scrollTo({ top: 0 });
   });
+  resultFrame = frame;
 };
 
 const handlePickManual = async () => {
-  if (!userStore.isLoggedIn || picking.value) return;
+  if (
+    disposed ||
+    !open.value ||
+    !userStore.isLoggedIn ||
+    picking.value ||
+    cloudUploadStore.status === 'running'
+  )
+    return;
+  const isCurrent = captureUiScope();
   picking.value = true;
   try {
     const result = await window.electron.cloud.pickUploadFiles('file', false);
-    if (result.canceled) return;
+    if (!isCurrent() || result.canceled) return;
     if (result.files.length === 0) {
       toastStore.warning(result.errors?.[0] || '没有可上传的音频文件');
       return;
@@ -520,13 +614,26 @@ const handlePickManual = async () => {
     manualSearchDone.value = false;
     step.value = 'manual-search';
   } catch (error) {
+    if (!isCurrent()) return;
     toastStore.danger(`选择文件失败：${(error as Error)?.message || String(error)}`);
   } finally {
-    picking.value = false;
+    if (isCurrent()) picking.value = false;
   }
 };
 
 const handleManualSearch = async () => {
+  if (
+    disposed ||
+    !open.value ||
+    !userStore.isLoggedIn ||
+    !manualFile.value ||
+    step.value !== 'manual-search'
+  )
+    return;
+  const file = manualFile.value;
+  const owner = captureUiScope();
+  const generation = ++searchGeneration;
+  const isCurrent = () => owner() && generation === searchGeneration && manualFile.value === file;
   const keyword = [manualSearchTitle.value.trim(), manualSearchArtist.value.trim()]
     .filter(Boolean)
     .join(' ');
@@ -539,6 +646,7 @@ const handleManualSearch = async () => {
   manualResults.value = [];
   try {
     const res = await search(keyword, 'song', 1, 30);
+    if (!isCurrent()) return;
     const data = (res as { data?: { lists?: unknown[] } })?.data ?? {};
     const lists = Array.isArray(data.lists) ? data.lists : [];
     manualResults.value = lists.map((item) => {
@@ -567,34 +675,79 @@ const handleManualSearch = async () => {
       };
     });
     manualSearchDone.value = true;
-    scrollResultListToTop();
+    scrollResultListToTop(isCurrent);
     if (manualResults.value.length === 0) {
       toastStore.warning('未找到匹配的歌曲，请修改搜索条件重试');
     }
   } catch (error) {
+    if (!isCurrent()) return;
     toastStore.danger(`搜索失败：${(error as Error)?.message || String(error)}`);
   } finally {
-    manualSearching.value = false;
+    if (isCurrent()) manualSearching.value = false;
   }
 };
 
 const handleSelectManualResult = async (result: ManualSearchResult) => {
-  if (!manualFile.value) return;
+  if (
+    disposed ||
+    !open.value ||
+    !userStore.isLoggedIn ||
+    !manualFile.value ||
+    step.value !== 'manual-search' ||
+    cloudUploadStore.status === 'running' ||
+    !manualResults.value.includes(result)
+  )
+    return;
   const item = manualFile.value;
   item.audioId = result.audioId;
   item.albumAudioId = result.albumAudioId;
   item.matchStatus = 'linked';
   item.status = 'uploading';
   // 接入任务中心：手动匹配上传同样注册任务、上报进度
-  const run = cloudUploadStore.start(1, () => {
-    canceled.value = true;
-    clearPickedUploadFiles();
-  });
+  const run = ownRun(
+    cloudUploadStore.start(1, () => {
+      canceled.value = true;
+      clearPickedUploadFiles();
+    }),
+  );
   items.value = [item];
   canceled.value = false;
   step.value = 'uploading';
   await runUpload(items.value, run);
 };
+
+watch(
+  [manualFile, manualSearchTitle, manualSearchArtist],
+  () => {
+    searchGeneration++;
+    manualSearching.value = false;
+    manualResults.value = [];
+    manualSearchDone.value = false;
+  },
+  { flush: 'sync' },
+);
+watch(
+  [
+    () => userStore.isLoggedIn,
+    () => userStore.accountRevision,
+    () => userStore.info?.userid ?? userStore.info?.userId,
+    () => userStore.info?.token,
+  ],
+  () => {
+    cloudUploadStore.requestAbort({ feedback: false });
+    cloudUploadStore.dismiss();
+    clearPickedUploadFiles();
+    showBackgroundConfirm.value = false;
+    open.value = false;
+    reset();
+  },
+  { flush: 'sync' },
+);
+onBeforeUnmount(() => {
+  disposed = true;
+  invalidateUi();
+  if (cloudUploadStore.status !== 'running') clearPickedUploadFiles();
+});
 
 const formatDuration = (sec: number) => {
   if (!sec || !Number.isFinite(sec)) return '';

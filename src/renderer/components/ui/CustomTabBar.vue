@@ -133,7 +133,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   border-radius: 9px;
   background: var(--content-selected-bg);
   box-shadow: 0 2px 4px color-mix(in srgb, var(--color-text-main) 8%, transparent);
-  transition: transform 0.2s ease;
+  transition: transform var(--motion-duration-normal) var(--motion-ease-standard);
   z-index: 1;
 }
 
@@ -155,7 +155,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   font-weight: 600;
   color: color-mix(in srgb, var(--color-text-main) 47%, transparent);
   border-radius: 9px;
-  transition: color 0.2s ease;
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .custom-tab-item:hover {

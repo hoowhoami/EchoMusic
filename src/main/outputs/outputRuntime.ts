@@ -40,7 +40,10 @@ const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 let discovery: SsdpHandle | null = null;
 let scanTimer: NodeJS.Timeout | null = null;
 let scanSearchFlight: Promise<void> | null = null;
+let scanStopFlight: Promise<void> | null = null;
 let shuttingDown = false;
+let shutdownFlight: Promise<void> | null = null;
+let stopReceivers: (() => Promise<void>) | null = null;
 let upnpNative: UpnpNativeLike | null = null;
 let scanActiveLogged = false;
 const ignoredDlnaDeviceIds = new Set<string>();
@@ -383,16 +386,21 @@ export function syncOutputScan(): void {
       scanActiveLogged = true;
       log.info(`DLNA SSDP 扫描启动: echo-upnp=${upnpNative ? 'ready' : 'missing'}`);
     }
-    void discovery
-      .start()
-      .then(() => {
-        if (scanSearchFlight) return scanSearchFlight;
-        scanSearchFlight = (discovery?.search() ?? Promise.resolve()).finally(() => {
-          scanSearchFlight = null;
+    if (!scanSearchFlight) {
+      const scanner = discovery;
+      const flight = (async () => {
+        await scanStopFlight;
+        if (shuttingDown || !host.wantsScan) return;
+        await scanner.start();
+        if (shuttingDown || !host.wantsScan) return;
+        await scanner.search();
+      })()
+        .catch((error) => log.warn(`[Output] SSDP 启动失败: ${String(error)}`))
+        .finally(() => {
+          if (scanSearchFlight === flight) scanSearchFlight = null;
         });
-        return scanSearchFlight;
-      })
-      .catch((error) => log.warn(`[Output] SSDP 启动失败: ${String(error)}`));
+      scanSearchFlight = flight;
+    }
     if (!scanTimer) scanTimer = setInterval(pushDlnaDevices, 4000);
     return;
   }
@@ -404,14 +412,27 @@ export function syncOutputScan(): void {
     scanActiveLogged = false;
     log.info('DLNA SSDP 扫描停止');
   }
-  scanSearchFlight = null;
   dlnaDescriptionCache.clear();
   ignoredDlnaDeviceIds.clear();
-  void discovery.stop().catch(() => undefined);
+  if (!scanStopFlight) {
+    const scanner = discovery;
+    const flight = (async () => {
+      await scanSearchFlight;
+      if (!shuttingDown && !host.wantsScan) await scanner.stop();
+    })()
+      .catch((error) => log.warn(`[Output] SSDP 停止失败: ${String(error)}`))
+      .finally(() => {
+        if (scanStopFlight === flight) {
+          scanStopFlight = null;
+          if (!shuttingDown && host.wantsScan) syncOutputScan();
+        }
+      });
+    scanStopFlight = flight;
+  }
 }
 
 export function initOutputRuntime(getController: () => PlayerController | null): void {
-  if (getOutputHost()) return;
+  if (shuttingDown || getOutputHost()) return;
   const bindHost = pickLanIpv4();
   const media = new MediaServer({
     bindHost,
@@ -457,14 +478,32 @@ export function initOutputRuntime(getController: () => PlayerController | null):
     },
     log: outputLog,
   });
+  stopReceivers = async () => {
+    await Promise.allSettled([scanSearchFlight, scanStopFlight]);
+    const results = await Promise.allSettled([discovery?.stop(), media.stop(), gena.stop()]);
+    for (const result of results) {
+      if (result.status === 'rejected') log.warn('[Output] 释放网络资源失败:', result.reason);
+    }
+  };
   app.once('before-quit', () => {
-    shuttingDown = true;
-    if (scanTimer) clearInterval(scanTimer);
-    scanTimer = null;
-    void getOutputHost()?.shutdown();
-    void discovery?.stop();
-    void media.stop();
-    void gena.stop();
+    void shutdownOutputRuntime().catch((error) => log.warn('[Output] 退出清理失败:', error));
   });
   log.info(`[Output] 发送会话已初始化，中转地址 ${bindHost}`);
+}
+
+/** 先结束连接/会话，再关闭它可能仍在启动的 HTTP 与 GENA 接收器。 */
+export function shutdownOutputRuntime(): Promise<void> {
+  if (shutdownFlight) return shutdownFlight;
+  shuttingDown = true;
+  if (scanTimer) clearInterval(scanTimer);
+  scanTimer = null;
+  const hostShutdown = getOutputHost()?.shutdown();
+  shutdownFlight = (async () => {
+    try {
+      await hostShutdown;
+    } finally {
+      await stopReceivers?.();
+    }
+  })();
+  return shutdownFlight;
 }

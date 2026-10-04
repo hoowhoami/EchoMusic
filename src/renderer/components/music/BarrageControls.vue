@@ -8,6 +8,7 @@ import Button from '@/components/ui/Button.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Popover from '@/components/ui/Popover.vue';
 import CommentComposer from './CommentComposer.vue';
+import { useCommentSubmission } from '@/composables/useCommentSubmission';
 import BarrageIcon from '@/components/ui/BarrageIcon.vue';
 import { iconX } from '@/icons';
 const props = defineProps<{ resource: CommentSendResource; variant?: 'lyric' }>();
@@ -42,6 +43,12 @@ function handleSent(content: string) {
   open.value = false;
   emit('sent', content);
 }
+const { submit: submitComment } = useCommentSubmission({
+  resource: () => props.resource,
+  content: draft,
+  sending,
+  sent: handleSent,
+});
 watch(
   () => props.resource.hash,
   () => {
@@ -176,6 +183,7 @@ watch(
             </div>
           </div>
           <CommentComposer
+            :submit-request="submitComment"
             class="barrage-panel-composer"
             v-model:content="draft"
             v-model:sending="sending"

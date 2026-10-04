@@ -1,21 +1,63 @@
 <script setup lang="ts">
 import { COMMENT_MAX_LENGTH, countCommentCharacters } from '@/utils/commentLimits';
 import { handleComposerKeydown } from '@/utils/composerKeyboard';
-import { computed, ref } from 'vue';
+import { computed, ref, watch, onBeforeUnmount } from 'vue';
 import type { Comment } from '@/models/comment';
 import Button from '@/components/ui/Button.vue';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
+import { captureUserSession } from '@/utils/userSession';
 import { iconX } from '@/icons';
-const props = defineProps<{ target: Comment; send?: (content: string) => Promise<void> }>();
+const props = withDefaults(
+  defineProps<{
+    target: Comment;
+    send?: (content: string) => Promise<void>;
+    notifySuccess?: boolean;
+  }>(),
+  { notifySuccess: true },
+);
 const emit = defineEmits<{ close: []; sent: [] }>();
 const draft = ref('');
 const busy = defineModel<boolean>('busy', { default: false });
 const user = useUserStore();
 const toast = useToastStore();
 const count = computed(() => countCommentCharacters(draft.value));
+const targetKey = computed(() =>
+  JSON.stringify([
+    props.target.id,
+    props.target.specialId ??
+      props.target.specialChildId ??
+      props.target.special_id ??
+      props.target.special_child_id,
+    props.target.tid ?? props.target.raw?.tid,
+    props.target.code,
+    props.target.mixSongId,
+  ]),
+);
+let generation = 0;
+let disposed = false;
+watch(
+  [
+    targetKey,
+    () => user.isLoggedIn,
+    () => user.accountRevision,
+    () => user.info?.userid ?? user.info?.userId,
+    () => user.info?.token,
+  ],
+  () => {
+    generation++;
+    draft.value = '';
+    busy.value = false;
+  },
+  { flush: 'sync' },
+);
+onBeforeUnmount(() => {
+  disposed = true;
+  generation++;
+});
 async function submit() {
   if (
+    disposed ||
     count.value > COMMENT_MAX_LENGTH ||
     !props.send ||
     busy.value ||
@@ -23,16 +65,27 @@ async function submit() {
     !user.isLoggedIn
   )
     return;
+  const startedTarget = targetKey.value;
+  const requestGeneration = ++generation;
+  const isSessionCurrent = captureUserSession(user);
+  const isCurrent = () =>
+    !disposed &&
+    requestGeneration === generation &&
+    startedTarget === targetKey.value &&
+    isSessionCurrent();
+  const originalDraft = draft.value;
   busy.value = true;
   try {
-    await props.send(draft.value.trim());
-    draft.value = '';
-    toast.show('回复已提交，展示结果以平台审核为准', 'success');
+    await props.send(originalDraft.trim());
+    if (!isCurrent()) return;
+    if (draft.value === originalDraft) draft.value = '';
+    if (props.notifySuccess !== false) toast.show('回复已提交，展示结果以平台审核为准', 'success');
     emit('sent');
   } catch (error) {
-    toast.show(error instanceof Error ? error.message : '回复失败，草稿已保留', 'danger');
+    if (isCurrent())
+      toast.show(error instanceof Error ? error.message : '回复失败，草稿已保留', 'danger');
   } finally {
-    busy.value = false;
+    if (isCurrent()) busy.value = false;
   }
 }
 </script>

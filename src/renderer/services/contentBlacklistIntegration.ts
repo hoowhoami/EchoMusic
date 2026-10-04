@@ -1,10 +1,11 @@
-import { reactive } from 'vue';
+import { reactive, watch } from 'vue';
 import { registerSongContextMenuExtension } from '@/components/music/songContextMenuExtensions';
 import type { Song } from '@/models/song';
 import { useContentBlacklistStore } from '@/stores/contentBlacklist';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
 import { isSongHashId } from '@/utils/share';
+import { captureUserSession } from '@/utils/userSession';
 
 const getSongHash = (song: Song): string => {
   const hash = String(song.hash ?? '')
@@ -24,10 +25,30 @@ export const registerContentBlacklistIntegration = () => {
   const toastStore = useToastStore();
   const userStore = useUserStore();
   const pendingHashes = reactive(new Set<string>());
+  let generation = 0;
+  let disposed = false;
+  const stopSessionWatch = watch(
+    [
+      () => userStore.isLoggedIn,
+      () => userStore.accountRevision,
+      () => userStore.info?.userid ?? userStore.info?.userId,
+      () => userStore.info?.token,
+    ],
+    () => {
+      generation++;
+      pendingHashes.clear();
+    },
+    { flush: 'sync' },
+  );
+  const captureScope = () => {
+    const token = generation;
+    const isSessionCurrent = captureUserSession(userStore);
+    return () => !disposed && token === generation && isSessionCurrent();
+  };
 
   const getEntry = (song: Song) => {
     const hash = getSongHash(song);
-    if (!hash) return undefined;
+    if (!hash || getStatus(song) !== 'present') return undefined;
     return blacklistStore.song.entries.find(
       (entry) => entry.label === 'song' && entry.key === hash,
     );
@@ -40,43 +61,49 @@ export const registerContentBlacklistIntegration = () => {
 
   const addSong = async (song: Song) => {
     const hash = getSongHash(song);
-    if (!hash || pendingHashes.has(hash)) return;
+    if (disposed || !userStore.isLoggedIn || !hash || pendingHashes.has(hash)) return;
+    const isCurrent = captureScope();
+    const target = { hash, mixSongId: song.mixSongId || undefined, name: getSongName(song) };
     pendingHashes.add(hash);
     try {
-      if (getStatus(song) === 'unknown') {
+      if (blacklistStore.status('song', hash) === 'unknown') {
         const loaded = await blacklistStore.ensureFullyLoaded('song');
+        if (!isCurrent()) return;
         if (!loaded) {
           toastStore.warning(blacklistStore.song.error || '不感兴趣列表加载失败，请稍后重试');
           return;
         }
       }
-      if (getStatus(song) === 'present') {
+      if (blacklistStore.status('song', hash) === 'present') {
         toastStore.info('已标记为不感兴趣，可在个人中心管理');
         return;
       }
-      const success = await blacklistStore.addSong({
-        hash,
-        mixSongId: song.mixSongId || undefined,
-        name: getSongName(song),
-      });
+      if (blacklistStore.status('song', hash) === 'unknown') {
+        toastStore.warning('不感兴趣列表加载失败，请稍后重试');
+        return;
+      }
+      const success = await blacklistStore.addSong(target);
+      if (!isCurrent()) return;
       if (success) toastStore.actionCompleted('已标记为不感兴趣');
       else toastStore.warning(blacklistStore.song.error || '操作失败，请稍后重试');
     } finally {
-      pendingHashes.delete(hash);
+      if (isCurrent()) pendingHashes.delete(hash);
     }
   };
 
   const removeSong = async (song: Song) => {
     const hash = getSongHash(song);
     const entry = getEntry(song);
-    if (!hash || !entry || pendingHashes.has(hash)) return;
+    if (disposed || !userStore.isLoggedIn || !hash || !entry || pendingHashes.has(hash)) return;
+    const isCurrent = captureScope();
     pendingHashes.add(hash);
     try {
       const success = await blacklistStore.remove(entry);
+      if (!isCurrent()) return;
       if (success) toastStore.actionCompleted('已撤销不感兴趣');
       else toastStore.warning(blacklistStore.song.error || '撤销失败，请稍后重试');
     } finally {
-      pendingHashes.delete(hash);
+      if (isCurrent()) pendingHashes.delete(hash);
     }
   };
 
@@ -98,6 +125,9 @@ export const registerContentBlacklistIntegration = () => {
   });
 
   return () => {
+    disposed = true;
+    generation++;
+    stopSessionWatch();
     disposeAdd();
     disposeRemove();
     pendingHashes.clear();

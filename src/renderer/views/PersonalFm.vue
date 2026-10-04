@@ -2,7 +2,8 @@
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 defineOptions({ name: 'personal-fm' });
-import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onActivated, onDeactivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { captureUserSession } from '@/utils/userSession';
 import {
   PERSONAL_FM_QUEUE_ID,
   getPersonalFmModePresentation,
@@ -35,6 +36,29 @@ const personalFmVinylsRef = ref<HTMLElement | null>(null);
 const personalFmVisibleSideCount = ref(3);
 let personalFmVinylsObserver: ResizeObserver | null = null;
 let personalFmPreviewPromise: Promise<Song | null> | null = null;
+let disposed = false;
+let active = true;
+let generation = 0;
+const captureScope = () => {
+  const token = generation;
+  const isSessionCurrent = captureUserSession(userStore);
+  return () => !disposed && active && token === generation && isSessionCurrent();
+};
+const capturePlaybackScope = (isCurrent: () => boolean) => {
+  const sequence = playerStore.playbackRequestSeq;
+  const queueId = playlistStore.activeQueueId;
+  return (allowFmActivation = false) =>
+    isCurrent() &&
+    sequence === playerStore.playbackRequestSeq &&
+    (playlistStore.activeQueueId === queueId ||
+      (allowFmActivation && playlistStore.activeQueueId === PERSONAL_FM_QUEUE_ID));
+};
+const invalidateOperations = () => {
+  generation++;
+  personalFmLoading.value = false;
+  personalFmPreloading.value = false;
+  personalFmPreviewPromise = null;
+};
 
 const personalFmModeOptions: Array<{ value: PersonalFmMode; label: string }> = [
   { value: 'normal', label: '红心' },
@@ -179,6 +203,9 @@ const resumeCurrentPersonalFm = async () => {
 };
 
 const handlePlayPersonalFm = async () => {
+  if (disposed || !active || !isLoggedIn.value || personalFmLoading.value) return;
+  const isCurrent = captureScope();
+  const isPlaybackCurrent = capturePlaybackScope(isCurrent);
   const resetPending = playlistStore.isPersonalFmSessionResetPending();
   if (
     isPersonalFmCurrentTrackActive.value &&
@@ -188,11 +215,11 @@ const handlePlayPersonalFm = async () => {
     await playerStore.togglePlay();
     return;
   }
-  if (personalFmLoading.value) return;
   personalFmLoading.value = true;
   try {
     if (resetPending && personalFmPreviewPromise) {
       await personalFmPreviewPromise;
+      if (!isPlaybackCurrent()) return;
     }
 
     const latestResetPending = playlistStore.isPersonalFmSessionResetPending();
@@ -206,16 +233,19 @@ const handlePlayPersonalFm = async () => {
       mode: selectedPersonalFmMode.value,
       recreate: latestResetPending,
       retainBuffer: latestResetPending,
+      isCurrent: () => isPlaybackCurrent(true),
     });
-    if (!ready) return;
+    if (!ready || !isPlaybackCurrent(true)) return;
     await playCurrentPersonalFm();
   } finally {
-    personalFmLoading.value = false;
+    if (isCurrent()) personalFmLoading.value = false;
   }
 };
 
 const handleSelectPersonalFmTrack = async (track: Song) => {
-  if (personalFmLoading.value) return;
+  if (disposed || !active || !isLoggedIn.value || personalFmLoading.value) return;
+  const isCurrent = captureScope();
+  const isPlaybackCurrent = capturePlaybackScope(isCurrent);
 
   const targetId = String(track.id ?? '');
   if (!targetId) return;
@@ -234,54 +264,76 @@ const handleSelectPersonalFmTrack = async (track: Song) => {
         fresh: true,
         mode: selectedPersonalFmMode.value,
         recreate: true,
+        isCurrent: () => isPlaybackCurrent(true),
       });
-      if (!ready) return;
+      if (!ready || !isPlaybackCurrent(true)) return;
       await playCurrentPersonalFm();
       return;
     }
     await playerStore.playPersonalFmTrack(track);
   } finally {
-    personalFmLoading.value = false;
+    if (isCurrent()) personalFmLoading.value = false;
   }
 };
 
 const handleChangePersonalFmMode = async (mode: PersonalFmMode) => {
-  if (personalFmLoading.value || mode === selectedPersonalFmMode.value) return;
+  if (
+    disposed ||
+    !active ||
+    !isLoggedIn.value ||
+    personalFmLoading.value ||
+    mode === selectedPersonalFmMode.value
+  )
+    return;
+  const isCurrent = captureScope();
+  const isPlaybackCurrent = capturePlaybackScope(isCurrent);
+  const wasActive = isPersonalFmActive.value;
   personalFmLoading.value = true;
   try {
-    await playlistStore.resetPersonalFmPreview({
+    const preview = await playlistStore.resetPersonalFmPreview({
       mode,
       songPoolId: selectedPersonalFmSongPoolId.value,
       action: 'login',
     });
-    if (isPersonalFmActive.value) {
+    if (preview && wasActive && isPersonalFmActive.value && isPlaybackCurrent()) {
       await playCurrentPersonalFm();
     }
   } finally {
-    personalFmLoading.value = false;
+    if (isCurrent()) personalFmLoading.value = false;
   }
 };
 
 const handleChangePersonalFmSongPool = async (songPoolId: PersonalFmSongPoolId) => {
-  if (personalFmLoading.value || songPoolId === selectedPersonalFmSongPoolId.value) return;
+  if (
+    disposed ||
+    !active ||
+    !isLoggedIn.value ||
+    personalFmLoading.value ||
+    songPoolId === selectedPersonalFmSongPoolId.value
+  )
+    return;
+  const isCurrent = captureScope();
+  const isPlaybackCurrent = capturePlaybackScope(isCurrent);
+  const wasActive = isPersonalFmActive.value;
   personalFmLoading.value = true;
   try {
-    await playlistStore.resetPersonalFmPreview({
+    const preview = await playlistStore.resetPersonalFmPreview({
       mode: selectedPersonalFmMode.value,
       songPoolId,
       action: 'change_song_pool',
     });
-    if (isPersonalFmActive.value) {
+    if (preview && wasActive && isPersonalFmActive.value && isPlaybackCurrent()) {
       await playCurrentPersonalFm();
     }
   } finally {
-    personalFmLoading.value = false;
+    if (isCurrent()) personalFmLoading.value = false;
   }
 };
 
 const handleDislikePersonalFm = async () => {
   const currentTrack = personalFmNowPlayingTrack.value ?? personalFmCurrentTrack.value;
-  if (personalFmLoading.value || !currentTrack) return;
+  if (disposed || !active || !isLoggedIn.value || personalFmLoading.value || !currentTrack) return;
+  const isCurrent = captureScope();
 
   personalFmLoading.value = true;
   try {
@@ -296,15 +348,16 @@ const handleDislikePersonalFm = async () => {
 
     await playerStore.dislikePersonalFm();
   } finally {
-    personalFmLoading.value = false;
+    if (isCurrent()) personalFmLoading.value = false;
   }
 };
 
 const preloadPersonalFmPreview = () => {
+  if (disposed || !active || !isLoggedIn.value) return Promise.resolve(null);
   if (personalFmPreviewPromise) return personalFmPreviewPromise;
-
+  const isCurrent = captureScope();
   personalFmPreloading.value = true;
-  personalFmPreviewPromise = playlistStore
+  const request = playlistStore
     .resetPersonalFmPreview({
       mode: selectedPersonalFmMode.value,
       songPoolId: selectedPersonalFmSongPoolId.value,
@@ -312,41 +365,76 @@ const preloadPersonalFmPreview = () => {
       action: 'login',
     })
     .finally(() => {
-      personalFmPreloading.value = false;
-      personalFmPreviewPromise = null;
+      if (isCurrent() && personalFmPreviewPromise === request) {
+        personalFmPreloading.value = false;
+        personalFmPreviewPromise = null;
+      }
     });
-
-  return personalFmPreviewPromise;
+  personalFmPreviewPromise = request;
+  return request;
 };
-
-onMounted(() => {
-  if (!isLoggedIn.value) return;
-
-  const shouldFetchPreview =
-    playlistStore.isPersonalFmSessionResetPending() || !personalFmCurrentTrack.value;
-
-  if (shouldFetchPreview && !personalFmLoading.value && !personalFmPreloading.value) {
+const ensurePreview = () => {
+  if (
+    disposed ||
+    !active ||
+    !isLoggedIn.value ||
+    personalFmLoading.value ||
+    personalFmPreloading.value
+  )
+    return;
+  if (
+    !personalFmCurrentTrack.value ||
+    (playlistStore.isPersonalFmSessionResetPending() && !playlistStore.personalFmBuffer.length)
+  ) {
     void preloadPersonalFmPreview();
   }
-
+};
+const bindVinylsObserver = () => {
+  personalFmVinylsObserver?.disconnect();
+  personalFmVinylsObserver = null;
+  if (disposed || !active) return;
   updatePersonalFmVisibleSideCount();
-  if (typeof ResizeObserver !== 'undefined') {
-    personalFmVinylsObserver = new ResizeObserver(() => {
-      updatePersonalFmVisibleSideCount();
+  if (typeof ResizeObserver !== 'undefined' && personalFmVinylsRef.value) {
+    const observer = new ResizeObserver(() => {
+      if (!disposed && active && personalFmVinylsObserver === observer)
+        updatePersonalFmVisibleSideCount();
     });
-    if (personalFmVinylsRef.value) {
-      personalFmVinylsObserver.observe(personalFmVinylsRef.value);
-    }
+    personalFmVinylsObserver = observer;
+    observer.observe(personalFmVinylsRef.value);
   }
+};
+const sessionSources = [
+  () => userStore.isLoggedIn,
+  () => userStore.accountRevision,
+  () => userStore.info?.userid ?? userStore.info?.userId,
+  () => userStore.info?.token,
+];
+watch(sessionSources, invalidateOperations, { flush: 'sync' });
+watch(sessionSources, () => {
+  if (!disposed && active && isLoggedIn.value) void preloadPersonalFmPreview();
 });
-
+watch(personalFmVinylsRef, bindVinylsObserver);
+onMounted(() => {
+  ensurePreview();
+  bindVinylsObserver();
+});
 onBeforeUnmount(() => {
+  disposed = true;
+  active = false;
+  invalidateOperations();
   personalFmVinylsObserver?.disconnect();
   personalFmVinylsObserver = null;
 });
-
+onDeactivated(() => {
+  active = false;
+  invalidateOperations();
+  personalFmVinylsObserver?.disconnect();
+  personalFmVinylsObserver = null;
+});
 onActivated(() => {
-  // KeepAlive 激活时无需手动重置滚动，每个页面有独立滚动容器
+  active = true;
+  ensurePreview();
+  bindVinylsObserver();
 });
 </script>
 

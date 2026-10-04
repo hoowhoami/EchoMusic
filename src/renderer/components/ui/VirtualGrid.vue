@@ -108,6 +108,7 @@ defineExpose({
       v-if="!props.loading && props.items.length > 0"
       :style="wrapperStyle"
       class="virtual-grid-wrapper"
+      :class="{ 'motion-content-enter': props.active }"
     >
       <div :style="visibleBlockStyle" class="will-change-transform">
         <div :style="visibleGridStyle" class="virtual-grid-inner">

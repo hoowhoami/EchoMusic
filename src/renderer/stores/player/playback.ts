@@ -1639,7 +1639,12 @@ export const createPlaybackManager = (
     const requestSeq = state.playbackRequestSeq;
     if (automatic && state.autoNextSuppressed) return;
     if (!playlistStore.getQueueById(PERSONAL_FM_QUEUE_ID)) {
-      const ready = await playlistStore.startPersonalFm();
+      const ready = await playlistStore.startPersonalFm({
+        isCurrent: () =>
+          advanceId === fmAdvanceId &&
+          requestSeq === state.playbackRequestSeq &&
+          (!automatic || !state.autoNextSuppressed),
+      });
       if (!ready || advanceId !== fmAdvanceId || requestSeq !== state.playbackRequestSeq) return;
     }
     const epoch = playlistStore.personalFmSessionEpoch;

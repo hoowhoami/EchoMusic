@@ -1,6 +1,6 @@
 import { STATUS_CODES } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { Readable, Transform } from 'node:stream';
+import { Readable, Transform, pipeline } from 'node:stream';
 import { net, type ClientRequest, type Session } from 'electron';
 import type {
   AxiosAdapter,
@@ -162,6 +162,12 @@ const createLimitedResponseStream = (
   maxContentLength: number,
 ) => {
   const source = response as unknown as Readable;
+  const onAborted = () => source.destroy(createCodedError('Response stream aborted', 'ECONNRESET'));
+  source.once('aborted', onAborted);
+  source.once('close', () => {
+    source.removeListener('aborted', onAborted);
+    if (!source.readableEnded) request.abort();
+  });
   if (maxContentLength < 0) return source;
 
   let receivedBytes = 0;
@@ -169,7 +175,6 @@ const createLimitedResponseStream = (
     transform(chunk: Buffer, _encoding, callback) {
       receivedBytes += chunk.length;
       if (receivedBytes > maxContentLength) {
-        request.abort();
         callback(
           createCodedError(
             `maxContentLength size of ${maxContentLength} exceeded`,
@@ -181,7 +186,10 @@ const createLimitedResponseStream = (
       callback(null, chunk);
     },
   });
-  source.pipe(limiter);
+  // pipe() alone does not forward source errors or propagate consumer cancellation.
+  pipeline(source, limiter, (error) => {
+    if (error) request.abort();
+  });
   return limiter;
 };
 
@@ -196,7 +204,6 @@ const toFetchResponse = (
 
   const contentLength = Number(headers.get('content-length'));
   if (maxContentLength >= 0 && Number.isFinite(contentLength) && contentLength > maxContentLength) {
-    request.abort();
     throw createCodedError(
       `maxContentLength size of ${maxContentLength} exceeded`,
       'ERR_BAD_RESPONSE',
@@ -240,9 +247,22 @@ const writeRequestBody = async (input: Request, request: ClientRequest, maxBodyL
 
   const reader = input.body.getReader();
   let sentBytes = 0;
+  let failure: unknown;
+  const cancelReader = (error: unknown) => {
+    failure ??= error;
+    void reader.cancel(error).catch(() => undefined);
+  };
+  const onAbort = () => cancelReader(getAbortReason(input.signal));
+  const onError = (error: Error) => cancelReader(error);
+  const onClose = () =>
+    cancelReader(createCodedError('Request closed during upload', 'ERR_NETWORK'));
+  request.once('abort', onAbort);
+  request.once('error', onError);
+  request.once('close', onClose);
   try {
     while (true) {
       const { done, value } = await reader.read();
+      if (failure) throw failure;
       if (done) break;
       const chunk = Buffer.from(value);
       sentBytes += chunk.length;
@@ -255,7 +275,13 @@ const writeRequestBody = async (input: Request, request: ClientRequest, maxBodyL
       request.write(chunk);
     }
     request.end();
+  } catch (error) {
+    cancelReader(error);
+    throw error;
   } finally {
+    request.removeListener('abort', onAbort);
+    request.removeListener('error', onError);
+    request.removeListener('close', onClose);
     reader.releaseLock();
   }
 };
@@ -285,6 +311,7 @@ const chromiumFetch = async (input: URL | Request | string): Promise<Response> =
     let redirectCount = 0;
     let currentMethod = fetchRequest.method.toUpperCase();
     let request: ClientRequest;
+    let responseStream: Readable | undefined;
 
     const cleanup = () => signal.removeEventListener('abort', onAbort);
     const resolveOnce = (response: Response, keepAbortListener = false) => {
@@ -355,24 +382,31 @@ const chromiumFetch = async (input: URL | Request | string): Promise<Response> =
     });
 
     request.on('response', (response) => {
+      const source = response as unknown as Readable;
+      source.once('error', cleanup);
       try {
         const fetchResponse = toFetchResponse(response, request, currentMethod, maxContentLength);
-        const responseStream = response as unknown as Readable;
-        responseStream.once('end', cleanup);
-        responseStream.once('close', cleanup);
+        responseStream = fetchResponse.body ? source : undefined;
+        source.once('end', cleanup);
+        source.once('close', cleanup);
         resolveOnce(fetchResponse, true);
       } catch (error) {
         rejectOnce(error);
+        request.abort();
       }
     });
-    request.on('error', rejectOnce);
+    request.on('error', (error) => {
+      responseStream?.destroy(error);
+      rejectOnce(error);
+    });
     request.on('abort', () => {
+      responseStream?.destroy(getAbortReason(signal) as Error);
       if (!settled) rejectOnce(getAbortReason(signal));
     });
 
     void writeRequestBody(fetchRequest, request, maxBodyLength).catch((error) => {
-      request.abort();
       rejectOnce(error);
+      request.abort();
     });
   });
 };
@@ -441,9 +475,8 @@ export const createElectronAxiosAdapter = (
       headerCapture,
       networkSession,
     });
-    const fetchAdapter = axiosModule.getAdapter('fetch', adapterConfig);
-
     try {
+      const fetchAdapter = axiosModule.getAdapter('fetch', adapterConfig);
       const response = await fetchAdapter(adapterConfig);
       normalizeAxiosResponse(response, config.responseType, headerCapture.setCookies);
       return response;

@@ -138,6 +138,7 @@ export const useUserStore = defineStore('user', {
       this.hasFetchedUserInfo = false;
 
       const mapped = mapUser(data);
+      const current = mapped.userid && mapped.userid !== this.info?.userid ? null : this.info;
       const detailPayload = isRecord(data.detail)
         ? data.detail
         : isRecord(data.extendsInfo) &&
@@ -154,13 +155,13 @@ export const useUserStore = defineStore('user', {
           : undefined;
 
       const mergedExtends = mergeExtendsInfo(
-        this.info?.extendsInfo,
+        current?.extendsInfo,
         mapped.extendsInfo,
         detailPayload ? { detail: detailPayload } : undefined,
         vipPayload ? { vip: vipPayload } : undefined,
       );
 
-      const nextInfo = buildPatchedUserInfo(this.info, {
+      const nextInfo = buildPatchedUserInfo(current, {
         ...mapped,
         ...(mergedExtends
           ? {
@@ -176,10 +177,18 @@ export const useUserStore = defineStore('user', {
     },
     async fetchUserInfo() {
       if (!this.isLoggedIn) return;
+      const revision = this.accountRevision;
       try {
-        const [detailRes, vipRes] = await Promise.all([getUserDetail(), getUserVipDetail()]);
-        const detailPayload = asApiPayload(detailRes);
-        const vipPayload = asApiPayload(vipRes);
+        const [detailRes, vipRes] = await Promise.allSettled([getUserDetail(), getUserVipDetail()]);
+        if (!this.isLoggedIn || revision !== this.accountRevision) return false;
+        const detailPayload = asApiPayload(
+          detailRes.status === 'fulfilled' ? detailRes.value : null,
+        );
+        const vipPayload = asApiPayload(vipRes.status === 'fulfilled' ? vipRes.value : null);
+        for (const result of [detailRes, vipRes]) {
+          if (result.status === 'rejected')
+            logger.warn('UserStore', 'User info request failed:', result.reason);
+        }
 
         if (detailPayload?.status === 1) {
           logger.info('UserStore', 'User detail fetched');
@@ -209,7 +218,7 @@ export const useUserStore = defineStore('user', {
           );
         }
 
-        return true;
+        return detailPayload?.status === 1;
       } catch (e) {
         logger.error('UserStore', 'Fetch user info error:', e);
         return false;
@@ -217,19 +226,23 @@ export const useUserStore = defineStore('user', {
     },
     async fetchUserInfoOnce() {
       if (!this.isLoggedIn || this.hasFetchedUserInfo || this.isFetchingUserInfo) return;
+      const revision = this.accountRevision;
       this.isFetchingUserInfo = true;
       try {
-        await this.fetchUserInfo();
-        this.hasFetchedUserInfo = true;
+        const success = await this.fetchUserInfo();
+        if (revision === this.accountRevision && this.isLoggedIn)
+          this.hasFetchedUserInfo = !!success;
       } finally {
-        this.isFetchingUserInfo = false;
+        if (revision === this.accountRevision) this.isFetchingUserInfo = false;
       }
     },
 
     async updateProfile(params: UpdateUserProfileParams) {
       if (!this.isLoggedIn || !this.info) throw new Error('请先登录后再修改个人资料');
+      const revision = this.accountRevision;
 
       await updateUserProfile(params);
+      if (!this.isLoggedIn || !this.info || revision !== this.accountRevision) return;
 
       const currentDetail = isRecord(this.info.extendsInfo?.detail)
         ? (this.info.extendsInfo.detail as Record<string, unknown>)
@@ -258,10 +271,11 @@ export const useUserStore = defineStore('user', {
 
     async updateAvatar(dataUrl: string, filename?: string) {
       if (!this.isLoggedIn || !this.info) throw new Error('请先登录后再修改头像');
+      const revision = this.accountRevision;
 
       const response = await updateUserAvatar(dataUrl, filename);
       const pic = readMutationString(response, 'pic');
-      if (pic) {
+      if (pic && this.isLoggedIn && revision === this.accountRevision) {
         this.setUserInfo(buildPatchedUserInfo(this.info, { pic, userPic: pic }));
       }
       return { pic, reviewPending: Boolean(response.reviewPending) };
@@ -273,8 +287,10 @@ export const useUserStore = defineStore('user', {
      */
     async fetchGradeInfo() {
       if (!this.isLoggedIn || !this.info) return;
+      const revision = this.accountRevision;
       try {
         const res = await getUserGradeInfo();
+        if (!this.isLoggedIn || !this.info || revision !== this.accountRevision) return;
         const payload = asApiPayload(res);
         if (payload?.status !== 1) return;
 
@@ -337,13 +353,16 @@ export const useUserStore = defineStore('user', {
 
     async fetchFollowedArtists() {
       if (!this.isLoggedIn) return;
+      const revision = this.accountRevision;
       try {
         const res = await getUserFollow();
+        if (!this.isLoggedIn || revision !== this.accountRevision) return;
         if (res && typeof res === 'object' && 'data' in res) {
           const data = (res as { data?: { lists?: unknown[] } }).data;
           const lists = Array.isArray(data?.lists) ? data.lists : [];
           const ids = new Set<string>();
           for (const item of lists) {
+            if (!isRecord(item)) continue;
             const record = item as Record<string, unknown>;
             const id = String(record.singerid ?? record.userid ?? record.id ?? '');
             if (id) ids.add(id);

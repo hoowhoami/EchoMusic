@@ -86,6 +86,8 @@ const defaultKeyword = ref('');
 const defaultAds = ref<{ mainTitle: string; subTitle: string; title: string }[]>([]);
 let suggestTimer: number | null = null;
 let suggestionRequest = 0;
+let disposed = false;
+let defaultSearchRequest = 0;
 let suggestionBlurTimer: number | null = null;
 
 const toggleTaskPanel = () => {
@@ -251,15 +253,17 @@ const suggestionParts = (text: string) => {
 };
 
 const loadHotSearches = async () => {
-  if (hotSearchLoaded || isLoadingHot.value) return;
+  if (disposed || hotSearchLoaded || isLoadingHot.value) return;
   isLoadingHot.value = true;
   try {
-    hotSearchCategories.value = extractHotCategories(await getSearchHot());
+    const result = await getSearchHot();
+    if (disposed) return;
+    hotSearchCategories.value = extractHotCategories(result);
     hotSearchLoaded = true;
   } catch {
-    hotSearchCategories.value = [];
+    if (!disposed) hotSearchCategories.value = [];
   } finally {
-    isLoadingHot.value = false;
+    if (!disposed) isLoadingHot.value = false;
   }
 };
 
@@ -503,30 +507,36 @@ watch(
     if (enabled) {
       fetchDefaultSearch();
     } else {
+      defaultSearchRequest++;
       defaultKeyword.value = '';
       defaultAds.value = [];
     }
   },
+  { flush: 'sync' },
 );
 
-const fetchDefaultSearch = () => {
-  getSearchDefault()
-    .then((res: any) => {
-      const ads = res?.data?.ads ?? res?.ads ?? [];
-      if (!Array.isArray(ads) || ads.length === 0) return;
-      const first = ads[0];
-      if (first?.main_title) {
-        defaultKeyword.value = String(first.main_title).trim();
-      }
-      defaultAds.value = ads
-        .filter((ad: any) => ad?.sub_title || ad?.main_title)
-        .map((ad: any) => ({
-          mainTitle: String(ad.main_title ?? '').trim(),
-          subTitle: String(ad.sub_title ?? '').trim(),
-          title: String(ad.title ?? '').trim(),
-        }));
-    })
-    .catch(() => {});
+const fetchDefaultSearch = async () => {
+  if (disposed || !settingStore.searchDefaultEnabled) return;
+  const request = ++defaultSearchRequest;
+  try {
+    const res = await getSearchDefault();
+    if (disposed || request !== defaultSearchRequest || !settingStore.searchDefaultEnabled) return;
+    const record = toRecord(res);
+    const data = toRecord(record?.data);
+    const ads = data?.ads ?? record?.ads;
+    if (!Array.isArray(ads)) return;
+    const mapped = ads.map(toRecord).filter((ad): ad is Record<string, unknown> => Boolean(ad));
+    defaultKeyword.value = String(mapped[0]?.main_title ?? '').trim();
+    defaultAds.value = mapped
+      .filter((ad) => ad.sub_title || ad.main_title)
+      .map((ad) => ({
+        mainTitle: String(ad.main_title ?? '').trim(),
+        subTitle: String(ad.sub_title ?? '').trim(),
+        title: String(ad.title ?? '').trim(),
+      }));
+  } catch {
+    // 请求失败保留上次成功的默认词，下次开启时可以重试。
+  }
 };
 
 onMounted(() => {
@@ -543,6 +553,9 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  disposed = true;
+  defaultSearchRequest++;
+  isLoadingHot.value = false;
   builtinDisposers.forEach((dispose) => dispose());
   window.removeEventListener('popstate', updateNavState);
   document.removeEventListener('pointerdown', handleGlobalPointerDown, true);

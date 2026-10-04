@@ -42,8 +42,10 @@ export const createDeviceManager = (
 ) => {
   let refreshingOutputDevices = false;
   let applyingOutputDevice = false;
-  let applyingOutputDeviceKey: string | null = null;
-  let applyingOutputDevicePromise: Promise<boolean> | null = null;
+  let queuedOutputDeviceKey: string | null = null;
+  let queuedOutputDevicePromise: Promise<boolean> | null = null;
+  let outputDeviceApplyTail: Promise<void> = Promise.resolve();
+  let outputDeviceRequestSeq = 0;
   let queuedOutputDevicesRefresh: OutputDevicesRefreshArg | true | null = null;
   let nativeOutputReconfigActive = false;
   let outputReconfigSettleUntil = 0;
@@ -113,8 +115,12 @@ export const createDeviceManager = (
     outputReconfigSettleUntil = Date.now() + OUTPUT_RECONFIG_SETTLE_MS;
   };
 
+  const hasPendingOutputDeviceChange = () =>
+    applyingOutputDevice || queuedOutputDevicePromise !== null;
   const isIntentionalOutputReconfigActive = () =>
-    applyingOutputDevice || nativeOutputReconfigActive || Date.now() < outputReconfigSettleUntil;
+    hasPendingOutputDeviceChange() ||
+    nativeOutputReconfigActive ||
+    Date.now() < outputReconfigSettleUntil;
 
   const handleCoreStateChange = (payload: PlayerCoreStateChangedPayload) => {
     if (payload.state === 'output-reconfig') {
@@ -182,7 +188,7 @@ export const createDeviceManager = (
     if (isIntentionalOutputReconfigActive()) {
       const isEscalatedDeviceError =
         isDeviceRecoveryReason(error.reason) &&
-        !applyingOutputDevice &&
+        !hasPendingOutputDeviceChange() &&
         !nativeOutputReconfigActive;
       if (!isEscalatedDeviceError && !isNoOutputDeviceAvailableError(error)) return true;
     }
@@ -202,11 +208,12 @@ export const createDeviceManager = (
 
   const applyOutputDeviceUnchecked = async (
     deviceId: string,
+    exclusive: boolean,
+    requestSeq: number,
     options?: { force?: boolean },
   ): Promise<boolean> => {
     const force = options?.force ?? false;
     const playerDevice = !deviceId || deviceId === 'default' ? 'auto' : deviceId;
-    const exclusive = settingStore.exclusiveAudioDevice;
 
     const player = window.electron?.player;
     const exclusiveChanged = exclusive !== (state._lastAppliedExclusive ?? false);
@@ -225,7 +232,11 @@ export const createDeviceManager = (
       state.appliedOutputDeviceId = deviceId;
       applied = true;
     } catch (error) {
-      if (exclusiveChanged) {
+      if (
+        exclusiveChanged &&
+        requestSeq === outputDeviceRequestSeq &&
+        settingStore.exclusiveAudioDevice === exclusive
+      ) {
         const previousExclusive = state._lastAppliedExclusive ?? false;
         if (settingStore.exclusiveAudioDevice !== previousExclusive) {
           settingStore.exclusiveAudioDevice = previousExclusive;
@@ -249,29 +260,36 @@ export const createDeviceManager = (
     }
   };
 
-  const applyOutputDevice = async (
-    deviceId: string,
-    options?: { force?: boolean },
-  ): Promise<boolean> => {
-    const applyKey = outputDeviceApplyKey(deviceId, settingStore.exclusiveAudioDevice);
-    if (applyingOutputDevice) {
-      if (applyingOutputDeviceKey === applyKey && applyingOutputDevicePromise) {
-        return applyingOutputDevicePromise;
+  const applyOutputDevice = (deviceId: string, options?: { force?: boolean }): Promise<boolean> => {
+    const exclusive = settingStore.exclusiveAudioDevice;
+    const applyKey = outputDeviceApplyKey(deviceId, exclusive);
+    if (queuedOutputDeviceKey === applyKey && queuedOutputDevicePromise) {
+      return queuedOutputDevicePromise;
+    }
+    const requestSeq = ++outputDeviceRequestSeq;
+    const task = outputDeviceApplyTail.then(async () => {
+      applyingOutputDevice = true;
+      beginIntentionalOutputReconfig();
+      try {
+        return await applyOutputDeviceUnchecked(deviceId, exclusive, requestSeq, options);
+      } finally {
+        settleIntentionalOutputReconfig();
+        applyingOutputDevice = false;
       }
-      return false;
-    }
-    applyingOutputDevice = true;
-    applyingOutputDeviceKey = applyKey;
-    beginIntentionalOutputReconfig();
-    applyingOutputDevicePromise = applyOutputDeviceUnchecked(deviceId, options);
-    try {
-      return await applyingOutputDevicePromise;
-    } finally {
-      settleIntentionalOutputReconfig();
-      applyingOutputDevice = false;
-      applyingOutputDeviceKey = null;
-      applyingOutputDevicePromise = null;
-    }
+    });
+    outputDeviceApplyTail = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    queuedOutputDeviceKey = applyKey;
+    queuedOutputDevicePromise = task;
+    const clearQueued = () => {
+      if (queuedOutputDevicePromise !== task) return;
+      queuedOutputDeviceKey = null;
+      queuedOutputDevicePromise = null;
+    };
+    void task.then(clearQueued, clearQueued);
+    return task;
   };
 
   const refreshOutputDevicesOnce = async (playerDevicesArg?: OutputDevicesRefreshArg) => {

@@ -12,7 +12,7 @@ import {
   favoriteAlbum as favoriteAlbumApi,
   unfavoriteAlbum as unfavoriteAlbumApi,
 } from '@/api/album';
-import { getAlbumComments } from '@/api/comment';
+import { useDetailComments } from '@/composables/useDetailComments';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
 import DetailPageError from '@/components/music/DetailPageError.vue';
@@ -33,10 +33,8 @@ import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song, SongArtist } from '@/models/song';
 import Button from '@/components/ui/Button.vue';
-import { mapAlbumDetailMeta, mapAlbumSong, mapCommentItem } from '@/utils/mappers';
-import { enrichCommentsWithYoungVip } from '@/utils/commentVipCache';
+import { mapAlbumDetailMeta, mapAlbumSong } from '@/utils/mappers';
 import type { AlbumMeta } from '@/models/album';
-import type { Comment } from '@/models/comment';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
@@ -56,16 +54,10 @@ import { useToastStore } from '@/stores/toast';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
-import { isRecord, toRecord } from '../../../shared/object';
+import { isRecord } from '../../../shared/object';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
+import { captureUserSession } from '@/utils/userSession';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
-
-const parseIntSafe = (value: unknown): number => {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  const parsed = Number.parseInt(String(value), 10);
-  return Number.isNaN(parsed) ? 0 : parsed;
-};
 
 const router = useRouter();
 const { id: currentId, onIdChange } = useRouteId();
@@ -87,12 +79,7 @@ const {
   select: selectTabs,
   isActive,
 } = useRouteTabs({ tab: ['songs', 'comments'] });
-const loadingComments = ref(false);
-const comments = ref<Comment[]>([]);
-const hotComments = ref<Comment[]>([]);
-const commentTotal = ref(0);
-const commentPage = ref(1);
-const hasMoreComments = ref(true);
+
 const showBatchDrawer = ref(false);
 const showIntroDialog = ref(false);
 
@@ -175,15 +162,33 @@ const isFavoriteAlbum = computed(() => {
   });
 });
 
+const togglingFavorite = ref(false);
+let favoriteGeneration = 0;
+watch(
+  [
+    getAlbumId,
+    () => userStore.isLoggedIn,
+    () => userStore.accountRevision,
+    () => userStore.info?.userid ?? userStore.info?.userId,
+    () => userStore.info?.token,
+  ],
+  () => {
+    favoriteGeneration++;
+    togglingFavorite.value = false;
+  },
+  { flush: 'sync' },
+);
+
 const toggleFavoriteAlbum = async () => {
   const meta = album.value;
-  if (!meta) return;
+  if (disposed || !meta || togglingFavorite.value) return;
   if (!userStore.isLoggedIn) {
     toastStore.loginRequired('收藏专辑');
     return;
   }
-
-  if (isFavoriteAlbum.value) {
+  const previousFavorite = isFavoriteAlbum.value;
+  let listId: string | number | undefined;
+  if (previousFavorite) {
     const target = playlistStore.userPlaylists.find((entry) => {
       if (entry.source !== 2) return false;
       const entryIds = [
@@ -200,32 +205,36 @@ const toggleFavoriteAlbum = async () => {
         .map((item) => String(item));
       return entryIds.some((id) => currentAlbumIds.value.includes(id));
     });
-    const listId = target?.listid ?? target?.id;
+    listId = target?.listid ?? target?.id;
     if (!listId) return;
-    try {
-      const res = await unfavoriteAlbumApi(listId);
-      if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
-        await playlistStore.fetchUserPlaylists();
-        toastStore.actionCompleted('已取消收藏专辑');
-      } else {
-        toastStore.actionFailed('取消收藏专辑');
-      }
-    } catch {
-      toastStore.actionFailed('取消收藏专辑');
-    }
-    return;
   }
-
+  const resourceId = getAlbumId();
+  const generation = ++favoriteGeneration;
+  const isSessionCurrent = captureUserSession(userStore);
+  const isCurrent = () =>
+    !disposed &&
+    generation === favoriteGeneration &&
+    resourceId === getAlbumId() &&
+    isSessionCurrent();
+  togglingFavorite.value = true;
   try {
-    const res = await favoriteAlbumApi(meta.id, meta.name, meta.singerId);
-    if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
-      await playlistStore.fetchUserPlaylists();
-      toastStore.actionSucceeded('收藏专辑');
-    } else {
-      toastStore.actionFailed('收藏专辑');
+    const response = previousFavorite
+      ? await unfavoriteAlbumApi(listId!)
+      : await favoriteAlbumApi(meta.id, meta.name, meta.singerId);
+    if (!isCurrent()) return;
+    if (!isRecord(response) || response.status !== 1) {
+      toastStore.actionFailed(previousFavorite ? '取消收藏专辑' : '收藏专辑');
+      return;
     }
+
+    await playlistStore.fetchUserPlaylists();
+    if (!isCurrent()) return;
+    if (previousFavorite) toastStore.actionCompleted('已取消收藏专辑');
+    else toastStore.actionSucceeded('收藏专辑');
   } catch {
-    toastStore.actionFailed('收藏专辑');
+    if (isCurrent()) toastStore.actionFailed(previousFavorite ? '取消收藏专辑' : '收藏专辑');
+  } finally {
+    if (isCurrent()) togglingFavorite.value = false;
   }
 };
 
@@ -254,77 +263,18 @@ const sortedSongs = computed(() =>
 );
 const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, searchQuery.value));
 
-const fetchComments = async (reset = false) => {
-  if (loadingComments.value) return;
-  if (reset) {
-    commentPage.value = 1;
-    comments.value = [];
-    hotComments.value = [];
-    commentTotal.value = 0;
-    hasMoreComments.value = true;
-  }
-  if (!hasMoreComments.value) return;
-
-  loadingComments.value = true;
-  try {
-    const res = await getAlbumComments(getAlbumId(), commentPage.value, 30, {
-      showClassify: commentPage.value === 1,
-      showHotwordList: commentPage.value === 1,
-    });
-    if (
-      res &&
-      typeof res === 'object' &&
-      'status' in res &&
-      (res as { status?: number }).status === 1
-    ) {
-      const record = toRecord(res);
-      const data = toRecord(record.data ?? record.info ?? record);
-      const listCandidate = data.list ?? data.comments ?? [];
-      const hotCandidate = data.hot_list ?? data.weight_list ?? [];
-      const list = Array.isArray(listCandidate) ? listCandidate : [];
-      const hotList = Array.isArray(hotCandidate) ? hotCandidate : [];
-      const mapped = (await enrichCommentsWithYoungVip(list.map(mapCommentItem))).filter(
-        (item) => item.content.length > 0,
-      );
-      const mappedHot = (await enrichCommentsWithYoungVip(hotList.map(mapCommentItem))).filter(
-        (item) => item.content.length > 0,
-      );
-      if (reset) {
-        hotComments.value = mappedHot.map((item) => ({ ...item }));
-      }
-      comments.value = reset ? mapped : [...comments.value, ...mapped];
-
-      // 如果本页没有返回任何有效评论（非 reset），说明已到末尾
-      if (!reset && mapped.length === 0) {
-        hasMoreComments.value = false;
-      } else {
-        const totalRaw =
-          data.total ?? data.count ?? record.total ?? record.count ?? commentTotal.value;
-        const totalValue = parseIntSafe(totalRaw);
-        hasMoreComments.value =
-          mapped.length > 0 &&
-          (totalValue > 0 ? comments.value.length < totalValue : mapped.length >= 30);
-      }
-
-      if (hasMoreComments.value) {
-        commentPage.value += 1;
-      }
-    } else {
-      hasMoreComments.value = false;
-    }
-  } catch (e) {
-    logger.error('AlbumDetail', 'Fetch album comments error', e);
-    hasMoreComments.value = false;
-    toastStore.loadFailed('专辑评论');
-  } finally {
-    loadingComments.value = false;
-  }
-};
+const { loadingComments, comments, hotComments, commentTotal, hasMoreComments, fetchComments } =
+  useDetailComments({
+    type: 'album',
+    resourceId: getAlbumId,
+    isActive: () => isActive.value && activeTab.value === 'comments',
+  });
 
 const loadingSongs = ref(true);
 
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
+let songsFullyLoaded = false;
 
 const handleTabChange = (value: string | number) => selectTabs({ tab: String(value) });
 const loadActiveTabData = () => {
@@ -370,17 +320,21 @@ watch(scrollContainerRef, () => {
 });
 
 let loadGeneration = 0;
+let disposed = false;
 const fetchData = async () => {
+  if (disposed) return;
   const generation = ++loadGeneration;
-  const isCurrent = () => generation === loadGeneration;
+  const albumId = getAlbumId();
+  const hadCompleteSongs = songsFullyLoaded;
+  const isCurrent = () => !disposed && generation === loadGeneration && albumId === getAlbumId();
   loading.value = true;
   loadingSongs.value = true;
-  const albumId = getAlbumId();
 
   // 1. 先获取专辑详情
   const detailTask = getAlbumDetail(albumId)
     .then((detailRes) => {
       if (!isCurrent()) return;
+
       const detailRaw = extractFirstObject(detailRes);
       const meta = detailRaw && mapAlbumDetailMeta(detailRaw);
       if (!meta || !meta.id) {
@@ -406,7 +360,10 @@ const fetchData = async () => {
   // 3. 创建加载器获取歌曲
   const loader = new PagedSongLoader<Song>(
     async (page, pageSize) => {
+      if (!isCurrent()) throw new Error('专辑加载已失效');
       const res = await getAlbumSongs(albumId, page, pageSize);
+      if (!isCurrent()) throw new Error('专辑加载已失效');
+
       if (!res || typeof res !== 'object' || !('status' in res) || res.status !== 1) {
         return { items: [], hasMore: false };
       }
@@ -419,12 +376,14 @@ const fetchData = async () => {
       dedupeKey: (song) => String(song.mixSongId || song.id),
       logTag: 'AlbumSongsLoader',
       onPageLoaded(allItems) {
-        if (!isCurrent()) return;
+        if (!isCurrent() || hadCompleteSongs) return;
+        songsFullyLoaded = false;
         songs.value = allItems.slice();
         loadedSongCount.value = allItems.length;
       },
       onComplete(allItems) {
         if (!isCurrent()) return;
+        songsFullyLoaded = true;
         songs.value = allItems.slice();
         loadedSongCount.value = allItems.length;
       },
@@ -465,6 +424,7 @@ onActivated(() => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
   loadGeneration++;
   songLoader?.abort();
   commentObserver?.disconnect();
@@ -473,15 +433,11 @@ onBeforeUnmount(() => {
 
 // id 变化时重置数据（仅同路由间切换，如专辑A→专辑B）
 onIdChange(() => {
+  songsFullyLoaded = false;
   album.value = null;
   albumArtists.value = [];
   songs.value = [];
   loadedSongCount.value = 0;
-  comments.value = [];
-  hotComments.value = [];
-  commentPage.value = 1;
-  commentTotal.value = 0;
-  hasMoreComments.value = true;
   if (songLoader) {
     songLoader.abort();
     songLoader = null;
@@ -549,6 +505,17 @@ const handleSongDoubleTapPlay = async (song: Song) => {
 };
 
 const handlePlayAll = async () => {
+  const loader = songLoader;
+  const generation = loadGeneration;
+  const resourceId = getAlbumId();
+  const requestSortField = sortField.value;
+  const requestSortOrder = sortOrder.value;
+  const requestQuery = searchQuery.value;
+  const isCurrent = () =>
+    !disposed &&
+    generation === loadGeneration &&
+    resourceId === getAlbumId() &&
+    loader === songLoader;
   const queueSongs = displayedSongs.value.slice() as Song[];
   if (queueSongs.length === 0) return;
   const queueOpts = {
@@ -557,14 +524,33 @@ const handlePlayAll = async () => {
     subtitle: album.value?.singerName || '',
     type: 'album' as const,
   };
-  await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, queueOpts);
+  const playRequest = replaceQueueAndPlay(
+    playlistStore,
+    playerStore,
+    queueSongs,
+    0,
+    undefined,
+    queueOpts,
+  );
+  const queue = playlistStore.getQueueById(queueOpts.queueId);
+  const queuedSongs = queue?.songs;
+  const queueRevision = queue?.playbackRevision;
+  const isCurrentQueue = () =>
+    isCurrent() &&
+    playlistStore.activeQueueId === queueOpts.queueId &&
+    playlistStore.getQueueById(queueOpts.queueId) === queue &&
+    queue?.songs === queuedSongs &&
+    queue?.playbackRevision === queueRevision;
+  const played = await playRequest;
+  if (!played || !isCurrentQueue()) return;
   // 后台等待全部加载完，静默更新播放队列
-  if (songLoader && !songLoader.fullyLoaded && !songLoader.failed) {
-    const allSongs = Array.from(await songLoader.waitForAll()) as Song[];
-    const sortedAllSongs = sortSongs(allSongs, sortField.value, sortOrder.value, {
+  if (loader && !loader.failed) {
+    const allSongs = Array.from(await loader.waitForAll()) as Song[];
+    if (!isCurrentQueue() || !loader.fullyLoaded || loader.failed) return;
+    const sortedAllSongs = sortSongs(allSongs, requestSortField, requestSortOrder, {
       indexSource: allSongs,
     });
-    const displayedAllSongs = filterSongsByQuery(sortedAllSongs, searchQuery.value);
+    const displayedAllSongs = filterSongsByQuery(sortedAllSongs, requestQuery);
     if (displayedAllSongs.length > queueSongs.length) {
       playlistStore.setPlaybackQueueWithOptions(
         Array.from(displayedAllSongs) as Song[],
@@ -801,6 +787,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                   热门评论
                 </div>
                 <CommentList
+                  :resource-id="currentId"
                   :comments="hotComments"
                   :loading="loadingComments"
                   resourceType="album"
@@ -810,6 +797,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                   @deleted="fetchComments(true)"
                 />
                 <CommentList
+                  :resource-id="currentId"
                   :comments="comments"
                   :loading="loadingComments"
                   :total="commentTotal"

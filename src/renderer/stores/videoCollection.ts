@@ -20,7 +20,7 @@ export const useVideoCollectionStore = defineStore('videoCollection', () => {
   let loadPromise: Promise<void> | null = null;
 
   watch(
-    accountKey,
+    [accountKey, () => userStore.accountRevision, () => userStore.info?.token],
     () => {
       generation += 1;
       collectedIds.value = new Set();

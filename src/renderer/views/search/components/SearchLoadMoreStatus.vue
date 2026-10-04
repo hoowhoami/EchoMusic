@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ComponentPublicInstance } from 'vue';
+import Button from '@/components/ui/Button.vue';
 import type { SearchPaginationState } from '../types';
 
 defineProps<{
@@ -10,11 +11,20 @@ defineProps<{
     refs?: Record<string, unknown>,
   ) => void;
 }>();
+defineEmits<{ retry: [] }>();
 </script>
 
 <template>
   <div
-    v-if="activePagination.loadingMore || activePagination.hasMore"
+    v-if="activePagination.error"
+    class="search-load-more-status flex items-center justify-center gap-3"
+    role="alert"
+  >
+    <span>{{ activePagination.error }}</span>
+    <Button variant="secondary" size="sm" @click="$emit('retry')">重试加载</Button>
+  </div>
+  <div
+    v-else-if="activePagination.loadingMore || activePagination.hasMore"
     :ref="setSentinelRef"
     class="search-load-more-status"
   >

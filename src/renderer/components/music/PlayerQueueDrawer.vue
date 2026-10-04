@@ -699,17 +699,25 @@ onBeforeUnmount(() => {
         <div class="queue-title-block">
           <div class="queue-title-row">
             <span v-if="headerStatus" class="queue-status">{{ headerStatus }}</span>
-            <div class="queue-title" :title="headerPresentation.title">
-              {{ headerPresentation.title }}
-            </div>
+            <Tooltip :content="headerPresentation.title" overflow-only>
+              <template #trigger>
+                <div class="queue-title">
+                  {{ headerPresentation.title }}
+                </div>
+              </template>
+            </Tooltip>
           </div>
-          <div
+          <Tooltip
             v-if="headerPresentation.subtitle"
-            class="queue-title-subtitle"
-            :title="headerPresentation.subtitle"
+            :content="headerPresentation.subtitle"
+            overflow-only
           >
-            {{ headerPresentation.subtitle }}
-          </div>
+            <template #trigger>
+              <div class="queue-title-subtitle">
+                {{ headerPresentation.subtitle }}
+              </div>
+            </template>
+          </Tooltip>
         </div>
         <Button
           type="button"
@@ -939,8 +947,8 @@ onBeforeUnmount(() => {
 
 @media (max-width: 420px) {
   :global(.drawer-panel.queue-drawer) {
-    --drawer-top-gap: 16px;
-    --drawer-bottom-gap: -4px;
+    --drawer-top-gap: 4px;
+    --drawer-bottom-gap: 8px;
     right: 8px;
     width: min(380px, calc(100vw - 16px));
   }

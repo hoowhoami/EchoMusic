@@ -46,7 +46,14 @@ const groupedOptions = computed(() => {
 
 const tabs = computed(() => groupedOptions.value.map(([key]) => key).filter((key) => key !== ''));
 const hasTabs = computed(() => tabs.value.length > 1);
-const activeTabIndex = ref(0);
+// Track the group itself so refreshed or reordered options cannot switch tabs implicitly.
+const activeGroup = ref('');
+const activeTabIndex = computed({
+  get: () => Math.max(0, tabs.value.indexOf(activeGroup.value)),
+  set: (index: number) => {
+    activeGroup.value = tabs.value[index] ?? tabs.value[0] ?? '';
+  },
+});
 
 const activeOptions = computed(() => {
   if (!hasTabs.value) return props.options;
@@ -61,15 +68,18 @@ const handleSelect = (option: PickerOption) => {
 };
 
 watch(
-  () => open.value,
-  (open) => {
-    if (!open) return;
-    if (!hasTabs.value) return;
-    const selectedOption = props.options.find((opt) => opt.id === props.selectedId);
-    if (!selectedOption?.group) return;
-    const index = tabs.value.findIndex((tab) => tab === selectedOption.group);
-    activeTabIndex.value = index >= 0 ? index : 0;
+  [open, tabs],
+  ([isOpen, groups], [wasOpen, previousGroups]) => {
+    if (!isOpen) return;
+    if (!wasOpen || !previousGroups || previousGroups.length <= 1) {
+      const selectedGroup = props.options.find((opt) => opt.id === props.selectedId)?.group;
+      activeGroup.value =
+        selectedGroup && groups.includes(selectedGroup) ? selectedGroup : (groups[0] ?? '');
+    } else if (!groups.includes(activeGroup.value)) {
+      activeGroup.value = groups[0] ?? '';
+    }
   },
+  { immediate: true },
 );
 </script>
 
@@ -108,7 +118,6 @@ watch(
 
 :deep(.custom-picker-dialog) {
   width: min(520px, 92vw);
-  border-radius: 24px !important;
   padding: 18px 2px 16px 18px !important;
 }
 
@@ -129,7 +138,7 @@ watch(
 }
 
 .custom-picker-option {
-  @apply px-4 py-2 rounded-[10px] text-[12px] font-semibold transition-all;
+  @apply px-4 py-2 rounded-[10px] text-[12px] font-semibold;
   color: var(--color-text-main);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
   background: color-mix(in srgb, var(--color-text-main) 6%, transparent);

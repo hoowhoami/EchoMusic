@@ -132,6 +132,10 @@ test('favorites sort by position and forced refresh ignores the previous respons
     { id: 1, playlistSort: 0, collectTime: 2 },
   ];
   const { favoritesActions } = compile('../src/renderer/stores/playlist/favoritesActions.ts', {
+    './accountScope': compile('../src/renderer/stores/playlist/accountScope.ts', {
+      '@/utils/userSession': compile('../src/renderer/utils/userSession.ts'),
+      '@/stores/user': { useUserStore: () => ({ info: { userid: 7 } }) },
+    }),
     '@/api/playlist': {
       getPlaylistTracksNew: (listid) => {
         assert.equal(listid, 12);
@@ -448,6 +452,10 @@ test('favorites publish the first page while remaining pages load, without marki
     secondRequested = resolve;
   });
   const { favoritesActions } = compile('../src/renderer/stores/playlist/favoritesActions.ts', {
+    './accountScope': compile('../src/renderer/stores/playlist/accountScope.ts', {
+      '@/utils/userSession': compile('../src/renderer/utils/userSession.ts'),
+      '@/stores/user': { useUserStore: () => ({ info: { userid: 7 } }) },
+    }),
     '@/api/playlist': {
       getPlaylistTracksNew: async (_id, page, size) => {
         requestedPages.push(page);

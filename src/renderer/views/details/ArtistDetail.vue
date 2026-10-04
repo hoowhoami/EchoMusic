@@ -43,6 +43,7 @@ import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { useContentBlacklistStore } from '@/stores/contentBlacklist';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
+import { captureUserSession } from '@/utils/userSession';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import {
   iconCurrentLocation,
@@ -111,6 +112,9 @@ const songs = shallowRef<Song[]>([]);
 const songSort = ref<ArtistSongSort>(settingStore.artistSongSort);
 const songSortMenuOpen = ref(false);
 let songFetchToken = 0;
+let disposed = false;
+let loadedSongSort: ArtistSongSort | null = null;
+let mvFetchToken = 0;
 const albums = shallowRef<ReturnType<typeof mapAlbumMeta>[]>([]);
 const albumPage = ref(1);
 const albumHasMore = ref(false);
@@ -175,38 +179,47 @@ const songSortLabel = computed(
 
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
-
-const fetchAllArtistSongs = (totalCount: number) => {
-  if (!songLoader || songLoader.fullyLoaded || songLoader.failed) return;
-  if (songLoader.count >= totalCount) return;
-  void songLoader.loadRemaining();
-};
+let songsFullyLoaded = false;
 
 const resetSongTableSort = () => {
   sortField.value = null;
   sortOrder.value = null;
 };
 
-const resetSongPaging = () => {
+const resetSongPaging = (preserveSongs = false) => {
   songFetchToken += 1;
   if (songLoader) {
     songLoader.abort();
     songLoader = null;
   }
-  songs.value = [];
-  loadedSongCount.value = 0;
+  if (!preserveSongs) {
+    songsFullyLoaded = false;
+    songs.value = [];
+    loadedSongCount.value = 0;
+  }
   loadingSongs.value = true;
 };
 
 const loadArtistSongs = async (artistId = getArtistId()) => {
-  resetSongPaging();
+  if (disposed) return;
+  const hadCompleteSongs = songsFullyLoaded && loadedSongSort === songSort.value;
+  resetSongPaging(hadCompleteSongs);
 
   const requestSort = songSort.value;
   const requestToken = ++songFetchToken;
+  loadedSongSort = requestSort;
+  const isCurrent = () =>
+    !disposed &&
+    requestToken === songFetchToken &&
+    requestSort === songSort.value &&
+    artistId === getArtistId();
 
   songLoader = new PagedSongLoader<Song>(
     async (page, pageSize) => {
+      if (!isCurrent()) throw new Error('歌手加载已失效');
       const res = await getArtistSongsV2(artistId, page, pageSize, requestSort);
+      if (!isCurrent()) throw new Error('歌手加载已失效');
+
       const items = extractList(res).map((item) => mapArtistSongV2(item));
       return { items, hasMore: items.length >= pageSize };
     },
@@ -216,17 +229,19 @@ const loadArtistSongs = async (artistId = getArtistId()) => {
       dedupeKey: (song) => String(song.id),
       logTag: 'ArtistSongsLoader',
       onPageLoaded(allItems) {
-        if (requestToken !== songFetchToken || requestSort !== songSort.value) return;
+        if (!isCurrent() || hadCompleteSongs) return;
+        songsFullyLoaded = false;
         songs.value = allItems.slice();
         loadedSongCount.value = allItems.length;
       },
       onComplete(allItems) {
-        if (requestToken !== songFetchToken || requestSort !== songSort.value) return;
+        if (!isCurrent()) return;
+        songsFullyLoaded = true;
         songs.value = allItems.slice();
         loadedSongCount.value = allItems.length;
       },
       onError() {
-        if (requestToken !== songFetchToken || requestSort !== songSort.value) return;
+        if (!isCurrent()) return;
         toastStore.loadFailed('歌手歌曲');
       },
     },
@@ -235,14 +250,13 @@ const loadArtistSongs = async (artistId = getArtistId()) => {
   const currentLoader = songLoader;
   try {
     await currentLoader.loadFirstPage();
-    if (requestToken !== songFetchToken || requestSort !== songSort.value) return;
+    if (!isCurrent()) return;
     loadingSongs.value = false;
-    const totalSongs = artist.value?.songCount ?? currentLoader.count;
-    if (totalSongs > currentLoader.count) {
-      fetchAllArtistSongs(totalSongs);
+    if (!currentLoader.fullyLoaded && !currentLoader.failed) {
+      void currentLoader.loadRemaining();
     }
   } catch {
-    if (requestToken === songFetchToken) {
+    if (isCurrent()) {
       loadingSongs.value = false;
     }
   }
@@ -259,8 +273,10 @@ const switchSongSort = (sort: ArtistSongSort) => {
 
 let detailFetchToken = 0;
 const fetchData = async () => {
+  if (disposed) return;
   const token = ++detailFetchToken;
   const artistId = getArtistId();
+  const isCurrent = () => !disposed && token === detailFetchToken && artistId === getArtistId();
   loading.value = true;
 
   // 0. 确保关注列表已加载
@@ -269,7 +285,8 @@ const fetchData = async () => {
   // 1. 获取歌手详情
   const detailTask = getArtistDetail(artistId)
     .then((res) => {
-      if (token !== detailFetchToken) return;
+      if (!isCurrent()) return;
+
       const detailRaw = extractFirstObject(res);
       const meta = detailRaw && mapArtistDetailMeta(detailRaw);
       if (!meta || !meta.id) {
@@ -278,10 +295,10 @@ const fetchData = async () => {
       artist.value = meta;
     })
     .catch(() => {
-      if (token === detailFetchToken && artist.value) toastStore.loadFailed('歌手详情');
+      if (isCurrent() && artist.value) toastStore.loadFailed('歌手详情');
     })
     .finally(() => {
-      if (token === detailFetchToken) loading.value = false;
+      if (isCurrent()) loading.value = false;
     });
 
   const songsTask = loadArtistSongs(artistId);
@@ -291,12 +308,15 @@ const fetchData = async () => {
 
 // id 变化时重置数据（仅同路由间切换，如歌手A→歌手B）
 onIdChange(() => {
+  songsFullyLoaded = false;
   artist.value = null;
   songs.value = [];
   songSort.value = settingStore.artistSongSort;
   songFetchToken += 1;
   albums.value = [];
   mvs.value = [];
+  mvFetchToken++;
+  loadingMvs.value = false;
   mvFetched.value = false;
   mvTotal.value = 0;
   mvPage.value = 1;
@@ -306,6 +326,7 @@ onIdChange(() => {
   albumFetched.value = false;
   albumSort.value = settingStore.artistAlbumSort;
   albumFetchToken += 1;
+  loadingAlbums.value = false;
   loadedSongCount.value = 0;
   searchQuery.value = '';
   resetSongTableSort();
@@ -318,6 +339,22 @@ onIdChange(() => {
 
 const isFollowed = computed(() => userStore.isArtistFollowed(artist.value?.id ?? ''));
 
+let followGeneration = 0;
+watch(
+  [
+    getArtistId,
+    () => userStore.isLoggedIn,
+    () => userStore.accountRevision,
+    () => userStore.info?.userid ?? userStore.info?.userId,
+    () => userStore.info?.token,
+  ],
+  () => {
+    followGeneration++;
+    togglingFollow.value = false;
+  },
+  { flush: 'sync' },
+);
+
 const isRequestSuccessful = (payload: unknown) => {
   if (!payload || typeof payload !== 'object') return false;
   const record = payload as Record<string, unknown>;
@@ -325,37 +362,41 @@ const isRequestSuccessful = (payload: unknown) => {
 };
 
 const toggleArtistFollow = async () => {
-  if (!artist.value || togglingFollow.value) return;
-
+  const meta = artist.value;
+  if (disposed || !meta || togglingFollow.value) return;
   if (!userStore.isLoggedIn) {
     toastStore.loginRequired('关注歌手');
     await router.push({ name: 'login' });
     return;
   }
-
+  const resourceId = getArtistId();
+  const generation = ++followGeneration;
+  const isSessionCurrent = captureUserSession(userStore);
+  const isCurrent = () =>
+    !disposed &&
+    generation === followGeneration &&
+    resourceId === getArtistId() &&
+    isSessionCurrent();
   togglingFollow.value = true;
   const previousFollowed = isFollowed.value;
-
   try {
-    const response = previousFollowed
-      ? await unfollowArtist(artist.value.id)
-      : await followArtist(artist.value.id);
-
-    if (isRequestSuccessful(response)) {
-      if (previousFollowed) {
-        userStore.removeFollowedArtist(artist.value.id);
-        toastStore.actionCompleted('已取消关注');
-      } else {
-        userStore.addFollowedArtist(artist.value.id);
-        toastStore.actionSucceeded('关注');
-      }
-    } else {
+    const response = previousFollowed ? await unfollowArtist(meta.id) : await followArtist(meta.id);
+    if (!isCurrent()) return;
+    if (!isRequestSuccessful(response)) {
       toastStore.actionFailed(previousFollowed ? '取消关注' : '关注');
+      return;
+    }
+    if (previousFollowed) {
+      userStore.removeFollowedArtist(meta.id);
+      toastStore.actionCompleted('已取消关注');
+    } else {
+      userStore.addFollowedArtist(meta.id);
+      toastStore.actionSucceeded('关注');
     }
   } catch {
-    toastStore.actionFailed(previousFollowed ? '取消关注' : '关注');
+    if (isCurrent()) toastStore.actionFailed(previousFollowed ? '取消关注' : '关注');
   } finally {
-    togglingFollow.value = false;
+    if (isCurrent()) togglingFollow.value = false;
   }
 };
 
@@ -388,49 +429,84 @@ const artistBlacklistStatus = computed(() =>
   contentBlacklistStore.status('singer', blacklistArtistId.value),
 );
 
+let blacklistGeneration = 0;
+const blacklistScopeSources = [
+  getArtistId,
+  blacklistArtistId,
+  () => userStore.isLoggedIn,
+  () => userStore.accountRevision,
+  () => userStore.info?.userid ?? userStore.info?.userId,
+  () => userStore.info?.token,
+];
+watch(
+  blacklistScopeSources,
+  () => {
+    blacklistGeneration++;
+    togglingBlacklist.value = false;
+  },
+  { flush: 'sync' },
+);
+
 const toggleArtistBlacklist = async () => {
   const singerId = blacklistArtistId.value;
   const name = blacklistArtistName.value;
-  if (!userStore.isLoggedIn || !singerId || !name || togglingBlacklist.value) return;
-
+  if (disposed || !userStore.isLoggedIn || !singerId || !name || togglingBlacklist.value) return;
+  const generation = ++blacklistGeneration;
+  const resourceId = getArtistId();
+  const isSessionCurrent = captureUserSession(userStore);
+  const isCurrent = () =>
+    !disposed &&
+    generation === blacklistGeneration &&
+    resourceId === getArtistId() &&
+    singerId === blacklistArtistId.value &&
+    isSessionCurrent();
   togglingBlacklist.value = true;
   try {
     let currentStatus = artistBlacklistStatus.value;
     if (currentStatus === 'unknown') {
       const loaded = await contentBlacklistStore.ensureFullyLoaded('singer');
+      if (!isCurrent()) return;
       if (!loaded) {
         toastStore.warning(contentBlacklistStore.singer.error || '已屏蔽歌手加载失败，请稍后重试');
         return;
       }
-      if (blacklistArtistId.value !== singerId) return;
       currentStatus = contentBlacklistStore.status('singer', singerId);
     }
-
+    if (currentStatus === 'unknown') {
+      toastStore.warning('已屏蔽歌手加载失败，请稍后重试');
+      return;
+    }
     const entry =
       currentStatus === 'present'
         ? contentBlacklistStore.singer.entries.find(
             (item) => item.label === 'singer' && item.key === singerId,
           )
         : undefined;
+    if (currentStatus === 'present' && !entry) return;
     const success = entry
       ? await contentBlacklistStore.remove(entry)
       : await contentBlacklistStore.addSinger({ singerId, name });
-    if (success) {
-      toastStore.actionCompleted(entry ? '已取消屏蔽' : '已屏蔽歌手');
-    } else {
+    if (!isCurrent()) return;
+    if (success) toastStore.actionCompleted(entry ? '已取消屏蔽' : '已屏蔽歌手');
+    else
       toastStore.warning(
         contentBlacklistStore.singer.error || `${entry ? '取消屏蔽' : '屏蔽歌手'}失败，请稍后重试`,
       );
-    }
   } finally {
-    togglingBlacklist.value = false;
+    if (isCurrent()) togglingBlacklist.value = false;
   }
 };
 
 watch(
-  [() => userStore.isLoggedIn, blacklistArtistId],
-  ([isLoggedIn, singerId]) => {
-    if (isLoggedIn && singerId && contentBlacklistStore.status('singer', singerId) === 'unknown') {
+  blacklistScopeSources,
+  () => {
+    const singerId = blacklistArtistId.value;
+    if (
+      !disposed &&
+      userStore.isLoggedIn &&
+      singerId &&
+      contentBlacklistStore.status('singer', singerId) === 'unknown'
+    ) {
       void contentBlacklistStore.ensureFullyLoaded('singer');
     }
   },
@@ -501,6 +577,17 @@ const handleSongDoubleTapPlay = async (song: Song) => {
 };
 
 const handlePlayAll = async () => {
+  const loader = songLoader;
+  const generation = songFetchToken;
+  const resourceId = getArtistId();
+  const requestSortField = sortField.value;
+  const requestSortOrder = sortOrder.value;
+  const requestQuery = searchQuery.value;
+  const isCurrent = () =>
+    !disposed &&
+    generation === songFetchToken &&
+    resourceId === getArtistId() &&
+    loader === songLoader;
   const queueSongs = displayedSongs.value.slice() as Song[];
   if (queueSongs.length === 0) return;
   const queueOpts = {
@@ -509,14 +596,33 @@ const handlePlayAll = async () => {
     subtitle: '',
     type: 'artist' as const,
   };
-  await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, queueOpts);
+  const playRequest = replaceQueueAndPlay(
+    playlistStore,
+    playerStore,
+    queueSongs,
+    0,
+    undefined,
+    queueOpts,
+  );
+  const queue = playlistStore.getQueueById(queueOpts.queueId);
+  const queuedSongs = queue?.songs;
+  const queueRevision = queue?.playbackRevision;
+  const isCurrentQueue = () =>
+    isCurrent() &&
+    playlistStore.activeQueueId === queueOpts.queueId &&
+    playlistStore.getQueueById(queueOpts.queueId) === queue &&
+    queue?.songs === queuedSongs &&
+    queue?.playbackRevision === queueRevision;
+  const played = await playRequest;
+  if (!played || !isCurrentQueue()) return;
   // 后台等待全部加载完，静默更新播放队列
-  if (songLoader && !songLoader.fullyLoaded && !songLoader.failed) {
-    const allSongs = Array.from(await songLoader.waitForAll()) as Song[];
-    const sortedAllSongs = sortSongs(allSongs, sortField.value, sortOrder.value, {
+  if (loader && !loader.failed) {
+    const allSongs = Array.from(await loader.waitForAll()) as Song[];
+    if (!isCurrentQueue() || !loader.fullyLoaded || loader.failed) return;
+    const sortedAllSongs = sortSongs(allSongs, requestSortField, requestSortOrder, {
       indexSource: allSongs,
     });
-    const displayedAllSongs = filterSongsByQuery(sortedAllSongs, searchQuery.value);
+    const displayedAllSongs = filterSongsByQuery(sortedAllSongs, requestQuery);
     if (displayedAllSongs.length > queueSongs.length) {
       playlistStore.setPlaybackQueueWithOptions(
         Array.from(displayedAllSongs) as Song[],
@@ -572,12 +678,22 @@ const mapMvItem = (item: Record<string, unknown>): ArtistMvCardProps => {
 };
 
 const fetchMvs = async (page = 1) => {
+  if (disposed || loadingMvs.value) return;
   const artistId = getArtistId();
+  const requestTag = mvTag.value;
+  const requestToken = ++mvFetchToken;
+  const isCurrent = () =>
+    !disposed &&
+    artistId === getArtistId() &&
+    requestTag === mvTag.value &&
+    requestToken === mvFetchToken;
   loadingMvs.value = true;
   try {
-    const res = await getArtistVideos(artistId, page, 30, mvTag.value);
+    const res = await getArtistVideos(artistId, page, 30, requestTag);
+    if (!isCurrent()) return;
+
     const record = res && typeof res === 'object' ? (res as Record<string, unknown>) : {};
-    const list = Array.isArray(record.data) ? record.data : [];
+    const list = extractList(res);
     const total = Number(record.total ?? 0);
     const mapped = list
       .map((item: unknown) =>
@@ -595,9 +711,9 @@ const fetchMvs = async (page = 1) => {
     mvHasMore.value = mvs.value.length < total;
     mvFetched.value = true;
   } catch {
-    if (page === 1) mvs.value = [];
+    if (isCurrent()) toastStore.loadFailed('歌手MV');
   } finally {
-    loadingMvs.value = false;
+    if (isCurrent()) loadingMvs.value = false;
   }
 };
 
@@ -613,6 +729,8 @@ const mvTagOptions = [
 
 const switchMvTag = (tag: typeof mvTag.value) => {
   if (tag === mvTag.value) return;
+  mvFetchToken++;
+  loadingMvs.value = false;
   mvTag.value = tag;
   mvs.value = [];
   mvTotal.value = 0;
@@ -650,15 +768,21 @@ const switchAlbumSort = (sort: ArtistAlbumSort) => {
 };
 
 const fetchMoreAlbums = async () => {
-  if (loadingAlbums.value || (!albumFetched.value ? false : !albumHasMore.value)) return;
+  if (disposed || loadingAlbums.value || (albumFetched.value && !albumHasMore.value)) return;
   const artistId = getArtistId();
   const nextPage = albumFetched.value ? albumPage.value + 1 : 1;
   const requestSort = albumSort.value;
   const requestToken = ++albumFetchToken;
+  const isCurrent = () =>
+    !disposed &&
+    requestToken === albumFetchToken &&
+    requestSort === albumSort.value &&
+    artistId === getArtistId();
   loadingAlbums.value = true;
   try {
     const res = await getArtistAlbums(artistId, nextPage, 30, requestSort);
-    if (requestToken !== albumFetchToken || requestSort !== albumSort.value) return;
+    if (!isCurrent()) return;
+
     const fetched = extractList(res).map((item) => mapAlbumMeta(item));
     if (nextPage === 1) {
       albums.value = fetched;
@@ -668,11 +792,12 @@ const fetchMoreAlbums = async () => {
     albumPage.value = nextPage;
     albumFetched.value = true;
     const totalAlbums = artist.value?.albumCount ?? 0;
-    albumHasMore.value = fetched.length >= 30 && albums.value.length < totalAlbums;
+    albumHasMore.value =
+      fetched.length >= 30 && (totalAlbums <= 0 || albums.value.length < totalAlbums);
   } catch {
-    // 忽略
+    if (isCurrent()) toastStore.loadFailed('歌手专辑');
   } finally {
-    if (requestToken === albumFetchToken) {
+    if (isCurrent()) {
       loadingAlbums.value = false;
     }
   }
@@ -743,7 +868,12 @@ const loadActiveTabData = () => {
 watch(activeTab, loadActiveTabData);
 
 onUnmounted(() => {
+  disposed = true;
   detailFetchToken++;
+  songFetchToken++;
+  albumFetchToken++;
+  mvFetchToken++;
+  songLoader?.abort();
   loadMoreObserver?.disconnect();
   loadMoreObserver = null;
 });

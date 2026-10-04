@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { normalizeCoverUrl, resolveCoverDisplayUrl } from '@/utils/cover';
 import { iconMusic } from '@/icons';
 import Skeleton from './Skeleton.vue';
+import { isCurrentImageEvent } from '@/utils/imageLoadEvent';
 
 interface Props {
   url?: string;
@@ -28,6 +29,7 @@ const primaryUrl = computed(() => normalizeCoverUrl(props.url, props.size));
 const failedPrimaryUrl = ref('');
 const useFallback = ref(false);
 const status = ref<'loading' | 'success' | 'error'>('loading');
+const imageRef = ref<HTMLImageElement | null>(null);
 const fallbackUrl = computed(() =>
   resolveCoverDisplayUrl(props.url, props.size, {
     reason: primaryUrl.value ? 'error' : 'empty',
@@ -41,10 +43,14 @@ const processedUrl = computed(() => {
   return fallbackUrl.value;
 });
 
-watch(primaryUrl, () => {
-  failedPrimaryUrl.value = '';
-  useFallback.value = false;
-});
+watch(
+  primaryUrl,
+  () => {
+    failedPrimaryUrl.value = '';
+    useFallback.value = false;
+  },
+  { flush: 'sync' },
+);
 
 watch(
   processedUrl,
@@ -54,15 +60,19 @@ watch(
   { immediate: true },
 );
 
-const handleLoad = () => {
+const handleLoad = (event: Event) => {
+  if (!isCurrentImageEvent(event, imageRef.value, processedUrl.value)) return;
   status.value = 'success';
 };
 
-const handleError = () => {
+const handleError = (event: Event) => {
+  if (!isCurrentImageEvent(event, imageRef.value, processedUrl.value)) return;
   if (primaryUrl.value && !useFallback.value) {
     failedPrimaryUrl.value = primaryUrl.value;
     useFallback.value = true;
-    status.value = 'loading';
+    // The default cover (or a plugin fallback) may be the failed primary itself.
+    status.value =
+      processedUrl.value && processedUrl.value !== failedPrimaryUrl.value ? 'loading' : 'error';
     return;
   }
   status.value = 'error';
@@ -103,6 +113,8 @@ const containerStyle = computed(() => {
     <!-- 2. 图片主体 -->
     <img
       v-if="processedUrl"
+      :key="processedUrl"
+      ref="imageRef"
       :src="processedUrl"
       :alt="alt"
       loading="lazy"
@@ -111,7 +123,7 @@ const containerStyle = computed(() => {
       @load="handleLoad"
       @error="handleError"
       :class="[
-        'w-full h-full object-cover cover-img',
+        'w-full h-full object-cover cover-img motion-image-feedback',
         status === 'success' ? 'opacity-100' : 'opacity-0',
       ]"
     />
@@ -130,9 +142,5 @@ const containerStyle = computed(() => {
 .cover-container {
   -webkit-mask-image: -webkit-radial-gradient(white, black);
   backface-visibility: hidden;
-}
-
-.cover-img {
-  transition: opacity 0.2s ease;
 }
 </style>

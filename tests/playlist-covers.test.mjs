@@ -151,6 +151,10 @@ test('favorites refresh updates the shared cover from the same complete song pag
     hash: `hash-${index}`,
   }));
   const { favoritesActions } = compile('../src/renderer/stores/playlist/favoritesActions.ts', {
+    './accountScope': compile('../src/renderer/stores/playlist/accountScope.ts', {
+      '@/utils/userSession': compile('../src/renderer/utils/userSession.ts'),
+      '@/stores/user': { useUserStore: () => ({ info: { userid: 7 } }) },
+    }),
     '@/api/playlist': {
       getPlaylistTracksNew: async (listid, number, size) => {
         assert.equal(listid, 2);

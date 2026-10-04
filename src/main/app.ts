@@ -15,14 +15,18 @@ import {
   cleanupDesktopLyric,
 } from './desktopLyric';
 import { initPlayer, destroyPlayer } from './player';
-import { initOutputRuntime } from './outputs/outputRuntime';
-import { getOutputHost } from './outputs/outputHost';
+import { initOutputRuntime, shutdownOutputRuntime } from './outputs/outputRuntime';
 import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpectrum';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { destroyAudioCapture } from './audioCapture';
 import { cleanupMiniPlayer } from './miniPlayer';
 import { initPowerMonitor } from './powerMonitor';
-import { clearPluginRuntimeSession, refreshPluginMetadata, setPluginSafeMode } from './plugins';
+import {
+  clearPluginRuntimeSession,
+  refreshPluginMetadata,
+  setPluginSafeMode,
+  terminatePluginProcesses,
+} from './plugins';
 import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } from './appIcons';
 import { setupThumbarButtons } from './thumbar';
 import { setupTaskbarThumbnail, destroyTaskbarThumbnail } from './taskbarThumbnail';
@@ -290,10 +294,11 @@ if (!gotTheLock) {
       log.info('[Main] before-quit: cleaning up native resources');
       try {
         try {
-          await getOutputHost()?.shutdown();
+          await shutdownOutputRuntime();
         } catch (err) {
           log.warn('[Main] Failed to stop remote output during shutdown:', err);
         }
+        await terminatePluginProcesses();
         globalShortcut.unregisterAll();
         clearPluginRuntimeSession();
         unregisterAudioSpectrumIpc();

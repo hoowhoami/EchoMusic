@@ -99,6 +99,10 @@ export function useComments(options: UseCommentsOptions) {
   let { resourceId, resourceType, mixSongId } = options;
   let effectiveId = mixSongId || resourceId;
   const stopped = ref(false);
+  let generation = 0;
+  let commentsGeneration = 0;
+  let classifyGeneration = 0;
+  let hotwordGeneration = 0;
 
   // 全部评论
   const isLoadingComments = ref(false);
@@ -136,10 +140,14 @@ export function useComments(options: UseCommentsOptions) {
     () => !hasMoreHotword.value && !isLoadingHotword.value && hotwordComments.value.length > 0,
   );
 
-  const applyVipLater = (payload: CommentPayload, apply: (enriched: CommentPayload) => void) => {
+  const applyVipLater = (
+    payload: CommentPayload,
+    apply: (enriched: CommentPayload) => void,
+    isCurrent: () => boolean,
+  ) => {
     void enrichPayload(payload)
       .then((enriched) => {
-        if (stopped.value) return;
+        if (!isCurrent()) return;
         apply(enriched);
       })
       .catch(() => undefined);
@@ -147,19 +155,27 @@ export function useComments(options: UseCommentsOptions) {
 
   const fetchMusicComments = async (reset = false) => {
     if (stopped.value) return;
-    if (isLoadingComments.value) return;
+    if (isLoadingComments.value && !reset) return;
     if (reset) {
+      commentsGeneration += 1;
       page.value = 1;
       comments.value = [];
       total.value = 0;
       hasMore.value = true;
     }
+    const requestGeneration = commentsGeneration;
+    const resourceGeneration = generation;
+    const isCurrent = () =>
+      !stopped.value &&
+      requestGeneration === commentsGeneration &&
+      resourceGeneration === generation;
     isLoadingComments.value = true;
     try {
       const res = await getMusicComments(effectiveId, page.value, 30, {
         showClassify: reset,
         showHotwordList: reset,
       });
+      if (!isCurrent()) return;
       if (
         res &&
         typeof res === 'object' &&
@@ -186,35 +202,48 @@ export function useComments(options: UseCommentsOptions) {
           payload.list.length > 0 &&
           (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
         if (hasMore.value) page.value += 1;
-        applyVipLater(payload, (enriched) => {
-          if (reset && enriched.hot) {
-            hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
-          }
-          comments.value = mergeVipComments(comments.value, enriched.list);
-        });
+        applyVipLater(
+          payload,
+          (enriched) => {
+            if (reset && enriched.hot) {
+              hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
+            }
+            comments.value = mergeVipComments(comments.value, enriched.list);
+          },
+          isCurrent,
+        );
       }
     } catch {
+      if (!isCurrent()) return;
       toastStore.loadFailed('评论');
     } finally {
-      isLoadingComments.value = false;
+      if (isCurrent()) isLoadingComments.value = false;
     }
   };
 
   const fetchPlaylistComments = async (reset = false) => {
     if (stopped.value) return;
-    if (isLoadingComments.value) return;
+    if (isLoadingComments.value && !reset) return;
     if (reset) {
+      commentsGeneration += 1;
       page.value = 1;
       comments.value = [];
       total.value = 0;
       hasMore.value = true;
     }
+    const requestGeneration = commentsGeneration;
+    const resourceGeneration = generation;
+    const isCurrent = () =>
+      !stopped.value &&
+      requestGeneration === commentsGeneration &&
+      resourceGeneration === generation;
     isLoadingComments.value = true;
     try {
       const res = await getPlaylistComments(resourceId, page.value, 30, {
         showClassify: reset,
         showHotwordList: reset,
       });
+      if (!isCurrent()) return;
       if (
         res &&
         typeof res === 'object' &&
@@ -233,35 +262,48 @@ export function useComments(options: UseCommentsOptions) {
           payload.list.length > 0 &&
           (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
         if (hasMore.value) page.value += 1;
-        applyVipLater(payload, (enriched) => {
-          if (reset && enriched.hot) {
-            hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
-          }
-          comments.value = mergeVipComments(comments.value, enriched.list);
-        });
+        applyVipLater(
+          payload,
+          (enriched) => {
+            if (reset && enriched.hot) {
+              hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
+            }
+            comments.value = mergeVipComments(comments.value, enriched.list);
+          },
+          isCurrent,
+        );
       }
     } catch {
+      if (!isCurrent()) return;
       toastStore.loadFailed('评论');
     } finally {
-      isLoadingComments.value = false;
+      if (isCurrent()) isLoadingComments.value = false;
     }
   };
 
   const fetchAlbumComments = async (reset = false) => {
     if (stopped.value) return;
-    if (isLoadingComments.value) return;
+    if (isLoadingComments.value && !reset) return;
     if (reset) {
+      commentsGeneration += 1;
       page.value = 1;
       comments.value = [];
       total.value = 0;
       hasMore.value = true;
     }
+    const requestGeneration = commentsGeneration;
+    const resourceGeneration = generation;
+    const isCurrent = () =>
+      !stopped.value &&
+      requestGeneration === commentsGeneration &&
+      resourceGeneration === generation;
     isLoadingComments.value = true;
     try {
       const res = await getAlbumComments(resourceId, page.value, 30, {
         showClassify: reset,
         showHotwordList: reset,
       });
+      if (!isCurrent()) return;
       if (
         res &&
         typeof res === 'object' &&
@@ -280,17 +322,22 @@ export function useComments(options: UseCommentsOptions) {
           payload.list.length > 0 &&
           (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
         if (hasMore.value) page.value += 1;
-        applyVipLater(payload, (enriched) => {
-          if (reset && enriched.hot) {
-            hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
-          }
-          comments.value = mergeVipComments(comments.value, enriched.list);
-        });
+        applyVipLater(
+          payload,
+          (enriched) => {
+            if (reset && enriched.hot) {
+              hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
+            }
+            comments.value = mergeVipComments(comments.value, enriched.list);
+          },
+          isCurrent,
+        );
       }
     } catch {
+      if (!isCurrent()) return;
       toastStore.loadFailed('评论');
     } finally {
-      isLoadingComments.value = false;
+      if (isCurrent()) isLoadingComments.value = false;
     }
   };
 
@@ -304,12 +351,21 @@ export function useComments(options: UseCommentsOptions) {
     if (stopped.value) return;
     if (!selectedClassify.value) return;
     if (resourceType !== 'music') return;
-    if (isLoadingClassify.value) return;
+    if (isLoadingClassify.value && !reset) return;
     if (reset) {
+      classifyGeneration += 1;
       classifyPage.value = 1;
       classifyComments.value = [];
       hasMoreClassify.value = true;
     }
+    const requestGeneration = classifyGeneration;
+    const selected = selectedClassify.value;
+    const resourceGeneration = generation;
+    const isCurrent = () =>
+      !stopped.value &&
+      requestGeneration === classifyGeneration &&
+      resourceGeneration === generation &&
+      selected === selectedClassify.value;
     isLoadingClassify.value = true;
     try {
       const res = await getMusicClassifyComments(
@@ -318,6 +374,7 @@ export function useComments(options: UseCommentsOptions) {
         classifyPage.value,
         30,
       );
+      if (!isCurrent()) return;
       if (
         res &&
         typeof res === 'object' &&
@@ -334,14 +391,19 @@ export function useComments(options: UseCommentsOptions) {
           payload.list.length > 0 &&
           (totalCount > 0 ? classifyComments.value.length < totalCount : payload.list.length >= 30);
         if (hasMoreClassify.value) classifyPage.value += 1;
-        applyVipLater(payload, (enriched) => {
-          classifyComments.value = mergeVipComments(classifyComments.value, enriched.list);
-        });
+        applyVipLater(
+          payload,
+          (enriched) => {
+            classifyComments.value = mergeVipComments(classifyComments.value, enriched.list);
+          },
+          isCurrent,
+        );
       }
     } catch {
+      if (!isCurrent()) return;
       toastStore.loadFailed('分类评论');
     } finally {
-      isLoadingClassify.value = false;
+      if (isCurrent()) isLoadingClassify.value = false;
     }
   };
 
@@ -349,12 +411,21 @@ export function useComments(options: UseCommentsOptions) {
     if (stopped.value) return;
     if (!selectedHotword.value) return;
     if (resourceType !== 'music') return;
-    if (isLoadingHotword.value) return;
+    if (isLoadingHotword.value && !reset) return;
     if (reset) {
+      hotwordGeneration += 1;
       hotwordPage.value = 1;
       hotwordComments.value = [];
       hasMoreHotword.value = true;
     }
+    const requestGeneration = hotwordGeneration;
+    const selected = selectedHotword.value;
+    const resourceGeneration = generation;
+    const isCurrent = () =>
+      !stopped.value &&
+      requestGeneration === hotwordGeneration &&
+      resourceGeneration === generation &&
+      selected === selectedHotword.value;
     isLoadingHotword.value = true;
     try {
       const res = await getMusicHotwordComments(
@@ -363,6 +434,7 @@ export function useComments(options: UseCommentsOptions) {
         hotwordPage.value,
         30,
       );
+      if (!isCurrent()) return;
       if (
         res &&
         typeof res === 'object' &&
@@ -379,26 +451,62 @@ export function useComments(options: UseCommentsOptions) {
           payload.list.length > 0 &&
           (totalCount > 0 ? hotwordComments.value.length < totalCount : payload.list.length >= 30);
         if (hasMoreHotword.value) hotwordPage.value += 1;
-        applyVipLater(payload, (enriched) => {
-          hotwordComments.value = mergeVipComments(hotwordComments.value, enriched.list);
-        });
+        applyVipLater(
+          payload,
+          (enriched) => {
+            hotwordComments.value = mergeVipComments(hotwordComments.value, enriched.list);
+          },
+          isCurrent,
+        );
       }
     } catch {
+      if (!isCurrent()) return;
       toastStore.loadFailed('热词评论');
     } finally {
-      isLoadingHotword.value = false;
+      if (isCurrent()) isLoadingHotword.value = false;
     }
   };
 
+  const invalidate = () => {
+    generation += 1;
+    commentsGeneration += 1;
+    classifyGeneration += 1;
+    hotwordGeneration += 1;
+    isLoadingComments.value = false;
+    isLoadingClassify.value = false;
+    isLoadingHotword.value = false;
+  };
+
   const updateResource = (newOptions: Partial<UseCommentsOptions>) => {
-    if (newOptions.resourceId !== undefined) resourceId = newOptions.resourceId;
-    if (newOptions.resourceType !== undefined) resourceType = newOptions.resourceType;
-    if (newOptions.mixSongId !== undefined) mixSongId = newOptions.mixSongId;
+    const nextId = newOptions.resourceId ?? resourceId;
+    const nextType = newOptions.resourceType ?? resourceType;
+    const nextMixSongId = 'mixSongId' in newOptions ? newOptions.mixSongId : mixSongId;
+    if (nextId === resourceId && nextType === resourceType && nextMixSongId === mixSongId) return;
+    invalidate();
+    resourceId = nextId;
+    resourceType = nextType;
+    mixSongId = nextMixSongId;
     effectiveId = mixSongId || resourceId;
+    comments.value = [];
+    hotComments.value = [];
+    total.value = 0;
+    page.value = 1;
+    hasMore.value = true;
+    classifyList.value = [];
+    classifyComments.value = [];
+    classifyPage.value = 1;
+    hasMoreClassify.value = true;
+    selectedClassify.value = null;
+    hotwordList.value = [];
+    hotwordComments.value = [];
+    hotwordPage.value = 1;
+    hasMoreHotword.value = true;
+    selectedHotword.value = null;
   };
 
   const stop = () => {
     stopped.value = true;
+    invalidate();
   };
   const resume = () => {
     stopped.value = false;
@@ -456,6 +564,7 @@ export function useFloorComments(resourceType: CommentResourceType, fallbackMixS
 
   const resetFloor = () => {
     floorGeneration += 1;
+    floorLoading.value = false;
     floorReplies.value = [];
     floorTotal.value = 0;
     floorPage.value = 1;
@@ -466,7 +575,7 @@ export function useFloorComments(resourceType: CommentResourceType, fallbackMixS
 
   const fetchFloorReplies = async (comment: Comment, reset = false) => {
     if (stopped.value) return;
-    if (floorLoading.value) return;
+    if (floorLoading.value && !reset) return;
     if (!floorHasMore.value && !reset) return;
     if (reset) {
       floorGeneration += 1;
@@ -525,12 +634,14 @@ export function useFloorComments(resourceType: CommentResourceType, fallbackMixS
       toastStore.loadFailed('楼层评论');
       floorLoadMoreMessage.value = '加载更多失败，点击重试';
     } finally {
-      floorLoading.value = false;
+      if (requestGeneration === floorGeneration) floorLoading.value = false;
     }
   };
 
   const stop = () => {
     stopped.value = true;
+    floorGeneration += 1;
+    floorLoading.value = false;
   };
   const resume = () => {
     stopped.value = false;

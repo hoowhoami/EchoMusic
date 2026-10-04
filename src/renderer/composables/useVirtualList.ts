@@ -2,6 +2,8 @@ import {
   computed,
   nextTick,
   onBeforeUnmount,
+  onActivated,
+  onDeactivated,
   ref,
   toValue,
   watch,
@@ -48,6 +50,9 @@ export function useVirtualList(options: UseVirtualListOptions) {
 
   let measureFrame = 0;
   let boundContainer: HTMLElement | null = null;
+  const disposed = ref(false);
+  const suspended = ref(false);
+  const measurementActive = computed(() => active.value && !suspended.value && !disposed.value);
 
   const cachedOffsets = {
     listContentTop: -1,
@@ -122,7 +127,10 @@ export function useVirtualList(options: UseVirtualListOptions) {
     const contentTop = listTop + paddingStart.value;
     const relativeTop = Math.max(0, viewportTop - contentTop);
     const relativeBottom = Math.max(0, Math.min(contentSize.value, viewportBottom - contentTop));
-    const nextStart = Math.max(0, Math.floor(relativeTop / stride.value) - overscan.value);
+    const nextStart = Math.min(
+      totalCount,
+      Math.max(0, Math.floor(relativeTop / stride.value) - overscan.value),
+    );
     const nextEnd = Math.min(totalCount, Math.ceil(relativeBottom / stride.value) + overscan.value);
     const resolvedEnd = Math.max(nextStart, nextEnd);
 
@@ -132,10 +140,10 @@ export function useVirtualList(options: UseVirtualListOptions) {
 
   const refresh = (forceDirty = false) => {
     if (forceDirty || !cacheOffsets.value) cachedOffsets.isDirty = true;
-    if (measureFrame) cancelAnimationFrame(measureFrame);
+    if (!measurementActive.value || measureFrame) return;
     measureFrame = requestAnimationFrame(() => {
       measureFrame = 0;
-      updateVisibleRange();
+      if (measurementActive.value) updateVisibleRange();
     });
   };
 
@@ -144,7 +152,8 @@ export function useVirtualList(options: UseVirtualListOptions) {
   };
 
   const bindScrollContainer = () => {
-    const nextContainer = options.scrollContainer.value;
+    if (disposed.value) return;
+    const nextContainer = measurementActive.value ? options.scrollContainer.value : null;
     if (boundContainer === nextContainer) return;
     if (boundContainer) {
       boundContainer.removeEventListener('scroll', handleScroll);
@@ -156,18 +165,34 @@ export function useVirtualList(options: UseVirtualListOptions) {
 
   const scrollToIndex = (index: number, behavior: ScrollBehavior = 'auto') => {
     const scrollContainer = options.scrollContainer.value;
-    if (!scrollContainer || !containerRef.value || index < 0) return;
+    if (
+      !measurementActive.value ||
+      !scrollContainer ||
+      !containerRef.value ||
+      !Number.isFinite(index) ||
+      index < 0 ||
+      itemCount.value === 0
+    )
+      return;
 
     const offsets = syncCachedOffsets();
     if (!offsets) return;
 
-    const targetTop = offsets.listContentTop + paddingStart.value + index * stride.value;
+    const targetIndex = Math.min(itemCount.value - 1, Math.floor(index));
+    const targetTop = offsets.listContentTop + paddingStart.value + targetIndex * stride.value;
     scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior });
     refresh(false);
   };
 
   watch(
-    () => [itemCount.value, itemSize.value, itemGap.value, paddingStart.value, paddingEnd.value],
+    () => [
+      itemCount.value,
+      itemSize.value,
+      itemGap.value,
+      paddingStart.value,
+      paddingEnd.value,
+      overscan.value,
+    ],
     async () => {
       await nextTick();
       refresh(true);
@@ -179,6 +204,9 @@ export function useVirtualList(options: UseVirtualListOptions) {
     () => [active.value, loading.value],
     async ([nextActive]) => {
       if (!nextActive) {
+        if (measureFrame) cancelAnimationFrame(measureFrame);
+        measureFrame = 0;
+        bindScrollContainer();
         resetRange();
         return;
       }
@@ -206,22 +234,39 @@ export function useVirtualList(options: UseVirtualListOptions) {
   );
 
   onBeforeUnmount(() => {
+    disposed.value = true;
     if (measureFrame) cancelAnimationFrame(measureFrame);
+    measureFrame = 0;
     boundContainer?.removeEventListener('scroll', handleScroll);
+    boundContainer = null;
   });
 
-  useResizeObserver(containerRef, () => {
-    cachedOffsets.isDirty = true;
+  onDeactivated(() => {
+    suspended.value = true;
+    if (measureFrame) cancelAnimationFrame(measureFrame);
+    measureFrame = 0;
+    bindScrollContainer();
+  });
+
+  onActivated(() => {
+    suspended.value = false;
+    bindScrollContainer();
     refresh(true);
   });
 
-  useResizeObserver(options.scrollContainer, () => {
-    cachedOffsets.isDirty = true;
-    refresh(true);
-  });
+  useResizeObserver(
+    () => (measurementActive.value ? containerRef.value : null),
+    () => refresh(true),
+  );
+
+  useResizeObserver(
+    () => (measurementActive.value ? options.scrollContainer.value : null),
+    () => refresh(true),
+  );
 
   return {
     containerRef,
+    measurementActive,
     visibleStart,
     visibleEnd,
     stride,

@@ -1079,3 +1079,24 @@ test('FM exhausted failure retry budget leaves an error state rather than a busy
     ['c'],
   );
 });
+
+test('round14: pending FM queue creation receives playback ownership and cancels on stop', async () => {
+  const e = setup({ fm: true });
+  e.playlist.playbackQueues = [];
+  e.playlist.personalFmBuffer = [];
+  let finish, options;
+  e.playlist.startPersonalFm = (value) => {
+    options = value;
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  };
+  const operation = e.manager.playPersonalFmTrack();
+  assert.equal(typeof options?.isCurrent, 'function');
+  assert.equal(options.isCurrent(), true);
+  e.manager.stop();
+  assert.equal(options.isCurrent(), false);
+  finish(true);
+  await operation;
+  assert.deepEqual(e.calls.history, []);
+});

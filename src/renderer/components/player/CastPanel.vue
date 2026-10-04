@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
@@ -110,28 +111,36 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="cast-panel-actions">
-        <button
-          type="button"
-          class="cast-panel-icon-button app-focus-ring-soft"
-          :disabled="output.busy || output.searching || !settingStore.networkPlaybackEnabled"
-          title="刷新设备"
-          @click="output.refresh()"
-        >
-          <Icon
-            :icon="iconRefreshCw"
-            width="15"
-            height="15"
-            :class="{ 'animate-spin': output.searching }"
-          />
-        </button>
-        <button
-          type="button"
-          class="cast-panel-icon-button app-focus-ring-soft"
-          title="投放设置"
-          @click="openCastSettings"
-        >
-          <Icon :icon="iconSettings" width="15" height="15" />
-        </button>
+        <Tooltip content="刷新设备">
+          <template #trigger>
+            <button
+              type="button"
+              class="cast-panel-icon-button app-focus-ring-soft"
+              :disabled="output.busy || output.searching || !settingStore.networkPlaybackEnabled"
+              aria-label="刷新设备"
+              @click="output.refresh()"
+            >
+              <Icon
+                :icon="iconRefreshCw"
+                width="15"
+                height="15"
+                :class="{ 'animate-spin': output.searching }"
+              />
+            </button>
+          </template>
+        </Tooltip>
+        <Tooltip content="投放设置">
+          <template #trigger>
+            <button
+              type="button"
+              class="cast-panel-icon-button app-focus-ring-soft"
+              aria-label="投放设置"
+              @click="openCastSettings"
+            >
+              <Icon :icon="iconSettings" width="15" height="15" />
+            </button>
+          </template>
+        </Tooltip>
         <Switch v-model="settingStore.networkPlaybackEnabled" />
       </div>
     </div>

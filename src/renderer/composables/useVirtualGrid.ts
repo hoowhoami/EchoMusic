@@ -134,35 +134,44 @@ export function useVirtualGrid<T extends Record<string, any>>(options: UseVirtua
   }));
 
   const syncContainerWidth = (nextWidth: number) => {
-    const normalizedWidth = Math.max(0, Math.round(nextWidth));
+    // Hidden containers can report zero during cache/tab transitions. Keep the
+    // last usable layout until the container has a measurable width again.
+    if (!virtualList.measurementActive.value || !Number.isFinite(nextWidth) || nextWidth <= 0)
+      return;
+    const normalizedWidth = Math.max(1, Math.round(nextWidth));
     if (normalizedWidth === containerWidth.value) return;
     containerWidth.value = normalizedWidth;
     virtualList.refresh(true);
   };
 
-  useResizeObserver(virtualList.containerRef, (entries) => {
-    const entry = entries[0];
-    const nextWidth = entry?.contentRect.width ?? virtualList.containerRef.value?.clientWidth ?? 0;
-    syncContainerWidth(nextWidth);
-  });
-
-  watch(
-    items,
-    async () => {
-      if (containerWidth.value <= 0 && virtualList.containerRef.value) {
-        syncContainerWidth(virtualList.containerRef.value.clientWidth);
-      }
-      virtualList.refresh(true);
-    },
-    { flush: 'post' },
-  );
-
   const refresh = () => {
+    if (!virtualList.measurementActive.value) return;
     if (virtualList.containerRef.value) {
       syncContainerWidth(virtualList.containerRef.value.clientWidth);
     }
     virtualList.refresh(true);
   };
+
+  useResizeObserver(
+    () => (virtualList.measurementActive.value ? virtualList.containerRef.value : null),
+    (entries) => {
+      if (!virtualList.measurementActive.value) return;
+      const entry = entries.find((entry) => entry.target === virtualList.containerRef.value);
+      if (entry) syncContainerWidth(entry.contentRect.width);
+    },
+  );
+
+  watch([virtualList.measurementActive, virtualList.containerRef], refresh, { flush: 'post' });
+
+  watch(
+    items,
+    () => {
+      if (!virtualList.measurementActive.value) return;
+      if (containerWidth.value <= 0) refresh();
+      else virtualList.refresh(true);
+    },
+    { flush: 'post' },
+  );
 
   return {
     containerRef: virtualList.containerRef,

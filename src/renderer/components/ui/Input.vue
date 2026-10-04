@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useAttrs } from 'vue';
+import { computed, ref, useAttrs } from 'vue';
 import { useVModel } from '@vueuse/core';
 import { type PrimitiveProps } from 'reka-ui';
 import { iconX } from '@/icons';
@@ -13,6 +13,8 @@ interface Props extends PrimitiveProps {
   class?: string;
   inputClass?: string;
   showClear?: boolean;
+  disabled?: boolean;
+  readonly?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -25,31 +27,47 @@ const emits = defineEmits(['update:modelValue', 'clear']);
 
 const value = useVModel(props, 'modelValue', emits);
 const attrs = useAttrs();
+const inputRef = ref<HTMLInputElement | null>(null);
+const canClear = computed(
+  () =>
+    props.showClear &&
+    !props.disabled &&
+    !props.readonly &&
+    value.value !== '' &&
+    value.value !== undefined &&
+    value.value !== null,
+);
 
 const handleClear = () => {
+  if (!canClear.value || inputRef.value?.matches(':disabled')) return;
   value.value = '';
   emits('clear');
+  inputRef.value?.focus({ preventScroll: true });
 };
 </script>
 
 <template>
   <div :class="['relative group w-full', props.class]">
     <input
+      ref="inputRef"
       v-model="value"
       v-bind="attrs"
       :type="type"
       :placeholder="placeholder"
+      :disabled="disabled"
+      :readonly="readonly"
       :class="[
-        'w-full h-14 pl-6 pr-12 bg-[var(--control-muted-bg)] border border-transparent rounded-2xl outline-none transition-all font-medium text-[15px] placeholder:opacity-50',
+        'w-full h-14 pl-6 pr-12 bg-[var(--control-muted-bg)] border border-transparent rounded-2xl outline-none motion-control-feedback font-medium text-[15px] placeholder:opacity-50',
         props.inputClass,
       ]"
     />
 
     <!-- 清除图标按钮 -->
     <button
-      v-if="showClear && value"
+      v-if="canClear"
       type="button"
-      class="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full text-text-main opacity-40 hover:opacity-70 transition-opacity"
+      aria-label="清空输入"
+      class="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full text-text-main opacity-40 hover:opacity-70 motion-control-feedback"
       @click="handleClear"
     >
       <Icon :icon="iconX" width="14" height="14" />

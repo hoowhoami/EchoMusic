@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Sortable from 'sortablejs';
 import Button from '@/components/ui/Button.vue';
@@ -161,10 +162,6 @@ const badgeControlForItem = (item: ResolvedPlayerBarAction) =>
 const badgeControlLabel = (control: PlayerBarBadgeControl) =>
   `${control.active ? '隐藏' : '显示'}${control.label}徽标`;
 
-const saveOrder = (keys: string[]) => {
-  settings.playerBarLayout = reorderPlayerBarLayout(settings.playerBarLayout, props.items, keys);
-};
-
 let sortables: Sortable[] = [];
 
 const destroySortables = () => {
@@ -292,6 +289,7 @@ onBeforeUnmount(() => {
     :content-class="popoverClass"
     :open="open"
     @update:open="updateOpen"
+    @open-auto-focus.prevent
   >
     <template #trigger>
       <span ref="moreTriggerRef" class="playerbar-more-anchor">
@@ -311,36 +309,47 @@ onBeforeUnmount(() => {
       <div class="playerbar-more-heading">
         <span>更多功能</span>
         <div class="playerbar-more-heading-actions">
-          <button
-            type="button"
-            class="playerbar-edit-entry app-focus-ring-soft"
-            aria-label="编辑播放栏布局"
-            title="编辑播放栏布局"
-            @click="editMode = true"
-          >
-            <Icon :icon="iconSlidersHorizontal" width="16" height="16" />
-          </button>
+          <Tooltip content="编辑播放栏布局">
+            <template #trigger>
+              <button
+                type="button"
+                class="playerbar-edit-entry app-focus-ring-soft"
+                aria-label="编辑播放栏布局"
+                @click="editMode = true"
+              >
+                <Icon :icon="iconSlidersHorizontal" width="16" height="16" />
+              </button>
+            </template>
+          </Tooltip>
         </div>
       </div>
 
       <div v-if="visibleMenuItems.length" class="playerbar-use-grid">
-        <button
+        <Tooltip
           v-for="item in visibleMenuItems"
           :key="item.key"
-          type="button"
-          class="playerbar-use-item app-focus-ring-soft"
-          :class="{ disabled: item.disabled }"
-          :disabled="item.disabled"
-          :title="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
-          @click="activate(item, $event)"
+          :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
         >
-          <span class="playerbar-use-icon">
-            <MvIcon v-if="item.key === 'mv'" class="w-[19px] h-[19px]" />
-            <PluginIcon v-else :icon="item.icon" :width="19" :height="19" />
-          </span>
-          <span class="playerbar-use-title">{{ item.title }}</span>
-          <span v-if="item.visibleBadge" class="playerbar-more-badge">{{ item.visibleBadge }}</span>
-        </button>
+          <template #trigger>
+            <button
+              type="button"
+              class="playerbar-use-item app-focus-ring-soft"
+              :class="{ disabled: item.disabled }"
+              :disabled="item.disabled"
+              :aria-label="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
+              @click="activate(item, $event)"
+            >
+              <span class="playerbar-use-icon">
+                <MvIcon v-if="item.key === 'mv'" class="w-[19px] h-[19px]" />
+                <PluginIcon v-else :icon="item.icon" :width="19" :height="19" />
+              </span>
+              <span class="playerbar-use-title">{{ item.title }}</span>
+              <span v-if="item.visibleBadge" class="playerbar-more-badge">{{
+                item.visibleBadge
+              }}</span>
+            </button>
+          </template>
+        </Tooltip>
       </div>
 
       <p v-else class="playerbar-more-empty">暂无收纳功能</p>
@@ -395,39 +404,49 @@ onBeforeUnmount(() => {
                 :data-playerbar-placement-list="zone.value"
                 :aria-label="zone.ariaLabel"
               >
-                <div
+                <Tooltip
                   v-for="(item, index) in groupedItems[zone.value]"
                   :key="item.key"
-                  role="button"
-                  tabindex="0"
-                  class="playerbar-layout-chip app-focus-ring-soft"
-                  :class="{ disabled: item.disabled }"
-                  :data-playerbar-key="item.key"
-                  :aria-label="item.title"
-                  :title="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
-                  @keydown="reorderByKeyboard($event, item, zone.value, index)"
+                  :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
                 >
-                  <span class="playerbar-chip-icon">
-                    <MvIcon v-if="item.key === 'mv'" class="w-[18px] h-[18px]" />
-                    <PluginIcon v-else :icon="item.icon" :width="18" :height="18" />
-                  </span>
-                  <span class="playerbar-chip-title">{{ item.title }}</span>
-                  <button
-                    v-if="badgeControlForItem(item)"
-                    type="button"
-                    class="playerbar-chip-badge-check app-focus-ring-soft"
-                    :class="{ active: badgeControlForItem(item)?.active }"
-                    :aria-pressed="badgeControlForItem(item)?.active"
-                    :aria-label="badgeControlLabel(badgeControlForItem(item)!)"
-                    :title="badgeControlLabel(badgeControlForItem(item)!)"
-                    @pointerdown.stop
-                    @mousedown.stop
-                    @click.stop="badgeControlForItem(item)?.toggle()"
-                  >
-                    <span class="playerbar-chip-check-box" aria-hidden="true"></span>
-                    <span class="playerbar-chip-badge-label">徽标</span>
-                  </button>
-                </div>
+                  <template #trigger>
+                    <div
+                      role="button"
+                      tabindex="0"
+                      class="playerbar-layout-chip app-focus-ring-soft"
+                      :class="{ disabled: item.disabled }"
+                      :data-playerbar-key="item.key"
+                      :aria-label="item.title"
+                      @keydown="reorderByKeyboard($event, item, zone.value, index)"
+                    >
+                      <span class="playerbar-chip-icon">
+                        <MvIcon v-if="item.key === 'mv'" class="w-[18px] h-[18px]" />
+                        <PluginIcon v-else :icon="item.icon" :width="18" :height="18" />
+                      </span>
+                      <span class="playerbar-chip-title">{{ item.title }}</span>
+                      <Tooltip
+                        v-if="badgeControlForItem(item)"
+                        :content="badgeControlLabel(badgeControlForItem(item)!)"
+                      >
+                        <template #trigger>
+                          <button
+                            type="button"
+                            class="playerbar-chip-badge-check app-focus-ring-soft"
+                            :class="{ active: badgeControlForItem(item)?.active }"
+                            :aria-pressed="badgeControlForItem(item)?.active"
+                            :aria-label="badgeControlLabel(badgeControlForItem(item)!)"
+                            @pointerdown.stop
+                            @mousedown.stop
+                            @click.stop="badgeControlForItem(item)?.toggle()"
+                          >
+                            <span class="playerbar-chip-check-box" aria-hidden="true"></span>
+                            <span class="playerbar-chip-badge-label">徽标</span>
+                          </button>
+                        </template>
+                      </Tooltip>
+                    </div>
+                  </template>
+                </Tooltip>
                 <span
                   v-if="!groupedItems[zone.value].length"
                   class="playerbar-layout-empty"
@@ -445,39 +464,49 @@ onBeforeUnmount(() => {
               data-playerbar-placement-list="more"
               aria-label="更多菜单按钮"
             >
-              <div
+              <Tooltip
                 v-for="(item, index) in groupedItems.more"
                 :key="item.key"
-                role="button"
-                tabindex="0"
-                class="playerbar-layout-chip app-focus-ring-soft"
-                :class="{ disabled: item.disabled }"
-                :data-playerbar-key="item.key"
-                :aria-label="item.title"
-                :title="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
-                @keydown="reorderByKeyboard($event, item, 'more', index)"
+                :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
               >
-                <span class="playerbar-chip-icon">
-                  <MvIcon v-if="item.key === 'mv'" class="w-[18px] h-[18px]" />
-                  <PluginIcon v-else :icon="item.icon" :width="18" :height="18" />
-                </span>
-                <span class="playerbar-chip-title">{{ item.title }}</span>
-                <button
-                  v-if="badgeControlForItem(item)"
-                  type="button"
-                  class="playerbar-chip-badge-check app-focus-ring-soft"
-                  :class="{ active: badgeControlForItem(item)?.active }"
-                  :aria-pressed="badgeControlForItem(item)?.active"
-                  :aria-label="badgeControlLabel(badgeControlForItem(item)!)"
-                  :title="badgeControlLabel(badgeControlForItem(item)!)"
-                  @pointerdown.stop
-                  @mousedown.stop
-                  @click.stop="badgeControlForItem(item)?.toggle()"
-                >
-                  <span class="playerbar-chip-check-box" aria-hidden="true"></span>
-                  <span class="playerbar-chip-badge-label">徽标</span>
-                </button>
-              </div>
+                <template #trigger>
+                  <div
+                    role="button"
+                    tabindex="0"
+                    class="playerbar-layout-chip app-focus-ring-soft"
+                    :class="{ disabled: item.disabled }"
+                    :data-playerbar-key="item.key"
+                    :aria-label="item.title"
+                    @keydown="reorderByKeyboard($event, item, 'more', index)"
+                  >
+                    <span class="playerbar-chip-icon">
+                      <MvIcon v-if="item.key === 'mv'" class="w-[18px] h-[18px]" />
+                      <PluginIcon v-else :icon="item.icon" :width="18" :height="18" />
+                    </span>
+                    <span class="playerbar-chip-title">{{ item.title }}</span>
+                    <Tooltip
+                      v-if="badgeControlForItem(item)"
+                      :content="badgeControlLabel(badgeControlForItem(item)!)"
+                    >
+                      <template #trigger>
+                        <button
+                          type="button"
+                          class="playerbar-chip-badge-check app-focus-ring-soft"
+                          :class="{ active: badgeControlForItem(item)?.active }"
+                          :aria-pressed="badgeControlForItem(item)?.active"
+                          :aria-label="badgeControlLabel(badgeControlForItem(item)!)"
+                          @pointerdown.stop
+                          @mousedown.stop
+                          @click.stop="badgeControlForItem(item)?.toggle()"
+                        >
+                          <span class="playerbar-chip-check-box" aria-hidden="true"></span>
+                          <span class="playerbar-chip-badge-label">徽标</span>
+                        </button>
+                      </template>
+                    </Tooltip>
+                  </div>
+                </template>
+              </Tooltip>
               <span
                 v-if="!groupedItems.more.length"
                 class="playerbar-layout-empty"

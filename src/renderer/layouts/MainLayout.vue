@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useResizeObserver } from '@vueuse/core';
+import { useMediaQuery, useResizeObserver } from '@vueuse/core';
 import { useSettingStore } from '@/stores/setting';
+import { usePageEntryMotion } from '@/composables/usePageEntryMotion';
 import { pageTransitionState } from '@/plugins/runtime/theme';
 import { getRouteViewCacheQuery, updateRouteViewCacheKey } from '@/utils/routeViewCache';
 import { YzsKeepAlive } from 'yzs-keep-alive-v3';
@@ -71,11 +72,17 @@ watch(
 const pageTransitionAppear = computed(
   () => pageTransitionState.enabled && pageTransitionState.appear,
 );
-const pageRouteEnterClass = computed(
-  () => `${pageTransitionState.name || 'page'}-route-enter-active`,
-);
-const isPageRouteEntering = ref(false);
-let pageRouteAnimationFrame: number | null = null;
+const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+const {
+  host: pageMotionHost,
+  entering: isPageRouteEntering,
+  className: pageRouteEnterClass,
+  replay: replayPageRouteAnimation,
+} = usePageEntryMotion({
+  enabled: () => pageTransitionState.enabled,
+  reducedMotion: prefersReducedMotion,
+  name: () => pageTransitionState.name,
+});
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 700;
 const isNarrowViewport = ref(false);
 const narrowViewportExpanded = ref(false);
@@ -109,36 +116,6 @@ const handleShortcutToggleSidebar = (event: Event) => {
   toggleSidebar();
 };
 
-const stopPageRouteAnimation = () => {
-  if (pageRouteAnimationFrame !== null) {
-    window.cancelAnimationFrame(pageRouteAnimationFrame);
-    pageRouteAnimationFrame = null;
-  }
-};
-
-// 动画结束/中断后移除 page-route-enter-active：该 class 携带 will-change 与 animation fill=both 的
-// 残留 transform，会把整页常驻提升为 GPU 合成层，在高 DPI（2K 缩放）下导致整页发虚。
-const handlePageRouteAnimationEnd = (event: AnimationEvent) => {
-  // 仅响应页面根元素自身的进入动画，忽略子元素冒泡上来的其它动画
-  if (event.target !== event.currentTarget) return;
-  if (event.animationName !== 'page-route-enter') return;
-  isPageRouteEntering.value = false;
-};
-
-const replayPageRouteAnimation = () => {
-  stopPageRouteAnimation();
-  isPageRouteEntering.value = false;
-  if (!pageTransitionState.enabled) return;
-  // prefers-reduced-motion 下 CSS 已把 animation 置为 none：加了 class 也不会播放动画、
-  // animationend 不会触发，反而让 will-change 常驻。此时直接跳过，无需进入动画。
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-  pageRouteAnimationFrame = window.requestAnimationFrame(() => {
-    isPageRouteEntering.value = true;
-    pageRouteAnimationFrame = null;
-  });
-};
-
 onMounted(() => {
   checkScreenWidth();
   window.addEventListener('resize', checkScreenWidth);
@@ -149,7 +126,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', checkScreenWidth);
   window.removeEventListener('echo:toggle-sidebar', handleShortcutToggleSidebar);
-  stopPageRouteAnimation();
 });
 
 const excludeFromCache = [
@@ -179,16 +155,6 @@ const keepAliveMax = computed(() =>
 watch(routeViewKey, () => {
   replayPageRouteAnimation();
 });
-
-watch(
-  () => pageTransitionState.enabled,
-  (enabled) => {
-    if (!enabled) {
-      stopPageRouteAnimation();
-      isPageRouteEntering.value = false;
-    }
-  },
-);
 </script>
 
 <template>
@@ -234,7 +200,13 @@ watch(
     <div class="main-workspace flex-1 flex flex-col min-w-0 min-h-0 relative">
       <main class="main-content flex-1 flex flex-col min-h-0 overflow-hidden">
         <TitleBar :is-sidebar-collapsed="isSidebarCollapsed" />
-        <div class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
+        <!-- Animate the stable viewport, including pages with multiple root nodes.
+             Keep cache identity and page mounting independent from motion. -->
+        <div
+          ref="pageMotionHost"
+          class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden"
+          :class="{ [pageRouteEnterClass]: isPageRouteEntering }"
+        >
           <router-view v-slot="{ Component }">
             <YzsKeepAlive
               v-if="keepAliveMax > 0"
@@ -242,22 +214,9 @@ watch(
               :exclude="excludeFromCache"
               :max="keepAliveMax"
             >
-              <component
-                :is="Component"
-                :key="routeViewKey"
-                :class="{ [pageRouteEnterClass]: isPageRouteEntering }"
-                @animationend="handlePageRouteAnimationEnd"
-                @animationcancel="handlePageRouteAnimationEnd"
-              />
+              <component :is="Component" :key="routeViewKey" />
             </YzsKeepAlive>
-            <component
-              v-else
-              :is="Component"
-              :key="routeViewKey"
-              :class="{ [pageRouteEnterClass]: isPageRouteEntering }"
-              @animationend="handlePageRouteAnimationEnd"
-              @animationcancel="handlePageRouteAnimationEnd"
-            />
+            <component v-else :is="Component" :key="routeViewKey" />
           </router-view>
         </div>
       </main>
@@ -286,7 +245,7 @@ watch(
   z-index: 201;
 }
 .sidebar-wrapper {
-  transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: width var(--motion-duration-panel) var(--motion-ease-enter);
 }
 .main-workspace {
   gap: var(--layout-panel-gap);
@@ -320,7 +279,7 @@ watch(
   display: grid;
   grid-template-rows: minmax(0, 1fr) var(--skin-player-height, 88px);
   gap: var(--layout-panel-gap);
-  transition: left 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: left var(--motion-duration-panel) var(--motion-ease-enter);
 }
 .layout-surface-effects {
   position: absolute;
@@ -347,7 +306,7 @@ watch(
   inset: 0 auto 0 0;
   width: var(--layout-sidebar-width);
   overflow: hidden;
-  transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: width var(--motion-duration-panel) var(--motion-ease-enter);
 }
 .frame-atmosphere {
   /* Tint the base once; images, theme artwork and panels remain above it. */

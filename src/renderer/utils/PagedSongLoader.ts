@@ -47,6 +47,9 @@ export class PagedSongLoader<T> {
   private _completionPromise: Promise<readonly T[]> | null = null;
   private _completionResolve: ((items: readonly T[]) => void) | null = null;
   private _startedAt = 0;
+  private _generation = 0;
+  private _firstPageFlight: Promise<readonly T[]> | null = null;
+  private _remainingFlight: Promise<readonly T[]> | null = null;
 
   private readonly fetcher: PageFetcher<T>;
   private readonly pageSize: number;
@@ -60,14 +63,14 @@ export class PagedSongLoader<T> {
 
   constructor(fetcher: PageFetcher<T>, options: PagedLoaderOptions<T> = {}) {
     this.fetcher = fetcher;
-    this.pageSize = options.pageSize ?? 200;
-    this.concurrency = options.concurrency ?? 3;
+    this.pageSize = this.positiveInteger(options.pageSize, 200);
+    this.concurrency = this.positiveInteger(options.concurrency, 3);
     this.dedupeKey = options.dedupeKey ?? null;
     this.onPageLoaded = options.onPageLoaded;
     this.onComplete = options.onComplete;
     this.onError = options.onError;
     this.logTag = options.logTag ?? 'PagedLoader';
-    this.maxPages = options.maxPages ?? 100;
+    this.maxPages = this.positiveInteger(options.maxPages, 100);
   }
 
   /** 当前已加载的数据（只读） */
@@ -109,142 +112,105 @@ export class PagedSongLoader<T> {
    * 加载首页数据
    * 快速返回第一页结果，供 UI 立即渲染
    */
-  async loadFirstPage(): Promise<readonly T[]> {
-    if (this._aborted || this._failed) return this._items;
+  loadFirstPage(): Promise<readonly T[]> {
+    if (this._fullyLoaded || this._aborted || this._failed || this._loadedPages > 0)
+      return Promise.resolve(this._items);
+    if (this._firstPageFlight) return this._firstPageFlight;
+    const generation = this._generation;
+    const snapshot = this._items;
     this._loading = true;
     this._startedAt = this._startedAt || performance.now();
-
-    try {
-      const { items, hasMore } = await this.fetcher(1, this.pageSize);
-      if (this._aborted) return this._items;
-
-      const deduped = this.deduplicateAndAppend(items);
-      this._loadedPages = 1;
-
-      if (deduped.length > 0) {
-        this.onPageLoaded?.(this._items, deduped, 1);
+    const task = async () => {
+      try {
+        const { items, hasMore } = await this.fetcher(1, this.pageSize);
+        if (!this.isCurrent(generation)) return snapshot;
+        const deduped = this.deduplicateAndAppend(items);
+        this._loadedPages = 1;
+        if (deduped.length > 0) this.onPageLoaded?.(this._items, deduped, 1);
+        if (!this.isCurrent(generation)) return snapshot;
+        if (!hasMore) this.markComplete(generation);
+        logger.debug(this.logTag, 'First page load finished', { count: snapshot.length, hasMore });
+      } catch (error) {
+        this.fail(error, generation);
       }
-
-      if (!hasMore) {
-        this.markComplete();
-      }
-
-      logger.debug(this.logTag, `First page load finished`, {
-        count: this._items.length,
-        hasMore,
-      });
-
-      return this._items;
-    } catch (error) {
-      if (!this._aborted) {
-        logger.warn(this.logTag, 'First page load failed:', error);
-        this.onError?.(error);
-        this.markFailed();
-      }
-      return this._items;
-    }
+      return snapshot;
+    };
+    const flight = task().finally(() => {
+      if (this._firstPageFlight === flight) this._firstPageFlight = null;
+    });
+    if (this._generation === generation) this._firstPageFlight = flight;
+    return flight;
   }
 
-  /**
-   * 后台加载剩余所有页
-   * 使用有限并发控制，保持页序正确
-   */
-  async loadRemaining(): Promise<readonly T[]> {
-    if (this._fullyLoaded || this._aborted || this._failed) return this._items;
-    if (this._loadedPages === 0) {
-      await this.loadFirstPage();
-      if (this._fullyLoaded || this._aborted || this._failed) return this._items;
-    }
-
-    this._loading = true;
-    let nextPage = this._loadedPages + 1;
-    let failed = false;
-
-    try {
-      let keepGoing = true;
-
-      while (keepGoing && !this._aborted && nextPage <= this.maxPages) {
-        // 构建一批并发请求
-        const batch: number[] = [];
-        for (let i = 0; i < this.concurrency && nextPage + i <= this.maxPages; i++) {
-          batch.push(nextPage + i);
+  /** 后台加载剩余页；相同加载周期的并发调用共享请求。 */
+  loadRemaining(): Promise<readonly T[]> {
+    if (this._fullyLoaded || this._aborted || this._failed) return Promise.resolve(this._items);
+    if (this._remainingFlight) return this._remainingFlight;
+    const generation = this._generation;
+    const snapshot = this._items;
+    const task = async () => {
+      try {
+        if (this._loadedPages === 0) await this.loadFirstPage();
+        if (!this.isCurrent(generation) || this._fullyLoaded || this._failed) return snapshot;
+        this._loading = true;
+        let nextPage = this._loadedPages + 1;
+        let complete = false;
+        while (this.isCurrent(generation) && nextPage <= this.maxPages && !complete) {
+          const batch: number[] = [];
+          for (let i = 0; i < this.concurrency && nextPage + i <= this.maxPages; i++) {
+            batch.push(nextPage + i);
+          }
+          const results = await Promise.allSettled(
+            batch.map((page) =>
+              Promise.resolve().then(() =>
+                this.isCurrent(generation)
+                  ? this.fetcher(page, this.pageSize)
+                  : { items: [], hasMore: false },
+              ),
+            ),
+          );
+          if (!this.isCurrent(generation)) return snapshot;
+          for (let i = 0; i < results.length; i++) {
+            const result = results[i];
+            const page = batch[i];
+            if (result.status === 'rejected') throw result.reason;
+            const { items, hasMore } = result.value;
+            const deduped = this.deduplicateAndAppend(items);
+            this._loadedPages = page;
+            if (deduped.length > 0) this.onPageLoaded?.(this._items, deduped, page);
+            if (!this.isCurrent(generation)) return snapshot;
+            // 重复页不代表结束，后续页仍可能含有新歌曲；最多读取 maxPages。
+            if (!hasMore) {
+              complete = true;
+              break;
+            }
+          }
+          nextPage += batch.length;
         }
-
-        // 并发请求
-        const results = await Promise.allSettled(
-          batch.map((page) => this.fetcher(page, this.pageSize)),
-        );
-
-        if (this._aborted) break;
-
-        // 按页序处理结果
-        for (let i = 0; i < results.length; i++) {
-          const result = results[i];
-          const page = batch[i];
-
-          if (result.status === 'rejected') {
-            logger.warn(this.logTag, `第 ${page} 页加载失败:`, result.reason);
-            this.onError?.(result.reason);
-            failed = true;
-            keepGoing = false;
-            break;
-          }
-
-          const { items, hasMore } = result.value;
-
-          if (this._aborted) {
-            keepGoing = false;
-            break;
-          }
-
-          const deduped = this.deduplicateAndAppend(items);
-          this._loadedPages = page;
-
-          if (deduped.length > 0) {
-            this.onPageLoaded?.(this._items, deduped, page);
-          }
-
-          // 终止条件：API 返回空数据、去重后无新增、或 fetcher 标记无更多页
-          if (items.length === 0 || deduped.length === 0 || !hasMore) {
-            keepGoing = false;
-            break;
-          }
-        }
-
-        nextPage += batch.length;
+        if (!this.isCurrent(generation)) return snapshot;
+        if (!complete) throw new Error(`分页超过最大页数限制（${this.maxPages}）`);
+        this.markComplete(generation);
+      } catch (error) {
+        this.fail(error, generation);
       }
-    } catch (error) {
-      if (!this._aborted) {
-        logger.warn(this.logTag, '后台加载失败:', error);
-        this.onError?.(error);
-      }
-      failed = true;
-    }
-
-    if (this._aborted) {
-      this.settleCompletion();
-      return this._items;
-    }
-
-    if (failed) {
-      this.markFailed();
-      return this._items;
-    }
-
-    this.markComplete();
-    return this._items;
+      return snapshot;
+    };
+    const flight = task().finally(() => {
+      if (this._remainingFlight === flight) this._remainingFlight = null;
+    });
+    if (this._generation === generation) this._remainingFlight = flight;
+    return flight;
   }
 
-  /**
-   * 一次性加载所有数据（首页 + 剩余页）
-   * 首页加载完立即回调，剩余页后台并发加载
-   */
+  /** 一次性加载所有数据，首页完成后仍可立即展示。 */
   async loadAll(): Promise<readonly T[]> {
+    const generation = this._generation;
+    const snapshot = this._items;
     await this.loadFirstPage();
-    if (!this._fullyLoaded && !this._aborted && !this._failed) {
+    if (this.isCurrent(generation) && !this._fullyLoaded && !this._failed) {
       await this.loadRemaining();
     }
-    return this._items;
+    return snapshot;
   }
 
   /**
@@ -264,13 +230,14 @@ export class PagedSongLoader<T> {
 
   /** 中止加载 */
   abort(): void {
+    this._generation += 1;
     this._aborted = true;
     this.settleCompletion();
   }
 
   /** 重置状态 */
   reset(): void {
-    this._aborted = true;
+    this.abort();
     this._items = [];
     this._loading = false;
     this._fullyLoaded = false;
@@ -279,6 +246,9 @@ export class PagedSongLoader<T> {
     this._seenKeys.clear();
     this._completionPromise = null;
     this._completionResolve = null;
+    this._firstPageFlight = null;
+    this._remainingFlight = null;
+    this._startedAt = 0;
     // 重置后允许重新加载
     this._aborted = false;
   }
@@ -304,12 +274,14 @@ export class PagedSongLoader<T> {
   }
 
   /** 标记加载完成 */
-  private markComplete(): void {
+  private markComplete(generation: number): void {
+    if (!this.isCurrent(generation)) return;
     this._loading = false;
     this._fullyLoaded = true;
     this._failed = false;
-    this.onComplete?.(this._items);
     this.settleCompletion();
+    this.onComplete?.(this._items);
+    if (!this.isCurrent(generation)) return;
     logger.info(this.logTag, `load completed`, {
       total: this._items.length,
       pages: this._loadedPages,
@@ -326,14 +298,25 @@ export class PagedSongLoader<T> {
     }
   }
 
-  /** 标记失败结束。失败不是“完整加载完成”，不能触发 onComplete 覆盖调用方数据。 */
-  private markFailed(): void {
+  private isCurrent(generation: number): boolean {
+    return this._generation === generation && !this._aborted;
+  }
+
+  private positiveInteger(value: number | undefined, fallback: number): number {
+    return Number.isFinite(value) && (value ?? 0) >= 1 ? Math.floor(value!) : fallback;
+  }
+
+  /** 错误回调也可能抛错/重置；先结束当前周期，不能留下悬挂等待者。 */
+  private fail(error: unknown, generation: number): void {
+    if (!this.isCurrent(generation)) return;
     this._failed = true;
+    this._fullyLoaded = false;
     this.settleCompletion();
-    logger.info(this.logTag, `load failed`, {
-      total: this._items.length,
-      pages: this._loadedPages,
-      durationMs: this._startedAt ? Math.round(performance.now() - this._startedAt) : 0,
-    });
+    logger.warn(this.logTag, 'Load failed:', error);
+    try {
+      this.onError?.(error);
+    } catch (callbackError) {
+      logger.warn(this.logTag, 'Error callback failed:', callbackError);
+    }
   }
 }

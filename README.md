@@ -64,30 +64,8 @@
 
 - 首页
   ![首页](screenshots/home.png)
-- 发现
-  ![发现](screenshots/discover.png)
-- 私人FM
-  ![私人FM](screenshots/personal_fm.png)
-- 听歌识曲
-  ![听歌识曲](screenshots/recognize.png)
-- 歌词
-  ![歌词](screenshots/lyric.png)
-- 歌曲详情
-  ![歌曲详情](screenshots/song_detail.png)
-- 歌曲评论
-  ![歌曲评论](screenshots/song_comment.png)
-- 播放列表
-  ![播放列表](screenshots/playlist.png)
-- 专辑
-  ![专辑](screenshots/album.png)
-- 歌手
-  ![歌手](screenshots/artist.png)
-- 搜索
-  ![搜索](screenshots/search.png)
-- 个人中心
-  ![个人中心](screenshots/profile.png)
-- 设置
-  ![设置](screenshots/settings.png)
+- 播放页
+  ![播放页](screenshots/lyric.png)
 
 ### macOS 后台运行
 

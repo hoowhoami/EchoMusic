@@ -39,6 +39,7 @@ type PluginProcessRecord = {
   executable: string;
   child: ChildProcess;
   startedAt: number;
+  termination?: Promise<void>;
 };
 
 type PluginProcessApiOptions = {
@@ -312,6 +313,7 @@ export const createPluginProcessApi = ({
   getPluginCompatibilityError,
   getPluginSafeMode,
 }: PluginProcessApiOptions) => {
+  let shuttingDown = false;
   const terminatePluginProcess = (pluginId: string, pid: number): PluginProcessTerminateResult => {
     const normalizedPluginId = normalizePluginId(pluginId);
     const normalizedPid = Math.trunc(Number(pid));
@@ -326,7 +328,6 @@ export const createPluginProcessApi = ({
 
     try {
       const terminated = record.child.kill();
-      if (terminated) pluginProcesses.delete(normalizedPid);
       return { ok: true, pid: normalizedPid, terminated };
     } catch (error) {
       return {
@@ -343,47 +344,56 @@ export const createPluginProcessApi = ({
     for (const [pid, record] of Array.from(pluginProcesses.entries())) {
       if (normalizedPluginId && record.pluginId !== normalizedPluginId) continue;
 
-      const terminationPromise = new Promise<void>((resolve) => {
-        const cleanup = () => {
-          pluginProcesses.delete(pid);
-          resolve();
-        };
+      if (!record.termination) {
+        record.termination = new Promise<void>((resolve) => {
+          let timeout: ReturnType<typeof setTimeout>;
+          const finish = () => {
+            clearTimeout(timeout);
+            record.child.removeListener('exit', onExit);
+            resolve();
+          };
+          const onExit = () => {
+            pluginProcesses.delete(pid);
+            finish();
+          };
+          if (record.child.exitCode !== null || record.child.signalCode !== null) {
+            onExit();
+            return;
+          }
 
-        if (record.child.exitCode !== null || record.child.killed) {
-          cleanup();
-          return;
-        }
-
-        const timeout = setTimeout(() => {
-          log.warn('[Plugin] Process termination timeout, forcing cleanup', {
-            pluginId: record.pluginId,
-            pid,
-          });
-          cleanup();
-        }, 5000);
-
-        const onExit = () => {
-          clearTimeout(timeout);
-          cleanup();
-        };
-
-        record.child.once('exit', onExit);
-        record.child.once('error', onExit);
-
-        try {
-          record.child.kill();
-        } catch (error) {
-          log.warn('[Plugin] Failed to terminate plugin process', {
-            pluginId: record.pluginId,
-            pid,
-            error,
-          });
-          clearTimeout(timeout);
-          cleanup();
-        }
-      });
-
-      terminationPromises.push(terminationPromise);
+          record.child.once('exit', onExit);
+          const sendSignal = (signal: NodeJS.Signals) => {
+            try {
+              record.child.kill(signal);
+            } catch (error) {
+              log.warn('[Plugin] Failed to terminate plugin process', {
+                pluginId: record.pluginId,
+                pid,
+                signal,
+                error,
+              });
+            }
+          };
+          timeout = setTimeout(() => {
+            log.warn('[Plugin] Process did not exit after SIGTERM, sending SIGKILL', {
+              pluginId: record.pluginId,
+              pid,
+            });
+            timeout = setTimeout(() => {
+              log.warn('[Plugin] Process still has not exited; retaining process tracking', {
+                pluginId: record.pluginId,
+                pid,
+              });
+              finish();
+            }, 5000);
+            sendSignal('SIGKILL');
+          }, 5000);
+          sendSignal('SIGTERM');
+        }).finally(() => {
+          record.termination = undefined;
+        });
+      }
+      terminationPromises.push(record.termination);
     }
 
     return Promise.all(terminationPromises).then(() => undefined);
@@ -394,6 +404,7 @@ export const createPluginProcessApi = ({
     options: PluginProcessLaunchOptions,
     owner?: BrowserWindow | null,
   ): Promise<PluginProcessLaunchResult> => {
+    if (shuttingDown) return { ok: false, error: '应用正在退出' };
     if (getPluginSafeMode()) return { ok: false, error: '插件安全模式已开启' };
 
     const plugin = findPlugin(pluginId);
@@ -410,7 +421,12 @@ export const createPluginProcessApi = ({
     try {
       const launch = await resolvePluginProcessLaunch(plugin, options);
       const assertCurrent = () => {
-        if (getPluginSafeMode() || findPlugin(pluginId) !== plugin || !plugin.enabled) {
+        if (
+          shuttingDown ||
+          getPluginSafeMode() ||
+          findPlugin(pluginId) !== plugin ||
+          !plugin.enabled
+        ) {
           throw new Error('插件权限已失效');
         }
       };
@@ -439,7 +455,7 @@ export const createPluginProcessApi = ({
         if (trackedPid > 0) pluginProcesses.delete(trackedPid);
       };
       child.once('exit', forgetProcess);
-      child.once('error', (error) => {
+      child.on('error', (error) => {
         if (trackedPid > 0) {
           log.warn('[Plugin] Plugin process failed', {
             pluginId: plugin.id,
@@ -448,7 +464,7 @@ export const createPluginProcessApi = ({
             error,
           });
         }
-        forgetProcess();
+        if (child.exitCode !== null || child.signalCode !== null) forgetProcess();
       });
 
       await new Promise<void>((resolveSpawn, rejectSpawn) => {
@@ -465,12 +481,6 @@ export const createPluginProcessApi = ({
       });
 
       const pid = Number(child.pid);
-      try {
-        assertCurrent();
-      } catch (error) {
-        child.kill();
-        throw error;
-      }
       if (!Number.isFinite(pid) || pid <= 0) {
         child.kill();
         return { ok: false, error: '插件进程启动失败' };
@@ -484,6 +494,12 @@ export const createPluginProcessApi = ({
         startedAt,
       });
       if (processFinished) pluginProcesses.delete(pid);
+      try {
+        assertCurrent();
+      } catch (error) {
+        await terminatePluginProcesses(plugin.id);
+        throw error;
+      }
 
       return {
         ok: true,
@@ -500,7 +516,10 @@ export const createPluginProcessApi = ({
     }
   };
 
-  app.once('before-quit', () => void terminatePluginProcesses());
+  app.once('before-quit', () => {
+    shuttingDown = true;
+    void terminatePluginProcesses();
+  });
 
   return {
     terminatePluginProcess,

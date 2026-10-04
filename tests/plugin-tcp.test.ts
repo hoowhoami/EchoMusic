@@ -233,10 +233,15 @@ test(
   'TCP surfaces connection refusal and a remote reset without unhandled socket errors',
   { timeout: 5000 },
   async (t) => {
-    const { manager, options, peers } = await fixture(t);
+    let acceptPeer!: (socket: Socket) => void;
+    const accepted = new Promise<Socket>((resolve) => {
+      acceptPeer = resolve;
+    });
+    const { manager, options } = await fixture(t, acceptPeer);
     await manager.connect(1, 'rgb', 'a', options);
+    const peer = await accepted;
     const pending = assert.rejects(manager.read(1, 'rgb', 'a'), /reset|ECONNRESET/i);
-    peers[0].resetAndDestroy();
+    peer.resetAndDestroy();
     await pending;
     manager.close(1, 'rgb', 'a');
 

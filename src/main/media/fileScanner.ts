@@ -131,9 +131,12 @@ export const scanLocalFiles = async (
       }
       if (!entry.isFile()) continue;
 
+      const extension = extname(entry.name).toLowerCase();
+      // Reject names outside the whitelist before doing filesystem metadata I/O.
+      if (extensions.size > 0 && !extensions.has(extension)) continue;
+
       try {
         const stats = await fs.stat(fullPath);
-        const extension = extname(entry.name).toLowerCase();
         const file: ScannedLocalFile = {
           name: basename(fullPath),
           path: fullPath,

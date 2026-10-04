@@ -37,8 +37,9 @@ fn set_iconic_flags(hwnd: HWND, enable: bool) -> Result<(), String> {
     unsafe {
         DwmSetWindowAttribute(hwnd, DWMWA_HAS_ICONIC_BITMAP, ptr, 4)
             .map_err(|e| format!("DwmSetWindowAttribute(HAS_ICONIC_BITMAP) failed: {e}"))?;
-        DwmSetWindowAttribute(hwnd, DWMWA_FORCE_ICONIC_REPRESENTATION, ptr, 4)
-            .map_err(|e| format!("DwmSetWindowAttribute(FORCE_ICONIC_REPRESENTATION) failed: {e}"))?;
+        DwmSetWindowAttribute(hwnd, DWMWA_FORCE_ICONIC_REPRESENTATION, ptr, 4).map_err(|e| {
+            format!("DwmSetWindowAttribute(FORCE_ICONIC_REPRESENTATION) failed: {e}")
+        })?;
     }
     Ok(())
 }
@@ -143,8 +144,9 @@ pub fn taskbar_disable_iconic(hwnd: String) -> napi::Result<()> {
 pub fn taskbar_invalidate(hwnd: String) -> napi::Result<()> {
     let hwnd = parse_hwnd(&hwnd).ok_or_else(|| napi::Error::from_reason("invalid hwnd"))?;
     unsafe {
-        DwmInvalidateIconicBitmaps(hwnd)
-            .map_err(|e| napi::Error::from_reason(format!("DwmInvalidateIconicBitmaps failed: {e}")))
+        DwmInvalidateIconicBitmaps(hwnd).map_err(|e| {
+            napi::Error::from_reason(format!("DwmInvalidateIconicBitmaps failed: {e}"))
+        })
     }
 }
 
@@ -158,10 +160,16 @@ pub fn taskbar_set_thumbnail(
     max_height: u32,
 ) -> napi::Result<()> {
     let hwnd = parse_hwnd(&hwnd).ok_or_else(|| napi::Error::from_reason("invalid hwnd"))?;
-    render_and_apply(hwnd, image.as_ref(), max_width, max_height, |hwnd, hbmp| unsafe {
-        DwmSetIconicThumbnail(hwnd, hbmp, 0)
-            .map_err(|e| format!("DwmSetIconicThumbnail failed: {e}"))
-    })
+    render_and_apply(
+        hwnd,
+        image.as_ref(),
+        max_width,
+        max_height,
+        |hwnd, hbmp| unsafe {
+            DwmSetIconicThumbnail(hwnd, hbmp, 0)
+                .map_err(|e| format!("DwmSetIconicThumbnail failed: {e}"))
+        },
+    )
     .map_err(napi::Error::from_reason)
 }
 
@@ -174,9 +182,15 @@ pub fn taskbar_set_live_preview(
     max_height: u32,
 ) -> napi::Result<()> {
     let hwnd = parse_hwnd(&hwnd).ok_or_else(|| napi::Error::from_reason("invalid hwnd"))?;
-    render_and_apply(hwnd, image.as_ref(), max_width, max_height, |hwnd, hbmp| unsafe {
-        DwmSetIconicLivePreviewBitmap(hwnd, hbmp, None, 0)
-            .map_err(|e| format!("DwmSetIconicLivePreviewBitmap failed: {e}"))
-    })
+    render_and_apply(
+        hwnd,
+        image.as_ref(),
+        max_width,
+        max_height,
+        |hwnd, hbmp| unsafe {
+            DwmSetIconicLivePreviewBitmap(hwnd, hbmp, None, 0)
+                .map_err(|e| format!("DwmSetIconicLivePreviewBitmap failed: {e}"))
+        },
+    )
     .map_err(napi::Error::from_reason)
 }

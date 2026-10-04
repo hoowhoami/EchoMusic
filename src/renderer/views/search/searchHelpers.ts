@@ -24,6 +24,7 @@ export const createSearchPaginationState = (): SearchPaginationState => ({
   loading: false,
   loaded: false,
   total: null,
+  error: '',
 });
 
 export const toRecord = (value: unknown): Record<string, unknown> | undefined => {

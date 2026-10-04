@@ -372,6 +372,7 @@ test('SQLite persistence saves both scopes and restores them in a new store', as
     '../src/renderer/stores/sqlitePersist.ts',
     {
       '../../shared/storePersistence': persistence,
+      '@/utils/logger': { warn() {} },
     },
     window,
   );
@@ -384,6 +385,8 @@ test('SQLite persistence saves both scopes and restores them in a new store', as
   first.adjustTimeOffset(-100);
   await vue.nextTick();
   for (const fn of timers.values()) fn();
+  await Promise.resolve();
+  await Promise.resolve();
   assert.equal(writes.length, 1);
   assert.equal(saved.globalTimeOffsetMs, 400);
   assert.equal(saved.timeOffsetMap.a, -100);

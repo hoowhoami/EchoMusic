@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { StyleValue } from 'vue';
 import { useVModel } from '@vueuse/core';
+import { useCachedOverlayOpen } from '@/composables/useCachedOverlayOpen';
+import { isTopmostDrawer } from './overlayEscape';
 
 interface Props {
   open?: boolean;
@@ -24,7 +26,9 @@ const emit = defineEmits<{
   (e: 'update:open', value: boolean): void;
 }>();
 
-const open = useVModel(props, 'open', emit, { defaultValue: false });
+const open = useCachedOverlayOpen(useVModel(props, 'open', emit, { defaultValue: false }));
+
+const panelRef = ref<HTMLElement | null>(null);
 
 const overlayClass = computed(() => ['drawer-overlay', props.overlayClass]);
 const panelClass = computed(() => ['drawer-panel', `drawer-${props.side}`, props.panelClass]);
@@ -34,18 +38,30 @@ const close = () => {
 };
 
 const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && open.value) {
+  if (e.key === 'Escape' && !e.defaultPrevented && open.value && isTopmostDrawer(panelRef.value)) {
+    e.preventDefault();
     e.stopPropagation();
     close();
   }
 };
 
+let mounted = false;
+let listening = false;
+const syncKeydownListener = () => {
+  const shouldListen = mounted && open.value;
+  if (shouldListen === listening) return;
+  listening = shouldListen;
+  if (shouldListen) window.addEventListener('keydown', handleKeydown);
+  else window.removeEventListener('keydown', handleKeydown);
+};
+watch(open, syncKeydownListener, { flush: 'sync' });
 onMounted(() => {
-  window.addEventListener('keydown', handleKeydown);
+  mounted = true;
+  syncKeydownListener();
 });
-
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown);
+  mounted = false;
+  syncKeydownListener();
 });
 </script>
 
@@ -58,6 +74,7 @@ onUnmounted(() => {
       @click="close"
     />
     <div
+      ref="panelRef"
       :class="panelClass"
       :data-state="open ? 'open' : 'closed'"
       :style="panelStyle"
@@ -84,13 +101,15 @@ onUnmounted(() => {
   visibility: hidden;
   pointer-events: none;
   transition:
-    opacity 0.2s ease,
-    visibility 0s linear 0.2s;
+    opacity var(--motion-duration-exit) var(--motion-ease-exit),
+    visibility 0s linear var(--motion-duration-exit);
 }
 
 :global(.drawer-overlay[data-state='open']) {
   opacity: 1;
   visibility: visible;
+  transition-duration: var(--motion-duration-normal), 0s;
+  transition-timing-function: var(--motion-ease-enter), linear;
   transition-delay: 0s;
   pointer-events: auto;
   -webkit-app-region: no-drag;
@@ -101,7 +120,7 @@ onUnmounted(() => {
    * 抽屉的安全区：
    * - 上方避开标题栏 / 窗口控制按钮（高度与 TitleBar / OverlayHeader 保持一致）；
    * - 下方避开播放器（--drawer-bottom-offset 由 PlayerBar 按实际高度发布，已含 8px 余量）。
-   * 上下边距刻意不对称：整体略向下沉，让面板离标题栏更远一些。
+   * 上下边距配对调整：保留面板高度，同时与底部播放器拉开间距。
    * 各具体抽屉的 top / bottom 请统一引用这两个变量，不要再写死 12px。
    */
   --drawer-top-gap: 16px;
@@ -120,14 +139,16 @@ onUnmounted(() => {
   pointer-events: none;
   z-index: 1410;
   transition:
-    opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
-    visibility 0s linear 0.22s;
+    opacity var(--motion-duration-exit) var(--motion-ease-exit),
+    transform var(--motion-duration-exit) var(--motion-ease-exit),
+    visibility 0s linear var(--motion-duration-exit);
   display: flex;
   flex-direction: column;
 }
 
 :global(.drawer-panel[data-state='open']) {
+  transition-duration: var(--motion-duration-panel), var(--motion-duration-panel), 0s;
+  transition-timing-function: var(--motion-ease-enter), var(--motion-ease-enter), linear;
   opacity: 1;
   visibility: visible;
   transition-delay: 0s;
@@ -142,7 +163,7 @@ onUnmounted(() => {
   bottom: var(--drawer-safe-bottom);
   width: min(380px, 88vw);
   border-radius: 10px 0 0 10px;
-  transform: translateX(24px);
+  transform: translateX(16px);
   box-shadow: none;
 }
 
@@ -150,12 +171,18 @@ onUnmounted(() => {
   left: var(--drawer-content-left, 0px);
   top: max(var(--drawer-content-top, 0px), var(--drawer-safe-top));
   bottom: var(--drawer-safe-bottom);
-  transform: translateY(8%);
+  transform: translateY(16px);
   width: var(--drawer-content-width, 92vw);
   border-radius: 24px;
 }
 
 :global(.drawer-bottom[data-state='open']) {
   transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  :global(.drawer-overlay),
+  :global(.drawer-panel) {
+    transition: none;
+  }
 }
 </style>

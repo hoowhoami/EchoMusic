@@ -7,6 +7,21 @@ import type {
 import { useSettingStore } from './setting';
 import { isUpdateSignatureError, UPDATE_SIGNATURE_ERROR } from '../../shared/updateError';
 
+// Keep request ownership outside persisted/reactive UI state, and separate check
+// and download revisions so a live event only supersedes its own snapshot field.
+const revisions = new WeakMap<
+  object,
+  { lifecycle: number; check: number; download: number; install: number }
+>();
+const getRevisions = (store: object) => {
+  let value = revisions.get(store);
+  if (!value) {
+    value = { lifecycle: 0, check: 0, download: 0, install: 0 };
+    revisions.set(store, value);
+  }
+  return value;
+};
+
 /**
  * 更新状态的单一可信来源（single source of truth）。
  *
@@ -32,11 +47,19 @@ export const useUpdateStore = defineStore('update', {
     async init() {
       if (this.initialized) return;
       this.initialized = true;
+      const revision = getRevisions(this);
+      const lifecycle = ++revision.lifecycle;
+      const checkRevision = revision.check;
+      const downloadRevision = revision.download;
+      const isCurrent = () => this.initialized && lifecycle === revision.lifecycle;
 
-      const listener = (payload: unknown) => this.handleCheckResult(payload);
+      const listener = (payload: unknown) => {
+        if (isCurrent()) this.handleCheckResult(payload);
+      };
       this.checkResultListener = listener;
       window.electron?.ipcRenderer?.on('update-check-result', listener);
       const notesListener = (payload: unknown) => {
+        if (!isCurrent()) return;
         if (!payload || typeof payload !== 'object') return;
         const result = payload as UpdateCheckResult;
         if (
@@ -44,6 +67,7 @@ export const useUpdateStore = defineStore('update', {
           result.latestVersion !== this.checkResult.latestVersion
         )
           return;
+        revision.check += 1;
         this.checkResult = {
           ...this.checkResult,
           body: result.body,
@@ -55,14 +79,20 @@ export const useUpdateStore = defineStore('update', {
 
       this.disposeDownload =
         window.electron?.updater?.onDownloadStatus((result) => {
-          this.applyDownloadStatus(result);
+          if (isCurrent()) this.applyDownloadStatus(result);
         }) ?? null;
 
       try {
         const state = await window.electron?.updater?.getState?.();
-        if (state) {
-          if (state.checkResult) this.checkResult = state.checkResult;
-          if (state.download) this.applyDownloadStatus(state.download);
+        if (state && isCurrent()) {
+          if (state.checkResult && checkRevision === revision.check) {
+            revision.check += 1;
+            this.checkResult = state.checkResult;
+            this.recoverSignatureFailure(state.checkResult.message);
+          }
+          if (state.download && downloadRevision === revision.download) {
+            this.applyDownloadStatus(state.download);
+          }
         }
       } catch {
         // 主进程暂不可用时忽略，后续事件会补齐状态
@@ -70,6 +100,11 @@ export const useUpdateStore = defineStore('update', {
     },
 
     dispose() {
+      const revision = getRevisions(this);
+      revision.lifecycle += 1;
+      revision.install += 1;
+      this.initialized = false;
+      this.isChecking = false;
       if (this.releaseNotesListener) {
         window.electron?.ipcRenderer?.off('update-release-notes', this.releaseNotesListener);
         this.releaseNotesListener = null;
@@ -80,10 +115,10 @@ export const useUpdateStore = defineStore('update', {
       }
       this.disposeDownload?.();
       this.disposeDownload = null;
-      this.initialized = false;
     },
 
     handleCheckResult(payload: unknown) {
+      getRevisions(this).check += 1;
       this.isChecking = false;
 
       const silent = Boolean(
@@ -110,9 +145,16 @@ export const useUpdateStore = defineStore('update', {
     },
 
     applyDownloadStatus(result: UpdateDownloadResult) {
+      const revision = getRevisions(this);
+      revision.download += 1;
+      // The main process acknowledges the same installation with an installing
+      // event before its invoke result. Terminal/new-download events supersede it.
+      if (result.status !== 'installing') revision.install += 1;
       if (result.status === 'error' && this.recoverSignatureFailure(result.error)) return;
       this.downloadStatus = result.status;
-      if (result.progress) {
+      if (result.status === 'downloaded') {
+        this.downloadPercent = 100;
+      } else if (result.progress) {
         this.downloadPercent = Math.round(result.progress.percent);
       } else if (result.status === 'idle') {
         this.downloadPercent = 0;
@@ -126,6 +168,10 @@ export const useUpdateStore = defineStore('update', {
 
     recoverSignatureFailure(error: unknown) {
       if (window.electron?.platform !== 'darwin' || !isUpdateSignatureError(error)) return false;
+      const revision = getRevisions(this);
+      revision.check += 1;
+      revision.download += 1;
+      revision.install += 1;
       this.checkResult = {
         ...this.checkResult,
         status: this.checkResult?.latestVersion ? 'available' : 'error',
@@ -162,6 +208,9 @@ export const useUpdateStore = defineStore('update', {
       ) {
         return;
       }
+      const revision = getRevisions(this);
+      revision.download += 1;
+      revision.install += 1;
       this.downloadStatus = 'downloading';
       this.downloadPercent = 0;
       this.downloadError = '';
@@ -171,6 +220,9 @@ export const useUpdateStore = defineStore('update', {
     /** 取消下载。仅 downloading 态有效，其他状态忽略。 */
     cancelDownload() {
       if (this.downloadStatus !== 'downloading') return;
+      const revision = getRevisions(this);
+      revision.download += 1;
+      revision.install += 1;
       this.downloadStatus = 'idle';
       this.downloadPercent = 0;
       this.downloadError = '';
@@ -184,12 +236,28 @@ export const useUpdateStore = defineStore('update', {
       }
       if (this.downloadStatus !== 'downloaded') return;
       const settingStore = useSettingStore();
+      const revision = getRevisions(this);
+      const lifecycle = revision.lifecycle;
+      const installRevision = ++revision.install;
+      revision.download += 1;
+      const isCurrent = () =>
+        lifecycle === revision.lifecycle &&
+        installRevision === revision.install &&
+        this.downloadStatus === 'installing';
       this.downloadStatus = 'installing';
       this.downloadError = '';
-      const result = await window.electron?.updater?.install(settingStore.silentUpdate);
-      if (result && !result.ok) {
-        this.downloadStatus = 'error';
-        this.downloadError = result.error || '安装器启动失败';
+      try {
+        const result = await window.electron?.updater?.install(settingStore.silentUpdate);
+        if (!isCurrent()) return;
+        if (!result?.ok) {
+          this.applyDownloadStatus({ status: 'error', error: result?.error || '安装器启动失败' });
+        }
+      } catch (error) {
+        if (!isCurrent()) return;
+        this.applyDownloadStatus({
+          status: 'error',
+          error: error instanceof Error ? error.message : '安装器启动失败',
+        });
       }
     },
 

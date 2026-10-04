@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { iconImage } from '@/icons';
+import { isCurrentImageEvent } from '@/utils/imageLoadEvent';
 
 interface Props {
   src?: string;
@@ -22,6 +23,7 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const status = ref<'loading' | 'success' | 'error'>('loading');
+const imageRef = ref<HTMLImageElement | null>(null);
 
 watch(
   () => props.src,
@@ -32,8 +34,12 @@ watch(
   { immediate: true },
 );
 
-const handleLoad = () => (status.value = 'success');
-const handleError = () => (status.value = 'error');
+const handleLoad = (event: Event) => {
+  if (isCurrentImageEvent(event, imageRef.value, props.src)) status.value = 'success';
+};
+const handleError = (event: Event) => {
+  if (isCurrentImageEvent(event, imageRef.value, props.src)) status.value = 'error';
+};
 </script>
 
 <template>
@@ -41,12 +47,17 @@ const handleError = () => (status.value = 'error');
     <!-- 1. Skeleton Loading -->
     <div
       v-if="status === 'loading' && showSkeleton"
-      :class="['absolute inset-0 bg-[var(--control-hover-bg)] animate-pulse z-10', skeletonClass]"
+      :class="[
+        'absolute inset-0 bg-[var(--control-hover-bg)] motion-safe:animate-pulse z-10',
+        skeletonClass,
+      ]"
     ></div>
 
     <!-- 2. Image -->
     <img
       v-if="src"
+      :key="src"
+      ref="imageRef"
       :src="src"
       :alt="alt"
       :loading="loading"
@@ -54,7 +65,7 @@ const handleError = () => (status.value = 'error');
       @load="handleLoad"
       @error="handleError"
       :class="[
-        'w-full h-full object-cover transition-opacity duration-500',
+        'w-full h-full object-cover motion-image-feedback',
         status === 'success' ? 'opacity-100' : 'opacity-0',
       ]"
     />

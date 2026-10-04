@@ -26,6 +26,7 @@ export interface SearchPaginationState {
   loading: boolean;
   loaded: boolean;
   total: number | null;
+  error: string;
 }
 
 export interface SearchPlaylistCardProps {

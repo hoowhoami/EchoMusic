@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue';
+import { ref, watch, onUnmounted, onActivated, onDeactivated } from 'vue';
 import { iconArrowUp } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 
@@ -10,15 +10,17 @@ const props = defineProps<{
 
 const visible = ref(false);
 let currentTarget: HTMLElement | null = null;
+let suspended = false;
+let disposed = false;
 
 const handleScroll = () => {
   if (!currentTarget) return;
-  visible.value = currentTarget.scrollTop > (props.threshold || 300);
+  visible.value = currentTarget.scrollTop > (props.threshold ?? 300);
 };
 
 const scrollToTop = () => {
   if (!currentTarget) return;
-  currentTarget.scrollTop = 0;
+  currentTarget.scrollTo({ top: 0, behavior: 'instant' });
 };
 
 const unbind = () => {
@@ -30,6 +32,11 @@ const unbind = () => {
 };
 
 const bind = (el: HTMLElement | null) => {
+  if (disposed || suspended) return;
+  if (currentTarget === el) {
+    handleScroll();
+    return;
+  }
   unbind();
   if (!el) return;
   currentTarget = el;
@@ -37,37 +44,43 @@ const bind = (el: HTMLElement | null) => {
   handleScroll();
 };
 
-// 响应式监听 scrollContainer 变化
+// 容器或阈值变化时立即重新判断；同一容器不重复绑定。
 watch(
-  () => props.scrollContainer,
-  (el) => {
+  [() => props.scrollContainer, () => props.threshold],
+  ([el]) => {
     bind(el ?? null);
   },
   { immediate: true },
 );
 
+onDeactivated(() => {
+  suspended = true;
+  unbind();
+});
+onActivated(() => {
+  if (disposed) return;
+  suspended = false;
+  bind(props.scrollContainer ?? null);
+});
 onUnmounted(() => {
+  disposed = true;
   unbind();
 });
 </script>
 
 <template>
-  <Transition name="fade">
-    <Button
-      variant="unstyled"
-      size="none"
-      v-if="visible"
-      @click="scrollToTop"
-      class="absolute right-6 bottom-4 z-50 p-3 rounded-full border border-[var(--control-border)] back-to-top-btn shadow-lg hover:shadow-xl transition-all duration-300 active:scale-95 group"
-      aria-label="回到顶部"
-    >
-      <Icon
-        class="transition-transform group-hover:-translate-y-1"
-        :icon="iconArrowUp"
-        width="20"
-        height="20"
-      />
-    </Button>
+  <Transition name="back-to-top">
+    <div v-if="visible" class="absolute right-6 bottom-4 z-50">
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="scrollToTop"
+        class="size-9 inline-flex items-center justify-center rounded-full border border-[var(--control-border)] back-to-top-btn shadow-lg hover:shadow-xl group"
+        aria-label="回到顶部"
+      >
+        <Icon class="back-to-top-icon" :icon="iconArrowUp" width="18" height="18" />
+      </Button>
+    </div>
   </Transition>
 </template>
 
@@ -93,16 +106,30 @@ onUnmounted(() => {
   color: var(--color-primary-text);
 }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition:
-    opacity 0.3s ease,
-    transform 0.3s ease;
+.back-to-top-leave-active {
+  pointer-events: none;
 }
 
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translateY(10px);
+@media (prefers-reduced-motion: no-preference) {
+  .back-to-top-enter-active {
+    transition: opacity var(--motion-duration-fast) var(--motion-ease-enter);
+  }
+
+  .back-to-top-leave-active {
+    transition: opacity var(--motion-duration-fast) var(--motion-ease-exit);
+  }
+
+  .back-to-top-enter-from,
+  .back-to-top-leave-to {
+    opacity: 0;
+  }
+
+  .back-to-top-icon {
+    transition: translate var(--motion-duration-fast) var(--motion-ease-standard);
+  }
+
+  .back-to-top-btn:hover .back-to-top-icon {
+    translate: 0 -2px;
+  }
 }
 </style>

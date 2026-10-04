@@ -8,6 +8,8 @@ import { LOCAL_AUDIO_EXTENSIONS } from '../shared/localMusic';
 import { readAudioMetadata, resolveAudioTitleAndArtist } from './media/audioMetadata';
 import { scanLocalFiles, type ScannedLocalFile } from './media/fileScanner';
 
+const METADATA_CONCURRENCY = 4;
+
 export const readLocalAudioFile = async (file: ScannedLocalFile): Promise<LocalAudioFile> => {
   let metadata: LocalAudioMetadata | undefined;
   try {
@@ -44,12 +46,17 @@ export const scanLocalAudioFiles = async (
     extensions: LOCAL_AUDIO_EXTENSIONS,
     onError: (message) => errors.push(message),
   });
-  const files: LocalAudioFile[] = [];
-  // 元数据解析当前串行执行；大目录扫描会等待较久。未来本地音乐正式立项时，
-  // 再改为 worker + 并发 + 增量扫描。
-  for (const file of scan.files) {
-    files.push(await readLocalAudioFile(file));
-  }
+  const files = new Array<LocalAudioFile>(scan.files.length);
+  let nextIndex = 0;
+  // Bound open files and retain scanner order even when parsers finish out of order.
+  await Promise.all(
+    Array.from({ length: Math.min(METADATA_CONCURRENCY, scan.files.length) }, async () => {
+      while (nextIndex < scan.files.length) {
+        const index = nextIndex++;
+        files[index] = await readLocalAudioFile(scan.files[index]);
+      }
+    }),
+  );
   return {
     root: scan.root,
     files,

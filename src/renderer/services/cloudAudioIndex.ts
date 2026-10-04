@@ -23,6 +23,8 @@ const createEmptyIndex = (): CloudAudioIndex => ({
 let index = createEmptyIndex();
 let indexedUserId = '';
 let pendingRefresh: Promise<void> | null = null;
+let accountKey = '';
+let generation = 0;
 
 const normalizePositiveId = (value: unknown): string => {
   const text = String(value ?? '').trim();
@@ -75,9 +77,17 @@ const getCloudPageSongs = (payload: unknown): { songs: Song[]; total: number } =
 };
 
 export const clearCloudAudioIndex = () => {
+  generation += 1;
   index = createEmptyIndex();
   indexedUserId = '';
+  accountKey = '';
   pendingRefresh = null;
+};
+
+const getAccountKey = () => {
+  const user = useUserStore();
+  const id = normalizePositiveId(user.info?.userid ?? user.info?.userId);
+  return user.isLoggedIn && id ? `${id}:${user.info?.token ?? ''}:${user.accountRevision}` : '';
 };
 
 export const refreshCloudAudioIndex = async (force = false): Promise<void> => {
@@ -88,10 +98,18 @@ export const refreshCloudAudioIndex = async (force = false): Promise<void> => {
     return;
   }
 
+  const requestAccount = getAccountKey();
+  if (accountKey !== requestAccount) {
+    clearCloudAudioIndex();
+    accountKey = requestAccount;
+  }
+
   if (pendingRefresh) return pendingRefresh;
   if (!force && indexedUserId === userId) return;
 
-  pendingRefresh = (async () => {
+  const requestGeneration = generation;
+  const isCurrent = () => generation === requestGeneration && getAccountKey() === requestAccount;
+  const task = (async () => {
     const nextIndex = createEmptyIndex();
     try {
       let page = 1;
@@ -99,6 +117,7 @@ export const refreshCloudAudioIndex = async (force = false): Promise<void> => {
       let loaded = 0;
       do {
         const res = await getUserCloud(page, CLOUD_AUDIO_INDEX_PAGE_SIZE);
+        if (!isCurrent()) return;
         const parsed = getCloudPageSongs(res);
         if (page === 1) total = parsed.total;
         if (parsed.songs.length === 0) break;
@@ -107,16 +126,17 @@ export const refreshCloudAudioIndex = async (force = false): Promise<void> => {
         page += 1;
       } while (loaded < total);
 
+      if (!isCurrent()) return;
       index = nextIndex;
       indexedUserId = userId;
     } catch (error) {
-      logger.warn('CloudAudioIndex', 'Refresh cloud audio index failed:', error);
+      if (isCurrent()) logger.warn('CloudAudioIndex', 'Refresh cloud audio index failed:', error);
     } finally {
-      pendingRefresh = null;
+      if (generation === requestGeneration) pendingRefresh = null;
     }
   })();
-
-  return pendingRefresh;
+  pendingRefresh = task;
+  return task;
 };
 
 export const getCloudAudioSourceForSong = async (song: Song): Promise<CloudAudioSource | null> => {
@@ -124,7 +144,9 @@ export const getCloudAudioSourceForSong = async (song: Song): Promise<CloudAudio
     return cloneSource(song.cloudAudioSource);
   }
 
+  const requestAccount = getAccountKey();
   await refreshCloudAudioIndex(false);
+  if (!requestAccount || getAccountKey() !== requestAccount) return null;
 
   const albumAudioId = normalizePositiveId(song.albumAudioId ?? song.mixSongId);
   const byAlbumAudioId = index.byAlbumAudioId.get(albumAudioId);

@@ -49,9 +49,18 @@ const queueActions = compile('../src/renderer/stores/playlist/queueActions.ts', 
   './constants': constants,
   './helpers': helpers,
 });
+const object = compile('../src/shared/object.ts');
+const extractors = compile('../src/renderer/utils/extractors.ts', {
+  '../../shared/object': object,
+});
+const userSession = compile('../src/renderer/utils/userSession.ts');
+let fetchPersonalFm = async () => [];
 const personalFmActions = compile('../src/renderer/stores/playlist/personalFmActions.ts', {
-  '@/api/music': { getPersonalFm: async () => [] },
-  '@/utils/extractors': { extractList: (value) => value },
+  '@/api/music': { getPersonalFm: (...args) => fetchPersonalFm(...args) },
+  '@/utils/extractors': extractors,
+
+  '@/utils/userSession': userSession,
+  '@/stores/user': { useUserStore: () => ({ isLoggedIn: false, accountRevision: 0, info: null }) },
   '@/utils/logger': { default: { warn() {} } },
   '@/utils/song': songUtils,
   '@/utils/mappers': { mapTopSong: (value) => value },
@@ -302,4 +311,31 @@ test('duplicate batches have bounded retries, errors allow a later retry, and am
     assert.fail('should not prefetch yet');
   };
   assert.equal(await store.replenishDiscoverQueue('discover'), 0);
+});
+
+test('round14: actual Pinia cold FM creation shares startup and commits the registered queue', async () => {
+  const { store } = setup();
+  let resolve;
+  const read = new Promise((r) => {
+    resolve = r;
+  });
+  let requests = 0;
+  fetchPersonalFm = () => {
+    requests++;
+    return read;
+  };
+  try {
+    const first = store.startPersonalFm(),
+      second = store.startPersonalFm();
+    const count = requests;
+    resolve([song('new')]);
+    const results = await Promise.all([first, second]);
+    assert.equal(count, 1);
+    assert.deepEqual(results, [true, true]);
+    assert.equal(store.activeQueueId, PERSONAL_FM_QUEUE_ID);
+    assert.equal(store.personalFmBuffer[0].id, 'new');
+  } finally {
+    resolve([]);
+    fetchPersonalFm = async () => [];
+  }
 });

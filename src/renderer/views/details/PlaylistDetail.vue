@@ -9,7 +9,7 @@ import { getPlaylistDetail, getPlaylistTracks, getPlaylistTracksNew } from '@/ap
 import { resolveOwnedPlaylistListId } from '@/utils/playlistTrackSource';
 import { orderByPlaylistPosition } from '@/utils/playlistOrder';
 import { usePlaylistCoversStore } from '@/stores/playlistCovers';
-import { getPlaylistComments } from '@/api/comment';
+import { useDetailComments } from '@/composables/useDetailComments';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
 import DetailPageError from '@/components/music/DetailPageError.vue';
@@ -36,16 +36,13 @@ import { formatDate } from '@/utils/format';
 import { useUserStore } from '@/stores/user';
 import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
-import { mapPlaylistMeta, resolvePlaylistTrackQueryId, mapCommentItem } from '@/utils/mappers';
-import { enrichCommentsWithYoungVip } from '@/utils/commentVipCache';
+import { mapPlaylistMeta, resolvePlaylistTrackQueryId } from '@/utils/mappers';
 import { parsePlaylistTracks } from '@/utils/mappers';
 import type { PlaylistMeta } from '@/models/playlist';
-import type { Comment } from '@/models/comment';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
-import { logger } from '@/utils/logger';
 import {
   iconCurrentLocation,
   iconPlay,
@@ -61,20 +58,13 @@ import {
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { copyShareTarget, createPlaylistShareTarget } from '@/utils/share';
 import { useToastStore } from '@/stores/toast';
-import { toRecord } from '../../../shared/object';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
+import { captureUserSession } from '@/utils/userSession';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 import { isSameSong } from '@/utils/song';
-
-const parseIntSafe = (value: unknown): number => {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  const parsed = Number.parseInt(String(value), 10);
-  return Number.isNaN(parsed) ? 0 : parsed;
-};
 
 const { id: currentId, onIdChange } = useRouteId();
 // const router = useRouter();
@@ -93,12 +83,7 @@ const {
   select: selectTabs,
   isActive,
 } = useRouteTabs({ tab: ['songs', 'comments'] });
-const loadingComments = ref(false);
-const comments = ref<Comment[]>([]);
-const hotComments = ref<Comment[]>([]);
-const commentTotal = ref(0);
-const commentPage = ref(1);
-const hasMoreComments = ref(true);
+
 const showIntroDialog = ref(false);
 const showBatchDrawer = ref(false);
 const showPlaylistOrder = ref(false);
@@ -258,74 +243,12 @@ const playlistCommentId = computed(() => {
   return getPlaylistId();
 });
 
-const fetchComments = async (reset = false) => {
-  if (loadingComments.value) return;
-  if (reset) {
-    commentPage.value = 1;
-    comments.value = [];
-    hotComments.value = [];
-    commentTotal.value = 0;
-    hasMoreComments.value = true;
-  }
-  if (!hasMoreComments.value) return;
-
-  loadingComments.value = true;
-  try {
-    const res = await getPlaylistComments(playlistCommentId.value, commentPage.value, 30, {
-      showClassify: commentPage.value === 1,
-      showHotwordList: commentPage.value === 1,
-    });
-    if (
-      res &&
-      typeof res === 'object' &&
-      'status' in res &&
-      (res as { status?: number }).status === 1
-    ) {
-      const record = toRecord(res);
-      const data = toRecord(record.data ?? record.info ?? record);
-      const listCandidate = data.list ?? data.comments ?? [];
-      const hotCandidate = data.hot_list ?? data.weight_list ?? [];
-      const list = Array.isArray(listCandidate) ? listCandidate : [];
-      const hotList = Array.isArray(hotCandidate) ? hotCandidate : [];
-      const mapped = (await enrichCommentsWithYoungVip(list.map(mapCommentItem))).filter(
-        (item) => item.content.length > 0,
-      );
-      const mappedHot = (await enrichCommentsWithYoungVip(hotList.map(mapCommentItem))).filter(
-        (item) => item.content.length > 0,
-      );
-      if (reset) {
-        hotComments.value = mappedHot.map((item) => ({ ...item }));
-      }
-      comments.value = reset ? mapped : [...comments.value, ...mapped];
-
-      // 如果本页没有返回任何有效评论（非 reset），说明已到末尾
-      if (!reset && mapped.length === 0) {
-        hasMoreComments.value = false;
-      } else {
-        const totalRaw =
-          data.total ?? data.count ?? record.total ?? record.count ?? commentTotal.value;
-        const totalValue = parseIntSafe(totalRaw);
-        if (totalValue > 0) {
-          commentTotal.value = totalValue;
-          hasMoreComments.value = comments.value.length < totalValue;
-        } else {
-          hasMoreComments.value = mapped.length > 0;
-        }
-      }
-
-      if (hasMoreComments.value) {
-        commentPage.value += 1;
-      }
-    } else {
-      hasMoreComments.value = false;
-    }
-  } catch (e) {
-    logger.error('PlaylistDetail', 'Fetch playlist comments error', e);
-    hasMoreComments.value = false;
-  } finally {
-    loadingComments.value = false;
-  }
-};
+const { loadingComments, comments, hotComments, commentTotal, hasMoreComments, fetchComments } =
+  useDetailComments({
+    type: 'playlist',
+    resourceId: () => playlistCommentId.value,
+    isActive: () => isActive.value && activeTab.value === 'comments',
+  });
 
 // 排序逻辑
 const sortField = ref<SortField | null>(null);
@@ -392,6 +315,7 @@ watch(scrollContainerRef, () => {
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
 let songLoadGeneration = 0;
+let disposed = false;
 let pendingAddedPlaylistSongs: Song[] = [];
 let pendingRemovedPlaylistSongs: Song[] = [];
 
@@ -430,11 +354,17 @@ const updateSongsFromLoader = (items: readonly Song[], complete = false) => {
 };
 
 const fetchData = async () => {
+  if (disposed) return;
+  const playlistId = getPlaylistId();
+  const isCurrentSession = captureUserSession(userStore);
   const generation = ++songLoadGeneration;
   const accountGeneration = playlistStore.userCollectionsGeneration;
   const accountId = userStore.info?.userid;
   const hadCompleteSongs = songs.value.length > 0 && isCurrentPlaylistSongCacheComplete();
   const isCurrent = () =>
+    !disposed &&
+    playlistId === getPlaylistId() &&
+    isCurrentSession() &&
     generation === songLoadGeneration &&
     accountGeneration === playlistStore.userCollectionsGeneration &&
     accountId === userStore.info?.userid;
@@ -443,7 +373,7 @@ const fetchData = async () => {
   try {
     pendingAddedPlaylistSongs = [];
     pendingRemovedPlaylistSongs = [];
-    const detailRes = await getPlaylistDetail(getPlaylistId());
+    const detailRes = await getPlaylistDetail(playlistId);
     if (!isCurrent()) return;
     if (detailRes?.status !== 1 || !detailRes.data?.[0]) {
       throw new Error('Playlist detail response contains no playlist');
@@ -453,7 +383,7 @@ const fetchData = async () => {
     const playlistMeta = playlist.value;
     const currentUserId = userStore.info?.userid;
     const ownedListId = ownedPlaylistListId.value;
-    const queryId = resolvePlaylistTrackQueryId(getPlaylistId(), {
+    const queryId = resolvePlaylistTrackQueryId(playlistId, {
       listid: playlistMeta?.listid,
       listCreateGid: playlistMeta?.listCreateGid,
       listCreateUserid: playlistMeta?.listCreateUserid,
@@ -465,31 +395,33 @@ const fetchData = async () => {
       songLoader.abort();
     }
 
-    // 重置过滤计数
-    playlistFilteredInvalidCount.value = 0;
+    const filteredCounts = new Map<number, number>();
     const coverPages = new Map<number, unknown>();
+    const updateFilteredCount = () => {
+      playlistFilteredInvalidCount.value = Array.from(filteredCounts)
+        .filter(([page]) => page <= loader.loadedPages)
+        .reduce((total, [, count]) => total + count, 0);
+    };
 
     const loader = new PagedSongLoader<Song>(
       async (page, pageSize) => {
+        if (!isCurrent()) throw new Error('歌单加载已失效');
         const res =
           ownedListId !== null
             ? await getPlaylistTracksNew(ownedListId, page, pageSize)
             : await getPlaylistTracks(queryId, page, pageSize);
-        if (isCurrent() && ownedListId !== null) coverPages.set(page, res);
-        if (!res || typeof res !== 'object') return { items: [], hasMore: false };
-        const hasStatus = 'status' in res;
-        const statusOk = hasStatus && (res as { status?: number }).status === 1;
-        const hasPayload = 'data' in res || 'info' in res;
-        if (!statusOk && !hasPayload) return { items: [], hasMore: false };
-
+        if (!isCurrent()) throw new Error('歌单加载已失效');
         const payload =
-          'data' in res
-            ? (res as { data?: unknown }).data
-            : 'info' in res
-              ? (res as { info?: unknown }).info
-              : res;
+          res && typeof res === 'object'
+            ? 'data' in res
+              ? res.data
+              : 'info' in res
+                ? res.info
+                : res
+            : res;
         const { songs: parsedSongs, filteredCount } = parsePlaylistTracks(payload ?? res);
-        if (isCurrent()) playlistFilteredInvalidCount.value += filteredCount;
+        filteredCounts.set(page, filteredCount);
+        if (ownedListId !== null) coverPages.set(page, res);
         // 返回数量不足一页说明没有更多了
         const hasMore = parsedSongs.length + filteredCount >= pageSize;
         return { items: parsedSongs, hasMore };
@@ -501,11 +433,15 @@ const fetchData = async () => {
         logTag: 'PlaylistDetailLoader',
         onPageLoaded(allItems) {
           if (!isCurrent()) return;
-          if (!hadCompleteSongs) updateSongsFromLoader(allItems);
+          if (!hadCompleteSongs) {
+            updateFilteredCount();
+            updateSongsFromLoader(allItems);
+          }
           loading.value = false;
         },
         onComplete(allItems) {
           if (!isCurrent()) return;
+          updateFilteredCount();
           updateSongsFromLoader(allItems, true);
           if (ownedListId !== null && coverPlaylistMeta.value) {
             void playlistCoversStore.updateFromPages(
@@ -534,7 +470,7 @@ const fetchData = async () => {
     console.error('Fetch playlist error:', e);
     if (isCurrent() && playlist.value) toastStore.loadFailed('歌单详情');
   } finally {
-    if (generation === songLoadGeneration) loading.value = false;
+    if (isCurrent()) loading.value = false;
   }
 };
 
@@ -554,11 +490,6 @@ onIdChange(() => {
   songs.value = [];
   loadedSongCount.value = 0;
   playlistFilteredInvalidCount.value = 0;
-  comments.value = [];
-  hotComments.value = [];
-  commentPage.value = 1;
-  commentTotal.value = 0;
-  hasMoreComments.value = true;
   if (songLoader) {
     songLoader.abort();
     songLoader = null;
@@ -570,10 +501,38 @@ onIdChange(() => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
   songLoadGeneration++;
   songLoader?.abort();
   commentObserver?.disconnect();
   commentObserver = null;
+});
+
+const playlistSessionSources = [
+  () => playlistStore.userCollectionsGeneration,
+  () => userStore.isLoggedIn,
+  () => userStore.accountRevision,
+  () => userStore.info?.userid ?? userStore.info?.userId,
+  () => userStore.info?.token,
+];
+watch(
+  playlistSessionSources,
+  () => {
+    songLoadGeneration++;
+    songLoader?.abort();
+    songLoader = null;
+    playlist.value = null;
+    songs.value = [];
+    loadedSongCount.value = 0;
+    playlistFilteredInvalidCount.value = 0;
+    pendingAddedPlaylistSongs = [];
+    pendingRemovedPlaylistSongs = [];
+    loading.value = false;
+  },
+  { flush: 'sync' },
+);
+watch(playlistSessionSources, () => {
+  if (isActive.value) void fetchData();
 });
 
 watch(
@@ -760,6 +719,17 @@ const applyPlaylistContentChanges = () => {
 };
 
 const handlePlayAll = async () => {
+  const loader = songLoader;
+  const generation = songLoadGeneration;
+  const resourceId = getPlaylistId();
+  const requestSortField = sortField.value;
+  const requestSortOrder = sortOrder.value;
+  const requestQuery = searchQuery.value;
+  const isCurrent = () =>
+    !disposed &&
+    generation === songLoadGeneration &&
+    resourceId === getPlaylistId() &&
+    loader === songLoader;
   const queueSongs = displayedSongs.value.slice() as Song[];
   if (queueSongs.length === 0) return;
   const queueOpts = {
@@ -768,7 +738,7 @@ const handlePlayAll = async () => {
     subtitle: playlist.value?.nickname || playlist.value?.list_create_username || '',
     type: 'playlist' as const,
   };
-  await replaceQueueAndPlay(
+  const playRequest = replaceQueueAndPlay(
     playlistStore,
     playerStore,
     queueSongs,
@@ -776,13 +746,25 @@ const handlePlayAll = async () => {
     undefined,
     queueOpts,
   );
+  const queue = playlistStore.getQueueById(queueOpts.queueId);
+  const queuedSongs = queue?.songs;
+  const queueRevision = queue?.playbackRevision;
+  const isCurrentQueue = () =>
+    isCurrent() &&
+    playlistStore.activeQueueId === queueOpts.queueId &&
+    playlistStore.getQueueById(queueOpts.queueId) === queue &&
+    queue?.songs === queuedSongs &&
+    queue?.playbackRevision === queueRevision;
+  const played = await playRequest;
+  if (!played || !isCurrentQueue()) return;
   // 后台等待全部加载完，静默更新播放队列
-  if (songLoader && !songLoader.fullyLoaded && !songLoader.failed) {
-    const allSongs = orderPlaylistSongs(await songLoader.waitForAll());
-    const sortedAllSongs = sortSongs(allSongs, sortField.value, sortOrder.value, {
+  if (loader && !loader.failed) {
+    const allSongs = orderPlaylistSongs(await loader.waitForAll());
+    if (!isCurrentQueue() || !loader.fullyLoaded || loader.failed) return;
+    const sortedAllSongs = sortSongs(allSongs, requestSortField, requestSortOrder, {
       indexSource: allSongs,
     });
-    const displayedAllSongs = filterSongsByQuery(sortedAllSongs, searchQuery.value);
+    const displayedAllSongs = filterSongsByQuery(sortedAllSongs, requestQuery);
     if (displayedAllSongs.length > queueSongs.length) {
       playlistStore.setPlaybackQueueWithOptions(
         Array.from(displayedAllSongs) as Song[],
@@ -1079,6 +1061,7 @@ watch(
                   热门评论
                 </div>
                 <CommentList
+                  :resource-id="playlistCommentId"
                   :comments="hotComments"
                   :loading="loadingComments"
                   resourceType="playlist"
@@ -1088,6 +1071,7 @@ watch(
                   @deleted="fetchComments(true)"
                 />
                 <CommentList
+                  :resource-id="playlistCommentId"
                   :comments="comments"
                   :loading="loadingComments"
                   :total="commentTotal"

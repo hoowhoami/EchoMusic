@@ -1,5 +1,6 @@
 import type { PiniaPluginContext, StateTree } from 'pinia';
 import { getStorePersistenceKey } from '../../shared/storePersistence';
+import logger from '@/utils/logger';
 
 type PersistOptions =
   | boolean
@@ -99,14 +100,20 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
   let hydrated = false;
   let pendingSave = 0;
   let lastPersistedState: StateTree | null = null;
+  let writes = Promise.resolve();
 
   const hydration = window.electron.storage
     .getKv<StateTree>(storageKey)
     .then((saved) => {
       if (saved && typeof saved === 'object') {
-        store.$patch(pickDeclaredState(saved, store.$state));
+        store.$patch(buildPersistedState(pickDeclaredState(saved, store.$state), persist));
       }
       lastPersistedState = buildPersistedState(store.$state, persist);
+      hydrated = true;
+    })
+    .catch((error) => {
+      logger.warn('SqlitePersist', `Read store ${store.$id} failed`, error);
+      // Let startup continue and allow later mutations to persist again.
       hydrated = true;
     })
     .finally(() => {
@@ -120,8 +127,14 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
       window.clearTimeout(pendingSave);
       pendingSave = 0;
     }
-    lastPersistedState = null;
-    await window.electron?.storage?.deleteKv(storageKey);
+    const deletion = writes.then(async () => {
+      await window.electron?.storage?.deleteKv(storageKey);
+      lastPersistedState = null;
+    });
+    writes = deletion.catch((error) => {
+      logger.warn('SqlitePersist', `Clear store ${store.$id} failed`, error);
+    });
+    await deletion;
   };
 
   store.$subscribe(
@@ -131,9 +144,15 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
       pendingSave = window.setTimeout(() => {
         pendingSave = 0;
         const payload = buildPersistedState(state, persist);
-        if (lastPersistedState && isSamePersistedValue(payload, lastPersistedState)) return;
-        lastPersistedState = payload;
-        void window.electron?.storage?.setKv(storageKey, payload);
+        writes = writes
+          .then(async () => {
+            if (lastPersistedState && isSamePersistedValue(payload, lastPersistedState)) return;
+            await window.electron?.storage?.setKv(storageKey, payload);
+            lastPersistedState = payload;
+          })
+          .catch((error) => {
+            logger.warn('SqlitePersist', `Save store ${store.$id} failed`, error);
+          });
       }, 120);
     },
     // 持久化的均为全局单例 store，其订阅应随应用整个生命周期存在；

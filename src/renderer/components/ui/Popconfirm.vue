@@ -52,17 +52,19 @@ watch(
 );
 
 const setOpen = (value: boolean) => {
+  if ((value && props.disabled) || isOpen.value === value) return;
   isOpen.value = value;
   emit('update:open', value);
 };
 
 const handleCancel = () => {
+  if (!isOpen.value) return;
   setOpen(false);
   emit('cancel');
 };
 
 const handleConfirm = () => {
-  if (props.confirmDisabled || props.confirmLoading) return;
+  if (!isOpen.value || props.disabled || props.confirmDisabled || props.confirmLoading) return;
   setOpen(false);
   emit('confirm');
 };
@@ -70,7 +72,8 @@ const handleConfirm = () => {
 
 <template>
   <Popover
-    v-model:open="isOpen"
+    :open="isOpen"
+    @update:open="setOpen"
     trigger="click"
     :side="side"
     :align="align"

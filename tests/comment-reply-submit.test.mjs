@@ -1,73 +1,41 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { transformSync } from 'esbuild';
+import { fixture, row, page, deferred, flush } from './helpers/comment-component-fixture.mjs';
 
-const source = readFileSync(
-  new URL('../src/renderer/components/music/CommentList.vue', import.meta.url),
-  'utf8',
-);
-const handler = source.slice(
-  source.indexOf('async function submitFloorReply('),
-  source.indexOf('// 评论内容展开/收起'),
-);
-const compiled = transformSync(handler, { loader: 'ts' }).code;
-function setup(send, refresh) {
-  const root = { id: '1' },
-    target = { id: '2' };
-  const replyRoot = { value: root },
-    replyTarget = { value: target },
-    replyBusy = { value: true };
-  const state = { expanded: false };
-  const submit = new Function(
-    'props',
-    'sendFloorComment',
-    'replyRoot',
-    'replyTarget',
-    'replyBusy',
-    'getFloorState',
-    'fetchFloorReplies',
-    `${compiled}; return submitFloorReply;`,
-  )(
-    { sendFloorReply: send, resourceType: 'music' },
-    send,
-    replyRoot,
-    replyTarget,
-    replyBusy,
-    () => state,
-    refresh,
-  );
-  return { submit, replyRoot, replyTarget, replyBusy, state, root, target };
-}
-test('successful send ends editing before a pending floor refresh can unmount the composer', async () => {
-  let finishRefresh;
-  const pending = new Promise((resolve) => {
-    finishRefresh = resolve;
+function setup(t) {
+  const f = fixture(t, 'CommentList', {
+    comments: [row(1), row(2, { raw: { pid: 1 } })],
+    resourceId: 'resource',
   });
-  const ui = setup(
-    async () => {},
-    () => {
-      assert.equal(ui.replyRoot.value, null);
-      assert.equal(ui.replyTarget.value, null);
-      return pending;
-    },
-  );
-  await ui.submit('333');
-  assert.equal(ui.replyBusy.value, false);
-  assert.equal(ui.state.expanded, true);
-  finishRefresh();
-  await pending;
-  assert.equal(ui.replyTarget.value, null);
+  const [root, target] = f.view.props.comments;
+  f.view.startReply(root, target);
+  f.view.replyBusy.value = true;
+  return { f, root, target };
+}
+test('successful send ends editing before a pending floor refresh can unmount the composer', async (t) => {
+  const { f } = setup(t),
+    pending = deferred();
+  f.api.getFloorComments = () => {
+    assert.equal(f.view.replyRoot.value, null);
+    assert.equal(f.view.replyTarget.value, null);
+    return pending.promise;
+  };
+  await f.view.submitFloorReply('333');
+  assert.equal(f.view.replyBusy.value, false);
+  assert.equal(f.view.getFloorState('1').expanded, true);
+  assert.equal(f.notices.length, 1);
+  pending.resolve(page([]));
+  await flush();
+  assert.equal(f.view.replyTarget.value, null);
 });
-test('failed send keeps the editor target and does not refresh the list', async () => {
-  const ui = setup(
-    async () => {
-      throw new Error('send failed');
-    },
-    () => assert.fail('unexpected refresh'),
-  );
-  await assert.rejects(ui.submit('333'), /send failed/);
-  assert.equal(ui.replyRoot.value, ui.root);
-  assert.equal(ui.replyTarget.value, ui.target);
-  assert.equal(ui.state.expanded, false);
+test('failed send keeps the editor target and does not refresh the list', async (t) => {
+  const { f, root, target } = setup(t);
+  f.api.sendFloorComment = async () => {
+    throw new Error('send failed');
+  };
+  f.api.getFloorComments = () => assert.fail('unexpected refresh');
+  await assert.rejects(f.view.submitFloorReply('333'), /send failed/);
+  assert.equal(f.view.replyRoot.value, root);
+  assert.equal(f.view.replyTarget.value, target);
+  assert.equal(f.view.getFloorState('1').expanded, false);
 });

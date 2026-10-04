@@ -27,7 +27,8 @@ const GRADE_SYNC_DIFF_SEC = 60;
 export const createListeningTimeManager = (state: PlayerState) => {
   const user = useUserStore();
   const report = useListenReportStore();
-  const account = () => (user.isLoggedIn ? `${user.info?.userid}:${user.info?.token}` : '');
+  const account = () =>
+    user.isLoggedIn ? `${user.info?.userid}:${user.info?.token}:${user.accountRevision}` : '';
   const active = (key: string) => Boolean(key) && account() === key;
   const assertSuccess = (body: any) => {
     if (
@@ -50,6 +51,7 @@ export const createListeningTimeManager = (state: PlayerState) => {
     start: async (identity) => {
       if (!active(identity.account)) return false;
       await waitForSessionEventGap();
+      if (!active(identity.account)) return false;
       lastSessionEventAt = Date.now();
       assertSuccess(await reportListeningEvent({ event: 'start', mixsongid: identity.mixsongid }));
       if (!active(identity.account)) return false;
@@ -59,6 +61,7 @@ export const createListeningTimeManager = (state: PlayerState) => {
     end: async (identity, duration, endState) => {
       if (!active(identity.account)) return;
       await waitForSessionEventGap();
+      if (!active(identity.account)) return;
       lastSessionEventAt = Date.now();
       const result = await reportListeningEvent({
         event: 'end',
@@ -117,7 +120,7 @@ export const createListeningTimeManager = (state: PlayerState) => {
           'Grade sync network-uncertain; dropping window to avoid duplicate',
           error,
         );
-        pendingPlayedMs -= diffSec * 1000;
+        if (active(accountKey)) pendingPlayedMs -= diffSec * 1000;
         return;
       }
       // request 直接解析返回响应 body（status=1 成功 / 502 业务拒绝）。

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, type CSSProperties } from 'vue';
-import { AvatarRoot, AvatarImage, AvatarFallback } from 'reka-ui';
+import { computed, ref, watch, type CSSProperties } from 'vue';
+import { AvatarRoot, AvatarImage, AvatarFallback, type AvatarImageEmits } from 'reka-ui';
 import { iconUser } from '@/icons';
 import Skeleton from './Skeleton.vue';
 
@@ -25,6 +25,20 @@ const props = withDefaults(defineProps<Props>(), {
   delayMs: 0,
 });
 
+// Each src keys a fresh Reka loading context, including when the address is cleared.
+const loadingStatus = ref<AvatarImageEmits['loadingStatusChange'][0]>('idle');
+const isLoading = computed(
+  () => Boolean(props.src) && (loadingStatus.value === 'idle' || loadingStatus.value === 'loading'),
+);
+
+watch(
+  () => props.src,
+  (src) => {
+    loadingStatus.value = src ? 'loading' : 'error';
+  },
+  { immediate: true, flush: 'sync' },
+);
+
 const sizeStyle = computed<CSSProperties | undefined>(() => {
   if (props.size === undefined || props.size === null || props.size === '') {
     return undefined;
@@ -43,22 +57,27 @@ const sizeStyle = computed<CSSProperties | undefined>(() => {
 </script>
 
 <template>
-  <AvatarRoot :class="['relative flex overflow-hidden shrink-0', props.class]" :style="sizeStyle">
+  <AvatarRoot
+    :key="src"
+    :class="['relative flex overflow-hidden shrink-0', props.class]"
+    :style="sizeStyle"
+  >
     <!-- 1. 图片主体 -->
     <AvatarImage
       v-if="src"
       :src="src"
       :alt="alt"
-      class="h-full w-full object-cover transition-opacity duration-500"
+      @loading-status-change="loadingStatus = $event"
+      class="h-full w-full object-cover motion-image-feedback"
     />
 
     <!-- 2. 加载中 & 失败占位 -->
     <AvatarFallback
-      :delay-ms="delayMs"
+      :delay-ms="delayMs > 0 ? delayMs : undefined"
       class="flex h-full w-full items-center justify-center bg-[var(--control-muted-bg)]"
     >
       <!-- 加载中骨架屏 -->
-      <div v-if="showSkeleton" class="absolute inset-0 z-10" :class="skeletonClass">
+      <div v-if="showSkeleton && isLoading" class="absolute inset-0 z-10" :class="skeletonClass">
         <Skeleton width="100%" height="100%" :radius="0" />
       </div>
 

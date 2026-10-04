@@ -5,6 +5,7 @@ import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import { useDialogStack } from '@/components/ui/dialogStack';
 import { useVModel } from '@vueuse/core';
+import { useCachedOverlayOpen } from '@/composables/useCachedOverlayOpen';
 import { iconX } from '@/icons';
 import {
   DialogContent,
@@ -49,7 +50,7 @@ const emit = defineEmits<{
   (e: 'update:open', value: boolean): void;
 }>();
 
-const open = useVModel(props, 'open', emit, { defaultValue: false });
+const open = useCachedOverlayOpen(useVModel(props, 'open', emit, { defaultValue: false }));
 const slots = useSlots();
 const {
   activationKey,
@@ -211,13 +212,13 @@ const handleInteractOutside = (event: Event) => {
 
 :global(.dialog-overlay[data-state='open']) {
   opacity: 1;
-  animation: dialog-overlay-in 160ms ease-out;
+  animation: dialog-overlay-in var(--motion-duration-normal) var(--motion-ease-enter);
   -webkit-app-region: no-drag;
 }
 
 :global(.dialog-overlay[data-state='closed']) {
   opacity: 0;
-  animation: dialog-overlay-out 140ms ease-in;
+  animation: dialog-overlay-out var(--motion-duration-exit) var(--motion-ease-exit);
 }
 
 :global(.dialog-content) {
@@ -247,13 +248,13 @@ const handleInteractOutside = (event: Event) => {
 
 :global(.dialog-content[data-state='open']) {
   opacity: 1;
-  animation: dialog-content-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: dialog-content-in var(--motion-duration-normal) var(--motion-ease-enter);
   -webkit-app-region: no-drag;
 }
 
 :global(.dialog-content[data-state='closed']) {
   opacity: 0;
-  animation: dialog-content-out 140ms cubic-bezier(0.4, 0, 1, 1);
+  animation: dialog-content-out var(--motion-duration-exit) var(--motion-ease-exit);
 }
 
 @keyframes dialog-overlay-in {
