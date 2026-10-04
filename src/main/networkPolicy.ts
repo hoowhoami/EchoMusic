@@ -23,6 +23,7 @@ let currentProxyPassword = '';
 let credentialRevision = 0;
 let lifecycleInstalled = false;
 let applyQueue: Promise<void> = Promise.resolve();
+let wakeRecovery: Promise<void> | null = null;
 const registeredSessions = new Set<Session>();
 const appliedKeys = new WeakMap<Session, string>();
 
@@ -121,6 +122,55 @@ export const updateNetworkPolicy = async (
   });
   applyQueue = task.catch(() => undefined);
   await task;
+};
+
+/** Reset transient transport state after sleep without touching cookies or stored settings. */
+export const recoverNetworkAfterWake = (): Promise<void> => {
+  if (wakeRecovery) return wakeRecovery;
+
+  const task = applyQueue.then(async () => {
+    const sessions = [...registeredSessions];
+    log.info('[Network] Wake recovery started', { sessionCount: sessions.length });
+    const results = await Promise.allSettled(
+      sessions.map(async (networkSession, sessionIndex) => {
+        const operations = [
+          ['connections', () => networkSession.closeAllConnections()],
+          ['dns', () => networkSession.clearHostResolverCache()],
+          ['proxy', () => networkSession.forceReloadProxyConfig()],
+        ] as const;
+        const outcomes = await Promise.allSettled(
+          operations.map(([, run]) => Promise.resolve().then(run)),
+        );
+        let failed = false;
+        outcomes.forEach((outcome, index) => {
+          if (outcome.status !== 'rejected') return;
+          failed = true;
+          log.warn('[Network] Wake recovery operation failed', {
+            sessionIndex,
+            operation: operations[index][0],
+            error: String(outcome.reason),
+          });
+        });
+        if (failed) throw new Error('Network session recovery failed');
+      }),
+    );
+    const failedSessions = results.filter((result) => result.status === 'rejected').length;
+    log.info('[Network] Wake recovery finished', {
+      sessionCount: sessions.length,
+      failedSessions,
+    });
+    if (failedSessions > 0)
+      throw new Error(`Network wake recovery failed for ${failedSessions} sessions`);
+  });
+  // New managed requests and proxy updates wait until recovery settles. Do not retry requests:
+  // closing old connections can fail in-flight writes which are unsafe to replay automatically.
+  applyQueue = task.catch(() => undefined);
+  wakeRecovery = task;
+  const finish = () => {
+    if (wakeRecovery === task) wakeRecovery = null;
+  };
+  void task.then(finish, finish);
+  return task;
 };
 
 export const attachProxyLoginHandler = (request: ClientRequest) => {

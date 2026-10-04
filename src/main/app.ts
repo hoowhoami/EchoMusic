@@ -43,7 +43,7 @@ import {
 import { isUpdateInstallQuitRequested } from './updateInstallQuit';
 import type { PlayerController } from './player/controller';
 import { initializeNetworkSettings } from './networkSettings';
-import { installNetworkPolicyLifecycle } from './networkPolicy';
+import { installNetworkPolicyLifecycle, recoverNetworkAfterWake } from './networkPolicy';
 
 const WM_TASKBARCREATED = 0x031a;
 const playerRef: { current: PlayerController | null } = { current: null };
@@ -198,6 +198,7 @@ if (!gotTheLock) {
     disposePowerMonitor = initPowerMonitor({
       getMainWindow,
       getController: () => playerRef.current,
+      recoverNetwork: recoverNetworkAfterWake,
     });
 
     // --- 创建主窗口 ---

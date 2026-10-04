@@ -7,6 +7,7 @@ import log from './logger';
 interface PowerMonitorContext {
   getMainWindow: () => BrowserWindow | null;
   getController: () => PlayerController | null;
+  recoverNetwork?: () => Promise<void>;
 }
 
 const WAKE_EVENT_DEDUPE_MS = 15_000;
@@ -49,7 +50,7 @@ const waitForRetry = (delayMs: number, signal: AbortSignal): Promise<boolean> =>
  * 可能停在坏状态，表现为「假死」。这里在主进程做恢复，
  * 不依赖渲染进程是否已解冻：
  * - suspend：若在播放则暂停（让音频输出干净 idle）+ 释放 power-save-blocker
- * - resume：重建音频输出设备 + 按需恢复播放 + 通知渲染进程重新枚举设备
+ * - resume：恢复网络会话 + 重建音频输出设备 + 按需恢复播放 + 通知渲染进程重新枚举设备
  *
  * 主路径只处理 suspend/resume；Windows 的 unlock-screen 仅在已经确认收到
  * suspend、但 resume 遗失时兜底，普通锁屏解锁不会打断播放。
@@ -128,12 +129,19 @@ export function initPowerMonitor(ctx: PowerMonitorContext): () => void {
       log.warn('[PowerMonitor] setSystemSuspended(false) failed:', formatLogError(err));
     }
 
-    const recovery = recoverAudio(
-      controller,
-      shouldResume,
-      recoveryAbortController.signal,
-      () => !isSuspended,
-    );
+    const recoverOutput = () =>
+      recoverAudio(controller, shouldResume, recoveryAbortController.signal, () => !isSuspended);
+    const recovery = ctx.recoverNetwork
+      ? Promise.resolve()
+          .then(() => {
+            if (disposed || isSuspended) return;
+            return ctx.recoverNetwork?.();
+          })
+          .catch((error) => {
+            log.warn('[PowerMonitor] Network wake recovery failed:', formatLogError(error));
+          })
+          .then(recoverOutput)
+      : recoverOutput();
     recoveryInFlight = recovery;
     const finishRecovery = (succeeded: boolean) => {
       if (recoveryInFlight === recovery) recoveryInFlight = null;
