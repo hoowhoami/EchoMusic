@@ -604,9 +604,6 @@ const providerEqLocked = computed(() => {
   // Provider is active so preset-owned EQ is never applied twice.
   return providerConfigured.value || !!player.playbackDiagnostics.graph?.providerPath;
 });
-const audioEffectPresetActive = computed(
-  () => !isResolvedCloudSource.value && player.audioEffect !== 'none',
-);
 const isAudioEffectOptionActive = (effect: AudioEffectValue) =>
   isResolvedCloudSource.value ? effect === 'none' : player.audioEffect === effect;
 
@@ -809,13 +806,9 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
         type="button"
         class="relative p-2 transition-all hover:scale-110 active:scale-90"
         :class="
-          audioEffectPresetActive || gains.some((g: number) => g !== 0) || spatialEffectActive
-            ? variant === 'lyric'
-              ? 'text-black dark:text-white'
-              : 'text-primary-text'
-            : variant === 'lyric'
-              ? 'text-black/40 dark:text-white/40'
-              : 'text-text-main/50 hover:text-primary-text'
+          variant === 'lyric'
+            ? 'text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white'
+            : 'text-text-main/50 hover:text-primary-text'
         "
         aria-label="音效与均衡器"
       >

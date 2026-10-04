@@ -207,6 +207,8 @@ const validateManifestCapabilities = (manifest: EchoPluginManifest) => {
   if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
     return 'manifest.capabilities 必须是对象';
   }
+  if (capabilities.theme !== undefined && typeof capabilities.theme !== 'boolean')
+    return 'manifest.capabilities.theme 必须是布尔值';
   if (capabilities.audioSource !== undefined && typeof capabilities.audioSource !== 'boolean') {
     return 'manifest.capabilities.audioSource 必须是布尔值';
   }

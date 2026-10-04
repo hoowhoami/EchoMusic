@@ -14,7 +14,6 @@ import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import { iconSearch, iconX } from '@/icons';
 import { marked } from 'marked';
 import { sanitizeHtml } from '@/utils/sanitize';
-import AppearanceSettingsSection from './settings/components/AppearanceSettingsSection.vue';
 import InterfaceSettingsSection from './settings/components/InterfaceSettingsSection.vue';
 import WindowSettingsSection from './settings/components/WindowSettingsSection.vue';
 import FontSettingsSection from './settings/components/FontSettingsSection.vue';
@@ -40,7 +39,7 @@ const currentPlatform = window.electron?.platform;
 
 const props = withDefaults(defineProps<{ embedded?: boolean; initialSection?: string }>(), {
   embedded: false,
-  initialSection: 'appearance',
+  initialSection: 'interface',
 });
 const emit = defineEmits<{ (event: 'close'): void }>();
 const closeSettings = () => emit('close');
@@ -124,35 +123,11 @@ interface SettingsRenderSection {
 
 const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
   {
-    id: 'appearance',
-    label: '主题与外观',
-    order: 100,
-    component: AppearanceSettingsSection,
-    searchKeywords: [
-      '透明背景',
-      '背景透明度',
-      '毛玻璃',
-      '背景底色',
-      '主题模式',
-      '浅色模式',
-      '深色模式',
-      '跟随系统',
-      '主题色来源',
-      '跟随封面',
-      '预设主题色',
-      '自定义主题色',
-      '顶部渐变色',
-      '渐变范围',
-      '渐变强度',
-      '全局主题色',
-    ],
-  },
-  {
     id: 'interface',
     label: '界面显示',
-    order: 150,
+    order: 100,
     component: InterfaceSettingsSection,
-    searchKeywords: ['搜索框默认推荐词', '侧边栏折叠'],
+    searchKeywords: ['深浅色模式', '跟随系统', '浅色', '深色', '搜索框默认推荐词', '动态专辑封面'],
   },
   {
     id: 'window',
@@ -852,7 +827,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--surface-card-base);
+  background: transparent;
 }
 
 .settings-heading {

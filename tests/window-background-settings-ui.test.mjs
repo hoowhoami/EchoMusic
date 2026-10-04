@@ -58,6 +58,7 @@ function setup(platform = 'darwin', closeBehavior = 'tray') {
     isWindows: platform === 'win32',
     supportsCustomWindowControls: platform === 'win32' || platform === 'linux',
     SettingsSectionShell: { name: 'SettingsSectionShell' },
+    WindowAppearanceSettings: { name: 'WindowAppearanceSettings' },
     Select: { name: 'Select' },
     Switch: { name: 'Switch' },
     Icon: { name: 'Icon' },

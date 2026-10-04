@@ -172,6 +172,7 @@ function setupFixture(t) {
   });
   fixture.lyric = reactive({
     lines: [],
+    displayLines: [],
     sourceDialogOpen: false,
     currentTimeOffset: 0,
     loadedHash: '',
@@ -220,7 +221,6 @@ function setupFixture(t) {
     addToPlaybackQueues: ref([]),
     canAddToPlaylist: ref(true),
     handleOpenAddToPlaylist() {
-      this;
       fixture.controls.showAddToPlaylistDialog.value = true;
     },
     handleAddToQueue() {},
@@ -248,7 +248,7 @@ function setupFixture(t) {
   return { calls, listeners };
 }
 
-function mountPage(t) {
+function mountPage() {
   const tree = node('root');
   const app = renderer.createApp(api.Page);
   app.component('Icon', { render: () => h('icon') });
@@ -292,7 +292,7 @@ test('host and none modes replace native content, keep shared panels, and revoke
     },
   });
   const dispose = plugin.register({ id: 'custom', component });
-  const tree = mountPage(t);
+  const tree = mountPage();
   assert.ok(find(tree, 'CoverMode.vue'));
   fixture.settings.lyricsPageProvider = key();
   await flush();
@@ -318,6 +318,42 @@ test('host and none modes replace native content, keep shared panels, and revoke
   assert.throws(() => page.panels.open('queue'), /失效/);
 });
 
+test('switching skins preserves the host skin drawer while cleaning transient panels', async (t) => {
+  const { calls, listeners } = setupFixture(t);
+  const plugin = makeApi();
+  const component = { render: () => h('replacement') };
+  plugin.register({ id: 'custom', component });
+  plugin.register({ id: 'second', component });
+  const tree = mountPage();
+  plugin.openSkins();
+  await flush();
+  const drawer = find(tree, 'LyricSettingsDrawer.vue');
+  assert.equal(drawer.props.open, true);
+  for (const provider of [key(), key('test', 'second'), 'host:cover', key()]) {
+    fixture.controls.isQueueDrawerOpen.value = true;
+    fixture.lyric.sourceDialogOpen = true;
+    fixture.settings.lyricsPageProvider = provider;
+    await flush();
+    assert.equal(find(tree, 'LyricSettingsDrawer.vue'), drawer, 'drawer stays mounted');
+    assert.equal(drawer.props.open, true, provider);
+    assert.equal(drawer.props.view, 'skins');
+    assert.equal(fixture.controls.isQueueDrawerOpen.value, false);
+    assert.equal(fixture.lyric.sourceDialogOpen, false);
+  }
+  api.removeLyricsPagesByPlugin('test');
+  await flush();
+  assert.equal(drawer.props.open, true, 'fallback leaves skin selection available');
+  assert.equal(fixture.settings.lyricsPageProvider, 'host:cover');
+  listeners.get('keydown')({ key: 'Escape', preventDefault() {}, stopImmediatePropagation() {} });
+  await flush();
+  assert.equal(drawer.props.open, false, 'explicit Escape still closes the drawer');
+  assert.equal(
+    calls.some(([name]) => name === 'visible'),
+    false,
+    'Escape keeps the player open',
+  );
+});
+
 test('render failures recover native content, reset selection, and do not retry on each open', async (t) => {
   setupFixture(t);
   const errors = [];
@@ -332,7 +368,7 @@ test('render failures recover native content, reset selection, and do not retry 
     },
   });
   fixture.settings.lyricsPageProvider = key();
-  const tree = mountPage(t);
+  const tree = mountPage();
   await flush();
   assert.ok(find(tree, 'CoverMode.vue'));
   assert.equal(attempts, 1);
@@ -349,7 +385,12 @@ test('render failures recover native content, reset selection, and do not retry 
 });
 
 test('lyrics page register throws without capabilities.lyricsPage', () => {
-  const denied = api.createLyricsPageApi('denied', () => {}, () => {}, false);
+  const denied = api.createLyricsPageApi(
+    'denied',
+    () => {},
+    () => {},
+    false,
+  );
   assert.throws(
     () => denied.register({ id: 'custom', component: { render: () => null } }),
     /lyricsPage/,
@@ -398,7 +439,7 @@ test('plugin panels use host surfaces; comments keep their original song and Esc
     },
   });
   fixture.settings.lyricsPageProvider = key();
-  const tree = mountPage(t);
+  const tree = mountPage();
   await page.panels.open('comments');
   await flush();
   assert.equal(find(tree, 'CommentDrawer.vue').props.resourceId, '100');

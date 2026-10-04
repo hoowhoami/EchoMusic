@@ -4,6 +4,7 @@ import type { EchoPluginDescriptor } from '../../shared/plugins';
 export const createPluginMetadataRegistry = (
   scan: () => Promise<EchoPluginDescriptor[]>,
   onRevoke: (pluginIds: string[]) => void,
+  onScanCommitted?: (presentPluginIds: Set<string>) => void,
 ) => {
   let records = new Map<string, EchoPluginDescriptor>();
   let enabled: Record<string, boolean> = {};
@@ -101,6 +102,8 @@ export const createPluginMetadataRegistry = (
             .map(([id]) => id);
           records = next;
           if (revoked.length) onRevoke(revoked);
+          // Keep diagnostics for invalid/ambiguous plugins and in-flight installs as well.
+          onScanCommitted?.(new Set([...plugins.map((plugin) => plugin.id), ...mutations]));
           return;
         }
       })().finally(() => {

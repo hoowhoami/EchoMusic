@@ -16,6 +16,9 @@ import ImportPlaylistDialog from '@/components/music/ImportPlaylistDialog.vue';
 import PlaylistOrderDialog from '@/components/music/PlaylistOrderDialog.vue';
 import type { PlaylistOrderTarget } from '@/services/playlistOrdering';
 import SidebarLayoutEditor from './SidebarLayoutEditor.vue';
+import SidebarShortcuts from './SidebarShortcuts.vue';
+import SidebarAccountPopover from './SidebarAccountPopover.vue';
+import SidebarTools from './SidebarTools.vue';
 import {
   resolveSidebarLayout,
   type SidebarLayoutItem,
@@ -28,16 +31,14 @@ import {
   iconExternalLink,
   iconHeart,
   iconPlaylistAdd,
-  iconPulse,
+  iconRadio,
   iconPlus,
   iconSearch,
-  iconSettings,
   iconShoppingBag,
   iconSparkles,
   iconTrash,
   iconChevronDown,
   iconArrowsSort,
-  iconDotsVertical,
 } from '@/icons';
 import type { PlaylistMeta } from '@/models/playlist';
 import { usePlaylistStore } from '@/stores/playlist';
@@ -68,7 +69,6 @@ const toastStore = useToastStore();
 const settingStore = useSettingStore();
 const importTaskStore = useImportTaskStore();
 
-const isMac = computed(() => window.electron.platform === 'darwin');
 const isLoggedIn = computed(() => userStore.isLoggedIn);
 const userInfo = computed(() => userStore.info);
 
@@ -101,7 +101,6 @@ const showCreateDialog = ref(false);
 const showRemoveDialog = ref(false);
 const showImportDialog = ref(false);
 const showCreateMenu = ref(false);
-const showPlaylistActions = ref(false);
 const isCreatingPlaylist = ref(false);
 const isRemovingPlaylist = ref(false);
 const newPlaylistName = ref('');
@@ -119,7 +118,7 @@ const currentUserIdNumber = computed<number | undefined>(() => {
 
 const iconMap = {
   sparkles: iconSparkles,
-  pulse: iconPulse,
+  radio: iconRadio,
   compass: iconCompass,
   search: iconSearch,
   clock: iconClock,
@@ -188,7 +187,7 @@ const builtinSidebarSections = [
     id: 'library',
     title: '我的乐库',
     order: 200,
-    collapsible: true,
+    collapsible: false,
     items: [
       {
         id: 'favorites',
@@ -203,7 +202,7 @@ const builtinSidebarSections = [
         key: 'personal-fm',
         title: '私人 FM',
         path: '/main/personal-fm',
-        builtinIcon: 'pulse',
+        builtinIcon: 'radio',
         order: 20,
       },
       {
@@ -341,7 +340,9 @@ const rawMenuGroups = computed<SidebarSection[]>(() => {
   for (const section of builtinSidebarSections) {
     sections.set(section.id, {
       ...section,
-      items: [...section.items],
+      items: section.items.filter(
+        (item) => !['home', 'explore', 'personal-fm', 'purchased'].includes(item.id),
+      ),
     });
   }
 
@@ -391,7 +392,6 @@ const toggleSection = (section: { id: string; collapsible?: boolean }) => {
 const showPlaylistOrder = ref(false);
 const playlistOrderTarget = ref<PlaylistOrderTarget>({ kind: 'playlists', type: 0, fixedIds: [] });
 const openPlaylistOrder = () => {
-  showPlaylistActions.value = false;
   playlistOrderTarget.value = {
     kind: 'playlists',
     type: activePlaylistTab.value === 0 ? 0 : 1,
@@ -490,8 +490,9 @@ const defaultPlaylistEditSection = computed<SidebarSection | null>(() => {
   if (!items.length) return null;
   return {
     id: DEFAULT_PLAYLIST_SECTION_ID,
-    title: '自建歌单',
+    title: '固定歌单',
     order: 1000,
+    lockedOrder: true,
     collapsible: false,
     items,
   };
@@ -500,7 +501,10 @@ const defaultPlaylistEditSection = computed<SidebarSection | null>(() => {
 const editableMenuGroups = computed(() => {
   const sections = resolveSidebarLayout(rawMenuGroups.value, settingStore.sidebarLayout, {
     includeHidden: true,
-  });
+  }).map((section) => ({
+    ...section,
+    title: section.id === 'library' ? '音乐菜单' : section.title,
+  }));
   const playlistSection = defaultPlaylistEditSection.value;
   if (!playlistSection) return sections;
   return [
@@ -785,11 +789,12 @@ watch(
 <template>
   <aside
     v-bind="attrs"
-    class="sidebar h-full flex flex-col bg-bg-sidebar border-r border-[var(--border-subtle)] select-none transition-all duration-300 relative overflow-hidden"
+    class="sidebar h-full flex flex-col select-none transition-all duration-300 relative overflow-hidden"
     :class="{ 'is-rail': collapsed }"
   >
+    <div class="sidebar-decoration" aria-hidden="true"><slot name="decoration" /></div>
     <div
-      :class="['w-full shrink-0 relative', isMac ? 'h-12' : 'h-6']"
+      class="sidebar-window-strip w-full shrink-0 relative"
       :style="{
         minHeight: 'var(--window-controls-left-height, 0px)',
       }"
@@ -828,9 +833,9 @@ watch(
           :scrollbar-inset="3"
           :content-props="{ class: 'sidebar-rail-scroll-content' }"
         >
+          <SidebarShortcuts collapsed />
           <div v-if="visibleRailMenuGroups.length > 0" class="sidebar-rail-nav">
             <template v-for="group in visibleRailMenuGroups" :key="group.id">
-              <div class="sidebar-rail-divider" aria-hidden="true"></div>
               <Tooltip
                 v-for="item in group.items"
                 :key="item.key"
@@ -879,7 +884,6 @@ watch(
             </template>
           </div>
           <div class="sidebar-rail-playlists">
-            <div class="sidebar-rail-divider" aria-hidden="true"></div>
             <div
               class="sidebar-rail-tabs"
               :class="activePlaylistTab === 1 ? 'is-favorited' : 'is-created'"
@@ -958,167 +962,58 @@ watch(
         </Scrollbar>
 
         <div class="sidebar-rail-bottom">
-          <Popover
-            v-model:open="showPlaylistActions"
-            trigger="click"
-            side="right"
-            align="end"
-            :side-offset="8"
-            :show-arrow="false"
-            content-class="sidebar-rail-more-menu"
-          >
-            <template #trigger>
-              <Tooltip content="歌单操作" side="right">
-                <template #trigger>
-                  <Button
-                    variant="unstyled"
-                    size="none"
-                    type="button"
-                    class="sidebar-rail-item"
-                    aria-label="歌单操作"
-                  >
-                    <Icon :icon="iconDotsVertical" width="18" height="18" />
-                  </Button>
-                </template>
-              </Tooltip>
-            </template>
-
-            <div class="sidebar-rail-more-list">
-              <div class="sidebar-sort-menu-title">歌单操作</div>
-              <button
-                type="button"
-                class="sidebar-sort-menu-item"
-                :disabled="!isLoggedIn"
-                @click="
-                  () => {
-                    showPlaylistActions = false;
-                    refreshUserPlaylists();
-                  }
-                "
-              >
-                刷新歌单
-              </button>
-              <button
-                type="button"
-                class="sidebar-sort-menu-item"
-                :disabled="!isLoggedIn || activePlaylistTab !== 0"
-                @click="
-                  () => {
-                    showPlaylistActions = false;
-                    openCreatePlaylistDialog();
-                  }
-                "
-              >
-                新建空歌单
-              </button>
-              <button
-                type="button"
-                class="sidebar-sort-menu-item"
-                :disabled="!isLoggedIn || activePlaylistTab !== 0"
-                @click="
-                  () => {
-                    showPlaylistActions = false;
-                    showImportDialog = true;
-                  }
-                "
-              >
-                导入外部歌单
-              </button>
-              <div class="sidebar-sort-menu-divider"></div>
-              <button
-                type="button"
-                class="sidebar-sort-menu-item"
-                :disabled="!isLoggedIn"
-                @click="openPlaylistOrder"
-              >
-                自定义顺序…
-              </button>
-            </div>
-          </Popover>
-
-          <SidebarLayoutEditor :sections="editableMenuGroups" collapsed />
-
-          <Tooltip content="设置" side="right">
-            <template #trigger>
-              <Button
-                variant="unstyled"
-                size="none"
-                class="sidebar-rail-item"
-                aria-label="设置"
-                @click="router.push('/main/settings')"
-              >
-                <Icon :icon="iconSettings" width="19" height="19" />
-              </Button>
-            </template>
-          </Tooltip>
+          <SidebarTools collapsed />
         </div>
       </div>
     </template>
 
     <template v-else>
       <div class="sidebar-full-panel flex flex-col flex-1 min-h-0">
-        <div :class="['px-4 pb-4 shrink-0 no-drag', isMac ? 'mt-0' : 'mt-0']">
-          <div
-            class="user-info-card flex items-center overflow-hidden bg-bg-info-card border border-[var(--border-subtle)] rounded-[20px] p-1 transition-all duration-200"
-          >
-            <div
-              class="sidebar-user-link min-w-0 flex-1 flex items-center gap-3 p-1.5 rounded-[14px] cursor-pointer transition-all active:scale-[0.98]"
-              @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
-            >
-              <div
-                class="w-8.5 h-8.5 shrink-0 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden"
-              >
-                <Avatar :src="isLoggedIn ? userInfo?.pic : ''" class="w-full h-full" />
-              </div>
-              <div class="flex flex-col min-w-0 flex-1 overflow-hidden">
-                <span
-                  class="text-[13px] font-semibold text-primary-text truncate leading-tight tracking-tight"
+        <div class="sidebar-profile shrink-0 no-drag">
+          <div class="user-info-card flex items-center transition-colors duration-200">
+            <Tooltip :content="isLoggedIn ? userInfo?.nickname : ''" overflowOnly>
+              <template #trigger>
+                <button
+                  type="button"
+                  class="sidebar-user-link"
+                  @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
                 >
-                  {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
-                </span>
-                <span
-                  class="truncate text-[9px] text-text-secondary font-medium tracking-wider inline-flex items-center gap-1.5"
-                >
-                  <template v-if="isLoggedIn">
-                    <span class="shrink-0 opacity-60">Lv.{{ userInfo?.p_grade || 0 }}</span>
-                    <span class="h-2.5 w-px shrink-0 bg-text-main/15"></span>
-                    <span
-                      v-if="vipBadge === 'svip'"
-                      class="shrink-0 px-0.75 py-[1.5px] rounded-sm bg-linear-to-r from-orange-500 to-orange-500/80 text-[8px] text-white font-black leading-none"
-                      >SVIP</span
-                    >
-                    <span
-                      v-else-if="vipBadge === 'tvip'"
-                      class="shrink-0 px-0.75 py-[1.5px] rounded-sm bg-linear-to-r from-[#07C160] to-[#07C160]/80 text-[8px] text-white font-black leading-none"
-                      >TVIP</span
-                    >
-                    <span
-                      v-else
-                      class="shrink-0 px-0.75 py-[1.5px] rounded-sm bg-linear-to-r from-gray-500/60 to-gray-500/40 text-[8px] text-white/60 font-black leading-none"
-                      >NOVIP</span
-                    >
-                  </template>
+                  <div class="sidebar-profile-avatar">
+                    <Avatar :src="isLoggedIn ? userInfo?.pic : ''" class="w-full h-full" />
+                  </div>
+                  <div class="sidebar-profile-copy">
+                    <span class="sidebar-profile-name" data-tooltip-label>
+                      {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
+                    </span>
+                    <span class="sidebar-profile-meta">
+                      <template v-if="isLoggedIn">
+                        <span class="sidebar-profile-level">Lv.{{ userInfo?.p_grade || 0 }}</span>
+                        <span v-if="vipBadge === 'svip'" class="sidebar-member-badge is-svip"
+                          >SVIP</span
+                        >
+                        <span v-else-if="vipBadge === 'tvip'" class="sidebar-member-badge is-tvip"
+                          >TVIP</span
+                        >
+                        <span v-else class="sidebar-member-badge">NOVIP</span>
+                      </template>
 
-                  <span v-else class="opacity-60">点击登录账号</span>
-                </span>
-              </div>
-            </div>
-            <div class="sidebar-user-divider"></div>
-            <Button
-              variant="unstyled"
-              size="none"
-              class="sidebar-settings-btn p-2 mr-1 rounded-[14px] text-text-secondary transition-all active:scale-90"
-              @click="router.push('/main/settings')"
-            >
-              <Icon :icon="iconSettings" width="19" height="19" />
-            </Button>
+                      <span v-else>点击登录账号</span>
+                    </span>
+                  </div>
+                </button>
+              </template>
+            </Tooltip>
+            <span class="sidebar-account-divider" aria-hidden="true"></span>
+            <SidebarAccountPopover />
           </div>
         </div>
 
         <Scrollbar class="sidebar-content no-drag" hide-scrollbar :scrollbar-inset="3">
-          <div class="px-4">
+          <SidebarShortcuts />
+          <div v-if="allMenuGroups.length" class="sidebar-menu-groups">
             <div v-for="group in allMenuGroups" :key="group.id" class="mb-1.5 last:mb-0">
               <h2
+                v-if="group.id !== 'library'"
                 class="sidebar-section-header px-3.5 text-[11px] font-semibold text-text-main/60 uppercase tracking-[0.5px] mb-2 flex items-center gap-1 select-none"
                 :class="group.collapsible ? 'cursor-pointer' : 'cursor-default'"
                 @click="toggleSection(group)"
@@ -1135,6 +1030,7 @@ watch(
               </h2>
               <nav
                 class="sidebar-section-body"
+                :aria-label="group.title"
                 :class="{ 'is-collapsed': isSectionCollapsed(group) }"
               >
                 <div class="space-y-0.5">
@@ -1475,7 +1371,7 @@ watch(
           </div>
         </Scrollbar>
         <div class="sidebar-layout-toolbar no-drag">
-          <SidebarLayoutEditor :sections="editableMenuGroups" />
+          <SidebarTools><SidebarLayoutEditor :sections="editableMenuGroups" /></SidebarTools>
         </div>
       </div>
     </template>
@@ -1564,14 +1460,52 @@ watch(
 </template>
 
 <style scoped>
+.user-info-card {
+  border: 1px solid var(--border-subtle);
+  min-height: 56px;
+  border-radius: 12px;
+  background: var(--control-muted-bg);
+  padding: 4px 4px 4px 8px;
+}
+
+.user-info-card:hover {
+  background: var(--control-hover-bg);
+}
+
+.sidebar-account-divider {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin-inline: 3px;
+  background: color-mix(in srgb, var(--color-text-main) 10%, transparent);
+}
+
 @reference "@/style.css";
 
+.sidebar-window-strip {
+  height: max(46px, var(--window-controls-left-height, 0px));
+}
+.sidebar-profile {
+  padding: 0 18px 22px;
+}
 .sidebar {
+  --sidebar-section-gap: 24px;
+  background: transparent;
+  isolation: isolate;
   width: 230px;
   transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.sidebar-decoration {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
 .sidebar.is-rail {
+  --sidebar-section-gap: 12px;
   width: 80px;
 }
 
@@ -1606,9 +1540,24 @@ watch(
   min-height: 0;
 }
 
+.sidebar-menu-groups {
+  padding: 0 16px;
+  margin-top: var(--sidebar-section-gap);
+}
+
 .sidebar-playlist-header {
-  padding-top: 6px;
-  padding-bottom: 6px;
+  margin-top: var(--sidebar-section-gap);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.sidebar-menu-groups + .sidebar-playlist-header {
+  /* The 24px playlist toolbar already adds 6px above its compact label. */
+  margin-top: calc(var(--sidebar-section-gap) - 6px);
+}
+
+.sidebar-shortcuts + .sidebar-rail-playlists {
+  margin-top: var(--sidebar-section-gap);
 }
 
 .sidebar-layout-toolbar {
@@ -1621,8 +1570,7 @@ watch(
 
 .sidebar-rail-top,
 .sidebar-rail-bottom,
-.sidebar-rail-tabs,
-.sidebar-rail-divider {
+.sidebar-rail-tabs {
   flex-shrink: 0;
 }
 
@@ -1658,6 +1606,10 @@ watch(
   gap: 6px;
 }
 
+.sidebar-rail-nav {
+  padding-block: var(--sidebar-section-gap);
+}
+
 .sidebar-rail-playlists {
   width: 100%;
   min-height: 0;
@@ -1665,7 +1617,6 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: 4px;
 }
 
 .sidebar-rail-tabs {
@@ -1805,26 +1756,6 @@ watch(
   cursor: not-allowed;
 }
 
-.sidebar-rail-divider {
-  width: 28px;
-  height: 1px;
-  margin: 6px auto;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--color-text-main) 13%, transparent);
-}
-
-:deep(.sidebar-rail-more-menu) {
-  padding: 6px;
-  border-radius: 12px;
-  min-width: 156px;
-}
-
-.sidebar-rail-more-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
 @keyframes sidebar-rail-enter {
   from {
     opacity: 0;
@@ -1882,7 +1813,84 @@ watch(
 }
 
 .sidebar-user-link {
+  display: flex;
+  align-items: center;
+  flex: 1;
   min-width: 0;
+  min-height: 44px;
+  gap: 10px;
+  padding: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-profile-avatar {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--control-muted-bg);
+}
+
+.sidebar-profile-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-profile-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--color-text-main);
+}
+
+.sidebar-profile-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 16px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.sidebar-member-badge {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  letter-spacing: 0.2px;
+  color: var(--color-text-secondary);
+  background: var(--control-hover-bg);
+}
+
+.sidebar-member-badge.is-svip {
+  color: #a94913;
+  background: rgb(244 127 44 / 12%);
+}
+
+.sidebar-member-badge.is-tvip {
+  color: #087c47;
+  background: rgb(7 193 96 / 12%);
+}
+
+.dark .sidebar-member-badge.is-svip {
+  color: #ffbe89;
+}
+
+.dark .sidebar-member-badge.is-tvip {
+  color: #78dda9;
 }
 
 .sidebar-settings-btn {
@@ -1895,8 +1903,7 @@ watch(
 }
 
 .sidebar-user-link:hover {
-  background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 8%, transparent);
+  color: var(--color-text-main);
 }
 
 .sidebar-settings-btn:hover,

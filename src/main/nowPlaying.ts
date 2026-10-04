@@ -272,6 +272,19 @@ export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
               payload.appearance.accentColor || DEFAULT_NOW_PLAYING_APPEARANCE.accentColor,
             ),
             fontFamily: toOptionalString(payload.appearance.fontFamily),
+            floatingSurfaceFrosted: payload.appearance.floatingSurfaceFrosted === true,
+            colors: isPlainRecord(payload.appearance.colors)
+              ? (Object.fromEntries(
+                  Object.entries(payload.appearance.colors).filter(
+                    ([key, value]) =>
+                      /^--(theme-shell|surface-(sidebar|main|card|elevated|dialog|player)-base|(floating-)?text-(main|secondary)|content-tone|floating-(tone|card-base|border|accent-text)|border-light)$/.test(
+                        key,
+                      ) &&
+                      typeof value === 'string' &&
+                      /^#[0-9a-f]{6}$/i.test(value),
+                  ),
+                ) as Record<string, string>)
+              : undefined,
           },
     updatedAt: Date.now(),
   };

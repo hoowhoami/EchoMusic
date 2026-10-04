@@ -88,7 +88,7 @@ export function resolveWindowBackgroundCapabilities({
       frostBackend: 'vibrancy',
       frostMode: 'native',
       frostLive: true,
-      live: false,
+      live: true,
       transparentMode: 'layered',
     };
   }
@@ -103,7 +103,7 @@ export function resolveWindowBackgroundCapabilities({
       frostBackend: 'hyprland-blur',
       frostMode: 'compositor',
       frostLive: true,
-      live: false,
+      live: true,
       transparentMode: 'layered',
     };
   }
@@ -114,7 +114,7 @@ export function resolveWindowBackgroundCapabilities({
     frostBackend: 'none',
     frostMode: 'none',
     frostLive: false,
-    live: false,
+    live: true,
     transparentMode: 'layered',
   };
 }

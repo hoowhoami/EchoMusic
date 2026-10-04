@@ -239,6 +239,8 @@ export const initNowPlayingSync = async () => {
   const syncAppearanceSnapshot = () => {
     const appearance = {
       isDark: themeStore.isDark,
+      colors: themeStore.cssTokens,
+      floatingSurfaceFrosted: themeStore.floatingSurfaceFrosted,
       accentColor: themeStore.sourceColor || themeStore.coverColor || '#31cfa1',
       fontFamily: settingStore.buildGlobalFontFamily(),
     };
@@ -351,6 +353,8 @@ export const initNowPlayingSync = async () => {
         themeStore.isDark,
         themeStore.sourceColor,
         themeStore.coverColor,
+        themeStore.cssTokens,
+        themeStore.floatingSurfaceFrosted,
         settingStore.globalFont,
       ],
       syncAppearanceSnapshot,

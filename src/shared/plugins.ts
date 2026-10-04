@@ -843,6 +843,7 @@ export interface EchoPluginManifest {
     lyricEffects?: boolean;
     lyrics?: boolean;
     lyricsPage?: boolean;
+    theme?: boolean;
     process?: boolean;
     sqlite?: boolean;
     tcp?: boolean;

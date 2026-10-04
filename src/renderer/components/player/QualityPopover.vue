@@ -83,19 +83,11 @@ const isPendingQuality = (quality: string) =>
   !isSwitchingToCloud.value &&
   requestedAudioQuality.value === quality;
 
-const buttonClass = computed(() => {
-  const activeClass =
-    props.variant === 'lyric'
-      ? 'text-black dark:text-white hover:scale-110 active:scale-90'
-      : 'text-primary-text hover:scale-110 active:scale-90';
-  const mutedClass =
-    props.variant === 'lyric'
-      ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
-      : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90';
-
-  if (currentTrack.value) return activeClass;
-  return mutedClass;
-});
+const buttonClass = computed(() =>
+  props.variant === 'lyric'
+    ? 'text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white hover:scale-110 active:scale-90'
+    : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90',
+);
 </script>
 
 <template>

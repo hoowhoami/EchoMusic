@@ -796,8 +796,8 @@ const confirmRemoveFromPlaylist = async () => {
 
 @media (max-width: 420px) {
   :global(.drawer-panel.batch-drawer) {
-    --drawer-top-gap: 16px;
-    --drawer-bottom-gap: -4px;
+    --drawer-top-gap: 4px;
+    --drawer-bottom-gap: 8px;
     right: 8px;
     width: calc(100vw - 16px);
   }

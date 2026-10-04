@@ -1,0 +1,62 @@
+/* Every surface derives its controls locally. Inherited computed CSS variables do
+ * not re-evaluate when a floating surface overrides its foreground or palette. */
+:root,
+.echo-popover-content,
+.drawer-panel,
+.dialog-content,
+.app-tooltip-content,
+.song-context-menu,
+.echo-date-picker-content,
+.titlebar-more-menu,
+.tb-search-panel,
+.toast-card {
+  --content-panel-bg: color-mix(in srgb, var(--content-tone) 5%, transparent);
+  --content-panel-border: color-mix(in srgb, var(--content-tone) 10%, transparent);
+  --content-selected-bg: color-mix(in srgb, var(--content-tone) 12%, transparent);
+  --bg-card: var(--content-panel-bg);
+  --bg-info-card: var(--content-panel-bg);
+  --color-bg-card: var(--bg-card);
+  --color-bg-info-card: var(--bg-info-card);
+  --color-text-main: var(--text-main);
+  --color-text-secondary: var(--text-secondary);
+  --color-border-light: var(--border-light);
+  --border-subtle: color-mix(in srgb, var(--border-light) 72%, transparent);
+  --border-strong: color-mix(in srgb, var(--content-tone) 18%, transparent);
+  --control-bg: color-mix(in srgb, var(--content-tone) 7%, transparent);
+  --control-muted-bg: color-mix(in srgb, var(--content-tone) 5%, transparent);
+  --control-hover-bg: color-mix(in srgb, var(--content-tone) 10%, transparent);
+  --control-active-bg: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  --control-border: color-mix(in srgb, var(--border-light) 76%, transparent);
+  --control-border-hover: color-mix(in srgb, var(--content-tone) 24%, transparent);
+  --control-track-bg: color-mix(in srgb, var(--content-tone) 12%, transparent);
+  --control-track-bg-hover: color-mix(in srgb, var(--content-tone) 18%, transparent);
+  --control-checkbox-bg: var(--control-bg);
+  --control-checkbox-border: var(--control-border);
+  --control-checkbox-border-hover: var(--color-primary);
+  --control-checkbox-indicator: var(--color-on-primary);
+  --row-hover-bg: color-mix(in srgb, var(--content-tone) 5%, transparent);
+  --row-active-bg: color-mix(in srgb, var(--content-tone) 8%, transparent);
+  --row-selected-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --scrollbar-thumb-bg: color-mix(in srgb, var(--content-tone) 22%, transparent);
+  --scrollbar-thumb-bg-hover: color-mix(in srgb, var(--content-tone) 28%, transparent);
+  --scrollbar-thumb-bg-active: color-mix(in srgb, var(--content-tone) 45%, transparent);
+}
+
+.echo-popover-content,
+.drawer-panel,
+.dialog-content,
+.app-tooltip-content,
+.song-context-menu,
+.echo-date-picker-content,
+.titlebar-more-menu,
+.tb-search-panel,
+.toast-card {
+  --content-tone: var(--floating-tone);
+  --text-main: var(--floating-text-main);
+  --text-secondary: var(--floating-text-secondary);
+  --surface-card-base: var(--floating-card-base);
+  --border-light: var(--floating-border);
+  --color-primary-text: var(--floating-accent-text);
+  --color-focus-ring: var(--floating-accent-text);
+  color: var(--text-main);
+}

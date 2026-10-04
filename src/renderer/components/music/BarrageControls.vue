@@ -376,7 +376,6 @@ watch(
 }
 :global(.echo-popover-content.barrage-send-popover) {
   padding: 16px;
-  border-radius: 16px;
   box-sizing: border-box;
   max-height: min(
     calc(100dvh - 32px),

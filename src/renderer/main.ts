@@ -231,7 +231,7 @@ router.onError((error) => {
 });
 
 window.electron?.appInfo?.onOpenSettings?.((section) => {
-  openSettingsDialog(section || 'appearance');
+  openSettingsDialog(section || 'interface');
 });
 
 app.use(pinia);

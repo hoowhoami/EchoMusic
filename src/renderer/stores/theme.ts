@@ -1,165 +1,393 @@
+import { legacySurfaceVariables } from '@/plugins/runtime/theme';
 import { defineStore } from 'pinia';
 import {
-  ACCENT_PRESETS,
-  DEFAULT_ACCENT,
+  resolveThemeColors,
+  themeColorVariables,
+  usesLightForeground,
+  type ResolvedThemeColors,
+} from '@/theme/colors';
+import {
   applyAccentToRoot,
+  DEFAULT_ACCENT,
   extractDominantColor,
   getAccentPalette,
+  createAccentPaletteFromPrimary,
   getNormalizedAccent,
   hexToRgb,
   waitForAbortableDelay,
 } from '@/utils/color';
-
-export type AccentMode = 'off' | 'cover' | 'preset' | 'custom';
+import {
+  builtinAppThemes,
+  validateThemeAppearance,
+  assertJsonSettings,
+  failAppTheme,
+  resolveAppTheme,
+  type AppThemeEntry,
+} from '@/theme/registry';
+import {
+  copyAppearance,
+  defaultAppearance,
+  CUSTOM_THEME_KEY,
+  defaultOverride,
+  normalizeOverride,
+  neutralTokens,
+  paletteFromSeed,
+  validColor,
+  clamp,
+  mixColor,
+  type AppearancePreference,
+  type ThemeOverride,
+  type AccentSource,
+  type AppThemeAppearance,
+  type GeneralAppearancePreference,
+  type ThemeDraft,
+  PANEL_MATERIAL,
+} from '@/theme/model';
+export type AccentMode = AccentSource;
 type CoverColorSource = string | readonly string[];
-
-// 判断当前是否为深色模式
-const isDarkMode = (): boolean => document.documentElement.classList.contains('dark');
-
-const resolveCoverColorSources = (coverUrl: CoverColorSource): string[] => {
-  const urls = Array.isArray(coverUrl) ? coverUrl : [coverUrl];
-  return Array.from(new Set(urls.map((url) => String(url ?? '').trim()).filter(Boolean)));
-};
-
 let coverColorRequestSeq = 0;
 let coverColorAbortController: AbortController | null = null;
-const COVER_COLOR_SETTLE_MS = 180;
-const DEFAULT_ACCENT_GRADIENT_HEIGHT = 70;
-const DEFAULT_ACCENT_GRADIENT_STRENGTH = 100;
-
-const clampAccentGradientSetting = (value: number, min: number, max: number): number => {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(max, Math.max(min, Math.round(value)));
-};
-
-export const useThemeStore = defineStore('theme', {
+const resolveModeSource = (preference: AppearancePreference, entry: AppThemeEntry) =>
+  preference.mode === 'theme' ? (entry.defaultMode ?? 'system') : preference.mode;
+export const useThemeStore = defineStore('appearance', {
   state: () => ({
-    // 主题色来源
-    accentMode: 'cover' as AccentMode,
-    // 预设 id
-    presetId: 'default',
-    // 自定义颜色
-    customColor: DEFAULT_ACCENT,
-    // 全局主题色：true 时影响整个 App，false 时仅影响播放相关区域
-    globalAccent: true,
-    // 顶部主题色渐变氛围层
-    accentGradient: true,
-    // 渐变向下延伸的窗口高度百分比
-    accentGradientHeight: DEFAULT_ACCENT_GRADIENT_HEIGHT,
-    // 渐变整体强度百分比
-    accentGradientStrength: DEFAULT_ACCENT_GRADIENT_STRENGTH,
-    // 当前生效的主题色源（未归一化，用于重算）
-    sourceColor: DEFAULT_ACCENT,
-    // 当前歌曲封面提取色（供歌词播放页“跟随封面取色”使用）
+    preferences: defaultAppearance(),
+    preview: null as AppearancePreference | null,
+    systemDark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     coverColor: DEFAULT_ACCENT,
-    // 主窗口实际生效的深浅色状态，由 App.vue 的主题流程同步
-    isDark: isDarkMode(),
+    customBackgroundSample: { source: '', color: '' },
   }),
   getters: {
-    currentPreset: (state) =>
-      ACCENT_PRESETS.find((item) => item.id === state.presetId) ?? ACCENT_PRESETS[0],
-    // 最终生效的主题色（已按深浅色归一化）。对应主题色过渡动画的“目标色”，
-    // 切歌/切主题时立即变到终值，不随 600ms 动画逐帧抖动。供组件与插件稳定消费。
-    accentColor: (state): string =>
-      getNormalizedAccent(state.sourceColor || DEFAULT_ACCENT, state.isDark),
-    accentTextColor: (state): string =>
-      getAccentPalette(state.sourceColor || DEFAULT_ACCENT, state.isDark).primaryText,
-    onAccentColor: (state): string =>
-      getAccentPalette(state.sourceColor || DEFAULT_ACCENT, state.isDark).onPrimary,
-    // 最终主题色的 RGB 形式，格式为 "r, g, b"，方便插件拼 rgba()。
+    activePreferences: (state): AppearancePreference => state.preview ?? state.preferences,
+    desiredThemeKey(): string {
+      return this.activePreferences.themeKey;
+    },
+    currentTheme(): AppThemeEntry {
+      return resolveAppTheme(this.desiredThemeKey) ?? builtinAppThemes[0];
+    },
+    effectiveThemeKey(): string {
+      return this.currentTheme.key;
+    },
+    nativeThemeSource(): 'system' | 'light' | 'dark' {
+      return resolveModeSource(this.activePreferences, this.currentTheme);
+    },
+    variantIsDark(): boolean {
+      return (
+        this.nativeThemeSource === 'dark' ||
+        (this.nativeThemeSource === 'system' && this.systemDark)
+      );
+    },
+    resolvedColors(): ResolvedThemeColors {
+      return resolveThemeColors(this.themeDefinition, this.variantIsDark);
+    },
+    isDark(): boolean {
+      return this.resolvedColors.dark;
+    },
+    displayMode(): 'light' | 'dark' {
+      return this.isDark ? 'dark' : 'light';
+    },
+    override(): ThemeOverride {
+      return normalizeOverride(
+        this.activePreferences.overrides[this.effectiveThemeKey] ?? defaultOverride(),
+      );
+    },
+    themeSettings(): Record<string, unknown> {
+      return { ...this.currentTheme.settings?.defaults, ...this.override.settings };
+    },
+    themeDefinition(): AppThemeAppearance {
+      const entry = this.currentTheme;
+      const paletteDark =
+        entry.key === CUSTOM_THEME_KEY
+          ? usesLightForeground(this.override.background.textColor)
+          : this.variantIsDark;
+      let base = entry.variants[paletteDark ? 'dark' : 'light'];
+      try {
+        const result = entry.settings?.validate?.(this.themeSettings);
+        if (result === false || (typeof result === 'object' && result.errors?.length))
+          throw new Error('主题配置校验失败');
+        const resolved = entry.resolve?.({ isDark: paletteDark, settings: this.themeSettings });
+        if (resolved) validateThemeAppearance(resolved);
+        if (resolved)
+          base = {
+            ...base,
+            ...resolved,
+            tokens: { ...base.tokens, ...resolved.tokens },
+            floating: { ...base.floating, ...resolved.floating },
+          };
+      } catch (error) {
+        failAppTheme(entry, error);
+        base = builtinAppThemes[0].variants[paletteDark ? 'dark' : 'light'];
+      }
+      const generated =
+        this.override.palette.source === 'custom'
+          ? paletteFromSeed(this.override.palette.color, paletteDark)
+          : null;
+      const sample = this.customBackgroundSample;
+      const imagePalette =
+        entry.key === CUSTOM_THEME_KEY &&
+        sample.source === this.backgroundImage &&
+        validColor(sample.color)
+          ? paletteFromSeed(sample.color, paletteDark)
+          : null;
+      const tokens = {
+        ...base.tokens,
+        // Image sampling only tints the window background and its two panels.
+        // Floating surfaces and their text keep the theme's readable palette.
+        ...(imagePalette
+          ? { shell: imagePalette.shell, main: imagePalette.main, player: imagePalette.player }
+          : {}),
+        ...generated,
+      };
+      if (entry.key === CUSTOM_THEME_KEY) {
+        tokens.text = this.override.background.textColor;
+        tokens.secondary = mixColor(tokens.text, neutralTokens(paletteDark).secondary, 0.25);
+      }
+      const definition = {
+        ...base,
+        tokens,
+        ...(generated ? { accent: this.override.palette.color } : {}),
+      };
+      return definition;
+    },
+    appearance(): AppThemeAppearance {
+      const colors = this.resolvedColors;
+      return { ...this.themeDefinition, tokens: colors.tokens, floating: colors.floating };
+    },
+    backgroundImage(): string {
+      return this.effectiveThemeKey === CUSTOM_THEME_KEY
+        ? this.override.background.image
+        : (this.appearance.background?.image ?? '');
+    },
+    accentMode(): AccentMode {
+      return this.activePreferences.accent.source;
+    },
+    customColor(): string {
+      return this.activePreferences.accent.color;
+    },
+    sourceColor(): string {
+      const pref = this.activePreferences.accent;
+      return pref.source === 'cover'
+        ? this.coverColor
+        : pref.source === 'custom'
+          ? pref.color
+          : (this.appearance.accent ?? '#0071e3');
+    },
+    accentColor(): string {
+      return this.accentMode === 'theme'
+        ? this.sourceColor
+        : getNormalizedAccent(this.sourceColor, this.isDark);
+    },
+    accentTextColor(): string {
+      return createAccentPaletteFromPrimary(this.accentColor, this.isDark).primaryText;
+    },
+    onAccentColor(): string {
+      return createAccentPaletteFromPrimary(this.accentColor, this.isDark).onPrimary;
+    },
     accentColorRgb(): string {
-      const rgb = hexToRgb(this.accentColor) ?? hexToRgb(DEFAULT_ACCENT);
-      return rgb ? `${rgb.r}, ${rgb.g}, ${rgb.b}` : '49, 207, 161';
+      const color = hexToRgb(this.accentColor) ?? hexToRgb(DEFAULT_ACCENT);
+      return color ? `${color.r}, ${color.g}, ${color.b}` : '0, 113, 227';
+    },
+    windowTransparency(): number {
+      return clamp(this.activePreferences.transparency, 0, 100);
+    },
+    floatingSurfaceFrosted(): boolean {
+      return this.activePreferences.floatingSurfaceFrosted;
+    },
+    surfaceVariables(): Record<string, string> {
+      const base: Record<string, string> = {};
+      for (const surface of ['main', 'sidebar', 'player', 'card', 'elevated', 'dialog'])
+        base[`--surface-${surface}-opacity`] = '100%';
+      if (this.currentTheme.pluginId === 'host') Object.assign(base, legacySurfaceVariables.value);
+      for (const surface of ['main', 'sidebar', 'player'])
+        base[`--surface-${surface}-opacity`] = `${PANEL_MATERIAL.opacity}%`;
+      base['--surface-backdrop-filter'] = 'none';
+      base['--surface-player-backdrop-filter'] = base['--surface-backdrop-filter'];
+      return base;
+    },
+    cssTokens(): Record<string, string> {
+      return themeColorVariables(this.resolvedColors, this.accentColor);
     },
   },
   actions: {
-    // 根据当前模式计算 source 并应用
+    setCustomBackgroundSample(source: string, color: string | null) {
+      if (this.effectiveThemeKey !== CUSTOM_THEME_KEY || source !== this.backgroundImage) return;
+      this.customBackgroundSample = { source, color: color && validColor(color) ? color : '' };
+      this.applyCurrent();
+    },
+    removePluginThemes(pluginId: string) {
+      const owns = (key: string) => {
+        try {
+          const pair = JSON.parse(key);
+          return Array.isArray(pair) && pair[0] === pluginId;
+        } catch {
+          return false;
+        }
+      };
+      const clear = (value: AppearancePreference) => ({
+        ...value,
+        themeKey: owns(value.themeKey) ? 'host:echo' : value.themeKey,
+        overrides: Object.fromEntries(
+          Object.entries(value.overrides).filter(([key]) => !owns(key)),
+        ),
+      });
+      this.preferences = clear(this.preferences);
+      if (this.preview) this.preview = clear(this.preview);
+      this.applyCurrent();
+    },
+    beginPreview() {
+      if (this.preview) return;
+      this.preview = copyAppearance(this.preferences);
+    },
+    cancelPreview() {
+      this.preview = null;
+      this.applyCurrent();
+    },
+    applyPreview() {
+      if (this.preview)
+        this.preferences = {
+          ...this.preferences,
+          themeKey: this.preview.themeKey,
+          overrides: copyAppearance(this.preview.overrides),
+        };
+      this.preview = null;
+      this.applyCurrent();
+    },
+    updatePreferences(patch: Partial<AppearancePreference>) {
+      const next = { ...this.activePreferences, ...copyAppearance(patch) };
+      if (this.preview) this.preview = next;
+      else this.preferences = next;
+      this.applyCurrent();
+    },
+    /** 设置页的长期偏好即时保存，同时同步到主题草稿，避免被主题撤销覆盖。 */
+    updateGeneralPreferences(patch: Partial<GeneralAppearancePreference>) {
+      const next = copyAppearance(patch);
+      this.preferences = { ...this.preferences, ...next };
+      if (this.preview) this.preview = { ...this.preview, ...next };
+      this.applyCurrent();
+    },
+    restoreThemeDraft(draft: ThemeDraft) {
+      this.updatePreferences({
+        themeKey: draft.themeKey,
+        overrides: copyAppearance(draft.overrides),
+      });
+    },
+    selectTheme(key: string) {
+      if (!resolveAppTheme(key)) throw new Error('主题不可用');
+      this.updatePreferences({ themeKey: key });
+    },
+    setCustomBackground(image: string) {
+      if (!image) throw new Error('请先选择图片');
+      this.selectTheme(CUSTOM_THEME_KEY);
+      this.updateOverride({ background: { ...this.override.background, source: 'image', image } });
+    },
+    updateOverride(patch: Partial<ThemeOverride>) {
+      if (patch.background && this.desiredThemeKey !== CUSTOM_THEME_KEY)
+        throw new Error('图片背景只能用于自定义皮肤');
+      if (!resolveAppTheme(this.desiredThemeKey))
+        this.updatePreferences({ themeKey: this.effectiveThemeKey });
+      const key = this.effectiveThemeKey;
+      const value = normalizeOverride({ ...this.override, ...copyAppearance(patch) });
+      const overrides = { ...this.activePreferences.overrides };
+      if (JSON.stringify(value) === JSON.stringify(defaultOverride())) delete overrides[key];
+      else overrides[key] = value;
+      this.updatePreferences({ overrides });
+    },
+    resetAppearanceAdjustments() {
+      const defaults = defaultAppearance();
+      this.updateGeneralPreferences({
+        accent: defaults.accent,
+        atmosphere: defaults.atmosphere,
+        transparency: defaults.transparency,
+        windowFrosted: defaults.windowFrosted,
+        floatingSurfaceFrosted: defaults.floatingSurfaceFrosted,
+      });
+    },
+    resetThemeSettings() {
+      this.updateOverride({ settings: {} });
+    },
+    updateThemeSettings(patch: Record<string, unknown>) {
+      const entry = this.currentTheme;
+      assertJsonSettings(patch);
+      const settings = { ...this.themeSettings, ...copyAppearance(patch) };
+      const result = entry.settings?.validate?.(settings);
+      if (result === false || (typeof result === 'object' && result.errors?.length))
+        throw new Error(typeof result === 'object' ? result.errors?.join('；') : '主题设置无效');
+      this.updateOverride({
+        settings: Object.fromEntries(
+          Object.entries(settings).filter(
+            ([key, value]) =>
+              JSON.stringify(value) !== JSON.stringify(entry.settings?.defaults[key]),
+          ),
+        ),
+      });
+    },
+    setMode(source: AccentMode) {
+      this.updateGeneralPreferences({ accent: { ...this.preferences.accent, source } });
+    },
+    setCustomColor(color: string) {
+      if (!validColor(color)) return;
+      this.updateGeneralPreferences({ accent: { source: 'custom', color } });
+    },
+    onThemeChange() {
+      this.systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      this.applyCurrent();
+    },
     applyCurrent() {
-      let source = DEFAULT_ACCENT;
-      if (this.accentMode === 'preset') {
-        source = this.currentPreset.color;
-      } else if (this.accentMode === 'custom') {
-        source = this.customColor || DEFAULT_ACCENT;
-      } else if (this.accentMode === 'cover') {
-        // cover 模式，用保存的 sourceColor；无值时先用默认
-        source = this.sourceColor || DEFAULT_ACCENT;
+      const root = document.documentElement,
+        body = document.body;
+      root.classList.toggle('dark', this.isDark);
+      root.classList.toggle('floating-surfaces-frosted', this.floatingSurfaceFrosted);
+      for (const [key, value] of Object.entries(this.cssTokens)) root.style.setProperty(key, value);
+      root.style.setProperty('--surface-dialog-base', this.appearance.tokens.elevated!);
+      for (const [key, value] of Object.entries(this.surfaceVariables))
+        root.style.setProperty(key, value);
+      body.classList.toggle(
+        'echo-surface-translucent',
+        Object.values(this.surfaceVariables).some((value) => value !== '100%' && value !== 'none'),
+      );
+      applyAccentToRoot(this.sourceColor, this.isDark, this.accentMode === 'theme');
+      const atmos = this.activePreferences.atmosphere;
+      const enabled = atmos.source === 'cover';
+      const strength = clamp(atmos.strength, 20, 200);
+      for (const key of Array.from(body.style))
+        if (key.startsWith('--accent-gradient-') && !key.startsWith('--accent-gradient-user-'))
+          body.style.removeProperty(key);
+      if (atmos.source === 'cover') {
+        const color = hexToRgb(getAccentPalette(this.coverColor, this.isDark).atmosphere)!;
+        // Cover atmosphere is a global effect independent of theme package backgrounds.
+        body.style.setProperty('--accent-gradient-color-rgb', `${color.r}, ${color.g}, ${color.b}`);
       }
-      this.sourceColor = source;
-      applyAccentToRoot(source, isDarkMode());
-      this.syncGlobalScope();
-      this.syncAccentGradient();
+      body.style.setProperty('--accent-gradient-user-height', `${clamp(atmos.height, 20, 100)}%`);
+      body.style.setProperty('--accent-gradient-user-opacity', String(Math.min(1, strength / 100)));
+      body.style.setProperty('--accent-gradient-user-gain', String(Math.max(1, strength / 100)));
+      body.classList.toggle('accent-gradient-disabled', !enabled);
+      body.classList.toggle('cover-atmosphere-enabled', atmos.source === 'cover');
+      // 同步模式来源；发送解析后的深浅色会反过来锁定 matchMedia，破坏跟随系统。
+      window.electron?.ipcRenderer?.send('update-theme', this.nativeThemeSource);
     },
-    // 切换模式
-    setMode(mode: AccentMode) {
-      this.accentMode = mode;
-      // 切回封面模式时重置 sourceColor，等待 App 层 watch 根据当前封面重新提取
-      if (mode === 'cover' || mode === 'off') {
-        this.sourceColor = DEFAULT_ACCENT;
-      }
-      this.applyCurrent();
-    },
-    // 选择预设
-    setPreset(id: string) {
-      const preset = ACCENT_PRESETS.find((item) => item.id === id);
-      if (!preset) return;
-      this.presetId = id;
-      this.accentMode = 'preset';
-      this.applyCurrent();
-    },
-    // 设置自定义颜色
-    setCustomColor(hex: string) {
-      this.customColor = hex;
-      this.accentMode = 'custom';
-      this.applyCurrent();
-    },
-    // 切换全局主题色开关
-    setGlobalAccent(enabled: boolean) {
-      this.globalAccent = enabled;
-      this.syncGlobalScope();
-    },
-    // 切换顶部主题色渐变氛围层
-    setAccentGradient(enabled: boolean) {
-      this.accentGradient = enabled;
-      this.syncAccentGradient();
-    },
-    setAccentGradientHeight(value: number) {
-      this.accentGradientHeight = clampAccentGradientSetting(value, 35, 100);
-      this.syncAccentGradient();
-    },
-    setAccentGradientStrength(value: number) {
-      this.accentGradientStrength = clampAccentGradientSetting(value, 20, 200);
-      this.syncAccentGradient();
-    },
-    resetAccentGradientAppearance() {
-      this.accentGradientHeight = DEFAULT_ACCENT_GRADIENT_HEIGHT;
-      this.accentGradientStrength = DEFAULT_ACCENT_GRADIENT_STRENGTH;
-      this.syncAccentGradient();
-    },
-    // 从封面提取主色（仅在 cover 模式下有效）
     async refreshFromCover(coverUrl: CoverColorSource) {
-      if (this.accentMode !== 'cover') return;
-      const next = await this.refreshCoverColor(coverUrl);
-      if (!next || this.accentMode !== 'cover') return;
-      this.sourceColor = next;
-      applyAccentToRoot(next, isDarkMode());
+      return this.refreshCoverColor(coverUrl);
     },
-    // 提取当前封面颜色，供歌词页单独使用
     async refreshCoverColor(coverUrl: CoverColorSource): Promise<string | null> {
       const seq = ++coverColorRequestSeq;
       coverColorAbortController?.abort();
       const abortController = new AbortController();
       coverColorAbortController = abortController;
-      const urls = resolveCoverColorSources(coverUrl);
+      const urls = Array.from(
+        new Set(
+          (Array.isArray(coverUrl) ? coverUrl : [coverUrl])
+            .map((url) => String(url ?? '').trim())
+            .filter(Boolean),
+        ),
+      );
       if (urls.length === 0) {
         if (coverColorAbortController === abortController) coverColorAbortController = null;
         this.coverColor = DEFAULT_ACCENT;
+        this.applyCurrent();
         return this.coverColor;
       }
 
-      const shouldExtract = await waitForAbortableDelay(
-        COVER_COLOR_SETTLE_MS,
-        abortController.signal,
-      );
+      const shouldExtract = await waitForAbortableDelay(180, abortController.signal);
       if (!shouldExtract || seq !== coverColorRequestSeq) return null;
 
       let extracted: string | null = null;
@@ -171,45 +399,9 @@ export const useThemeStore = defineStore('theme', {
 
       if (coverColorAbortController === abortController) coverColorAbortController = null;
       this.coverColor = extracted || DEFAULT_ACCENT;
+      this.applyCurrent();
       return this.coverColor;
     },
-    // 明暗切换时重新应用归一化
-    onThemeChange() {
-      this.isDark = isDarkMode();
-      applyAccentToRoot(this.sourceColor || DEFAULT_ACCENT, this.isDark);
-    },
-    // 同步全局作用范围：通过 body 上的 class 控制 CSS 作用域
-    syncGlobalScope() {
-      const body = document.body;
-      if (this.globalAccent) {
-        body.classList.add('accent-global');
-        body.classList.remove('accent-scoped');
-      } else {
-        body.classList.remove('accent-global');
-        body.classList.add('accent-scoped');
-      }
-    },
-    // 同步顶部渐变开关与用户参数；插件变量仍可在 CSS 中覆盖这些基础值
-    syncAccentGradient() {
-      const body = document.body;
-      const height = clampAccentGradientSetting(this.accentGradientHeight, 35, 100);
-      const strength = clampAccentGradientSetting(this.accentGradientStrength, 20, 200);
-      body.style.setProperty('--accent-gradient-user-height', `${height}%`);
-      // CSS opacity stops at 1; intensities above 100% scale the gradient stops instead.
-      body.style.setProperty('--accent-gradient-user-opacity', String(Math.min(1, strength / 100)));
-      body.style.setProperty('--accent-gradient-user-gain', String(Math.max(1, strength / 100)));
-      body.classList.toggle('accent-gradient-disabled', !this.accentGradient);
-    },
   },
-  persist: {
-    pick: [
-      'accentMode',
-      'presetId',
-      'customColor',
-      'globalAccent',
-      'accentGradient',
-      'accentGradientHeight',
-      'accentGradientStrength',
-    ],
-  },
+  persist: { pick: ['preferences'] },
 });

@@ -1,4 +1,5 @@
-import { reactive } from 'vue';
+import { createAppThemeApi } from '@/theme/registry';
+import { reactive, shallowRef } from 'vue';
 import { hexToRgb } from '@/utils/color';
 import { createStyleDisposer } from './styles';
 
@@ -68,7 +69,7 @@ export interface PluginAccentGradientOptions {
   dark?: PluginAccentGradientDarkVariant;
 }
 
-export interface PluginThemeApi {
+export interface PluginThemeApi extends ReturnType<typeof createAppThemeApi> {
   surface: {
     set: (options: PluginSurfaceOptions) => () => void;
     clear: () => void;
@@ -303,23 +304,21 @@ const normalizeAccentGradientContribution = (
   };
 };
 
+export const legacyAccentGradientVariables = shallowRef<Record<string, string>>({});
+export const legacySurfaceVariables = shallowRef<Record<string, string>>({});
+
 const applyAccentGradientContributions = () => {
-  if (typeof document === 'undefined') return;
-
-  const body = document.body;
-  accentGradientCssVariables.forEach((name) => body.style.removeProperty(name));
-
   const contributions = Array.from(pluginAccentGradientContributions.values()).sort(
     (a, b) => a.updatedAt - b.updatedAt,
   );
-  if (contributions.length === 0) return;
-
   const merged: NormalizedAccentGradientContribution['variables'] = {};
   for (const contribution of contributions) Object.assign(merged, contribution.variables);
 
-  Object.entries(merged).forEach(([name, value]) => {
-    body.style.setProperty(name, value);
-  });
+  legacyAccentGradientVariables.value = Object.fromEntries(
+    accentGradientCssVariables
+      .filter((name) => merged[name] !== undefined)
+      .map((name) => [name, merged[name]!]),
+  );
 };
 
 const normalizeTransitionName = (value: string | undefined) => {
@@ -425,17 +424,9 @@ const normalizePageTransitionContribution = (
 });
 
 const applySurfaceContributions = () => {
-  if (typeof document === 'undefined') return;
-
-  const body = document.body;
   const enabledContributions = Array.from(pluginSurfaceContributions.values())
     .filter((contribution) => contribution.enabled)
     .sort((a, b) => a.updatedAt - b.updatedAt);
-
-  surfaceCssVariables.forEach((name) => body.style.removeProperty(name));
-  body.classList.toggle('echo-surface-translucent', enabledContributions.length > 0);
-
-  if (enabledContributions.length === 0) return;
 
   const merged: Partial<Record<(typeof surfaceCssVariables)[number], string>> = {};
 
@@ -462,9 +453,11 @@ const applySurfaceContributions = () => {
     }
   }
 
-  Object.entries(merged).forEach(([name, value]) => {
-    body.style.setProperty(name, value);
-  });
+  legacySurfaceVariables.value = Object.fromEntries(
+    surfaceCssVariables
+      .filter((name) => merged[name] !== undefined)
+      .map((name) => [name, merged[name]!]),
+  );
 };
 
 const applyPageTransitionContributions = () => {
@@ -537,6 +530,8 @@ const clearPageTransitionStyle = (pluginId: string) => {
 export const createThemeApi = (
   pluginId: string,
   addDisposable: (dispose: () => void) => () => void,
+  reportError: (source: string, error: unknown) => void,
+  allowed: boolean,
 ) => {
   let clearSurfaceRegistered = false;
   let clearPageTransitionRegistered = false;
@@ -577,6 +572,7 @@ export const createThemeApi = (
   };
 
   return {
+    ...createAppThemeApi(pluginId, addDisposable, reportError, allowed),
     surface: {
       set: (options: PluginSurfaceOptions) => {
         pluginSurfaceContributions.set(pluginId, normalizeSurfaceContribution(options));

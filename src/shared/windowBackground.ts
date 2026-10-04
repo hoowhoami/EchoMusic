@@ -46,29 +46,25 @@ export function resolveWindowBackground(
     : { ...DEFAULT_WINDOW_BACKGROUND };
 }
 
-// Both legacy Windows effects need Electron's alpha surface. Modern Windows
-// uses native composition without a transparent BrowserWindow. Hyprland keeps
-// the alpha surface for the lifetime of the window so the app layer can toggle
-// its own opacity without recreating the BrowserWindow.
+// Keep an alpha-capable surface for the entire window lifetime. Off mode paints
+// an opaque background rather than changing BrowserWindow.transparent. Modern
+// Windows prepares alpha through its native composition API and retains its frame.
 export function getWindowComposition(
   value: WindowBackground,
   platform: string,
   build: number,
   strategy: WindowBackgroundStrategyId = 'default',
 ) {
-  const systemMaterial = value.enabled && value.frosted && platform === 'win32' && build >= 22621;
-  const alwaysTransparent = platform === 'linux' && strategy === 'hyprland';
+  // All desktop strategies now keep the surface ready; retained for caller symmetry.
+  void strategy;
   return {
-    transparent:
-      alwaysTransparent ||
-      (value.enabled &&
-        (platform === 'win32' ? build < 22621 : !(platform === 'darwin' && value.frosted))),
-    systemMaterial,
+    transparent: !(platform === 'win32' && build >= 22621),
+    systemMaterial: value.enabled && value.frosted && platform === 'win32' && build >= 22621,
     clientCornerRadius: 0,
   };
 }
 
-/** Resolve effects against the immutable BrowserWindow.transparent creation option. */
+/** Resolve against the alpha capability, not the last enabled material. */
 export function resolveRunningWindowBackground(
   value: WindowBackground,
   platform: string,
@@ -80,40 +76,17 @@ export function resolveRunningWindowBackground(
   const build = typeof buildOrCapabilities === 'number' ? buildOrCapabilities : 22621;
   const frostMode =
     typeof buildOrCapabilities === 'number' ? 'none' : buildOrCapabilities.frostMode;
-  const strategy =
-    typeof buildOrCapabilities === 'number' ? 'default' : buildOrCapabilities.strategy;
-  const alwaysTransparent = platform === 'linux' && strategy === 'hyprland';
   const wanted = normalizeWindowBackground(value);
-  if (platform === 'win32') {
-    if (build >= 22621) return { background: wanted, restartRequired: false };
-    const needsTransparentWindow = wanted.enabled;
-    const restartRequired = needsTransparentWindow !== transparent;
-    return {
-      // Neither effect can be enabled on an existing opaque window. Off is safe
-      // immediately, but recreating the window restores its native frame.
-      background: restartRequired ? { ...DEFAULT_WINDOW_BACKGROUND } : wanted,
-      restartRequired,
-    };
-  }
-  if (platform === 'darwin') {
-    const needsTransparentWindow = wanted.enabled && !wanted.frosted;
-    return {
-      // Vibrancy is independent of transparent. Clear cannot be enabled on an opaque window.
-      background:
-        needsTransparentWindow && !transparent ? { ...DEFAULT_WINDOW_BACKGROUND } : wanted,
-      restartRequired: needsTransparentWindow !== transparent,
-    };
-  }
-  // Linux has no Electron backdrop-material API; preserve the current native mode until restart.
-  // Hyprland creates a transparent BrowserWindow from the start, so toggling
-  // the app layer and compositor blur is live after that initial creation.
+  const alphaReady = transparent || (platform === 'win32' && build >= 22621);
+  const requiresAlpha = wanted.enabled && !(platform === 'darwin' && wanted.frosted);
+  if (requiresAlpha && !alphaReady)
+    return { background: { ...DEFAULT_WINDOW_BACKGROUND }, restartRequired: true };
   return {
-    background: resolveWindowBackground(
-      wanted,
-      alwaysTransparent && transparent ? wanted.enabled : transparent,
-      frostMode === 'compositor' ? wanted.frosted : false,
-    ),
-    restartRequired: alwaysTransparent ? !transparent : wanted.enabled !== transparent,
+    background: {
+      ...wanted,
+      frosted: platform === 'linux' && frostMode !== 'compositor' ? false : wanted.frosted,
+    },
+    restartRequired: false,
   };
 }
 

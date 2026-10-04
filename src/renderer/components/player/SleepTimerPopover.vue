@@ -3,7 +3,7 @@ import { computed, ref, useId } from 'vue';
 import power from '@iconify/icons-tabler/power';
 import logout from '@iconify/icons-tabler/logout';
 import playerPause from '@iconify/icons-tabler/player-pause';
-import { iconCheck, iconMoon } from '@/icons';
+import { iconCheckMark, iconMoon } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import Popover from '@/components/ui/Popover.vue';
 import Switch from '@/components/ui/Switch.vue';
@@ -191,7 +191,7 @@ const selectAction = (action: SleepTimerAction) => {
                 @click="selectDuration('custom')"
               >
                 <span>自定义时长</span>
-                <Icon v-if="selected === 'custom'" :icon="iconCheck" width="16" height="16" />
+                <Icon v-if="selected === 'custom'" :icon="iconCheckMark" width="16" height="16" />
                 <span v-else class="sleep-timer-secondary text-[11px] opacity-40">1–180 分钟</span>
               </button>
               <div v-if="selected === 'custom'">
@@ -242,7 +242,7 @@ const selectAction = (action: SleepTimerAction) => {
                 </span>
                 <Icon
                   v-if="selectedAction === option.value"
-                  :icon="iconCheck"
+                  :icon="iconCheckMark"
                   width="16"
                   height="16"
                 />

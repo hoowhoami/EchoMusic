@@ -110,6 +110,7 @@ export const useUserStore = defineStore('user', {
     isFetchingUserInfo: false,
     followedArtistIds: new Set<string>(),
     hasFetchedFollowedArtists: false,
+    accountRevision: 0,
   }),
   actions: {
     setUserInfo(info: UserInfo) {
@@ -117,7 +118,10 @@ export const useUserStore = defineStore('user', {
       const nextInfo = normalizeUserInfo(info);
       const nextUserKey = String(nextInfo.userid ?? nextInfo.userId ?? '');
       this.$patch((state) => {
-        if (previousUserKey && nextUserKey && previousUserKey !== nextUserKey) {
+        if (previousUserKey !== nextUserKey || state.info?.token !== nextInfo.token) {
+          state.accountRevision += 1;
+          state.hasFetchedUserInfo = false;
+          state.isFetchingUserInfo = false;
           state.followedArtistIds = new Set();
           state.hasFetchedFollowedArtists = false;
         }
@@ -306,6 +310,7 @@ export const useUserStore = defineStore('user', {
     },
 
     logout() {
+      this.accountRevision += 1;
       this.info = null;
       this.isLoggedIn = false;
       this.hasFetchedUserInfo = false;
@@ -362,6 +367,7 @@ export const useUserStore = defineStore('user', {
       'isFetchingUserInfo',
       'followedArtistIds',
       'hasFetchedFollowedArtists',
+      'accountRevision',
     ],
   },
 });

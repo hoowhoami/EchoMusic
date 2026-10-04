@@ -267,7 +267,12 @@ export const createPluginContext = (
     kugou: createKugouApi(descriptor),
     kugouVerification: createKugouVerificationApi(descriptor),
     settings: settingStore,
-    theme: createThemeApi(descriptor.id, addDisposable),
+    theme: createThemeApi(
+      descriptor.id,
+      addDisposable,
+      reportPluginRuntimeError,
+      descriptor.manifest.capabilities?.theme === true,
+    ),
     graphics: createPluginGraphicsApi({
       addDisposable,
       runCallback: (source, callback) =>

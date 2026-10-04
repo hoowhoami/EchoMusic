@@ -31,7 +31,6 @@ const Settings = defineAsyncComponent(() => import('@/views/Settings.vue'));
   max-height: calc(100dvh - 48px);
   padding: 0;
   overflow: hidden;
-  border-radius: 20px;
 }
 .global-settings-body {
   height: 100%;
@@ -41,7 +40,6 @@ const Settings = defineAsyncComponent(() => import('@/views/Settings.vue'));
   .dialog-content.global-settings-dialog {
     width: calc(100vw - 16px);
     height: calc(100dvh - 32px);
-    border-radius: 14px;
   }
 }
 </style>

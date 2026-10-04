@@ -5,7 +5,8 @@ import { computed, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
 import Input from '@/components/ui/Input.vue';
-import { iconCheck, iconPalette } from '@/icons';
+import { iconCheckMark, iconPalette } from '@/icons';
+import { contrast } from '@/theme/model';
 
 interface Props {
   open?: boolean;
@@ -129,15 +130,19 @@ const confirm = () => {
               type="button"
               class="color-picker-swatch"
               :class="{ active: !isDynamicDraft && normalizedDraft === color.toLowerCase() }"
-              :style="{ backgroundColor: color }"
+              :style="{
+                backgroundColor: color,
+                color: contrast('#ffffff', color) >= 3 ? '#ffffff' : '#1d1d1f',
+              }"
               :aria-label="color"
+              :aria-pressed="!isDynamicDraft && normalizedDraft === color.toLowerCase()"
               @click="applyPreset(color)"
             >
               <Icon
                 v-if="!isDynamicDraft && normalizedDraft === color.toLowerCase()"
-                :icon="iconCheck"
-                width="12"
-                height="12"
+                :icon="iconCheckMark"
+                width="16"
+                height="16"
               />
             </button>
           </template>
@@ -149,6 +154,7 @@ const confirm = () => {
         type="button"
         class="color-picker-dynamic"
         :class="{ active: isDynamicDraft }"
+        :aria-pressed="isDynamicDraft"
         @click="applyDynamic"
       >
         <span
@@ -160,7 +166,7 @@ const confirm = () => {
               ' 100%)',
           }"
         >
-          <Icon v-if="isDynamicDraft" :icon="iconCheck" width="12" height="12" />
+          <Icon v-if="isDynamicDraft" :icon="iconCheckMark" width="16" height="16" />
           <Icon v-else :icon="iconPalette" width="12" height="12" />
         </span>
         <span class="color-picker-dynamic-text">
@@ -311,12 +317,6 @@ const confirm = () => {
 
 .color-picker-swatch:hover {
   transform: scale(1.06);
-}
-
-.color-picker-swatch.active {
-  box-shadow:
-    inset 0 0 0 1.5px rgba(255, 255, 255, 0.6),
-    0 0 0 2px var(--color-text-main);
 }
 
 /* 底部按钮 */

@@ -11,7 +11,7 @@ const source = readFileSync(
   .replace(/^export /gm, '');
 
 const { code } = transformSync(
-  `${source}\nreturn { emptySidebarLayout, reorderSidebarItems, reorderSidebarSections, resolveSidebarLayout, setSidebarItemHidden, setSidebarRailSectionVisible, setSidebarSectionHidden };`,
+  `${source}\nreturn { emptySidebarLayout, resetSidebarMenus, reorderSidebarItems, reorderSidebarSections, resolveSidebarLayout, setSidebarItemHidden, setSidebarRailSectionVisible, setSidebarSectionHidden };`,
   { loader: 'ts' },
 );
 
@@ -102,4 +102,37 @@ test('sidebar layout does not reorder locked items', () => {
   ]);
 
   assert.deepEqual(layout, api.emptySidebarLayout());
+});
+
+test('menu section ordering cannot move fixed playlist sections', () => {
+  const fixed = { id: 'created-playlist-defaults', lockedOrder: true };
+  const editable = [...sections, fixed];
+  const layout = {
+    ...api.emptySidebarLayout(),
+    sectionOrder: ['discover', 'library', fixed.id],
+  };
+  assert.equal(
+    api.reorderSidebarSections(layout, editable, [fixed.id, 'library', 'discover']),
+    layout,
+  );
+  assert.deepEqual(
+    api.reorderSidebarSections(layout, editable, ['library', 'discover']).sectionOrder,
+    ['library', 'discover', fixed.id],
+  );
+});
+
+test('resetting menu layout preserves independently configured shortcut cards', () => {
+  const layout = {
+    ...api.emptySidebarLayout(),
+    shortcutKeys: ['explore', 'home', 'personal-fm', 'artist:1'],
+    shortcutResources: [{ key: 'artist:1', kind: 'artist', id: '1', title: 'Artist' }],
+    hiddenSections: { library: true },
+    hiddenItems: { favorites: true },
+    itemOrder: { library: ['history', 'favorites'] },
+  };
+  assert.deepEqual(api.resetSidebarMenus(layout), {
+    ...api.emptySidebarLayout(),
+    shortcutKeys: layout.shortcutKeys,
+    shortcutResources: layout.shortcutResources,
+  });
 });

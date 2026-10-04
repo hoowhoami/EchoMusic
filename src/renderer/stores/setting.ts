@@ -1,3 +1,4 @@
+import { useThemeStore } from './theme';
 import { emptyTitlebarLayout } from '../plugins/titlebar';
 import { emptyPlayerBarLayout } from '../layouts/playerBarActions';
 import { emptySidebarLayout } from '../layouts/sidebarLayout';
@@ -111,8 +112,6 @@ const toImpulseResponseFilePayload = (file: SpatialAudioEffectEntry): SpatialAud
 
 export const useSettingStore = defineStore('setting', {
   state: () => ({
-    theme: 'system' as ThemeMode,
-    floatingSurfaceFrosted: false,
     titlebarLayout: emptyTitlebarLayout(),
     playerBarLayout: emptyPlayerBarLayout(),
     sidebarLayout: emptySidebarLayout(),
@@ -182,7 +181,6 @@ export const useSettingStore = defineStore('setting', {
     defaultShortcutLabels: { ...DEFAULT_SHORTCUT_LABELS } as Record<string, string>,
     defaultGlobalShortcutLabels: { ...DEFAULT_GLOBAL_SHORTCUT_LABELS } as Record<string, string>,
     sidebarCollapsed: false,
-    sidebarCollapseEnabled: false,
     showFullscreenButton: true,
     outputDevice: 'default',
     outputDevices: [{ label: '系统默认', value: 'default' }] as OutputDeviceOption[],
@@ -278,6 +276,8 @@ export const useSettingStore = defineStore('setting', {
     devToolsEnabled: false,
   }),
   getters: {
+    floatingSurfaceFrosted: () => useThemeStore().floatingSurfaceFrosted,
+    theme: () => useThemeStore().displayMode,
     effectiveWindowBackground: (state) =>
       resolveWindowBackground(
         state.windowBackground,
@@ -383,12 +383,8 @@ export const useSettingStore = defineStore('setting', {
       });
       await this.initWindowBackground();
     },
-    setFloatingSurfaceFrosted(enabled: boolean) {
-      this.floatingSurfaceFrosted = enabled === true;
-    },
     setTheme(theme: ThemeMode) {
-      this.theme = theme;
-      this.syncTheme();
+      useThemeStore().updateGeneralPreferences({ mode: theme });
     },
     toggleShortcuts(enabled: boolean) {
       this.shortcutEnabled = enabled;
@@ -475,7 +471,7 @@ export const useSettingStore = defineStore('setting', {
     },
     syncTheme() {
       if (window.electron?.ipcRenderer) {
-        window.electron.ipcRenderer.send('update-theme', this.theme);
+        window.electron.ipcRenderer.send('update-theme', useThemeStore().nativeThemeSource);
       }
     },
     syncRememberWindowSize() {

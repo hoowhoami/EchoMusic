@@ -36,7 +36,7 @@ test('Hyprland uses compositor blur and keeps layered transparency controls', ()
       frostBackend: 'hyprland-blur',
       frostMode: 'compositor',
       frostLive: true,
-      live: false,
+      live: true,
       transparentMode: 'layered',
     },
   );
@@ -49,7 +49,7 @@ test('non-Hyprland Linux keeps the existing no-frost, layered behavior', () => {
     frostBackend: 'none',
     frostMode: 'none',
     frostLive: false,
-    live: false,
+    live: true,
     transparentMode: 'layered',
   });
 });

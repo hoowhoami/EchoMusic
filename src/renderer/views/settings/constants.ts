@@ -1,6 +1,5 @@
-import type { AccentMode } from '@/stores/theme';
 import type { AudioQualityValue, ShortcutItem } from '@/types';
-import type { CloseBehavior, ThemeMode } from '../../../shared/app';
+import type { CloseBehavior } from '../../../shared/app';
 import {
   iconDeviceSpeaker,
   iconCast,
@@ -10,7 +9,6 @@ import {
   iconCloud,
   iconEye,
   iconMusicShare,
-  iconPalette,
   iconPictureInPicture,
   iconPlayerPlay,
   iconPlugin,
@@ -22,7 +20,6 @@ import {
 } from '@/icons';
 
 export const sectionTitles = {
-  appearance: { label: '主题与外观', icon: iconPalette },
   interface: { label: '界面显示', icon: iconEye },
   window: { label: '窗口与启动', icon: iconSettings },
   font: { label: '字体设置', icon: iconTypography },
@@ -41,19 +38,6 @@ export const sectionTitles = {
   network: { label: '网络设置', icon: iconCloud },
   about: { label: '关于', icon: iconInfo },
 } as const;
-
-export const accentModeOptions: { label: string; value: AccentMode }[] = [
-  { label: '跟随封面', value: 'cover' },
-  { label: '预设主题', value: 'preset' },
-  { label: '自定义', value: 'custom' },
-  { label: '关闭', value: 'off' },
-];
-
-export const themeOptions: { label: string; value: ThemeMode }[] = [
-  { label: '跟随系统', value: 'system' },
-  { label: '浅色模式', value: 'light' },
-  { label: '深色模式', value: 'dark' },
-];
 
 export const shortcutItems: ShortcutItem[] = [
   { command: 'togglePlayback', title: '播放 / 暂停', desc: '切换当前歌曲的播放状态' },

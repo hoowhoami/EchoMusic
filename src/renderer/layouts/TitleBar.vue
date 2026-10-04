@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isWindowDragTarget } from './windowDrag';
 import { logger } from '@/utils/logger';
 import WindowControls from './WindowControls.vue';
 import TitleBarMoreMenu from './TitleBarMoreMenu.vue';
@@ -39,16 +40,13 @@ import {
   iconClipboardList,
   iconHeadphones,
   iconPlugin,
-  iconMusicBolt,
+  iconVinyl,
 } from '@/icons';
 
 const route = useRoute();
 const router = useRouter();
 const isMac = computed(() => window.electron.platform === 'darwin');
 const settingStore = useSettingStore();
-const navStartClass = computed(() =>
-  isMac.value && !settingStore.sidebarCollapseEnabled ? 'pl-6' : 'pl-4',
-);
 
 // 侧边栏折叠
 const props = defineProps<{
@@ -170,7 +168,7 @@ const registerBuiltinActions = () => {
   builtinApi.register({
     id: 'discover-flow',
     title: '刷歌',
-    icon: iconMusicBolt,
+    icon: iconVinyl,
     defaultPlacement: 'more',
     order: 35,
     onClick: async () => {
@@ -372,7 +370,7 @@ const handleNativePointerDown = (point?: unknown, details?: unknown) => {
     // 原生通知异步到达，只处理拖动层；历史按钮等普通区域仍由 DOM 事件判断，
     // 避免删除历史后原位置的节点变化被误判为外部点击。
     const target = document.elementFromPoint(point.x, point.y);
-    if (!target?.closest('.native-titlebar .drag-region, .native-titlebar .titlebar-drag-space')) {
+    if (!isWindowDragTarget(target)) {
       logger.info('TitlebarPointer', {
         popup: 'search',
         decision: 'ignored-non-drag-target',
@@ -399,7 +397,7 @@ const handleNativeDoubleClick = (point?: unknown, details?: unknown) => {
   )
     return;
   const target = document.elementFromPoint(point.x, point.y);
-  if (!target?.closest('.native-titlebar .drag-region, .native-titlebar .titlebar-drag-space')) {
+  if (!isWindowDragTarget(target)) {
     logger.info('TitlebarPointer', { decision: 'ignored-non-drag-target', details });
     return;
   }
@@ -557,7 +555,7 @@ onUnmounted(() => {
 <template>
   <header
     ref="titlebarRef"
-    class="native-titlebar title-bar flex items-center shrink-0 select-none transition-colors duration-300 z-200 bg-transparent relative"
+    class="native-titlebar title-bar window-drag-area flex items-center shrink-0 select-none transition-colors duration-300 z-200 bg-transparent relative"
   >
     <!-- 拖动层：绝对定位铺满标题栏 -->
     <div class="drag-region"></div>
@@ -565,12 +563,11 @@ onUnmounted(() => {
     <!-- 1. 左侧：导航按钮 -->
     <div
       ref="navigationRef"
-      class="titlebar-nav flex items-center gap-1 no-drag relative z-10"
-      :class="navStartClass"
+      class="titlebar-nav flex items-center gap-1 relative z-10 pl-4"
       :style="
         isMac
           ? {
-              paddingLeft: `max(${settingStore.sidebarCollapseEnabled ? 16 : 24}px, calc(var(--window-controls-left-inset, 0px) - ${props.isSidebarCollapsed ? 80 : 230}px))`,
+              paddingLeft: `max(16px, calc(var(--window-controls-left-inset, 0px) - ${props.isSidebarCollapsed ? 80 : 230}px))`,
             }
           : {
               paddingLeft: `max(16px, calc(var(--window-controls-left-inset, 0px) - ${props.isSidebarCollapsed ? 80 : 230}px + 16px))`,
@@ -908,9 +905,20 @@ onUnmounted(() => {
 
 <style scoped>
 .title-bar {
+  -webkit-app-region: drag;
   height: max(46px, calc(35px / var(--window-zoom-factor, 1)));
 }
 
+.titlebar-drag-space {
+  -webkit-app-region: drag;
+  position: relative;
+  z-index: 1;
+}
+.title-bar :deep(button),
+.title-bar :deep(input),
+.tb-search {
+  -webkit-app-region: no-drag;
+}
 .titlebar-nav {
   min-width: 0;
   flex: 0 1 410px;

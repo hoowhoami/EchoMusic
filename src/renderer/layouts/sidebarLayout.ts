@@ -1,4 +1,8 @@
+import type { SidebarShortcutResource } from './sidebarShortcutResources';
+
 export interface SidebarLayout {
+  shortcutKeys?: string[];
+  shortcutResources?: SidebarShortcutResource[];
   sectionOrder: string[];
   itemOrder: Record<string, string[]>;
   hiddenSections: Record<string, boolean>;
@@ -27,6 +31,7 @@ export interface SidebarLayoutSection<T extends SidebarLayoutItem = SidebarLayou
   title: string;
   order: number;
   collapsible?: boolean;
+  lockedOrder?: boolean;
   items: T[];
 }
 
@@ -104,10 +109,12 @@ export function resolveSidebarLayout<T extends SidebarLayoutItem>(
 
 export function reorderSidebarSections(
   layout: SidebarLayout | undefined,
-  sections: readonly { id: string }[],
+  sections: readonly { id: string; lockedOrder?: boolean }[],
   ids: string[],
 ): SidebarLayout {
-  const active = new Set(sections.map((section) => section.id));
+  const active = new Set(
+    sections.filter((section) => !section.lockedOrder).map((section) => section.id),
+  );
   const base = layout ?? emptySidebarLayout();
   if (new Set(ids).size !== ids.length || ids.some((id) => !active.has(id))) return base;
 
@@ -190,3 +197,32 @@ export function setSidebarRailSectionVisible(
     },
   };
 }
+
+export const REQUIRED_SHORTCUT_KEYS = ['home', 'explore'];
+export const DEFAULT_SHORTCUT_KEYS = [...REQUIRED_SHORTCUT_KEYS];
+export function normalizeShortcutKeys(keys?: readonly string[]): string[] {
+  const unique = [...new Set(keys ?? DEFAULT_SHORTCUT_KEYS)].filter(
+    (key) => typeof key === 'string',
+  );
+  return [...REQUIRED_SHORTCUT_KEYS.filter((key) => !unique.includes(key)), ...unique];
+}
+export function reorderShortcutKeys(
+  saved: readonly string[] | undefined,
+  visible: readonly string[],
+  ordered: readonly string[],
+): string[] {
+  const keys = normalizeShortcutKeys(saved);
+  if (
+    ordered.length !== visible.length ||
+    new Set(ordered).size !== ordered.length ||
+    ordered.some((key) => !visible.includes(key))
+  )
+    return keys;
+  let index = 0;
+  return keys.map((key) => (visible.includes(key) ? ordered[index++] : key));
+}
+export const resetSidebarMenus = (layout: SidebarLayout): SidebarLayout => ({
+  ...emptySidebarLayout(),
+  shortcutKeys: layout.shortcutKeys,
+  shortcutResources: layout.shortcutResources,
+});

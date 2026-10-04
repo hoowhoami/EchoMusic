@@ -68,22 +68,11 @@ export const usePluginFailures = ({ records }: UsePluginFailuresOptions) => {
     },
   });
 
-  const failurePluginIds = computed(() => {
-    const failure = pluginRuntimeState.lastFailure;
-    if (!failure) return [];
-    const installedIds = new Set(records.value.map((record) => record.descriptor.id));
-    return Array.from(
-      new Set(
-        ([failure.pluginId, ...(failure.pluginIds ?? [])].filter(Boolean) as string[]).filter(
-          (id) => installedIds.has(id),
-        ),
-      ),
-    );
-  });
-
   const globalFailure = computed(() => {
     const failure = pluginRuntimeState.lastFailure;
-    if (!failure || failurePluginIds.value.length > 0) return null;
+    // Missing plugins must not turn an attributed historical failure into a global alert.
+    if (!failure || [failure.pluginId, ...(failure.pluginIds ?? [])].some((id) => id?.trim()))
+      return null;
     return failure;
   });
 
@@ -210,6 +199,19 @@ export const usePluginFailures = ({ records }: UsePluginFailuresOptions) => {
     }
   };
 
+  const clearGlobalFailureRecord = async () => {
+    if (!globalFailure.value || isClearingFailure.value) return;
+    isClearingFailure.value = true;
+    try {
+      await clearRuntimePluginFailure();
+      toastStore.actionCompleted('插件异常记录已清除');
+    } catch (error) {
+      toastStore.warning(error instanceof Error ? error.message : '插件异常记录清除失败');
+    } finally {
+      isClearingFailure.value = false;
+    }
+  };
+
   return {
     isClearingFailure,
     pluginCardFailureReasonLabels,
@@ -229,5 +231,6 @@ export const usePluginFailures = ({ records }: UsePluginFailuresOptions) => {
     getPluginFailureButtonTitle,
     openPluginFailureDetail,
     clearActiveFailureRecord,
+    clearGlobalFailureRecord,
   };
 };

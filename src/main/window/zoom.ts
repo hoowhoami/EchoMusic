@@ -5,7 +5,10 @@ import { normalizeZoomLevel, stepZoomLevel, zoomShortcut } from '../../shared/wi
 
 // One authority for shortcuts, settings, reload and startup. Auxiliary lyric and
 // plugin windows have separate sizing contracts and do not inherit this setting.
-export function installWindowZoom(win: BrowserWindow, onChange: (level: number) => void) {
+export function installWindowZoom(
+  win: BrowserWindow,
+  onChange: (level: number) => void = () => {},
+) {
   let level = normalizeZoomLevel(getMainAppSettings().windowZoomLevel);
   const publish = () => {
     win.webContents.setZoomLevel(level);

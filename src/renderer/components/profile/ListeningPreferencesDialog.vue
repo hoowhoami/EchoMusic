@@ -5,7 +5,7 @@ import Dialog from '@/components/ui/Dialog.vue';
 import Select from '@/components/ui/Select.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import PreferenceStrengthSlider from './PreferenceStrengthSlider.vue';
-import { iconCheck, iconChevronDown, iconRefreshCw, iconShield } from '@/icons';
+import { iconCheckMark, iconChevronDown, iconRefreshCw, iconShield } from '@/icons';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { getListeningPreferences, updateListeningPreferences } from '@/api/listeningPreferences';
@@ -250,7 +250,7 @@ watch(account, () => {
                   >
                     <span>{{ option.label }}</span>
                     <Icon
-                      :icon="iconCheck"
+                      :icon="iconCheckMark"
                       width="13"
                       height="13"
                       class="preference-check"

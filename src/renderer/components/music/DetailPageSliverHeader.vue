@@ -251,7 +251,7 @@ onUnmounted(() => {
   </PageStickyHeader>
 
   <div
-    class="sliver-header-spacer relative w-full bg-bg-main"
+    class="sliver-header-spacer relative w-full"
     :style="{ height: `${props.expandedHeight - props.collapsedHeight}px` }"
   ></div>
 </template>

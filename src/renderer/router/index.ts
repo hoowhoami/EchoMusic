@@ -30,6 +30,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/layouts/MainLayout.vue'),
     children: [
       {
+        path: 'themes',
+        name: 'themes',
+        component: () => import('@/theme/ThemeCenter.vue'),
+        meta: { title: '主题中心' },
+      },
+      {
         path: 'home',
         name: 'home',
         component: () => import('@/views/Home.vue'),

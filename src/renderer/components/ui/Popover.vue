@@ -35,6 +35,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void;
+  (e: 'open-auto-focus', event: Event): void;
 }>();
 
 const internalOpen = ref(props.open ?? false);
@@ -215,6 +216,7 @@ defineExpose({
           @mouseenter="handleContentEnter"
           @mouseleave="handleContentLeave"
           @interact-outside="handleInteractOutside"
+          @open-auto-focus="emit('open-auto-focus', $event)"
         >
           <div ref="contentWrapRef">
             <slot />
@@ -230,7 +232,7 @@ defineExpose({
 .echo-popover-content {
   --popover-background: var(--floating-surface-bg);
   z-index: 9999;
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--popover-background);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);

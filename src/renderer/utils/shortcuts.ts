@@ -490,14 +490,12 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
   } else if (command === 'toggleWindow') {
     window.electron?.ipcRenderer?.send('window-toggle', null);
   } else if (command === 'toggleSidebar') {
-    if (settingStore.sidebarCollapseEnabled) {
-      const handledByLayout = !window.dispatchEvent(
-        new CustomEvent('echo:toggle-sidebar', { cancelable: true }),
-      );
-      if (handledByLayout) return;
+    const handledByLayout = !window.dispatchEvent(
+      new CustomEvent('echo:toggle-sidebar', { cancelable: true }),
+    );
+    if (handledByLayout) return;
 
-      settingStore.sidebarCollapsed = !settingStore.sidebarCollapsed;
-    }
+    settingStore.sidebarCollapsed = !settingStore.sidebarCollapsed;
   }
 };
 

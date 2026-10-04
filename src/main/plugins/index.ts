@@ -209,6 +209,13 @@ export const onPluginAccessRevoked = (listener: (pluginIds: string[]) => void) =
 const pluginMetadata = createPluginMetadataRegistry(
   () => scanPluginDescriptors(),
   revokePluginAccess,
+  (presentPluginIds) => {
+    const failure = getPluginLastFailure();
+    if (!failure) return;
+    for (const id of normalizePluginIds([failure.pluginId, ...(failure.pluginIds ?? [])])) {
+      if (!presentPluginIds.has(id)) clearPluginFailureRecord(id);
+    }
+  },
 );
 let preferencesInitialized = false;
 let lastPluginFailure: PluginFailureRecord | null = null;
@@ -2295,10 +2302,6 @@ export const uninstallPlugin = async (pluginId: string): Promise<PluginUninstall
       const nextState = getEnabledState();
       delete nextState[plugin.id];
       setEnabledState(nextState);
-      const lastFailure = getPluginLastFailure();
-      if (lastFailure?.pluginId === plugin.id || lastFailure?.pluginIds?.includes(plugin.id)) {
-        getKvStorage().delete(PLUGIN_LAST_FAILURE_KEY);
-      }
       clearPluginStorage(plugin.id);
       removePluginInstalledAt(plugin.id);
       getKvStorage().delete(getPluginInstallSourceKey(plugin.id));
@@ -2319,6 +2322,7 @@ export const uninstallPlugin = async (pluginId: string): Promise<PluginUninstall
       }
 
       await fs.rm(directory, { recursive: true, force: true });
+      clearPluginFailureRecord(plugin.id);
       return { ok: true as const, pluginId: plugin.id };
     });
   } catch (error) {

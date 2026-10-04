@@ -63,7 +63,7 @@ test('Windows clear and Acrylic preserve a non-layered native window', () => {
   });
   for (const platform of ['darwin', 'linux']) {
     assert.deepEqual(getWindowComposition({ ...clear, frosted: true }, platform, 22631), {
-      transparent: platform !== 'darwin',
+      transparent: true,
       systemMaterial: false,
       clientCornerRadius: 0,
     });
@@ -83,17 +83,14 @@ test('explicit active frost state takes precedence over saved preferences', () =
 
 const clear = { enabled: true, frosted: false, transparency: 60, color: '' };
 const frost = { ...clear, frosted: true };
-test('legacy Windows selects an Electron transparent window for clear and frost', () => {
+test('legacy Windows keeps an alpha surface while all effects toggle live', () => {
   for (const build of [19045, 22000, 22620]) {
     assert.equal(getWindowComposition(clear, 'win32', build).transparent, true);
     assert.equal(getWindowComposition(frost, 'win32', build).transparent, true);
-    assert.equal(
-      getWindowComposition(DEFAULT_WINDOW_BACKGROUND, 'win32', build).transparent,
-      false,
-    );
+    assert.equal(getWindowComposition(DEFAULT_WINDOW_BACKGROUND, 'win32', build).transparent, true);
     for (const transparent of [false, true]) {
       for (const wanted of [DEFAULT_WINDOW_BACKGROUND, clear, frost]) {
-        const restartRequired = wanted.enabled !== transparent;
+        const restartRequired = wanted.enabled && !transparent;
         assert.deepEqual(resolveRunningWindowBackground(wanted, 'win32', transparent, build), {
           background: restartRequired ? DEFAULT_WINDOW_BACKGROUND : wanted,
           restartRequired,
@@ -130,13 +127,13 @@ test('legacy Windows can cancel a pending clear selection without restarting', (
     restartRequired: false,
   });
 });
-test('macOS ordinary windows toggle Vibrancy live and require recreation for clear and frost', () => {
+test('macOS keeps alpha prepared and changes clear, Vibrancy and off without recreation', () => {
   for (const background of [DEFAULT_WINDOW_BACKGROUND, frost]) {
     assert.deepEqual(resolveRunningWindowBackground(background, 'darwin', false), {
       background,
       restartRequired: false,
     });
-    assert.equal(getWindowComposition(background, 'darwin', 0).transparent, false);
+    assert.equal(getWindowComposition(background, 'darwin', 0).transparent, true);
   }
   assert.deepEqual(resolveRunningWindowBackground(clear, 'darwin', false), {
     background: DEFAULT_WINDOW_BACKGROUND,
@@ -149,11 +146,11 @@ test('macOS ordinary windows toggle Vibrancy live and require recreation for cle
   for (const background of [DEFAULT_WINDOW_BACKGROUND, frost]) {
     assert.deepEqual(resolveRunningWindowBackground(background, 'darwin', true), {
       background,
-      restartRequired: true,
+      restartRequired: false,
     });
   }
 });
-test('Linux preserves native transparency until recreation and never enables Vibrancy', () => {
+test('Linux toggles its app layer live on alpha without enabling unsupported frost', () => {
   assert.deepEqual(resolveRunningWindowBackground(clear, 'linux', false), {
     background: DEFAULT_WINDOW_BACKGROUND,
     restartRequired: true,
@@ -163,8 +160,8 @@ test('Linux preserves native transparency until recreation and never enables Vib
     restartRequired: false,
   });
   assert.deepEqual(resolveRunningWindowBackground({ ...clear, enabled: false }, 'linux', true), {
-    background: clear,
-    restartRequired: true,
+    background: { ...clear, enabled: false },
+    restartRequired: false,
   });
   assert.deepEqual(resolveRunningWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'linux', false), {
     background: DEFAULT_WINDOW_BACKGROUND,
@@ -203,4 +200,37 @@ test('Hyprland keeps a transparent native surface while toggling the app layer l
     background: DEFAULT_WINDOW_BACKGROUND,
     restartRequired: true,
   });
+});
+
+test('a window created with effects off can traverse all supported modes without replacing its surface', () => {
+  for (const platform of ['darwin', 'win32', 'linux']) {
+    for (const build of [19045, 22631]) {
+      for (const strategy of ['default', 'hyprland']) {
+        const created = getWindowComposition(DEFAULT_WINDOW_BACKGROUND, platform, build, strategy);
+        for (const value of [
+          clear,
+          frost,
+          DEFAULT_WINDOW_BACKGROUND,
+          clear,
+          DEFAULT_WINDOW_BACKGROUND,
+        ]) {
+          const state = resolveRunningWindowBackground(
+            value,
+            platform,
+            created.transparent,
+            platform === 'win32'
+              ? build
+              : { frostMode: strategy === 'hyprland' ? 'compositor' : 'native', strategy },
+          );
+          assert.equal(state.restartRequired, false, `${platform}/${build}/${strategy}`);
+          assert.equal(state.background.enabled, value.enabled);
+          assert.equal(state.background.transparency, value.transparency);
+          assert.equal(
+            getWindowComposition(value, platform, build, strategy).transparent,
+            created.transparent,
+          );
+        }
+      }
+    }
+  }
 });

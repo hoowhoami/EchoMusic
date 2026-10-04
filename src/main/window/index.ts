@@ -33,7 +33,7 @@ import {
   supportsWindowsAccent,
 } from './windowsComposition';
 import { applyMacWindowBackground } from './macComposition';
-import { createTitleBarController } from './titleBar';
+import { getMainWindowChrome } from './chrome';
 import { createHyprlandBackgroundController } from './hyprlandBackground';
 import { installWindowZoom, registerWindowZoomHandlers } from './zoom';
 import {
@@ -43,7 +43,7 @@ import {
   isWindowFullscreenTransitioning,
   setWindowFullscreen,
 } from './fullscreen';
-import { normalizeZoomLevel, titleBarHeight, zoomLevelToFactor } from '../../shared/windowZoom';
+import { normalizeZoomLevel, zoomLevelToFactor } from '../../shared/windowZoom';
 import {
   enterMacBackgroundMode,
   isMacBackgroundMode,
@@ -87,12 +87,7 @@ let windowPresentationRevision = 0;
 let cancelPendingBackgroundClose = () => {};
 let zoomController: ReturnType<typeof installWindowZoom> | null = null;
 let backgroundUnavailableReason = '';
-let titleBarController: ReturnType<typeof createTitleBarController> | null = null;
-const usesNativeOverlay = process.platform === 'win32' || process.platform === 'linux';
 const usesWayland = isWaylandWindowingBackend();
-const syncTitleBar = (level = normalizeZoomLevel(getMainAppSettings().windowZoomLevel)) => {
-  titleBarController?.sync(level);
-};
 
 const canUseMainWindow = (mainWindow: BrowserWindow | null): mainWindow is BrowserWindow => {
   return Boolean(mainWindow && !mainWindow.isDestroyed());
@@ -252,7 +247,6 @@ const syncHyprlandBackground = (remapped = false) => {
 const syncMainWindowBackground = () => {
   if (!canUseMainWindow(win)) return;
   if (nativeTheme.themeSource !== currentTheme) nativeTheme.themeSource = currentTheme;
-  syncTitleBar();
   if (process.platform === 'win32') {
     const state = resolveRunningWindowBackground(
       windowBackground,
@@ -321,16 +315,6 @@ export const registerMainWindowPreferenceHandlers = () => {
     () => zoomController,
   );
   nativeTheme.on('updated', syncMainWindowBackground);
-  ipcRegistry.registerListener('window:lyric-visibility', (event, visible: unknown) => {
-    if (
-      !win ||
-      event.sender !== win.webContents ||
-      event.senderFrame !== win.webContents.mainFrame ||
-      typeof visible !== 'boolean'
-    )
-      return;
-    titleBarController?.setLyricVisible(visible);
-  });
   ipcRegistry.registerHandler('window-background:get', readBackgroundState);
   ipcRegistry.registerHandler('window-background:diagnostics', (event) => {
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
@@ -456,36 +440,22 @@ export async function createWindow() {
     minWidth: placement.minWidth,
     minHeight: placement.minHeight,
     show: false, // 初始不显示，防止白屏
-    backgroundColor: activeComposition.transparent ? '#00000000' : initialBgColor,
-    frame: process.platform === 'darwin',
+    backgroundColor: windowBackground.enabled ? '#00000000' : initialBgColor,
+    ...getMainWindowChrome(process.platform),
     // Electron's WS_THICKFRAME option is Windows-only, independent of materials.
     ...(process.platform === 'win32' ? { thickFrame: !activeComposition.transparent } : {}),
     transparent: activeComposition.transparent,
     roundedCorners: activeComposition.clientCornerRadius === 0,
     ...(process.platform === 'darwin'
       ? {
-          // Electron chooses the translucent compositor during Widget initialization.
-          // Prime Vibrancy even when effects are off so later live toggles clear old frames.
-          // syncMainWindowBackground removes the material before loading/showing in off mode.
-          // Keep transparent:false for ordinary/frosted windows and their native frame.
+          // Prime Vibrancy at creation; the alpha surface stays available for live effects.
+          // syncMainWindowBackground removes the material before loading in off mode.
           vibrancy: 'under-window' as const,
           visualEffectState: 'active' as const,
           acceptFirstMouse: true,
-          titleBarOverlay: true,
-          trafficLightPosition: { x: 14, y: 14 },
         }
       : {}),
     hasShadow: true,
-    titleBarStyle: 'hidden',
-    ...(usesNativeOverlay
-      ? {
-          titleBarOverlay: {
-            color: '#00000000',
-            symbolColor: initialBgColor === '#26262a' ? '#ffffff' : '#202020',
-            height: titleBarHeight(normalizeZoomLevel(getMainAppSettings().windowZoomLevel)),
-          },
-        }
-      : {}),
     webPreferences: {
       preload,
       additionalArguments: [
@@ -513,7 +483,7 @@ export async function createWindow() {
   });
   // Windows cannot give a transparent window WS_THICKFRAME (Windows 10 clear/frost).
   // Electron then emulates fullscreen and maximize with SetBounds: isFullScreen()
-  // stays false, the WCO caption buttons stay visible and SC_MAXIMIZE is swallowed.
+  // stays false and native maximize requests can be swallowed.
   const emulatedWindowChrome = process.platform === 'win32' && activeComposition.transparent;
   installWindowFullscreen(win, { emulated: emulatedWindowChrome });
   if (process.platform === 'darwin') {
@@ -533,17 +503,6 @@ export async function createWindow() {
     emulatedMaximize: emulatedWindowChrome,
     isFullscreen: () => isWindowFullscreen(mainWindow),
   });
-  titleBarController = usesNativeOverlay
-    ? createTitleBarController(
-        win,
-        () =>
-          currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors),
-        () => normalizeZoomLevel(getMainAppSettings().windowZoomLevel),
-      )
-    : null;
-  win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
-    if (mainFrame && !inPlace) titleBarController?.setLyricVisible(false);
-  });
   windowStateTracker = trackMainWindowState(win, {
     initial: initialWindowState,
     enabled: () => rememberWindowSize,
@@ -553,7 +512,7 @@ export async function createWindow() {
     transitioning: () => isWindowFullscreenTransitioning(mainWindow),
     fullscreen: () => isWindowFullscreen(mainWindow),
   });
-  zoomController = installWindowZoom(win, syncTitleBar);
+  zoomController = installWindowZoom(win);
   installWindowFullscreenShortcut(win);
   syncMainWindowBackground();
   await logMainMemory('createWindow:after BrowserWindow');

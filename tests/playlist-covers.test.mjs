@@ -89,6 +89,56 @@ function createStore(storage) {
   return mod.usePlaylistCoversStore(pinia.createPinia());
 }
 
+test('recent playlist candidates and saved cards react to the shared cover cache without extra page loads', async () => {
+  const shortcuts = compile('../src/renderer/layouts/sidebarShortcutResources.ts', {});
+  const covers = createStore({ getKv: async () => ({}), setKv: async () => {} });
+  const meta = { ...playlist, globalCollectionId: '12345', name: '歌单' };
+  const snapshot = { kind: 'playlist', id: '12345', title: '旧名称', image: 'old-snapshot' };
+  const queues = [
+    {
+      id: 'queue:playlist:12',
+      type: 'playlist',
+      title: '队列',
+      coverUrl: 'old-queue',
+      songs: [{}],
+      updatedAt: 1,
+    },
+  ];
+  const resolve = (entry) =>
+    shortcuts.resolvePlaylistShortcut(entry, [meta], (item) => covers.coverFor(item, 7));
+  const candidate = vue.computed(() =>
+    resolve(shortcuts.recentPlaylistShortcuts(queues, [meta])[0]),
+  );
+  const saved = vue.computed(() => resolve(snapshot));
+  await covers.updateFromPages(
+    meta,
+    7,
+    [page([track(1, 'https://img.test/first', 0)])],
+    () => true,
+  );
+  assert.equal(candidate.value.image, 'https://img.test/first');
+  assert.equal(saved.value.image, candidate.value.image);
+  await covers.updateFromPages(
+    meta,
+    7,
+    [page([track(2, 'https://img.test/reordered', 0)], 1, 10)],
+    () => true,
+  );
+  assert.equal(candidate.value.image, 'https://img.test/reordered');
+  assert.equal(saved.value.image, candidate.value.image);
+  await covers.setManualCover({ ...meta, pic: 'https://img.test/manual' }, 7, () => true);
+  assert.equal(candidate.value.image, 'https://img.test/manual');
+  assert.equal(saved.value.image, candidate.value.image);
+  const cleared = { ...meta, id: 13, listid: 13 };
+  await covers.updateFromPages(cleared, 7, [page([], 0)], () => true);
+  assert.equal(
+    shortcuts.resolvePlaylistShortcut(snapshot, [cleared], (item) => covers.coverFor(item, 7))
+      .image,
+    '',
+  );
+  assert.equal(snapshot.image, 'old-snapshot');
+});
+
 test('favorites refresh updates the shared cover from the same complete song pages after reordering', async () => {
   const covers = createStore({ getKv: async () => ({}), setKv: async () => {} });
   const logger = { debug() {}, info() {}, warn() {}, error() {} };

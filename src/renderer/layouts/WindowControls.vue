@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import Button from '@/components/ui/Button.vue';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { iconFullscreen, iconPictureInPicture, iconX } from '@/icons';
+import { iconFullscreen, iconPictureInPicture } from '@/icons';
+import { Icon } from '@iconify/vue';
 import { useSettingStore } from '@/stores/setting';
 withDefaults(defineProps<{ showMiniPlayer?: boolean }>(), { showMiniPlayer: false });
 const settings = useSettingStore();
@@ -10,21 +10,6 @@ const openMiniPlayer = () => {
 };
 const toggleFullscreen = () => window.electron.windowControl('fullscreen');
 const isMac = window.electron.platform === 'darwin';
-const isLinux = window.electron.platform === 'linux';
-const controlsOverlay = (
-  navigator as Navigator & { windowControlsOverlay?: EventTarget & { visible: boolean } }
-).windowControlsOverlay;
-const nativeControlsVisible = ref(!isLinux || controlsOverlay?.visible === true);
-const showFallbackClose = computed(() => isLinux && !nativeControlsVisible.value);
-const syncNativeControls = () => {
-  nativeControlsVisible.value = !isLinux || controlsOverlay?.visible === true;
-};
-onMounted(() => {
-  syncNativeControls();
-  controlsOverlay?.addEventListener('geometrychange', syncNativeControls);
-});
-onUnmounted(() => controlsOverlay?.removeEventListener('geometrychange', syncNativeControls));
-const closeWindow = () => window.electron.windowControl('close');
 </script>
 
 <template>
@@ -51,17 +36,6 @@ const closeWindow = () => window.electron.windowControl('close');
     >
       <Icon :icon="iconFullscreen" width="14" height="14" />
     </Button>
-    <Button
-      v-if="showFallbackClose"
-      variant="unstyled"
-      size="none"
-      class="window-action window-close-action"
-      tooltip="关闭窗口"
-      aria-label="关闭窗口"
-      @click="closeWindow"
-    >
-      <Icon :icon="iconX" width="16" height="16" />
-    </Button>
   </div>
 </template>
 
@@ -83,7 +57,9 @@ const closeWindow = () => window.electron.windowControl('close');
      歌词页通过 --window-action-color / --window-action-hover-color 覆盖为白色系。 */
   color: var(--window-action-color, var(--color-text-secondary));
   background: transparent;
-  transition: color 0.2s;
+  transition:
+    color 0.2s,
+    background-color 0.2s;
 }
 .window-action:hover {
   color: var(--window-action-hover-color, var(--color-text-main));

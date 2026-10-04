@@ -41,7 +41,7 @@ import { createLyricTimeline, findLyricIndexAtTimeMs } from '@/composables/useLy
 import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
 import { subscribeWithSnapshot } from '@/utils/snapshotSubscription';
 import { useWindowDrag } from '@/composables/useWindowDrag';
-import { getAccentPalette } from '@/utils/color';
+import { applyAccentToRoot } from '@/utils/color';
 
 // 卡片折叠/展开高度，源自共享尺寸常量，保证与主进程窗口尺寸一致、不漂移
 const cardCollapsedHeight = `${MINI_PLAYER_DIMENSIONS.controlsHeight}px`;
@@ -61,6 +61,7 @@ const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } = usePlaybackProg
     (playback.value?.isProgressBusy === true ? 'buffering' : null),
 );
 const appearance = ref<MiniPlayerAppearancePayload | null>(null);
+let lastAppearanceKey = '';
 const queue = ref<MiniPlayerQueuePayload | null>(null);
 const lyric = ref<MiniPlayerLyricPayload | null>(null);
 const lyricCoverUrl = ref('');
@@ -383,15 +384,17 @@ const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
       (lyric.value?.timeOffset ?? 0) !== previousLyricTimeOffset,
   });
   syncLyricClockTimer();
-  if (appearance.value) {
+  const appearanceKey = JSON.stringify(appearance.value);
+  if (appearance.value && appearanceKey !== lastAppearanceKey) {
+    lastAppearanceKey = appearanceKey;
     document.documentElement.classList.toggle('dark', appearance.value.isDark);
-    const palette = getAccentPalette(
-      appearance.value.accentColor || '#0071e3',
-      appearance.value.isDark,
+    document.documentElement.classList.toggle(
+      'floating-surfaces-frosted',
+      appearance.value.floatingSurfaceFrosted === true,
     );
-    document.documentElement.style.setProperty('--color-primary', palette.primary);
-    document.documentElement.style.setProperty('--color-primary-text', palette.primaryText);
-    document.documentElement.style.setProperty('--color-on-primary', palette.onPrimary);
+    for (const [key, value] of Object.entries(appearance.value.colors ?? {}))
+      document.documentElement.style.setProperty(key, value);
+    applyAccentToRoot(appearance.value.accentColor || '#0071e3', appearance.value.isDark);
     document.documentElement.style.fontFamily = appearance.value.fontFamily || '';
   }
 };

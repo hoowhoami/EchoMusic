@@ -5,7 +5,11 @@ import {
   rgbToOklab,
   oklabToRgb,
 } from '../../shared/accentPalette';
-export { normalizeAccent, getAccentPalette } from '../../shared/accentPalette';
+export {
+  normalizeAccent,
+  getAccentPalette,
+  createAccentPaletteFromPrimary,
+} from '../../shared/accentPalette';
 export type { AccentPalette } from '../../shared/accentPalette';
 // 主题色工具：提取、归一化、派生 CSS 变量
 
@@ -137,9 +141,9 @@ export const waitForAbortableDelay = (ms: number, signal?: AbortSignal): Promise
   });
 
 // 从图片 URL 中提取主色，失败或被取消时返回 null
-export const extractDominantColor = (
+const extractImageColor = (
   url: string,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; average?: boolean } = {},
 ): Promise<string | null> => {
   return new Promise((resolve) => {
     if (!url) {
@@ -198,6 +202,21 @@ export const extractDominantColor = (
         }
         ctx.drawImage(img, 0, 0, size, size);
         const data = ctx.getImageData(0, 0, size, size).data;
+        if (options.average) {
+          let r = 0,
+            g = 0,
+            b = 0,
+            weight = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            const alpha = data[i + 3] / 255;
+            r += data[i] * alpha;
+            g += data[i + 1] * alpha;
+            b += data[i + 2] * alpha;
+            weight += alpha;
+          }
+          finish(weight ? rgbToHex(r / weight, g / weight, b / weight) : null);
+          return;
+        }
 
         // 按色相分桶（每 20° 一桶，共 18 个桶）
         const BUCKET_COUNT = 18;
@@ -273,6 +292,11 @@ export const extractDominantColor = (
   });
 };
 
+export const extractDominantColor = (url: string, options: { signal?: AbortSignal } = {}) =>
+  extractImageColor(url, options);
+export const extractAverageColor = (url: string, options: { signal?: AbortSignal } = {}) =>
+  extractImageColor(url, { ...options, average: true });
+
 // ─────────────── 写入 CSS 变量 ───────────────
 
 // 上一次应用的 RGB（用于插值动画）
@@ -346,8 +370,8 @@ const setAccentVars = (rgb: { r: number; g: number; b: number }, isDark: boolean
 };
 
 // 带 600ms 插值动画的主题色应用
-export const applyAccentToRoot = (hex: string, isDark: boolean) => {
-  const normalized = normalizeAccent(hex, isDark);
+export const applyAccentToRoot = (hex: string, isDark: boolean, preservePrimary = false) => {
+  const normalized = preservePrimary ? hex : normalizeAccent(hex, isDark);
   const targetRgb = hexToRgb(normalized);
   if (!targetRgb) return;
 

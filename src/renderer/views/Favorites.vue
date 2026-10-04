@@ -789,7 +789,7 @@ watch(
                 :items="videos"
                 :loading="videosLoading && !videosLoaded"
                 :active="activeTab === 'videos'"
-                :itemMinWidth="260"
+                :itemMinWidth="240"
                 :itemAspectRatio="16 / 9"
                 :itemChromeHeight="66"
                 :gap="20"

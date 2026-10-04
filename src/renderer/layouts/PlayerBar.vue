@@ -563,13 +563,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    class="player-bar-container w-full shrink-0 px-2 pb-1.25 z-1000"
-    data-toast-anchor="main-player"
-  >
+  <div class="player-bar-container w-full shrink-0 z-1000" data-toast-anchor="main-player">
     <footer
       ref="playerBarRef"
-      class="player-bar w-full h-21 border rounded-xl flex items-center justify-between px-3 py-1 gap-3 select-none no-drag transition-all duration-300"
+      class="player-bar w-full flex items-center justify-between gap-3 select-none no-drag transition-all duration-300"
     >
       <!-- 1. 左侧：歌曲信息 - 弹性增长 -->
       <div class="flex-1 flex items-center gap-3 min-w-30 max-w-[320px] overflow-hidden">
@@ -910,9 +907,12 @@ onUnmounted(() => {
 }
 
 .player-bar {
-  background: var(--color-bg-player);
-  border-color: var(--border-subtle);
-  box-shadow: var(--shadow-elevated);
+  min-height: 88px;
+  padding: 10px 18px;
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  box-shadow: none;
   transition:
     background-color 0.3s ease,
     border-color 0.3s ease;

@@ -221,7 +221,7 @@ const handleInteractOutside = (event: Event) => {
 }
 
 :global(.dialog-content) {
-  @apply fixed w-[420px] max-w-[92vw] rounded-2xl border flex flex-col select-none;
+  @apply fixed w-[420px] max-w-[92vw] rounded-xl border flex flex-col select-none;
   @apply max-h-[calc(100vh-240px)];
   /*
    * 用自动外边距将弹窗放在可视区 46% 高度，避免百分比 translate 产生半物理像素。

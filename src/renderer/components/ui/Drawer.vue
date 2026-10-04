@@ -5,6 +5,7 @@ import { useVModel } from '@vueuse/core';
 
 interface Props {
   open?: boolean;
+  title?: string;
   side?: 'right' | 'bottom';
   overlayClass?: string;
   panelClass?: string;
@@ -61,6 +62,7 @@ onUnmounted(() => {
       :data-state="open ? 'open' : 'closed'"
       :style="panelStyle"
       role="dialog"
+      :aria-label="title"
       :aria-hidden="!open"
       :inert="!open || undefined"
     >
@@ -102,8 +104,8 @@ onUnmounted(() => {
    * 上下边距刻意不对称：整体略向下沉，让面板离标题栏更远一些。
    * 各具体抽屉的 top / bottom 请统一引用这两个变量，不要再写死 12px。
    */
-  --drawer-top-gap: 28px;
-  --drawer-bottom-gap: 0px;
+  --drawer-top-gap: 16px;
+  --drawer-bottom-gap: 12px;
   --drawer-titlebar-height: max(46px, calc(35px / var(--window-zoom-factor, 1)));
   --drawer-safe-top: calc(var(--drawer-titlebar-height) + var(--drawer-top-gap));
   --drawer-safe-bottom: calc(var(--drawer-bottom-offset, 96px) + var(--drawer-bottom-gap));

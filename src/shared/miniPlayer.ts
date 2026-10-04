@@ -87,6 +87,8 @@ export interface MiniPlayerSnapshotPatch {
 }
 
 export interface MiniPlayerAppearancePayload {
+  floatingSurfaceFrosted?: boolean;
+  colors?: Record<string, string>;
   isDark: boolean;
   accentColor: string;
   fontFamily?: string;

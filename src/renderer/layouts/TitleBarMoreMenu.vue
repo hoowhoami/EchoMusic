@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isWindowDragTarget } from './windowDrag';
 import { logger } from '@/utils/logger';
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { PopoverRoot, PopoverAnchor, PopoverTrigger, PopoverPortal, PopoverContent } from 'reka-ui';
@@ -32,7 +33,7 @@ const handleNativePointerDown = (point?: unknown, details?: unknown) => {
     // 与搜索弹层一致：只补充原生拖动层点击，普通按钮由 Popover 处理。
     // 不把延迟到达的图钉/触发按钮点击当成外部点击。
     const target = document.elementFromPoint(point.x, point.y);
-    if (!target?.closest('.native-titlebar .drag-region, .native-titlebar .titlebar-drag-space')) {
+    if (!isWindowDragTarget(target)) {
       logger.info('TitlebarPointer', {
         popup: 'more',
         decision: 'ignored-non-drag-target',

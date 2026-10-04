@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { setOpenThemesHandler } from '@/theme/registry';
+import { settingsDialogOpen } from '@/composables/useSettingsDialog';
 import { setupStartupPluginUpdateCheck } from '@/stores/pluginUpdates';
 let disposePluginUpdateCheck: (() => void) | undefined;
 import TooltipScope from '@/components/ui/TooltipScope.vue';
@@ -92,14 +94,6 @@ const isMiniPlayerWindow = () => {
   );
 };
 const isMiniPlayerRoute = computed(isMiniPlayerWindow);
-watch(
-  () => Boolean(player.value?.isLyricViewOpen),
-  (visible) => {
-    if (!isMiniPlayerRoute.value && window.electron?.platform !== 'darwin')
-      window.electron?.ipcRenderer.send('window:lyric-visibility', visible);
-  },
-  { immediate: true },
-);
 // 首屏从 loading 切到主界面时跳过根级过渡，避免 out-in "先淡出旧页 → 空档" 造成的白屏
 const suppressRootTransition = ref(false);
 const pendingShareTarget = ref<ShareTarget | null>(null);
@@ -129,13 +123,7 @@ const currentUserKey = computed(() =>
 );
 let loadedCloudUserKey = '';
 
-const updateTheme = () => {
-  const isDark =
-    settings.theme === 'dark' ||
-    (settings.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  document.documentElement.classList.toggle('dark', isDark);
-  themeStore.onThemeChange();
-};
+const updateTheme = () => themeStore.onThemeChange();
 
 const applyGlobalFont = () => {
   document.documentElement.style.fontFamily = settings.buildGlobalFontFamily();
@@ -265,6 +253,10 @@ onMounted(async () => {
     return;
   }
 
+  // 先监听再同步原生颜色模式，避免启动时恢复 system 触发的 change 被漏掉。
+  colorSchemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  colorSchemeMediaQuery.addEventListener('change', updateTheme);
+
   disposeContentBlacklistIntegration = registerContentBlacklistIntegration();
 
   const [
@@ -320,6 +312,10 @@ onMounted(async () => {
     }, 300);
   }
 
+  setOpenThemesHandler(() => {
+    settingsDialogOpen.value = false;
+    void router.push('/main/themes');
+  });
   updateTheme();
   applyGlobalFont();
   themeStore.applyCurrent();
@@ -363,8 +359,6 @@ onMounted(async () => {
   }
   void refreshPlugins();
   scheduleClipboardShareCheck();
-  colorSchemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  colorSchemeMediaQuery.addEventListener('change', updateTheme);
 });
 
 onUnmounted(() => {
@@ -403,6 +397,7 @@ onUnmounted(() => {
   disposeContentBlacklistIntegration = null;
   disposeTaskBridges?.();
   disposeTaskBridges = null;
+  setOpenThemesHandler(null);
   colorSchemeMediaQuery?.removeEventListener('change', updateTheme);
   colorSchemeMediaQuery = null;
 });
@@ -416,15 +411,22 @@ watch(
   },
 );
 watch(
-  () => settings.theme,
+  () => [
+    themeStore.activePreferences,
+    themeStore.currentTheme,
+    themeStore.cssTokens,
+    themeStore.surfaceVariables,
+  ],
   () => {
-    if (!isMiniPlayerRoute.value) updateTheme();
+    if (!isMiniPlayerRoute.value) themeStore.applyCurrent();
   },
+  { deep: true },
 );
 watch(
   () => settings.floatingSurfaceFrosted,
   (enabled) => {
-    document.documentElement.classList.toggle('floating-surfaces-frosted', enabled === true);
+    if (!isMiniPlayerRoute.value)
+      document.documentElement.classList.toggle('floating-surfaces-frosted', enabled === true);
   },
   { immediate: true },
 );

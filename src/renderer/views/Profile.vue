@@ -18,6 +18,7 @@ import Select from '@/components/ui/Select.vue';
 import Textarea from '@/components/ui/Textarea.vue';
 import ContentBlacklistDialog from '@/components/profile/ContentBlacklistDialog.vue';
 import ListeningPreferencesDialog from '@/components/profile/ListeningPreferencesDialog.vue';
+import LogoutConfirmDialog from '@/components/profile/LogoutConfirmDialog.vue';
 
 import Avatar from '@/components/ui/Avatar.vue';
 import Tag from '@/components/ui/Tag.vue';
@@ -1542,12 +1543,7 @@ onMounted(() => loadData());
       </div>
     </div>
 
-    <Dialog v-model:open="showLogoutConfirm" title="退出登录" description="确定要退出当前账号吗？">
-      <template #footer>
-        <Button variant="outline" size="sm" @click="showLogoutConfirm = false">取消</Button>
-        <Button variant="danger" size="sm" @click="confirmLogout">确认退出</Button>
-      </template>
-    </Dialog>
+    <LogoutConfirmDialog v-model:open="showLogoutConfirm" @confirm="confirmLogout" />
 
     <Dialog
       v-model:open="showProfileEditor"
@@ -2120,8 +2116,8 @@ onMounted(() => loadData());
 }
 @media (max-width: 420px) {
   :global(.drawer-panel.profile-social-drawer) {
-    --drawer-top-gap: 16px;
-    --drawer-bottom-gap: -4px;
+    --drawer-top-gap: 4px;
+    --drawer-bottom-gap: 8px;
     right: 8px;
     width: min(460px, calc(100vw - 16px));
   }
@@ -2659,7 +2655,6 @@ onMounted(() => loadData());
 }
 .vip-expire-popover.echo-popover-content {
   padding: 12px 14px;
-  border-radius: 14px;
   border-color: var(--border-subtle);
 }
 

@@ -1,3 +1,4 @@
+import { registerThemeAssetHandlers } from './themeAssets';
 import { ipcRegistry } from './registry';
 import { registerApiServerHandlers } from './server';
 import { registerWindowHandlers } from './window';
@@ -49,6 +50,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerSettingsBackupHandlers();
   registerRecognizeHandlers();
   registerOpenccHandlers();
+  registerThemeAssetHandlers();
   registered = true;
 };
 

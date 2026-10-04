@@ -112,6 +112,8 @@ export interface NowPlayingLyricPayload {
 }
 
 export interface NowPlayingAppearancePayload {
+  floatingSurfaceFrosted?: boolean;
+  colors?: Record<string, string>;
   isDark: boolean;
   accentColor: string;
   fontFamily?: string;

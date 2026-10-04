@@ -342,7 +342,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
   border: 1px solid var(--border-subtle);
-  border-radius: 16px;
+  border-radius: 12px;
   box-shadow: var(--shadow-elevated);
   outline: none;
   transform-origin: var(--reka-popover-content-transform-origin);

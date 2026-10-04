@@ -194,15 +194,18 @@ const openComments = () => {
   commentTrack.value = { ...currentTrack.value };
   isCommentDrawerOpen.value = true;
 };
-const closePanels = () => {
-  isSettingsOpen.value = false;
-  settingsView.value = 'skins';
+const closePlaybackPanels = () => {
   isQueueDrawerOpen.value = false;
   isCommentDrawerOpen.value = false;
   showAddToPlaylistDialog.value = false;
   lyricStore.sourceDialogOpen = false;
   isQualityOpen.value = false;
   isEffectOpen.value = false;
+};
+const closePanels = () => {
+  isSettingsOpen.value = false;
+  settingsView.value = 'skins';
+  closePlaybackPanels();
 };
 const openPanel = async (panel: LyricsPagePanel) => {
   if (
@@ -254,7 +257,8 @@ const pageContext = useLyricsPageContext(controls, titlebar, openPanel, closePan
   send: (content: string) => barrageRef.value?.onSent(content),
 });
 watch(pluginPage, (next, previous) => {
-  if (next !== previous) closePanels();
+  // The host skin drawer owns the switch and must remain open for further selections.
+  if (next !== previous) closePlaybackPanels();
   // 仅当 provider 指向自定义皮肤但解析失败时才提示；用户主动切换到内置皮肤不提示
   if (previous && !next && !settingStore.lyricsPageProvider.startsWith(HOST_SKIN_PREFIX)) {
     toastStore.warning('自定义歌词页不可用，已恢复默认歌词页');

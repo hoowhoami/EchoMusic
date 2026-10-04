@@ -8,6 +8,7 @@ import { computed } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import Drawer from '@/components/ui/Drawer.vue';
 import Button from '@/components/ui/Button.vue';
+import SelectionBadge from '@/components/ui/SelectionBadge.vue';
 import LyricSkinSettingsPanel from './LyricSkinSettingsPanel.vue';
 import {
   HOST_SKIN_PREFIX,
@@ -17,7 +18,7 @@ import {
   retryAndSelectLyricsPage,
 } from '@/plugins/lyricsPage';
 import type { LyricSkin } from '@/plugins/lyricsPage';
-import { iconCheck, iconChevronLeft, iconMusic, iconSettings, iconX } from '@/icons';
+import { iconChevronLeft, iconMusic, iconSettings, iconX } from '@/icons';
 
 type LyricViewMode = 'cover' | 'portrait' | 'lyric' | 'amll';
 
@@ -72,10 +73,6 @@ const applySkin = (key: string) => {
     settingStore.lyricViewMode = key.slice(HOST_SKIN_PREFIX.length) as LyricViewMode;
   }
   settingStore.lyricsPageProvider = key;
-};
-
-const retryActiveSkin = () => {
-  retryAndSelectLyricsPage(activeSkinKey.value, applySkin);
 };
 
 /** 皮肤卡交互：单击选中皮肤；已选中皮肤再次点击进入该皮肤的设置面板。 */
@@ -213,9 +210,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
                     <div v-else class="skin-card-placeholder" :style="cardStyle(skin, index)">
                       <Icon :icon="iconMusic" width="26" height="26" class="skin-card-icon" />
                     </div>
-                    <span v-if="skin.key === activeSkinKey" class="skin-card-check">
-                      <Icon :icon="iconCheck" width="12" height="12" />
-                    </span>
+                    <SelectionBadge v-if="skin.key === activeSkinKey" class="skin-card-check" />
                     <span
                       v-if="skin.key === activeSkinKey"
                       class="skin-card-settings"
@@ -266,8 +261,8 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 
 @media (max-width: 420px) {
   .drawer-panel.lyric-settings-panel {
-    --drawer-top-gap: 16px;
-    --drawer-bottom-gap: -4px;
+    --drawer-top-gap: 4px;
+    --drawer-bottom-gap: 8px;
     right: 8px !important;
     width: min(360px, calc(100vw - 16px)) !important;
   }
@@ -663,17 +658,6 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   position: absolute;
   top: 8px;
   right: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  color: white;
-  background: var(--color-primary);
-  box-shadow:
-    0 1px 6px color-mix(in srgb, var(--color-primary) 55%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, white 22%, transparent);
   z-index: 1;
   transition: opacity 0.15s ease;
 }

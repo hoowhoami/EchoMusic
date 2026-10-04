@@ -419,6 +419,8 @@ export const initMiniPlayerSync = async () => {
     window.electron.miniPlayer?.syncSnapshot({
       appearance: {
         isDark: themeStore.isDark,
+        colors: themeStore.cssTokens,
+        floatingSurfaceFrosted: themeStore.floatingSurfaceFrosted,
         accentColor: themeStore.sourceColor || '#0071e3',
         fontFamily: settingStore.buildGlobalFontFamily(),
       },
@@ -508,8 +510,9 @@ export const initMiniPlayerSync = async () => {
         () => settingStore.globalFont,
         () => themeStore.isDark,
         () => themeStore.sourceColor,
+        () => themeStore.cssTokens,
+        () => themeStore.floatingSurfaceFrosted,
         () => themeStore.accentMode,
-        () => themeStore.presetId,
         () => themeStore.customColor,
       ],
       syncAppearanceSnapshot,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import Sortable from 'sortablejs';
 import Button from '@/components/ui/Button.vue';
@@ -9,7 +10,7 @@ import PluginIcon from '@/plugins/PluginIcon.vue';
 import type { PluginIcon as PluginIconValue } from '@/plugins/registry';
 import { useSettingStore } from '@/stores/setting';
 import {
-  emptySidebarLayout,
+  resetSidebarMenus,
   reorderSidebarItems,
   reorderSidebarSections,
   setSidebarItemHidden,
@@ -43,7 +44,11 @@ const destroySortables = () => {
 const readSectionIds = () => {
   const list = sectionListRef.value;
   if (!list) return [];
-  return Array.from(list.querySelectorAll<HTMLElement>(':scope > [data-sidebar-section-id]'))
+  return Array.from(
+    list.querySelectorAll<HTMLElement>(
+      ':scope > [data-sidebar-section-id]:not([data-sidebar-order-locked="true"])',
+    ),
+  )
     .map((element) => element.dataset.sidebarSectionId)
     .filter((id): id is string => Boolean(id));
 };
@@ -86,7 +91,7 @@ const setupSortables = async () => {
   if (!list) return;
   sortables.push(
     new Sortable(list, {
-      draggable: '[data-sidebar-section-id]',
+      draggable: '[data-sidebar-section-id]:not([data-sidebar-order-locked="true"])',
       dataIdAttr: 'data-sidebar-section-id',
       handle: '.sidebar-layout-section-handle',
       animation: 150,
@@ -94,6 +99,7 @@ const setupSortables = async () => {
       fallbackTolerance: 5,
       ghostClass: 'sidebar-layout-sort-ghost',
       chosenClass: 'sidebar-layout-sort-chosen',
+      onMove: (event) => event.related.dataset.sidebarOrderLocked !== 'true',
       onEnd: () => {
         saveSectionOrder();
       },
@@ -101,6 +107,7 @@ const setupSortables = async () => {
   );
 
   for (const section of props.sections) {
+    if (section.items.every((item) => item.lockedOrder)) continue;
     const itemList = list.querySelector<HTMLElement>(
       `[data-sidebar-item-list="${CSS.escape(section.id)}"]`,
     );
@@ -182,7 +189,7 @@ onBeforeUnmount(destroySortables);
         :class="['sidebar-layout-entry', collapsed ? 'is-rail' : 'is-pill']"
         aria-label="编辑侧边栏"
         tooltip="编辑侧边栏"
-        tooltip-side="right"
+        tooltip-side="top"
       >
         <Icon :icon="iconSlidersHorizontal" width="18" height="18" />
       </Button>
@@ -191,17 +198,20 @@ onBeforeUnmount(destroySortables);
     <div class="sidebar-layout-editor" aria-label="编辑侧边栏布局">
       <div class="sidebar-layout-heading">
         <div class="sidebar-layout-title">
-          <span>侧边栏布局</span>
+          <span>菜单与歌单</span>
         </div>
-        <button
-          type="button"
-          class="sidebar-layout-reset app-focus-ring-soft"
-          title="恢复默认"
-          aria-label="恢复默认"
-          @click="settings.sidebarLayout = emptySidebarLayout()"
-        >
-          恢复默认
-        </button>
+        <Tooltip content="恢复菜单与歌单默认布局">
+          <template #trigger>
+            <button
+              type="button"
+              class="sidebar-layout-reset app-focus-ring-soft"
+              aria-label="恢复默认"
+              @click="settings.sidebarLayout = resetSidebarMenus(settings.sidebarLayout)"
+            >
+              恢复默认
+            </button>
+          </template>
+        </Tooltip>
       </div>
 
       <div ref="sectionListRef" class="sidebar-layout-section-list">
@@ -211,40 +221,53 @@ onBeforeUnmount(destroySortables);
           class="sidebar-layout-section"
           :class="{ 'is-hidden': section.isHidden }"
           :data-sidebar-section-id="section.id"
+          :data-sidebar-order-locked="section.lockedOrder ? 'true' : undefined"
         >
           <div class="sidebar-layout-section-row">
-            <span class="sidebar-layout-section-handle" title="拖动排序">
-              <Cover
-                v-if="sectionVisualItem(section)?.layoutCover"
-                :url="sectionVisualItem(section)?.layoutCover"
-                :size="64"
-                :width="22"
-                :height="22"
-                :borderRadius="7"
-              />
-              <PluginIcon
-                v-else-if="sectionVisualItem(section)?.layoutIcon"
-                :icon="sectionVisualItem(section)?.layoutIcon"
-                :width="16"
-                :height="16"
-              />
-            </span>
+            <Tooltip :content="section.lockedOrder ? '位置固定' : '拖动排序'">
+              <template #trigger>
+                <span
+                  class="sidebar-layout-section-handle"
+                  :class="{ 'is-fixed': section.lockedOrder }"
+                >
+                  <Cover
+                    v-if="sectionVisualItem(section)?.layoutCover"
+                    :url="sectionVisualItem(section)?.layoutCover"
+                    :size="64"
+                    :width="22"
+                    :height="22"
+                    :borderRadius="7"
+                  />
+                  <PluginIcon
+                    v-else-if="sectionVisualItem(section)?.layoutIcon"
+                    :icon="sectionVisualItem(section)?.layoutIcon"
+                    :width="16"
+                    :height="16"
+                  />
+                </span>
+              </template>
+            </Tooltip>
             <div class="sidebar-layout-section-copy">
               <span>{{ section.title }}</span>
-              <small>
+              <small v-if="section.lockedOrder">位于自建歌单顶部</small>
+              <small v-else>
                 {{ section.items.filter((item) => !item.isHidden).length }} /
                 {{ section.items.length }} 项
               </small>
             </div>
-            <button
-              type="button"
-              class="sidebar-layout-icon-button app-focus-ring-soft"
-              :aria-pressed="!section.isHidden"
-              :title="section.isHidden ? '显示分组' : '隐藏分组'"
-              @click="toggleSection(section)"
-            >
-              <Icon :icon="section.isHidden ? iconEyeOff : iconEye" width="15" height="15" />
-            </button>
+            <Tooltip :content="section.isHidden ? '显示分组' : '隐藏分组'">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="sidebar-layout-icon-button app-focus-ring-soft"
+                  :aria-pressed="!section.isHidden"
+                  :aria-label="section.isHidden ? '显示分组' : '隐藏分组'"
+                  @click="toggleSection(section)"
+                >
+                  <Icon :icon="section.isHidden ? iconEyeOff : iconEye" width="15" height="15" />
+                </button>
+              </template>
+            </Tooltip>
           </div>
 
           <div class="sidebar-layout-item-list" :data-sidebar-item-list="section.id">
@@ -256,32 +279,43 @@ onBeforeUnmount(destroySortables);
               :data-sidebar-item-key="item.key"
               :data-sidebar-order-locked="item.lockedOrder ? 'true' : undefined"
             >
-              <span class="sidebar-layout-item-handle" title="拖动排序">
-                <Cover
-                  v-if="item.layoutCover"
-                  :url="item.layoutCover"
-                  :size="64"
-                  :width="22"
-                  :height="22"
-                  :borderRadius="7"
-                />
-                <PluginIcon
-                  v-else-if="item.layoutIcon"
-                  :icon="item.layoutIcon"
-                  :width="16"
-                  :height="16"
-                />
-              </span>
+              <Tooltip :content="item.lockedOrder ? '位置固定' : '拖动排序'">
+                <template #trigger>
+                  <span
+                    class="sidebar-layout-item-handle"
+                    :class="{ 'is-fixed': item.lockedOrder }"
+                  >
+                    <Cover
+                      v-if="item.layoutCover"
+                      :url="item.layoutCover"
+                      :size="64"
+                      :width="22"
+                      :height="22"
+                      :borderRadius="7"
+                    />
+                    <PluginIcon
+                      v-else-if="item.layoutIcon"
+                      :icon="item.layoutIcon"
+                      :width="16"
+                      :height="16"
+                    />
+                  </span>
+                </template>
+              </Tooltip>
               <span class="sidebar-layout-item-title">{{ item.title }}</span>
-              <button
-                type="button"
-                class="sidebar-layout-icon-button is-small app-focus-ring-soft"
-                :aria-pressed="!item.isHidden"
-                :title="item.isHidden ? '显示入口' : '隐藏入口'"
-                @click="toggleItem(item)"
-              >
-                <Icon :icon="item.isHidden ? iconEyeOff : iconEye" width="14" height="14" />
-              </button>
+              <Tooltip :content="item.isHidden ? '显示入口' : '隐藏入口'">
+                <template #trigger>
+                  <button
+                    type="button"
+                    class="sidebar-layout-icon-button is-small app-focus-ring-soft"
+                    :aria-pressed="!item.isHidden"
+                    :aria-label="item.isHidden ? '显示入口' : '隐藏入口'"
+                    @click="toggleItem(item)"
+                  >
+                    <Icon :icon="item.isHidden ? iconEyeOff : iconEye" width="14" height="14" />
+                  </button>
+                </template>
+              </Tooltip>
             </div>
           </div>
         </section>
@@ -329,7 +363,7 @@ onBeforeUnmount(destroySortables);
   max-width: min(368px, calc(100vw - 24px));
   max-height: min(620px, calc(100vh - 24px));
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 0;
   background: var(--floating-surface-bg);
   -webkit-backdrop-filter: var(--floating-surface-filter);
@@ -487,6 +521,11 @@ onBeforeUnmount(destroySortables);
 .sidebar-layout-section-handle:active,
 .sidebar-layout-item-handle:active {
   cursor: grabbing;
+}
+
+.sidebar-layout-section-handle.is-fixed,
+.sidebar-layout-item-handle.is-fixed {
+  cursor: default;
 }
 
 .sidebar-layout-section-copy {

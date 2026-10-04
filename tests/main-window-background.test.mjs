@@ -13,6 +13,7 @@ const compile = (file) =>
   }).code;
 const compiled = {
   window: compile('../src/main/window/index.ts'),
+  chrome: compile('../src/main/window/chrome.ts'),
   fullscreen: compile('../src/main/window/fullscreen.ts'),
   background: compile('../src/main/macBackgroundMode.ts'),
   app: compile('../src/shared/app.ts'),
@@ -170,7 +171,6 @@ async function setup({
     './pointer': { installWindowPointerEvents: noop },
     './windowsComposition': { supportsWindowsAccent: () => false, applyWindowsComposition: noop },
     './macComposition': { applyMacWindowBackground: noop },
-    './titleBar': { createTitleBarController: () => ({ sync: noop }) },
     './hyprlandBackground': {},
     './zoom': { installWindowZoom: () => ({}), registerWindowZoomHandlers: noop },
     './logger': { warn: noop },
@@ -196,6 +196,7 @@ async function setup({
     return module.exports;
   };
   mocks['../../shared/app'] = evaluate(compiled.app);
+  mocks['./chrome'] = evaluate(compiled.chrome);
   mocks['../../shared/windowZoom'] = evaluate(compiled.zoom);
   const fullscreen = (mocks['./fullscreen'] = evaluate(compiled.fullscreen));
   const background = (mocks['../macBackgroundMode'] = evaluate(compiled.background));

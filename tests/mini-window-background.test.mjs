@@ -13,6 +13,7 @@ const compile = (file) =>
   }).code;
 const compiled = {
   window: compile('../src/main/window/index.ts'),
+  chrome: compile('../src/main/window/chrome.ts'),
   mini: compile('../src/main/miniPlayer.ts'),
   mode: compile('../src/main/window/mode.ts'),
   modeController: compile('../src/main/window/modeController.ts'),
@@ -168,7 +169,6 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
     './pointer': { installWindowPointerEvents: noop },
     './windowsComposition': {},
     './macComposition': { applyMacWindowBackground: noop },
-    './titleBar': { createTitleBarController: () => ({ sync: noop }) },
     './hyprlandBackground': {},
     './zoom': { installWindowZoom: () => ({}), registerWindowZoomHandlers: noop },
     './logger': { warn: noop },
@@ -201,6 +201,7 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
     return module.exports;
   };
   mocks['../../shared/app'] = evaluate(compiled.app);
+  mocks['./chrome'] = evaluate(compiled.chrome);
   mocks['../../shared/windowZoom'] = evaluate(compiled.zoom);
   mocks['../shared/miniPlayer'] = evaluate(compiled.miniDimensions);
   mocks['./fullscreen'] = evaluate(compiled.fullscreen);

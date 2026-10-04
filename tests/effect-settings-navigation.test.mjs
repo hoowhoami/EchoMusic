@@ -21,6 +21,8 @@ function setupComponent(t, file, props, imports = {}) {
       useId: () => 'settings-panel',
       onMounted() {},
       onUnmounted() {},
+      onActivated() {},
+      onDeactivated() {},
       inject: () => null,
       provide() {},
     },

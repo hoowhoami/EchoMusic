@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import WindowControls from './WindowControls.vue';
+import TrafficLights from './TrafficLights.vue';
 import { computed, ref } from 'vue';
 
 const props = withDefaults(
@@ -18,8 +19,9 @@ const headerRef = ref<HTMLElement | null>(null);
   <header ref="headerRef" class="native-titlebar overlay-header">
     <!-- 拖动层 -->
     <div class="drag-region"></div>
+    <TrafficLights />
 
-    <!-- 左侧插槽（macOS 避开红绿灯） -->
+    <!-- 所有平台都为左侧红绿灯留出空间。 -->
     <div
       v-if="$slots.left"
       class="overlay-header-left no-drag relative z-10"
@@ -59,7 +61,7 @@ const headerRef = ref<HTMLElement | null>(null);
 .overlay-header-left {
   position: absolute;
   top: 0;
-  left: calc(16px + var(--window-controls-left-inset, 0px));
+  left: 80px;
   height: 100%;
   display: flex;
   align-items: center;

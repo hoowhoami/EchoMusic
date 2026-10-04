@@ -1,0 +1,106 @@
+.editor-section {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+.editor-section:first-child {
+  padding-top: 14px;
+}
+.editor-section:last-child {
+  border-bottom: 0;
+}
+.editor-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+.editor-heading h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+.editor-heading span,
+.editor-help {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.editor-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.editor-field > label {
+  font-size: 13px;
+  color: var(--text-main);
+}
+.editor-section :deep(.echo-select-trigger) {
+  width: 100%;
+  font-size: 13px;
+}
+.editor-details {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.editor-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 4px;
+}
+.editor-details summary::-webkit-details-marker {
+  display: none;
+}
+.editor-details summary::after {
+  content: '＋';
+  font-size: 16px;
+}
+.editor-details[open] > summary::after {
+  content: '−';
+}
+.editor-details summary:hover {
+  color: var(--text-main);
+}
+.editor-details-body {
+  display: grid;
+  gap: 14px;
+  padding: 12px 0 2px;
+}
+.editor-range-heading {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  gap: 12px;
+}
+.editor-range-heading output {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.editor-section :deep(.slider-wrapper) {
+  width: 100%;
+}
+.editor-color-button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-main);
+}
+.editor-color-button i {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+}
+.editor-section button:focus-visible,
+.editor-details summary:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}

@@ -69,6 +69,21 @@ export interface PluginSidebarItemContribution extends PluginOwnedContribution {
   onClick?: () => void | Promise<void>;
 }
 
+export interface PluginShortcutContribution extends PluginOwnedContribution {
+  key: string;
+  title: string;
+  icon?: PluginIcon;
+  order: number;
+  pageId?: string;
+  onClick?: () => void | Promise<void>;
+  visible?: boolean | (() => boolean);
+  disabled?: boolean | (() => boolean);
+}
+export type PluginShortcutRegistration = Omit<
+  PluginShortcutContribution,
+  'pluginId' | 'key' | 'order'
+> & { order?: number };
+
 export interface PluginSongContextMenuItem extends PluginOwnedContribution {
   label: string;
   order: number;
@@ -99,6 +114,7 @@ export type PluginCoverFallbackInput = CoverFallbackResolver | PluginCoverFallba
 export interface PluginUiRegistryState {
   pages: PluginPageContribution[];
   sidebarItems: PluginSidebarItemContribution[];
+  shortcuts: PluginShortcutContribution[];
   settings: PluginSettingsContribution[];
   commands: PluginCommand[];
 }
@@ -106,6 +122,7 @@ export interface PluginUiRegistryState {
 export const pluginUiRegistry = reactive<PluginUiRegistryState>({
   pages: [],
   sidebarItems: [],
+  shortcuts: [],
   settings: [],
   commands: [],
 });
@@ -125,6 +142,7 @@ const sortByOrder = <T extends { order: number; title?: string; label?: string }
     );
 
 export const pluginPages = computed(() => sortByOrder(pluginUiRegistry.pages));
+export const pluginShortcuts = computed(() => sortByOrder(pluginUiRegistry.shortcuts));
 export const pluginSidebarItems = computed(() => sortByOrder(pluginUiRegistry.sidebarItems));
 export const pluginSettingsContributions = computed(() =>
   pluginUiRegistry.settings
@@ -150,13 +168,19 @@ const upsertContribution = <T extends PluginOwnedContribution>(
 ): (() => void) => {
   removeContribution(list, contribution.pluginId, contribution.id);
   list.push(contribution);
-  return () => removeContribution(list, contribution.pluginId, contribution.id);
+  return () => {
+    const index = list.indexOf(contribution);
+    if (index >= 0) list.splice(index, 1);
+  };
 };
 
 export const removePluginContributions = (pluginId: string) => {
   removeLyricsPagesByPlugin(pluginId);
   removeTitlebarItemsByPlugin(pluginId);
   removePlayerbarItemsByPlugin(pluginId);
+  pluginUiRegistry.shortcuts = pluginUiRegistry.shortcuts.filter(
+    (item) => item.pluginId !== pluginId,
+  );
   pluginUiRegistry.pages = pluginUiRegistry.pages.filter((item) => item.pluginId !== pluginId);
   pluginUiRegistry.sidebarItems = pluginUiRegistry.sidebarItems.filter(
     (item) => item.pluginId !== pluginId,
@@ -265,6 +289,36 @@ export const createPluginUiApi = (
       });
     },
     sidebar: {
+      shortcuts: {
+        register(input: PluginShortcutRegistration) {
+          const id = String(input.id ?? '').trim();
+          if (
+            !id ||
+            !input.title?.trim() ||
+            Boolean(input.pageId) === Boolean(input.onClick) ||
+            (input.onClick !== undefined && typeof input.onClick !== 'function')
+          ) {
+            throw new Error('快捷卡片需要 id、title，以及 pageId 或 onClick 之一');
+          }
+          const item = withOwner({
+            ...input,
+            id,
+            title: input.title.trim(),
+            key: JSON.stringify([pluginId, id]),
+          });
+          const original = item.onClick;
+          if (original)
+            item.onClick = async () => {
+              if (!pluginUiRegistry.shortcuts.includes(item)) return;
+              try {
+                await original();
+              } catch (error) {
+                reportError(`快捷卡片: ${id}`, error);
+              }
+            };
+          return add(upsertContribution(pluginUiRegistry.shortcuts, item));
+        },
+      },
       addItem(
         contribution: Omit<
           PluginSidebarItemContribution,

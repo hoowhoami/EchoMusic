@@ -288,3 +288,61 @@ test(
     assert.match(result.error, /权限已失效/);
   },
 );
+
+const failureRecord = (extra = {}) => ({
+  reason: 'activation-error',
+  message: '主题类型无效',
+  createdAt: 123456,
+  ...extra,
+});
+
+test('refresh removes uninstalled failure IDs and persists only remaining installed IDs', async (t) => {
+  const { api } = await fixture(t);
+  api.reportPluginFailure(failureRecord({ pluginId: 'removed-theme', pluginIds: ['rgb'] }));
+  const result = await api.refreshPluginMetadata();
+  assert.deepEqual(result.lastFailure, failureRecord({ pluginIds: ['rgb'] }));
+  assert.deepEqual(api.getKvStorage().get('plugins:last-failure'), result.lastFailure);
+  api.reportPluginFailure(failureRecord({ pluginId: 'removed-theme' }));
+  assert.equal((await api.refreshPluginMetadata()).lastFailure, null);
+  assert.equal(api.getKvStorage().get('plugins:last-failure'), null);
+});
+
+test('uninstall preserves diagnostics belonging to other installed plugins', async (t) => {
+  const { api, userData } = await fixture(t);
+  const other = join(userData, 'plugins', 'other');
+  await writePlugin(other);
+  await fs.writeFile(
+    join(other, 'manifest.json'),
+    JSON.stringify({ id: 'other', name: 'Other', version: '1.0.0' }),
+  );
+  await api.refreshPluginMetadata();
+  api.reportPluginFailure(failureRecord({ pluginIds: ['rgb', 'other'] }));
+  assert.equal((await api.uninstallPlugin('rgb')).ok, true);
+  assert.deepEqual(api.getPluginLastFailure(), failureRecord({ pluginIds: ['other'] }));
+});
+
+test('failed scans preserve diagnostics and anonymous errors remain manually clearable', async (t) => {
+  const { api, harness } = await fixture(t);
+  const failure = failureRecord({ pluginId: 'removed-theme' });
+  api.reportPluginFailure(failure);
+  harness.failScan = true;
+  await assert.rejects(api.refreshPluginMetadata(), /scan failed/);
+  assert.deepEqual(api.getPluginLastFailure(), failure);
+  harness.failScan = false;
+  api.reportPluginFailure(failureRecord());
+  assert.deepEqual((await api.refreshPluginMetadata()).lastFailure, failureRecord());
+  assert.equal(api.clearPluginFailureRecord().ok, true);
+  assert.equal(api.getPluginLastFailure(), null);
+});
+
+test('a refresh during plugin replacement keeps its failure until the mutation completes', async (t) => {
+  const { api, pluginDirectory } = await fixture(t);
+  api.reportPluginFailure(failureRecord({ pluginId: 'rgb' }));
+  await api.withPluginMetadataMutation('rgb', async () => {
+    await fs.rm(pluginDirectory, { recursive: true });
+    await api.refreshPluginMetadata();
+    assert.equal(api.getPluginLastFailure()?.pluginId, 'rgb');
+    await writePlugin(pluginDirectory);
+  });
+  assert.equal(api.getPluginLastFailure()?.pluginId, 'rgb');
+});

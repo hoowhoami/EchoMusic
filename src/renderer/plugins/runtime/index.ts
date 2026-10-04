@@ -7,6 +7,7 @@ import type {
 import { isAbortError } from '../../../shared/abortError';
 import { logger } from '@/utils/logger';
 import { useSettingStore } from '@/stores/setting';
+import { useThemeStore } from '@/stores/theme';
 import { executePluginCommand, removePluginContributions } from '../registry';
 import { isLyricsPageKeyOwnedBy } from '../lyricsPage';
 import type { EchoPluginContext, PluginRuntimeHost } from './context';
@@ -19,6 +20,8 @@ import {
 import { createStyleDisposer } from './styles';
 
 export { pageTransitionState } from './theme';
+export type { AppThemeContext, AppThemeRegistration } from '@/theme/registry';
+export type { AppThemeAppearance, ThemeTokens } from '@/theme/model';
 export type {
   PluginAccentGradientDarkVariant,
   PluginAccentGradientOptions,
@@ -578,18 +581,18 @@ export const setRuntimePluginSafeMode = async (enabled: boolean) => {
   return result.safeMode;
 };
 
-export const clearRuntimePluginFailure = async (pluginId: string) => {
-  const shouldClearLastFailure = isLastFailureForPlugin(pluginId);
+export const clearRuntimePluginFailure = async (pluginId?: string) => {
+  const shouldClearLastFailure = !pluginId || isLastFailureForPlugin(pluginId);
   if (shouldClearLastFailure) {
     const result = await window.electron.plugins?.clearFailure(pluginId);
     if (!result?.ok) {
       throw new Error('插件异常记录清除失败');
     }
-    pluginRuntimeState.lastFailure = removePluginIdFromFailure(
-      pluginRuntimeState.lastFailure,
-      pluginId,
-    );
+    pluginRuntimeState.lastFailure = pluginId
+      ? removePluginIdFromFailure(pluginRuntimeState.lastFailure, pluginId)
+      : null;
   }
+  if (!pluginId) return;
   clearCurrentPluginFailure(pluginId);
   clearRecordFailure(pluginId);
 };
@@ -602,6 +605,7 @@ export const uninstallRuntimePlugin = async (pluginId: string) => {
   }
   // 仅卸载路径清理皮肤配置：禁用/启用（refreshPlugins 走 deactivatePlugin）必须保留用户设置
   useSettingStore().removeLyricSkinConfigsWhere((key) => isLyricsPageKeyOwnedBy(key, pluginId));
+  useThemeStore().removePluginThemes(pluginId);
   await refreshPlugins();
   return result.pluginId;
 };
