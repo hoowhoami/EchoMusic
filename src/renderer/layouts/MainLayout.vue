@@ -163,7 +163,6 @@ watch(routeViewKey, () => {
     :style="{ '--layout-sidebar-width': isSidebarCollapsed ? '80px' : '230px' }"
   >
     <div class="layout-window-drag-strip window-drag-area" aria-hidden="true" />
-    <TrafficLights />
     <!-- Compose all decorative layers together; transparency never wraps business content. -->
     <div class="layout-skin" aria-hidden="true">
       <ThemeBackground>
@@ -225,6 +224,9 @@ watch(routeViewKey, () => {
         <PlayerBar />
       </div>
     </div>
+    <!-- Electron combines app-region rectangles in DOM order. Keep these no-drag
+         controls after the sidebar/titlebar drag regions so their holes remain clickable. -->
+    <TrafficLights />
   </div>
 </template>
 

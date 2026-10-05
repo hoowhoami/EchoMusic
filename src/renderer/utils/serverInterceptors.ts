@@ -142,8 +142,8 @@ export const runServerInterceptorChain = async (
 // --- 请求来源标记（防递归） ---
 //
 // 拦截器只处理 host 来源请求；插件经 ctx.kugou.* 发起的请求标记为 plugin 来源并绕过链。
-// 业务 api 函数均在同步段发起 request.get/post（调用前无 await），因此用同步上下文标记即可，
-// 无 AsyncLocalStorage 依赖、无并发竞态。
+// request.get/post 在同步入口读取来源；多阶段 API 需在 await 前捕获来源，
+// 并用 runWithRequestOrigin 包裹后续请求，无 AsyncLocalStorage 依赖。
 
 const HOST_ORIGIN: PluginServerRequest['origin'] = { type: 'host' };
 let currentOrigin: PluginServerRequest['origin'] = HOST_ORIGIN;

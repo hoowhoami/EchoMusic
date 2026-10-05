@@ -424,6 +424,10 @@ export const createResolver = (
           }
         : track;
     let catalogLoudness: ReturnType<typeof resolveTrackLoudness> = null;
+    const getCatalogUrlOptions = () => ({
+      albumId: catalogTrack.albumId,
+      albumAudioId: catalogTrack.albumAudioId,
+    });
 
     const syncTrackRelateGoods = (relateGoods: Song['relateGoods']) => {
       if (!relateGoods || relateGoods.length === 0) return;
@@ -450,7 +454,7 @@ export const createResolver = (
         return catalogLoudness;
       }
       try {
-        const res = await getSongUrl(catalogTrack.hash);
+        const res = await getSongUrl(catalogTrack.hash, '', undefined, getCatalogUrlOptions());
         return rememberCatalogTrackLoudness(res);
       } catch (error) {
         logger.debug('PlayerResolver', 'Fetch catalog loudness for cloud source failed:', error, {
@@ -573,7 +577,12 @@ export const createResolver = (
 
       for (const effectHash of effectHashes) {
         try {
-          const effectRes = await getSongUrl(effectHash, apiEffect);
+          const effectRes = await getSongUrl(
+            effectHash,
+            apiEffect,
+            undefined,
+            getCatalogUrlOptions(),
+          );
           const rawEffectUrls = resolveUrlsFromResponse(effectRes);
           if (rawEffectUrls.length > 0) {
             const effectSource = await resolveVocalExtractSources(
@@ -609,7 +618,7 @@ export const createResolver = (
       );
       if (!matched?.hash) continue;
       try {
-        const res = await getSongUrl(matched.hash, quality);
+        const res = await getSongUrl(matched.hash, quality, undefined, getCatalogUrlOptions());
         const loudness = rememberCatalogTrackLoudness(res);
         const urls = resolveUrlsFromResponse(res);
         if (urls.length > 0) {
@@ -632,7 +641,7 @@ export const createResolver = (
 
     if (compatibilityMode) {
       try {
-        const res = await getSongUrl(catalogTrack.hash);
+        const res = await getSongUrl(catalogTrack.hash, '', undefined, getCatalogUrlOptions());
         const loudness = rememberCatalogTrackLoudness(res);
         const urls = resolveUrlsFromResponse(res);
         if (urls.length > 0) {
@@ -654,7 +663,7 @@ export const createResolver = (
     }
 
     try {
-      const res = await getSongUrl(catalogTrack.hash, '', 356753938);
+      const res = await getSongUrl(catalogTrack.hash, '', 356753938, getCatalogUrlOptions());
       const loudness = rememberCatalogTrackLoudness(res);
       const urls = resolveUrlsFromResponse(res);
       if (urls.length > 0) {

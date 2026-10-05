@@ -71,7 +71,7 @@ const createApiNamespace = (descriptor: EchoPluginDescriptor, namespace: string)
         requireKugouApiCapability(descriptor);
         const api = await loadApiFunction(namespace, property);
         // 标记为插件来源：插件经 ctx.kugou 发起的请求绕过服务拦截链（防递归）。
-        // 业务 api 函数均在同步段发起 request.get/post，因此同步包裹即可正确标记。
+        // 首次请求在同步段读取来源；getSongUrl 等多阶段 API 会在 await 后恢复捕获的来源。
         return runWithRequestOrigin({ type: 'plugin', pluginId: descriptor.id }, () =>
           (api as RuntimeApiFunction)(...args),
         );

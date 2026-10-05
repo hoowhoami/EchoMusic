@@ -656,6 +656,7 @@ pub fn spawn_decode_worker(
 /// Mutable per-worker state shared by the main loop and the command handlers.
 struct WorkerState {
     decoded_position_secs: f64,
+    pts_warnings: DecodedPtsWarnings,
     /// Track sequence of the decoder currently in `data` (the live/outgoing track).
     live_seq: u64,
     pending_source_switch: Option<PendingSourceSwitch>,
@@ -683,6 +684,7 @@ impl WorkerState {
     fn new(decoded_position_secs: f64, live_seq: u64) -> Self {
         Self {
             decoded_position_secs,
+            pts_warnings: DecodedPtsWarnings::default(),
             live_seq,
             pending_source_switch: None,
             armed_transition: None,
@@ -996,12 +998,13 @@ fn decode_worker_loop(
                                 actual_pts,
                                 chunk.format.sample_rate,
                             ) {
-                                emit_decode_warning(format!(
-                                    "decoded audio timestamp discontinuity: expected={:.6}s actual={:.6}s delta={:+.3}ms generation={generation}",
+                                state.pts_warnings.report(
+                                    (state.live_seq, generation),
                                     state.decoded_position_secs,
                                     actual_pts,
-                                    delta_secs * 1_000.0
-                                ));
+                                    delta_secs,
+                                    Instant::now(),
+                                );
                             }
                         }
                     }
@@ -1293,6 +1296,86 @@ fn hand_off_armed_directly(
 
 pub(crate) fn emit_decode_info(shared: &SharedAudio, message: &str) {
     crate::emit_shared_event(shared, PlayerEvent::log("info", message.to_string()));
+}
+
+const DECODED_PTS_WARNING_INTERVAL: Duration = Duration::from_secs(30);
+
+#[derive(Default)]
+struct DecodedPtsWarnings {
+    context: Option<(u64, u64)>,
+    last_report_at: Option<Instant>,
+    last_reported_abs_delta_secs: f64,
+    suppressed: u64,
+    max_abs_delta_secs: f64,
+}
+
+impl DecodedPtsWarnings {
+    fn record(&mut self, delta_secs: f64, now: Instant) -> bool {
+        self.max_abs_delta_secs = self.max_abs_delta_secs.max(delta_secs.abs());
+        // Repeated codec timestamp jitter is summarized; a substantially larger gap
+        // is surfaced immediately rather than hidden behind the current interval.
+        let escalated = delta_secs.abs() >= (self.last_reported_abs_delta_secs * 2.0).max(0.1);
+        if self
+            .last_report_at
+            .is_none_or(|last| now.saturating_duration_since(last) >= DECODED_PTS_WARNING_INTERVAL)
+            || escalated
+        {
+            self.last_report_at = Some(now);
+            self.last_reported_abs_delta_secs = delta_secs.abs();
+            true
+        } else {
+            self.suppressed = self.suppressed.saturating_add(1);
+            false
+        }
+    }
+
+    fn report(
+        &mut self,
+        context: (u64, u64),
+        expected_secs: f64,
+        actual_secs: f64,
+        delta_secs: f64,
+        now: Instant,
+    ) {
+        if self.context != Some(context) {
+            self.flush();
+            self.context = Some(context);
+            self.last_report_at = None;
+            self.last_reported_abs_delta_secs = 0.0;
+        }
+        if self.record(delta_secs, now) {
+            emit_decode_warning(format!(
+                "decoded audio timestamp discontinuity: expected={expected_secs:.6}s actual={actual_secs:.6}s delta={:+.3}ms track_seq={} generation={} suppressed={} max_abs_delta_ms={:.3}",
+                delta_secs * 1_000.0,
+                context.0,
+                context.1,
+                self.suppressed,
+                self.max_abs_delta_secs * 1_000.0,
+            ));
+            self.suppressed = 0;
+            self.max_abs_delta_secs = 0.0;
+        }
+    }
+
+    fn flush(&mut self) {
+        if self.suppressed > 0 {
+            if let Some((track_seq, generation)) = self.context {
+                emit_decode_warning(format!(
+                    "decoded audio timestamp discontinuity summary: track_seq={track_seq} generation={generation} suppressed={} max_abs_delta_ms={:.3}",
+                    self.suppressed,
+                    self.max_abs_delta_secs * 1_000.0,
+                ));
+            }
+        }
+        self.suppressed = 0;
+        self.max_abs_delta_secs = 0.0;
+    }
+}
+
+impl Drop for DecodedPtsWarnings {
+    fn drop(&mut self) {
+        self.flush();
+    }
 }
 
 fn decoded_pts_discontinuity(
@@ -1827,6 +1910,7 @@ fn activate_pending_source_switch(
     shared.bind_interrupt(decoder.interrupt.clone());
     let previous = std::mem::replace(data, *decoder);
     crate::retire_value_background(Some(previous), "player-source-switch-reaper".to_string());
+    state.pts_warnings = DecodedPtsWarnings::default();
     for mut chunk in pending.predecoded.drain(..) {
         if !align_switched_chunk(&mut chunk, &mut data.discard_before_secs) {
             continue;
@@ -2202,6 +2286,14 @@ mod tests {
         replacement.duration = Some(Duration::from_secs(20));
         let new_interrupt = replacement.interrupt.clone();
         let mut state = WorkerState::new(10.0, 7);
+        let now = Instant::now();
+        let warning_context = (7, shared.current_decode_generation());
+        state
+            .pts_warnings
+            .report(warning_context, 1.0, 1.01, 0.01, now);
+        state
+            .pts_warnings
+            .report(warning_context, 2.0, 2.01, 0.01, now);
         let (reply, received) = sync_channel(1);
         state.pending_source_switch = Some(PendingSourceSwitch {
             decoder: Some(Box::new(replacement)),
@@ -2216,6 +2308,7 @@ mod tests {
         ));
         assert!(Arc::ptr_eq(&data.interrupt, &old_interrupt));
         assert!(matches!(received.try_recv(), Err(TryRecvError::Empty)));
+        assert_eq!(state.pts_warnings.suppressed, 1);
         state.decoded_position_secs = 10.738;
         assert!(activate_pending_source_switch(
             &mut data, &shared, &mut state
@@ -2224,6 +2317,9 @@ mod tests {
         assert!(Arc::ptr_eq(&data.interrupt, &new_interrupt));
         assert!((state.decoded_position_secs - 11.1).abs() < 1.0e-6);
         assert_eq!(state.live_seq, 7);
+        assert_eq!(state.pts_warnings.context, None);
+        assert_eq!(state.pts_warnings.last_report_at, None);
+        assert_eq!(state.pts_warnings.suppressed, 0);
     }
 
     #[test]
@@ -2467,6 +2563,71 @@ mod tests {
         assert!((forward - 0.025).abs() < 1.0e-9);
         assert!((backward + 0.025).abs() < 1.0e-9);
         assert_eq!(decoded_pts_discontinuity(f64::NAN, 1.0, 48_000), None);
+    }
+
+    #[test]
+    fn decoded_pts_warnings_summarize_alternating_jitter() {
+        let now = Instant::now();
+        let mut warnings = DecodedPtsWarnings::default();
+        warnings.report((7, 3), 0.0, 0.010159, 0.010159, now);
+        assert_eq!(warnings.last_report_at, Some(now));
+        for index in 1..=1_000 {
+            let delta = if index % 2 == 0 { 0.010159 } else { -0.010159 };
+            warnings.report(
+                (7, 3),
+                1.0,
+                1.0 + delta,
+                delta,
+                now + Duration::from_millis(index),
+            );
+        }
+        assert_eq!(warnings.last_report_at, Some(now));
+        assert_eq!(warnings.suppressed, 1_000);
+        assert!((warnings.max_abs_delta_secs - 0.010159).abs() < 1e-9);
+        warnings.report(
+            (7, 3),
+            30.0,
+            30.01,
+            0.01,
+            now + DECODED_PTS_WARNING_INTERVAL,
+        );
+        assert_eq!(
+            warnings.last_report_at,
+            Some(now + DECODED_PTS_WARNING_INTERVAL)
+        );
+        assert_eq!(warnings.suppressed, 0);
+        assert_eq!(warnings.max_abs_delta_secs, 0.0);
+    }
+
+    #[test]
+    fn decoded_pts_warnings_surface_larger_gaps_without_repeated_spam() {
+        let now = Instant::now();
+        let mut warnings = DecodedPtsWarnings::default();
+        warnings.report((7, 3), 1.0, 1.01, 0.01, now);
+        let later = now + Duration::from_secs(1);
+        warnings.report((7, 3), 2.0, 2.25, 0.25, later);
+        assert_eq!(warnings.last_report_at, Some(later));
+        warnings.report((7, 3), 3.0, 2.75, -0.25, later + Duration::from_millis(1));
+        assert_eq!(warnings.suppressed, 1);
+        assert_eq!(warnings.last_report_at, Some(later));
+        warnings.flush();
+        assert_eq!(warnings.suppressed, 0);
+    }
+
+    #[test]
+    fn decoded_pts_warnings_restart_for_a_new_track_or_generation() {
+        let now = Instant::now();
+        let mut warnings = DecodedPtsWarnings::default();
+        for context in [(7, 3), (8, 3), (8, 4)] {
+            warnings.report(context, 1.0, 1.01, 0.01, now);
+            assert_eq!(warnings.context, Some(context));
+            assert_eq!(warnings.suppressed, 0);
+            warnings.report(context, 2.0, 2.01, 0.01, now);
+            assert_eq!(warnings.suppressed, 1);
+        }
+        warnings.flush();
+        assert_eq!(warnings.suppressed, 0);
+        assert_eq!(warnings.max_abs_delta_secs, 0.0);
     }
 
     #[test]

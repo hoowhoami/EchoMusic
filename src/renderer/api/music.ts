@@ -1,4 +1,8 @@
 import request from '@/utils/request';
+import { getUserVerify } from './user';
+import { useUserStore } from '@/stores/user';
+import { captureUserSession } from '@/utils/userSession';
+import { getCurrentRequestOrigin, runWithRequestOrigin } from '@/utils/serverInterceptors';
 
 export interface AudioImagePortrait {
   id?: number;
@@ -104,13 +108,47 @@ const normalizeCloudSongUrls = (data: CloudSongUrlData): string[] => {
   return [...urls];
 };
 
+export interface SongUrlOptions {
+  albumId?: string | number;
+  albumAudioId?: string | number;
+  auth?: string;
+}
+
 /**
- * 获取歌曲播放地址
+ * 获取歌曲播放地址，由 Auth 聚合接口完成歌曲授权和地址获取。
  */
-export function getSongUrl(hash: string, quality = '', ppageId?: string | number) {
-  return request.get('/song/url', {
-    params: { hash, quality, ...(ppageId ? { ppage_id: ppageId } : {}) },
-  });
+export async function getSongUrl(
+  hash: string,
+  quality = '',
+  ppageId?: string | number,
+  options?: SongUrlOptions,
+) {
+  const origin = getCurrentRequestOrigin();
+  const isCurrentSession = captureUserSession(useUserStore());
+  let auth = options?.auth;
+  if (!auth) {
+    const response = await getUserVerify();
+    if (!isCurrentSession()) throw new Error('登录状态已变化，请重新发起操作');
+    auth = response?.data?.auth;
+    if (response?.status !== 1 || typeof auth !== 'string' || !auth.trim()) {
+      const error = new Error(response?.msg || '获取歌曲播放授权失败');
+      (error as Error & { response?: unknown }).response = response;
+      throw error;
+    }
+  }
+  // 授权请求后的异步续体仍沿用调用方来源，避免插件请求进入自身拦截器。
+  return runWithRequestOrigin(origin, () =>
+    request.get('/song/url/auth/merge', {
+      params: {
+        hash,
+        quality,
+        auth,
+        ...(ppageId ? { ppage_id: ppageId } : {}),
+        ...(options?.albumId ? { album_id: options.albumId } : {}),
+        ...(options?.albumAudioId ? { album_audio_id: options.albumAudioId } : {}),
+      },
+    }),
+  );
 }
 
 /**
