@@ -14,6 +14,7 @@ function fixture(overrides = {}) {
   const hooks = {},
     timers = new Map(),
     listeners = new Set(),
+    pointerListeners = new Set(),
     events = [];
   let nextTimer = 0,
     exposed,
@@ -35,8 +36,10 @@ function fixture(overrides = {}) {
     mod,
     mod.exports,
     {
-      addEventListener: (_, fn) => listeners.add(fn),
-      removeEventListener: (_, fn) => listeners.delete(fn),
+      addEventListener: (type, fn) =>
+        (type === 'pointermove' ? pointerListeners : listeners).add(fn),
+      removeEventListener: (type, fn) =>
+        (type === 'pointermove' ? pointerListeners : listeners).delete(fn),
     },
     (fn) => {
       timers.set(++nextTimer, fn);
@@ -67,6 +70,7 @@ function fixture(overrides = {}) {
     exposed,
     timers,
     listeners,
+    pointerListeners,
     events,
     get removedBranches() {
       return removedBranches;
@@ -97,6 +101,80 @@ test('explicit close cancels delayed hover opening; explicit open cancels delaye
   s.tick();
   assert.equal(s.api.isOpen.value, true);
   s.dispose();
+});
+
+test('hovering a portalled descendant cancels parent closing, leaving the whole region closes it', () => {
+  const s = fixture();
+  const tooltip = {};
+  s.api.registerPopoverBranch((target) => target === tooltip);
+  s.exposed.open();
+  s.api.handleContentLeave();
+  s.api.handleDocumentPointerMove({ target: tooltip });
+  s.tick();
+  assert.equal(s.api.isOpen.value, true);
+  s.api.handleDocumentPointerMove({ target: {} });
+  s.tick();
+  assert.equal(s.api.isOpen.value, false);
+  s.dispose();
+});
+
+test('direct movement from parent content into an owned tooltip does not schedule closing', () => {
+  const s = fixture();
+  const tooltip = {};
+  s.api.registerPopoverBranch((target) => target === tooltip);
+  s.exposed.open();
+  s.api.handleContentLeave({ relatedTarget: tooltip });
+  assert.equal(s.timers.size, 0);
+  assert.equal(s.api.isOpen.value, true);
+  s.dispose();
+});
+
+test('unrelated or unregistered tooltip branches cannot keep a hover panel open', () => {
+  const s = fixture();
+  const tooltip = {};
+  const unregister = s.api.registerPopoverBranch((target) => target === tooltip);
+  s.exposed.open();
+  s.api.handleDocumentPointerMove({ target: {} });
+  s.tick();
+  assert.equal(s.api.isOpen.value, false);
+  s.exposed.open();
+  unregister();
+  s.api.handleDocumentPointerMove({ target: tooltip });
+  s.tick();
+  assert.equal(s.api.isOpen.value, false);
+  s.dispose();
+});
+
+test('clicking an owned tooltip keeps its click panel open, outside clicks still close it', () => {
+  const s = fixture({ trigger: 'click' });
+  const tooltip = {};
+  s.api.registerPopoverBranch((target) => target === tooltip);
+  s.exposed.open();
+  s.api.handleDocumentMousedown({ target: tooltip });
+  assert.equal(s.api.isOpen.value, true);
+  s.api.handleDocumentMousedown({ target: {} });
+  assert.equal(s.api.isOpen.value, false);
+  s.dispose();
+});
+
+test('pointer tracking exists only while a hover panel is open and active', () => {
+  const s = fixture();
+  assert.equal(s.pointerListeners.size, 0);
+  s.exposed.open();
+  assert.equal(s.pointerListeners.size, 1);
+  s.props.trigger = 'click';
+  assert.equal(s.pointerListeners.size, 0);
+  assert.equal(s.listeners.size, 1);
+  s.props.trigger = 'hover';
+  assert.equal(s.pointerListeners.size, 1);
+  s.deactivate();
+  assert.equal(s.pointerListeners.size, 0);
+  s.activate();
+  assert.equal(s.pointerListeners.size, 0);
+  s.exposed.open();
+  assert.equal(s.pointerListeners.size, 1);
+  s.dispose();
+  assert.equal(s.pointerListeners.size, 0);
 });
 
 test('parent open changes win over already queued hover work', async () => {

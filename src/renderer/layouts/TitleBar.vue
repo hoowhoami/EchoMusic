@@ -129,7 +129,8 @@ const updateToolbarCapacity = () => {
   // Reserve the search/navigation width, window controls, More, divider and a drag area.
   // Measure fixed space only, so moving overflow items cannot cause resize oscillation.
   const navigationWidth = parseFloat(getComputedStyle(navigationRef.value).flexBasis) || 410;
-  const fixedWidth = navigationWidth + (windowActionsRef.value?.offsetWidth ?? 0) + 58 + 17 + 64;
+  const fixedWidth =
+    navigationWidth + (windowActionsRef.value?.offsetWidth ?? 0) + 34 + 12 + 4 + 64;
   toolbarCapacity.value = Math.max(0, Math.floor((available - fixedWidth) / 38));
 };
 useResizeObserver([titlebarRef, windowActionsRef], updateToolbarCapacity);
@@ -977,7 +978,7 @@ onUnmounted(() => {
   width: 1px;
   height: 20px;
   flex-shrink: 0;
-  margin-right: 8px;
+  margin: 0 1.5px;
   background: color-mix(in srgb, var(--color-text-main) 24%, transparent);
   position: relative;
   z-index: 10;
@@ -1001,7 +1002,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin: 0 12px;
+  margin-left: 12px;
   position: relative;
   z-index: 10;
   flex-shrink: 0;

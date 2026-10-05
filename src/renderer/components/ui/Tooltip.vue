@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, useSlots, watch, onActivated, onDeactivated, onBeforeUnmount } from 'vue';
+import {
+  computed,
+  ref,
+  useSlots,
+  watch,
+  inject,
+  onActivated,
+  onDeactivated,
+  onBeforeUnmount,
+} from 'vue';
 import TooltipScope from './TooltipScope.vue';
 import TooltipLifecycle from './TooltipLifecycle.vue';
 import {
@@ -41,6 +50,14 @@ const inactive = computed(() => props.disabled || (!props.content?.trim() && !sl
 const { forwardRef, currentElement } = useForwardExpose();
 const open = ref(false);
 const suspended = ref(false);
+const contentWrapRef = ref<HTMLElement | null>(null);
+type RegisterPopoverBranch = (contains: (target: Node) => boolean) => () => void;
+const registerParentBranch = inject<RegisterPopoverBranch | null>('echo-popover-branch', null);
+// The portal is outside the parent's DOM, but still belongs to its interaction.
+const unregisterParentBranch = registerParentBranch?.(
+  (target) =>
+    open.value && !suspended.value && !!contentWrapRef.value?.parentElement?.contains(target),
+);
 let disposed = false;
 const updateOpen = (value: boolean) => {
   const trigger = currentElement.value as HTMLElement | undefined;
@@ -72,6 +89,7 @@ onActivated(() => {
 onBeforeUnmount(() => {
   disposed = true;
   open.value = false;
+  unregisterParentBranch?.();
 });
 </script>
 
@@ -100,7 +118,7 @@ onBeforeUnmount(() => {
           hide-when-detached
           :class="['app-tooltip-surface', 'app-tooltip-content', props.contentClass]"
         >
-          <div class="app-tooltip-body">
+          <div ref="contentWrapRef" class="app-tooltip-body">
             <slot>
               {{ props.content }}
             </slot>

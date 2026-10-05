@@ -131,8 +131,18 @@ const handleTriggerLeave = () => {
 const handleContentEnter = () => {
   if (props.trigger === 'hover') clearTimers();
 };
-const handleContentLeave = () => {
+const handleContentLeave = (event?: MouseEvent) => {
+  if (event?.relatedTarget && containsPopoverTarget(event.relatedTarget as Node)) {
+    handleContentEnter();
+    return;
+  }
   if (props.trigger === 'hover') doHide();
+};
+
+const handleDocumentPointerMove = (event: PointerEvent) => {
+  if (props.trigger !== 'hover' || !isOpen.value || !event.target) return;
+  if (containsPopoverTarget(event.target as Node)) clearTimers();
+  else if (hideTimer === null) doHide();
 };
 
 // focus
@@ -209,14 +219,22 @@ watch(
 );
 
 let listeningForOutsideClick = false;
-const syncOutsideClickListener = () => {
+let listeningForHover = false;
+const syncDocumentListeners = () => {
   const shouldListen = mounted.value && isOpen.value && props.trigger === 'click';
-  if (shouldListen === listeningForOutsideClick) return;
-  listeningForOutsideClick = shouldListen;
-  if (shouldListen) document.addEventListener('mousedown', handleDocumentMousedown, true);
-  else document.removeEventListener('mousedown', handleDocumentMousedown, true);
+  if (shouldListen !== listeningForOutsideClick) {
+    listeningForOutsideClick = shouldListen;
+    if (shouldListen) document.addEventListener('mousedown', handleDocumentMousedown, true);
+    else document.removeEventListener('mousedown', handleDocumentMousedown, true);
+  }
+  const shouldTrackHover = mounted.value && isOpen.value && props.trigger === 'hover';
+  if (shouldTrackHover !== listeningForHover) {
+    listeningForHover = shouldTrackHover;
+    if (shouldTrackHover) document.addEventListener('pointermove', handleDocumentPointerMove, true);
+    else document.removeEventListener('pointermove', handleDocumentPointerMove, true);
+  }
 };
-watch([mounted, isOpen, () => props.trigger], syncOutsideClickListener, { flush: 'sync' });
+watch([mounted, isOpen, () => props.trigger], syncDocumentListeners, { flush: 'sync' });
 
 onMounted(() => {
   mounted.value = true;
@@ -233,7 +251,7 @@ onActivated(() => {
 onUnmounted(() => {
   disposed.value = true;
   mounted.value = false;
-  syncOutsideClickListener();
+  syncDocumentListeners();
   unregisterParentBranch?.();
   childBranches.clear();
   clearTimers();

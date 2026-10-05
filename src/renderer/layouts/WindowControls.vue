@@ -148,6 +148,7 @@ onUnmounted(() => {
 .window-actions {
   display: flex;
   align-items: center;
+  gap: 4px;
   height: 100%;
   position: relative;
   z-index: 10;
@@ -156,8 +157,8 @@ onUnmounted(() => {
 }
 .window-action {
   flex-shrink: 0;
-  width: 40px;
-  height: 100%;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -176,16 +177,15 @@ onUnmounted(() => {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 2px;
-  margin-left: 8px;
+  gap: 4px;
   -webkit-app-region: no-drag;
 }
 .window-caption-button {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border-radius: 6px;
   color: var(--window-action-color, var(--color-text-secondary));
   background: transparent;
