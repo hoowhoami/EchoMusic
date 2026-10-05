@@ -121,8 +121,8 @@ unsafe fn set_accent(handle: *mut c_void, state: i32, color: u32) -> bool {
 
 // Suspend expensive legacy Acrylic during the OS modal move/resize loop.
 // Unlike a JS debounce, these messages also cover a paused mouse inside the loop.
-// 失焦保持（keep 位，bit 3）：聚焦时用 Acrylic(4，带主题着色)，失焦时切换为
-// 不受激活状态影响的旧版模糊(3)。着色存于 data 高 32 位，切换时原样复用。
+// 失焦保持（keep 位，bit 3）：常驻 Acrylic(4，带主题着色)——真实 alpha 着色下
+// accent 4 失焦不失效（Win11 实测）。着色存于 data 高 32 位，恢复时原样复用。
 // Data bits: 1 = suspended, 2 = last failed, 4 = keep on blur; bits 32+ = tint ABGR.
 unsafe extern "system" fn acrylic_drag_proc(
     hwnd: *mut c_void,
@@ -147,26 +147,19 @@ unsafe extern "system" fn acrylic_drag_proc(
         && IsWindow(hwnd) != 0
         && GetWindowSubclass(hwnd, acrylic_drag_proc, id, &mut data) != 0
     {
-        let keep = data & 4 != 0;
         let suspended = data & 1 != 0;
         let restore = match message {
-            0x0232 => true,          // 拖动/缩放结束，无条件恢复（顺带清 suspended 位）
-            0x031e => !suspended,    // 合成状态变化，暂停期间不抢恢复
-            _ => keep && !suspended, // WM_ACTIVATE：仅失焦保持模式需要切换
+            0x0232 => true,       // 拖动/缩放结束，无条件恢复
+            0x031e => !suspended, // 合成状态变化，暂停期间不抢恢复
+            // WM_ACTIVATE：accent 4 常驻，焦点变化不重设。实测（Win11 24H2）
+            // accent 4 应用一次后失焦不失效；失焦期间重设反而会打成灰罩，
+            // 之后的再次重设甚至会清掉材质。
+            _ => false,
         };
         if restore {
-            let focused = if message == 0x0006 {
-                (wparam & 0xffff) != 0 // WA_INACTIVE=0，WA_ACTIVE/WA_CLICKACTIVE 非零
-            } else {
-                GetForegroundWindow() == hwnd
-            };
-            let ok = if keep && !focused {
-                set_accent(hwnd, 3, 0)
-            } else {
-                // 未存着色的遗留安装（mode 8/10 非 keep）回退到 0x01000000。
-                let tint = (data >> 32) as u32;
-                set_accent(hwnd, 4, if tint == 0 { 0x01000000 } else { tint })
-            };
+            // 未存着色的遗留安装（mode 8/10 非 keep）回退到 0x01000000。
+            let tint = (data >> 32) as u32;
+            let ok = set_accent(hwnd, 4, if tint == 0 { 0x01000000 } else { tint });
             SetWindowSubclass(hwnd, acrylic_drag_proc, id, (data & !3) | if ok { 0 } else { 2 });
         }
     }
@@ -404,9 +397,11 @@ unsafe fn set_alpha_composition(handle: *mut c_void, enabled: bool) -> bool {
 /// window without modifying Electron's DWM alpha or frame margins;
 /// 12=Accent Acrylic on a Win11 material-prepared window: clear only the system
 /// backdrop, enable per-pixel alpha, then stack Accent Acrylic (keep-on-blur always on).
-/// keep_on_blur 仅对 10/12 有意义：子类在失焦时切换到旧版模糊(3)，聚焦时切回。
-/// tint 为 keep 模式 AccentPolicy 的 GradientColor（ABGR）；缺省沿用遗留的
-/// 0x01000000（近乎透明的 tint，与旧 addon 行为一致）。
+/// keep_on_blur 仅对 10/12 有意义：子类不再在失焦时切换材质，accent 4 常驻
+/// （真实 alpha 着色下实测失焦不失效）。
+/// tint 为 keep 模式 AccentPolicy 的 GradientColor（ABGR），必须使用真实 alpha
+/// （建议 ≥0x50：24H2 会把近零 alpha 的 accent 4 退化成无模糊灰罩）；缺省沿用
+/// 遗留的 0x01000000（与旧 addon 行为一致，仅兼容旧调用方）。
 /// Modes 6/7 deliberately differ from the former legacy 4/2 protocol:
 /// old addons reject them, causing an explicit fallback instead of silent failure.
 #[napi]

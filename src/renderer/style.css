@@ -865,24 +865,6 @@ html.app-background-transparent::before {
 html.app-background-frosted::before {
   display: none;
 }
-/* 失焦保持模式：Accent 材质没有 system backdrop 的提亮层，且旧版模糊(3)不接受
-   着色，因此聚焦(4)/失焦(3)共用这层常驻罩色，保证两种状态下观感一致。
-   微调改两处 rgba 的 alpha；CSS 热更新即时生效，无需重启。
-   （由原 native 着色平移：0x70ffffff → rgba(255,255,255,0.44)、
-     0x32808080 → rgba(128,128,128,0.2)） */
-html.app-background-frosted-keep::before {
-  display: block;
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.44);
-}
-html.dark.app-background-frosted-keep::before {
-  background: rgba(128, 128, 128, 0.2);
-}
 /* A lyric overlay replaces the page rather than exposing its retained content.
    Keep the page mounted for scroll/cache state, but remove it from painting and input. */
 html.app-background-transparent body:has(.lyric-overlay-host:not([data-leaving])) .main-layout {
