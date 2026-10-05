@@ -51,6 +51,13 @@ const readMetadataString = (...values: unknown[]) => {
   return '';
 };
 
+const readMetadataNumber = (value: unknown): number | undefined => {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  if (typeof value === 'string' && !value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : undefined;
+};
+
 export const parseTrackMetadataFromPrivilege = (payload: unknown): Partial<Song> => {
   const record = getPrivilegeTrackRecord(payload);
   if (!record) return {};
@@ -73,8 +80,14 @@ export const parseTrackMetadataFromPrivilege = (payload: unknown): Partial<Song>
   );
   const durationMs = Number(info.duration ?? record.timelength ?? 0);
   const albumId = readMetadataString(record.album_id, record.albumId);
+  const privilege = readMetadataNumber(record.privilege);
+  const payType = readMetadataNumber(record.pay_type);
+  const oldCpy = readMetadataNumber(record.old_cpy);
 
   return {
+    ...(privilege !== undefined ? { privilege } : {}),
+    ...(payType !== undefined ? { payType } : {}),
+    ...(oldCpy !== undefined ? { oldCpy } : {}),
     ...(albumAudioId ? { albumAudioId, mixSongId: albumAudioId } : {}),
     ...(coverUrl ? { coverUrl, cover: coverUrl } : {}),
     ...(Number.isFinite(durationMs) && durationMs > 0

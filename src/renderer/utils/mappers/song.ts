@@ -13,6 +13,7 @@ import {
   parseOptionalInt,
   pickValue,
   processSongTitle,
+  readPositiveId,
   readString,
   toRecord,
 } from './shared';
@@ -317,7 +318,13 @@ export const mapPlaylistSong = (json: unknown): Song => {
     EMPTY_RECORD;
 
   const privilege = parseOptionalInt(
-    pickValue(record.privilege, audioInfo.privilege, privilegeDownload.privilege, undefined),
+    pickValue(
+      record.privilege,
+      audioInfo.privilege,
+      privilegeDownload.privilege,
+      record.media_privilege,
+      transParam.audio_privilege,
+    ),
   );
 
   let payType: number | undefined;
@@ -327,7 +334,9 @@ export const mapPlaylistSong = (json: unknown): Song => {
     payType = parseOptionalInt(firstDownload.pay_type ?? firstDownload.PayType);
   }
   if (payType === undefined) {
-    payType = parseOptionalInt(pickValue(record.pay_type, record.PayType, record.payType));
+    payType = parseOptionalInt(
+      pickValue(record.pay_type, record.PayType, record.payType, record.media_pay_type),
+    );
   }
 
   const oldCpy = parseOptionalInt(
@@ -350,9 +359,8 @@ export const mapPlaylistSong = (json: unknown): Song => {
     singers,
     album: albumName,
     albumName,
-    albumId: readString(
-      pickValue(albumInfo.id, albumInfo.album_id, record.album_id, record.albumid, ''),
-    ),
+    albumId: readPositiveId(albumInfo.id, albumInfo.album_id, record.album_id, record.albumid),
+    albumAudioId: readPositiveId(record.album_audio_id, record.mixsongid) || undefined,
     duration: Math.floor(durationRaw / 1000),
     coverUrl: normalizeCoverUrl(cover, 400),
     cover,

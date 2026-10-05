@@ -77,6 +77,39 @@ const page = (rows, count = rows.length, listVer = 9) => ({
   status: 1,
   data: { info: rows, count, list_ver: listVer },
 });
+
+const loulan = {
+  name: '云朵 - 我的楼兰.mp3',
+  hash: '208D789BD23B987FBAFCD99E24A75308',
+  mixsongid: 64323384,
+  fileid: 2418,
+  album_id: '2603117',
+  cover: '',
+  sort: 0,
+};
+const completedLoulan = {
+  ...song.mapPlaylistSong(loulan),
+  coverUrl: 'https://imge.kugou.com/stdmusic/400/20240628/20240628181912160687.jpg',
+};
+test('automatic cover selection uses enriched artwork for the first sorted song, joined by file and hash', () => {
+  const later = track(2, 'https://img.test/later', 1);
+  const pages = [page([later, loulan])];
+  assert.equal(buildPlaylistCoverEntry(pages).coverUrl, later.cover);
+  assert.equal(
+    buildPlaylistCoverEntry(pages, [completedLoulan]).coverUrl,
+    completedLoulan.coverUrl,
+  );
+  for (const mismatched of [
+    { ...completedLoulan, fileId: 9999 },
+    { ...completedLoulan, hash: 'another-version' },
+  ])
+    assert.equal(buildPlaylistCoverEntry(pages, [mismatched]).coverUrl, later.cover);
+  assert.equal(buildPlaylistCoverEntry([page([loulan], 2)], [completedLoulan]), null);
+  assert.equal(
+    buildPlaylistCoverEntry([page([loulan], 2), page([later], 2, 10)], [completedLoulan]),
+    null,
+  );
+});
 function createStore(storage) {
   const mod = compile('../src/renderer/stores/playlistCovers.ts', {
     pinia,
@@ -88,6 +121,40 @@ function createStore(storage) {
   globalThis.window = { electron: { storage } };
   return mod.usePlaylistCoversStore(pinia.createPinia());
 }
+
+test('enriched artwork repairs a same-version sidebar cover once and does not overwrite newer or manual covers', async () => {
+  let writes = 0;
+  const pages = [page([loulan, track(2, 'https://img.test/later', 1)])];
+  const covers = createStore({
+    getKv: async () => ({
+      '7:12': { listVer: 9, selection: 'sort', coverUrl: 'https://img.test/later' },
+    }),
+    setKv: async () => {
+      writes++;
+    },
+  });
+  await covers.hydrate();
+  const sidebarCover = vue.computed(() => covers.coverFor(playlist, 7));
+  assert.equal(sidebarCover.value, 'https://img.test/later');
+  await covers.updateFromPages(playlist, 7, pages, () => true);
+  assert.equal(writes, 0);
+  await covers.updateFromPages(playlist, 7, pages, () => true, [completedLoulan]);
+  assert.equal(sidebarCover.value, completedLoulan.coverUrl);
+  assert.equal(writes, 1);
+  await covers.updateFromPages(playlist, 7, pages, () => true, [completedLoulan]);
+  assert.equal(writes, 1);
+  await covers.updateFromPages(
+    playlist,
+    7,
+    [page([track(3, 'https://img.test/newer', 0)], 1, 10)],
+    () => true,
+  );
+  await covers.updateFromPages(playlist, 7, pages, () => true, [completedLoulan]);
+  assert.equal(sidebarCover.value, 'https://img.test/newer');
+  await covers.setManualCover({ ...playlist, pic: 'https://img.test/manual' }, 7, () => true);
+  await covers.updateFromPages(playlist, 7, pages, () => true, [completedLoulan]);
+  assert.equal(sidebarCover.value, 'https://img.test/manual');
+});
 
 test('recent playlist candidates and saved cards react to the shared cover cache without extra page loads', async () => {
   const shortcuts = compile('../src/renderer/layouts/sidebarShortcutResources.ts', {});
@@ -151,6 +218,7 @@ test('favorites refresh updates the shared cover from the same complete song pag
     hash: `hash-${index}`,
   }));
   const { favoritesActions } = compile('../src/renderer/stores/playlist/favoritesActions.ts', {
+    '@/services/songMetadata': { completeSongMetadata: async (songs) => songs },
     './accountScope': compile('../src/renderer/stores/playlist/accountScope.ts', {
       '@/utils/userSession': compile('../src/renderer/utils/userSession.ts'),
       '@/stores/user': { useUserStore: () => ({ info: { userid: 7 } }) },

@@ -87,6 +87,7 @@ function setup(overrides = {}) {
     },
   };
   const { favoritesActions } = compile('../src/renderer/stores/playlist/favoritesActions.ts', {
+    '@/services/songMetadata': { completeSongMetadata: async (songs) => songs },
     ...dependencies,
     '@/utils/playlistOrder': order,
     '@/utils/PagedSongLoader': loader,

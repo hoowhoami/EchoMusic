@@ -4,8 +4,9 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import * as vue from 'vue';
+import { renderToString } from '@vue/server-renderer';
 const require = createRequire(import.meta.url);
-const { parse, compileScript } = require('vue/compiler-sfc');
+const { parse, compileScript, compileTemplate } = require('vue/compiler-sfc');
 const load = (path, deps = {}) => {
   const module = { exports: {} };
   new Function(
@@ -49,6 +50,51 @@ const sources = Object.fromEntries(
     ];
   }),
 );
+const { descriptor: songCardDescriptor } = parse(
+  readFileSync(new URL('../src/renderer/components/music/SongCard.vue', import.meta.url), 'utf8'),
+);
+const songCardCode = transformSync(
+  compileScript(songCardDescriptor, { id: 'metadata-song-card' }).content,
+  {
+    loader: 'ts',
+    format: 'cjs',
+  },
+).code;
+const songCardModule = { exports: {} };
+new Function('require', 'module', 'exports', songCardCode)(
+  (name) => {
+    if (name.endsWith('.vue')) return {};
+    const dependencies = {
+      vue,
+      'vue-router': { useRouter: () => ({ push() {} }) },
+      '@/stores/playlist': { usePlaylistStore: () => ({ isFavoriteSong: () => false }) },
+      '@/stores/player': { usePlayerStore: () => ({}) },
+      '@/stores/setting': { useSettingStore: () => ({}) },
+      '@/utils/format': {},
+      '@/icons': {},
+      '@/utils/playback': {},
+      '@/utils/song': {},
+    };
+    assert.ok(name in dependencies, name);
+    return dependencies[name];
+  },
+  songCardModule,
+  songCardModule.exports,
+);
+
+const observeSongCard = (t, songs) => {
+  const props = vue.shallowReactive({ song: songs.value[0] });
+  const state = songCardModule.exports.default.setup(props, { expose() {} });
+  const stop = vue.watch(
+    () => songs.value[0],
+    (song) => {
+      props.song = song;
+    },
+    { flush: 'sync' },
+  );
+  t.after(stop);
+  return state;
+};
 const deferred = () => {
   let resolve, reject;
   const promise = new Promise((a, b) => {
@@ -86,6 +132,7 @@ function fixture(t, kind) {
     routeCallbacks = [],
     unmounts = [],
     notices = [],
+    errors = [],
     reads = [],
     cache = [],
     covers = [],
@@ -178,6 +225,8 @@ function fixture(t, kind) {
   };
   let play = async () => true;
   let vip = async (rows) => rows;
+  const fixtureLogger = { ...log, error: (...args) => errors.push(args) };
+  let metadata = async (rows) => rows;
   const deps = {
     vue: {
       ...vue,
@@ -202,7 +251,7 @@ function fixture(t, kind) {
     '@/utils/userSession': session,
     '@/utils/PagedSongLoader': loaders,
     '@/utils/mappers': mappers,
-    '@/utils/logger': { ...log, logger: log },
+    '@/utils/logger': { ...fixtureLogger, logger: fixtureLogger },
     '@/utils/playlistTrackSource': trackSource,
     '@/utils/playlistOrder': {
       orderByPlaylistPosition: (songs) =>
@@ -234,6 +283,9 @@ function fixture(t, kind) {
     '@/api/artist': api,
     '@/api/playlist': api,
     '@/services/playlistEditing': { canEditPlaylist: () => false },
+    '@/services/songMetadata': {
+      completeSongMetadata: (rows, isCurrent) => metadata(rows, isCurrent),
+    },
     '@/stores/playlist': { usePlaylistStore: () => playlistStore },
     '@/stores/player': { usePlayerStore: () => player },
     '@/stores/user': { useUserStore: () => user },
@@ -310,6 +362,7 @@ function fixture(t, kind) {
     playlistStore,
     reads,
     notices,
+    errors,
     cache,
     covers,
     queues,
@@ -328,6 +381,9 @@ function fixture(t, kind) {
     mutations,
     setVip: (fn) => {
       vip = fn;
+    },
+    setMetadata: (fn) => {
+      metadata = fn;
     },
     setPlay: (fn) => {
       play = fn;
@@ -441,6 +497,235 @@ test('playlist failed refresh preserves the complete filtered-song count and cac
   assert.equal(f.view.songs.value.length, 1);
   assert.equal(f.view.playlistFilteredInvalidCount.value, 1);
   assert.equal(f.cache.length, count);
+});
+
+for (const owned of [false, true]) {
+  test(`playlist ${owned ? 'owned' : 'public'}: metadata completes in the background and updates shared cache without changing playback identity`, async (t) => {
+    const f = fixture(t, 'Playlist');
+    const gate = deferred();
+    const song = {
+      ...row(1),
+      hash: 'original-hash',
+      albumAudioId: '64323384',
+      fileId: 2418,
+      playlistSort: 0,
+      coverUrl: '',
+      privilege: 0,
+    };
+    f.api.getPlaylistDetail = async () => ({
+      status: 1,
+      data: [
+        {
+          id: 'A',
+          count: 1,
+          ...(owned ? { listid: 12, listCreateListid: 12, listCreateUserid: 7 } : {}),
+        },
+      ],
+    });
+    const requests = [];
+    f.api.getPlaylistTracks = async (...args) => {
+      requests.push(['public', ...args]);
+      return { status: 1, data: { info: [song] } };
+    };
+    f.api.getPlaylistTracksNew = async (...args) => {
+      requests.push(['owned', ...args]);
+      return { status: 1, data: { info: [song] } };
+    };
+    f.setMetadata((items, isCurrent) => {
+      assert.equal(items[0], song);
+      assert.equal(isCurrent(), true);
+      return gate.promise;
+    });
+    await bounded(f.run());
+    assert.equal(f.view.loading.value, false);
+    assert.equal(f.loader().fullyLoaded, true);
+    assert.equal(requests[0][0], owned ? 'owned' : 'public');
+    assert.equal(f.view.songs.value[0].coverUrl, '');
+    const card = observeSongCard(t, f.view.songs);
+    assert.equal(card.songCoverUrl.value, '');
+    assert.deepEqual(card.songArtists.value, []);
+    const covers = vue.computed(() => f.view.songs.value.map((item) => item.coverUrl));
+    assert.deepEqual(covers.value, ['']);
+    song.privilege = 10;
+    song.relateGoods = [{ hash: 'fresh-flac', quality: 'flac' }];
+    gate.resolve([
+      {
+        ...song,
+        privilege: 0,
+        relateGoods: [],
+        coverUrl: 'real-cover',
+        cover: 'real-cover',
+        albumId: '2603117',
+        albumName: '倔强',
+        artists: [{ name: '云朵', id: '6743' }],
+      },
+    ]);
+    await flush();
+    assert.deepEqual(covers.value, ['real-cover']);
+    assert.equal(card.songCoverUrl.value, 'real-cover');
+    assert.equal(card.songArtists.value[0].id, '6743');
+    assert.equal(f.view.songs.value[0].albumId, '2603117');
+    assert.equal(f.view.songs.value[0].artists[0].id, '6743');
+    assert.equal(f.cache.at(-1)[1][0].coverUrl, 'real-cover');
+    assert.equal(f.cache.at(-1)[2], true);
+    for (const key of ['id', 'hash', 'albumAudioId', 'fileId', 'playlistSort'])
+      assert.equal(f.view.songs.value[0][key], song[key]);
+    assert.equal(f.view.songs.value[0].privilege, 10);
+    assert.equal(f.view.songs.value[0].relateGoods[0].hash, 'fresh-flac');
+    assert.equal(f.view.playlist.value.count, 1);
+    assert.deepEqual(f.notices, []);
+  });
+}
+
+for (const change of ['route', 'account', 'refresh', 'unmount']) {
+  test(`playlist: late metadata is discarded after ${change}`, async (t) => {
+    const f = fixture(t, 'Playlist');
+    const gate = deferred();
+    const old = { ...row(1), coverUrl: '' };
+    f.api.getPlaylistTracks = async () => ({ status: 1, data: { info: [old] } });
+    f.setMetadata(() => gate.promise);
+    await f.run();
+    f.api.getPlaylistTracks = async () => ({
+      status: 1,
+      data: { info: [{ ...row(2), coverUrl: 'fresh-cover' }] },
+    });
+    f.setMetadata(async (items) => items);
+    if (change === 'route') f.go('B');
+    if (change === 'account') {
+      f.user.info.token = 'new';
+      f.playlistStore.userCollectionsGeneration++;
+    }
+    if (change === 'refresh') await f.run();
+    if (change === 'unmount') f.stop();
+    await flush();
+    const current = f.view.songs.value;
+    gate.resolve([{ ...old, coverUrl: 'stale-cover', albumId: '999' }]);
+    await flush();
+    assert.equal(old.coverUrl, '');
+    assert.equal(f.view.songs.value, current);
+    if (change !== 'unmount') assert.equal(f.view.songs.value[0].coverUrl, 'fresh-cover');
+    assert.deepEqual(f.notices, []);
+  });
+}
+
+test('playlist metadata never restores locally removed songs or drops a concurrent addition', async (t) => {
+  const f = fixture(t, 'Playlist');
+  const gate = deferred();
+  const first = { ...row(1), coverUrl: '' },
+    second = { ...row(2), coverUrl: '' };
+  f.api.getPlaylistDetail = async () => ({ status: 1, data: [{ id: 'A', count: 2 }] });
+  f.api.getPlaylistTracks = async () => ({ status: 1, data: { info: [first, second] } });
+  f.setMetadata(() => gate.promise);
+  await f.run();
+  f.view.applyRemovedPlaylistSongs([first]);
+  f.view.applyAddedPlaylistSongs([row(3)]);
+  gate.resolve([
+    { ...first, coverUrl: 'removed-cover' },
+    { ...second, coverUrl: 'remaining-cover' },
+  ]);
+  await flush();
+  assert.deepEqual(
+    f.view.songs.value.map((song) => song.id),
+    ['3', '2'],
+  );
+  assert.equal(f.view.songs.value[1].coverUrl, 'remaining-cover');
+  assert.equal(f.view.playlist.value.count, 2);
+  assert.equal(f.view.loadedSongCount.value, 2);
+  assert.deepEqual(
+    f.cache.at(-1)[1].map((song) => song.id),
+    ['3', '2'],
+  );
+});
+
+test('playlist completion replaces only changed row props and preserves every untouched row reference', async (t) => {
+  const f = fixture(t, 'Playlist');
+  const gate = deferred();
+  const changed = { ...row(1), coverUrl: '' },
+    unchanged = { ...row(2), coverUrl: 'existing-cover' };
+  f.api.getPlaylistTracks = async () => ({ status: 1, data: { info: [changed, unchanged] } });
+  f.setMetadata(() => gate.promise);
+  await f.run();
+  const card = observeSongCard(t, f.view.songs);
+  assert.equal(card.songCoverUrl.value, '');
+  gate.resolve([{ ...changed, coverUrl: 'real-cover' }, unchanged]);
+  await flush();
+  assert.notEqual(f.view.songs.value[0], changed);
+  assert.equal(f.view.songs.value[1], unchanged);
+  assert.equal(card.songCoverUrl.value, 'real-cover');
+  assert.equal(f.cache.at(-1)[1][0], changed);
+  assert.equal(changed.coverUrl, 'real-cover');
+});
+
+test('playlist metadata failure leaves the complete song list playable without a load failure toast', async (t) => {
+  const f = fixture(t, 'Playlist');
+  f.setMetadata(async () => {
+    throw Error('optional metadata unavailable');
+  });
+  await bounded(f.run());
+  await flush();
+  assert.equal(f.view.songs.value.length, 1);
+  assert.equal(f.view.loading.value, false);
+  assert.equal(f.loader().fullyLoaded, true);
+  assert.deepEqual(f.notices, []);
+});
+
+test('playlist metadata only receives accepted, deduplicated page songs, excluding speculative pages', async (t) => {
+  const f = fixture(t, 'Playlist');
+  const batches = [];
+  f.api.getPlaylistDetail = async () => ({ status: 1, data: [{ id: 'A', count: 201 }] });
+  f.api.getPlaylistTracks = async (_id, p) =>
+    page(p === 1 ? range(200) : p === 2 ? [0, 200] : [999]);
+  f.setMetadata(async (songs) => {
+    batches.push(songs.map((song) => song.id));
+    return songs;
+  });
+  await f.run();
+  await flush();
+  assert.equal(f.view.songs.value.length, 201);
+  assert.equal(batches.length, 2);
+  assert.equal(batches[0].length, 200);
+  assert.deepEqual(batches[1], ['200']);
+  assert.ok(!batches.flat().includes('999'));
+});
+
+test('owned playlist sidebar cover receives completed artwork once after the full snapshot without another page request', async (t) => {
+  const f = fixture(t, 'Playlist'),
+    gate = deferred();
+  const song = { ...row(1), coverUrl: '' };
+  let reads = 0;
+  f.api.getPlaylistDetail = async () => ({
+    status: 1,
+    data: [{ id: 'A', listid: 12, listCreateListid: 12, listCreateUserid: 7, count: 1 }],
+  });
+  f.api.getPlaylistTracksNew = async () => {
+    reads++;
+    return { status: 1, data: { info: [song] } };
+  };
+  f.setMetadata(() => gate.promise);
+  await bounded(f.run());
+  assert.equal(f.covers.length, 1);
+  gate.resolve([{ ...song, coverUrl: 'real-cover' }]);
+  await flush();
+  assert.equal(reads, 1);
+  assert.equal(f.covers.length, 2);
+  assert.equal(f.covers[1][4][0].coverUrl, 'real-cover');
+  assert.equal(f.covers[1][3](), true);
+});
+
+test('playlist edits invalidate the delayed enriched sidebar cover snapshot', async (t) => {
+  const f = fixture(t, 'Playlist'),
+    gate = deferred();
+  f.api.getPlaylistDetail = async () => ({
+    status: 1,
+    data: [{ id: 'A', listid: 12, listCreateListid: 12, listCreateUserid: 7, count: 1 }],
+  });
+  f.setMetadata(() => gate.promise);
+  await f.run();
+  f.playlistStore.playlistContentVersions['12'] = 1;
+  gate.resolve([{ ...row(1), coverUrl: 'stale-cover' }]);
+  await flush();
+  assert.equal(f.covers.length, 1);
+  assert.equal(f.covers[0][3](), false);
 });
 
 test('playlist speculative pages after the terminal page do not add filtered-song counts or covers', async (t) => {
@@ -1293,6 +1578,136 @@ for (const kind of ['Album', 'Artist', 'Playlist']) {
     assert.deepEqual(f.view.songs.value, []);
     assert.equal(f.loader().failed, false);
     assert.equal(f.loader().fullyLoaded, true);
+    assert.deepEqual(f.notices, []);
+  });
+}
+
+for (const kind of ['Album', 'Artist', 'Playlist']) {
+  for (const payload of [
+    { status: 1, error_code: 0, errcode: 0, errmsg: '', data: [{}] },
+    { status: 1, data: [] },
+    { status: 1, data: null },
+  ]) {
+    test(`${kind}: successful empty detail ${JSON.stringify(payload.data)} stays unavailable without an assertion`, async (t) => {
+      const f = fixture(t, kind);
+      f.api[`get${kind}Detail`] = async () => payload;
+      await f.view.fetchData();
+      assert.equal(f.view[kind.toLowerCase()].value, null);
+      if (f.loader()) await bounded(f.loader().waitForAll());
+      assert.equal(f.view.loading.value, false);
+      assert.deepEqual(f.notices, []);
+      assert.deepEqual(f.errors, []);
+    });
+  }
+}
+
+// Render the production template and actual error component. Other components
+// are slot wrappers so this checks the page branch without Electron/DOM globals.
+async function renderDetailState(kind, view) {
+  const filename = `src/renderer/views/details/${kind}Detail.vue`;
+  const { descriptor } = parse(readFileSync(filename, 'utf8'), { filename });
+  const template = compileTemplate({
+    source: descriptor.template.content,
+    filename,
+    id: `detail-state-${kind}`,
+  });
+  assert.deepEqual(template.errors, []);
+  const module = { exports: {} };
+  new Function(
+    'require',
+    'module',
+    'exports',
+    transformSync(template.code, { format: 'cjs' }).code,
+  )(
+    (id) => {
+      assert.equal(id, 'vue');
+      return vue;
+    },
+    module,
+    module.exports,
+  );
+  const wrapper = vue.defineComponent({
+    setup(_, { slots }) {
+      return () => vue.h('div', slots.default?.());
+    },
+  });
+  const errorSfc = parse(
+    readFileSync('src/renderer/components/music/DetailPageError.vue', 'utf8'),
+  ).descriptor;
+  const errorModule = { exports: {} };
+  const errorCode = transformSync(
+    compileScript(errorSfc, { id: 'detail-error-state', inlineTemplate: true }).content,
+    { loader: 'ts', format: 'cjs' },
+  ).code;
+  const Button = vue.defineComponent({
+    setup(_, { attrs, slots }) {
+      return () => vue.h('button', attrs, slots.default?.());
+    },
+  });
+  new Function('require', 'module', 'exports', errorCode)(
+    (id) => {
+      if (id === 'vue') return vue;
+      if (id === '@/components/ui/Button.vue') return Button;
+      if (id === '@iconify/vue') return { Icon: { render: () => null } };
+      if (id === '@/icons') return {};
+      throw new Error(`Unexpected dependency ${id}`);
+    },
+    errorModule,
+    errorModule.exports,
+  );
+  const app = vue.createSSRApp({ setup: () => ({ ...view }), render: module.exports.render });
+  const components = new Set();
+  const visit = (node) => {
+    if (node.type === 1 && /^[A-Z]/.test(node.tag)) components.add(node.tag);
+    node.children?.forEach(visit);
+  };
+  visit(descriptor.template.ast);
+  for (const name of components)
+    app.component(name, name === 'DetailPageError' ? errorModule.exports.default : wrapper);
+  return renderToString(app);
+}
+
+for (const kind of ['Album', 'Artist']) {
+  test(`${kind}: a previously cached zero-ID record cannot render an empty detail page`, async (t) => {
+    const f = fixture(t, kind);
+    f.view[kind.toLowerCase()].value = { id: 0, name: '' };
+    f.view.loading.value = false;
+    const html = await renderDetailState(kind, f.view);
+    assert.ok(html.includes('重新加载'));
+    assert.ok(!html.includes('0 首歌曲'));
+  });
+}
+
+for (const [kind, label] of [
+  ['Album', '专辑'],
+  ['Artist', '歌手'],
+  ['Playlist', '歌单'],
+]) {
+  test(`${kind}: empty detail renders retry state without playback actions, then retry restores metadata`, async (t) => {
+    const f = fixture(t, kind);
+    f.api[`get${kind}Detail`] = async () => ({ status: 1, data: [{}] });
+    await f.view.fetchData();
+    const html = await renderDetailState(kind, f.view);
+    assert.ok(html.includes(`暂时无法加载${label}`));
+    assert.ok(html.includes('重新加载'));
+    assert.ok(html.includes('role="status"'));
+    assert.ok(!html.includes('0 首歌曲'));
+    assert.ok(!html.includes('收藏'));
+    assert.deepEqual(f.errors, []);
+    f.api[`get${kind}Detail`] = async () =>
+      kind === 'Playlist' ? { status: 1, data: [{ id: 'A', name: 'available' }] } : detail('A');
+    await f.view.fetchData();
+    assert.equal(f.view[kind.toLowerCase()].value.id, 'A');
+  });
+
+  test(`${kind}: empty refresh preserves an existing usable detail snapshot`, async (t) => {
+    const f = fixture(t, kind);
+    await f.view.fetchData();
+    const metadata = f.view[kind.toLowerCase()].value;
+    f.api[`get${kind}Detail`] = async () => ({ status: 1, data: [{}] });
+    await f.view.fetchData();
+    assert.equal(f.view[kind.toLowerCase()].value, metadata);
+    assert.deepEqual(f.errors, []);
     assert.deepEqual(f.notices, []);
   });
 }

@@ -641,3 +641,15 @@ test('round12: menu checks captured hash when the song object changes during lis
   assert.equal(writes[0][1].hash, hash);
   assert.deepEqual(f.notices, [['actionCompleted', '已标记为不感兴趣']]);
 });
+
+for (const data of [undefined, null, []]) {
+  test(`successful blacklist response with empty data ${JSON.stringify(data)} returns an empty page`, async (t) => {
+    const f = fixture(t);
+    f.respond(() => ({ status: 1, error_code: 0, data }));
+    const page = await f.api.getBlacklistPage({ label: 'song' });
+    assert.deepEqual(page.entries, []);
+    assert.equal(page.total, 0);
+    assert.equal(page.page, 1);
+    assert.equal(page.pageSize, 30);
+  });
+}

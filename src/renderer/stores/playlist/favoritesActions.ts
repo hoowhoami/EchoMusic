@@ -3,6 +3,7 @@ import { orderByPlaylistPosition } from '@/utils/playlistOrder';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { parsePlaylistTracks } from '@/utils/mappers';
+import { completeSongMetadata } from '@/services/songMetadata';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
 import { useUserStore } from '@/stores/user';
 import { usePlaylistCoversStore } from '@/stores/playlistCovers';
@@ -311,6 +312,9 @@ export const favoritesActions = {
     const accountId = user.info?.userid;
     const covers = usePlaylistCoversStore();
     const coverPages = new Map<number, unknown>();
+    const metadataUpdates = new Map<number, Promise<void>>();
+    let completedCoverChanged = false;
+    const coverVersion = this.playlistContentVersions?.[String(likedListId)] ?? 0;
     let coverUpdate: Promise<void> | undefined;
     const runtime = getFavoritesRuntime(this);
     const changes: FavoriteChange[] = [];
@@ -327,6 +331,41 @@ export const favoritesActions = {
         coverPages.set(page, response);
         const { songs: pageSongs, filteredCount } = parsePlaylistTracks(response);
         const hasMore = pageSongs.length + filteredCount >= pageSize;
+        // 元数据补全不阻塞列表首屏和分页；同一批对象也被加载器的完整快照持有。
+        metadataUpdates.set(
+          page,
+          completeSongMetadata(pageSongs, isCurrentLoader)
+            .then((completed) => {
+              if (!isCurrentLoader()) return;
+              let changed = false;
+              completed.forEach((song, index) => {
+                const original = pageSongs[index];
+                if (song === original) return;
+                // 只同步展示字段，避免覆盖播放过程中更新的音源、权限和队列身份。
+                const fields = [
+                  'coverUrl',
+                  'cover',
+                  'albumId',
+                  'albumName',
+                  'album',
+                  'artists',
+                  'singers',
+                  'artist',
+                ] as const;
+                for (const field of fields) {
+                  if (song[field] === original[field]) continue;
+                  Object.assign(original, { [field]: song[field] });
+                  if (field === 'coverUrl' || field === 'cover') completedCoverChanged = true;
+                  changed = true;
+                }
+              });
+              if (changed) publishFavorites(this, (runtime.base ?? this.favorites).slice());
+            })
+            .catch(() => {
+              if (isCurrentLoader())
+                logger.warn('PlaylistStore', 'Background song metadata completion failed');
+            }),
+        );
         return { items: pageSongs, hasMore };
       },
       {
@@ -342,16 +381,23 @@ export const favoritesActions = {
         onComplete: (allItems) => {
           if (!isCurrentLoader()) return;
           updateFavorites(allItems, true);
-          coverUpdate = covers.updateFromPages(
-            this.likedPlaylist ?? likedPlaylist,
-            accountId,
-            Array.from(coverPages)
-              // 不让并发预取的越界页（info:null）使有效快照失效。
-              .filter(([page]) => page <= loader.loadedPages)
-              .sort(([left], [right]) => left - right)
-              .map(([, response]) => response),
-            isCurrentLoader,
-          );
+          const meta = this.likedPlaylist ?? likedPlaylist;
+          const pages = Array.from(coverPages)
+            .filter(([page]) => page <= loader.loadedPages)
+            .sort(([left], [right]) => left - right)
+            .map(([, response]) => response);
+          coverUpdate = covers.updateFromPages(meta, accountId, pages, isCurrentCover);
+          const updates = Array.from(metadataUpdates)
+            .filter(([page]) => page <= loader.loadedPages)
+            .map(([, update]) => update);
+          // 不等待补全来结束收藏加载；同版本补全封面只重算一次。
+          void Promise.all(updates)
+            .then(() => {
+              if (completedCoverChanged && isCurrentCover())
+                return covers.updateFromPages(meta, accountId, pages, isCurrentCover, allItems);
+            })
+            .catch(() => logger.warn('PlaylistStore', 'Completed playlist cover update failed'));
+          metadataUpdates.clear();
           coverPages.clear();
         },
         onError: () => {
@@ -368,6 +414,9 @@ export const favoritesActions = {
 
     const isCurrentLoader = () =>
       favoritesLoader === loader && isCurrentScope() && this.likedPlaylistListId === likedListId;
+    const isCurrentCover = () =>
+      isCurrentLoader() &&
+      coverVersion === (this.playlistContentVersions?.[String(likedListId)] ?? 0);
 
     const updateFavorites = (items: readonly Song[], complete: boolean) => {
       if (!isCurrentLoader()) return;

@@ -179,6 +179,22 @@ test('failed status reads are retryable and never mark an empty collection as lo
   assert.equal(store.isCollected(123), true);
 });
 
+for (const data of [undefined, null, {}]) {
+  test(`successful video collection response with empty data ${JSON.stringify(data)} loads normally`, async () => {
+    let reads = 0;
+    const { store } = setup(async () => {
+      reads++;
+      return { status: 1, data };
+    });
+    await store.ensureLoaded();
+    await store.ensureLoaded();
+    assert.equal(store.loaded, true);
+    assert.equal(store.loading, false);
+    assert.equal(store.isCollected(123), false);
+    assert.equal(reads, 1);
+  });
+}
+
 test('account switches discard old reads and old mutation completions', async () => {
   const oldRead = deferred();
   const oldWrite = deferred();

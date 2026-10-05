@@ -30,6 +30,7 @@ import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import PlaylistOrderDialog from '@/components/music/PlaylistOrderDialog.vue';
 import PlaylistEditDialog from '@/components/music/PlaylistEditDialog.vue';
 import { canEditPlaylist } from '@/services/playlistEditing';
+import { completeSongMetadata } from '@/services/songMetadata';
 import type { PlaylistOrderTarget } from '@/services/playlistOrdering';
 import type { Song } from '@/models/song';
 import { formatDate } from '@/utils/format';
@@ -65,6 +66,7 @@ import { useScrollContainer } from '@/composables/usePageScroll';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 import { isSameSong } from '@/utils/song';
+import logger from '@/utils/logger';
 
 const { id: currentId, onIdChange } = useRouteId();
 // const router = useRouter();
@@ -353,6 +355,47 @@ const updateSongsFromLoader = (items: readonly Song[], complete = false) => {
   );
 };
 
+const completePlaylistSongPage = (items: readonly Song[], isCurrent: () => boolean) => {
+  return completeSongMetadata(items, isCurrent)
+    .then((completed) => {
+      if (!isCurrent()) return false;
+      const changed = new Set<Song>();
+      let coverChanged = false;
+      const fields = [
+        'coverUrl',
+        'cover',
+        'albumId',
+        'albumName',
+        'album',
+        'artists',
+        'singers',
+        'artist',
+      ] as const;
+      completed.forEach((song, index) => {
+        const original = items[index];
+        if (song === original) return;
+        // 加载器、列表和歌单缓存共享对象，仅补展示字段，保留当前音源、权限及排序身份。
+        for (const field of fields) {
+          if (song[field] === original[field]) continue;
+          Object.assign(original, { [field]: song[field] });
+          if (field === 'coverUrl' || field === 'cover') coverChanged = true;
+          changed.add(original);
+        }
+      });
+      // 不使用旧分页快照替换列表，避免把补查期间删除的歌曲加回来。
+      if (changed.size && songs.value.some((song) => changed.has(song))) {
+        // shallowRef 的数组通知不会使 SongCard 的同引用 song prop 失效。
+        // 只替换补全过的行，令卡片重算封面/歌手，同时复用其他行。
+        songs.value = songs.value.map((song) => (changed.has(song) ? { ...song } : song));
+      }
+      return coverChanged;
+    })
+    .catch(() => {
+      if (isCurrent()) logger.warn('PlaylistDetail', 'Background song metadata completion failed');
+      return false;
+    });
+};
+
 const fetchData = async () => {
   if (disposed) return;
   const playlistId = getPlaylistId();
@@ -375,10 +418,10 @@ const fetchData = async () => {
     pendingRemovedPlaylistSongs = [];
     const detailRes = await getPlaylistDetail(playlistId);
     if (!isCurrent()) return;
-    if (detailRes?.status !== 1 || !detailRes.data?.[0]) {
-      throw new Error('Playlist detail response contains no playlist');
-    }
-    playlist.value = mapPlaylistMeta(detailRes.data[0]);
+    if (detailRes?.status !== 1 || !detailRes.data?.[0]) return;
+    const meta = mapPlaylistMeta(detailRes.data[0]);
+    if (!meta.id && !meta.name && !meta.globalCollectionId && !meta.listCreateGid) return;
+    playlist.value = meta;
 
     const playlistMeta = playlist.value;
     const currentUserId = userStore.info?.userid;
@@ -397,6 +440,11 @@ const fetchData = async () => {
 
     const filteredCounts = new Map<number, number>();
     const coverPages = new Map<number, unknown>();
+    const metadataUpdates: Promise<boolean | undefined>[] = [];
+    const coverVersion = playlistStore.playlistContentVersions[String(ownedListId)] ?? 0;
+    const isCurrentCover = () =>
+      isCurrent() &&
+      coverVersion === (playlistStore.playlistContentVersions[String(ownedListId)] ?? 0);
     const updateFilteredCount = () => {
       playlistFilteredInvalidCount.value = Array.from(filteredCounts)
         .filter(([page]) => page <= loader.loadedPages)
@@ -431,28 +479,40 @@ const fetchData = async () => {
         concurrency: 3,
         dedupeKey: (song) => String(song.id),
         logTag: 'PlaylistDetailLoader',
-        onPageLoaded(allItems) {
+        onPageLoaded(allItems, newItems) {
           if (!isCurrent()) return;
           if (!hadCompleteSongs) {
             updateFilteredCount();
             updateSongsFromLoader(allItems);
           }
           loading.value = false;
+          // 只补已接受的新页，排除重复歌曲及超过末页的预取结果；补全不阻塞分页。
+          metadataUpdates.push(completePlaylistSongPage(newItems, isCurrent));
         },
         onComplete(allItems) {
           if (!isCurrent()) return;
           updateFilteredCount();
           updateSongsFromLoader(allItems, true);
           if (ownedListId !== null && coverPlaylistMeta.value) {
-            void playlistCoversStore.updateFromPages(
-              coverPlaylistMeta.value,
-              accountId,
-              Array.from(coverPages)
-                .filter(([page]) => page <= loader.loadedPages)
-                .sort(([a], [b]) => a - b)
-                .map(([, response]) => response),
-              isCurrent,
-            );
+            const coverMeta = coverPlaylistMeta.value;
+            const pages = Array.from(coverPages)
+              .filter(([page]) => page <= loader.loadedPages)
+              .sort(([a], [b]) => a - b)
+              .map(([, response]) => response);
+            void playlistCoversStore.updateFromPages(coverMeta, accountId, pages, isCurrentCover);
+            // 全部后台补全结束后只重算一次自动封面，不阻塞列表或重新请求歌曲。
+            void Promise.all(metadataUpdates)
+              .then((changed) => {
+                if (changed.some(Boolean) && isCurrentCover())
+                  return playlistCoversStore.updateFromPages(
+                    coverMeta,
+                    accountId,
+                    pages,
+                    isCurrentCover,
+                    allItems,
+                  );
+              })
+              .catch(() => logger.warn('PlaylistDetail', 'Completed playlist cover update failed'));
           }
           coverPages.clear();
         },

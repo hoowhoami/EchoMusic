@@ -45,6 +45,15 @@ export const readString = (value: unknown, fallback = ''): string => {
   return String(value);
 };
 
+export const readPositiveId = (...values: unknown[]): string => {
+  for (const value of values) {
+    if (typeof value !== 'string' && typeof value !== 'number') continue;
+    const id = String(value).trim();
+    if (/^\d+$/.test(id) && Number.isSafeInteger(Number(id)) && Number(id) > 0) return id;
+  }
+  return '';
+};
+
 export const pickValue = (...values: unknown[]): unknown => {
   for (const value of values) {
     if (value === undefined || value === null) continue;

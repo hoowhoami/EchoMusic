@@ -1,4 +1,5 @@
 import type { PlaylistMeta } from '@/models/playlist';
+import type { Song } from '@/models/song';
 import { toRecord } from '../../shared/object';
 import { mapPlaylistSong } from './mappers/song';
 import { resolveOwnedPlaylistListId } from './playlistTrackSource';
@@ -43,13 +44,19 @@ export function playlistCoverKey(playlist: PlaylistMeta, userId: number | undefi
 }
 
 /** 只在完整且版本一致的分页数据上选择封面，不改变歌曲排序。 */
-export function buildPlaylistCoverEntry(pages: readonly unknown[]): PlaylistCoverEntry | null {
+export function buildPlaylistCoverEntry(
+  pages: readonly unknown[],
+  enrichedSongs: readonly Song[] = [],
+): PlaylistCoverEntry | null {
   const listVer = readPlaylistPageVersion(pages[0]);
   if (listVer === undefined) return null;
   let count: number | undefined;
   let received = 0;
   let coverUrl = '';
   let firstPosition = Infinity;
+  const songKey = (song: Song) =>
+    `${song.fileId ?? song.id}:${String(song.hash ?? '').toLowerCase()}`;
+  const enriched = new Map(enrichedSongs.map((song) => [songKey(song), song]));
   for (const response of pages) {
     const body = toRecord(response);
     if (body.status != null ? Number(body.status) !== 1 : Number(body.error_code) !== 0)
@@ -68,7 +75,14 @@ export function buildPlaylistCoverEntry(pages: readonly unknown[]): PlaylistCove
     received += rows.length;
     for (const row of rows) {
       const song = mapPlaylistSong(row);
-      const url = (song.coverUrl || song.cover || '').trim();
+      const completed = enriched.get(songKey(song));
+      const url = (
+        song.coverUrl ||
+        song.cover ||
+        completed?.coverUrl ||
+        completed?.cover ||
+        ''
+      ).trim();
       if (!/^https?:\/\//i.test(url)) continue;
       const position = song.playlistSort ?? Infinity;
       // 与歌曲列表的 sort 升序一致；相同或缺失位置时保留接口分页顺序。
