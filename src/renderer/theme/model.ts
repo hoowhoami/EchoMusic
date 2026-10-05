@@ -28,12 +28,20 @@ export interface AppearancePreference {
   accent: AccentPreference;
   transparency: number;
   windowFrosted: boolean;
+  /** 失焦时强制保持毛玻璃渲染（仅 Windows 毛玻璃后端生效）。 */
+  windowFrostedKeepOnBlur: boolean;
   floatingSurfaceFrosted: boolean;
   atmosphere: { source: 'off' | 'cover'; height: number; strength: number };
 }
 export type GeneralAppearancePreference = Pick<
   AppearancePreference,
-  'mode' | 'accent' | 'atmosphere' | 'transparency' | 'windowFrosted' | 'floatingSurfaceFrosted'
+  | 'mode'
+  | 'accent'
+  | 'atmosphere'
+  | 'transparency'
+  | 'windowFrosted'
+  | 'windowFrostedKeepOnBlur'
+  | 'floatingSurfaceFrosted'
 >;
 export type ThemeDraft = Pick<AppearancePreference, 'themeKey' | 'overrides'>;
 export interface ThemeTokens {
@@ -77,6 +85,7 @@ export const defaultAppearance = (): AppearancePreference => ({
   atmosphere: { source: 'off', height: 70, strength: 100 },
   transparency: 0,
   windowFrosted: false,
+  windowFrostedKeepOnBlur: false,
   floatingSurfaceFrosted: false,
 });
 export const defaultOverride = (): ThemeOverride => ({

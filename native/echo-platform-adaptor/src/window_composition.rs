@@ -85,14 +85,20 @@ extern "system" {
 const LEGACY_COMPOSITION_SUBCLASS: usize = 0x4543484f;
 const ACRYLIC_DRAG_SUBCLASS: usize = 0x45434841;
 
-unsafe fn set_accent(handle: *mut c_void, state: i32) -> bool {
-    let name: Vec<u16> = "user32.dll\0".encode_utf16().collect();
-    let module = GetModuleHandleW(name.as_ptr());
-    let proc = if module.is_null() {
+// 组合属性相关 API 未公开，按名称运行时解析；缺失时由调用方按失败处理。
+unsafe fn resolve_user32_proc(name: &[u8]) -> *mut c_void {
+    let module: Vec<u16> = "user32.dll\0".encode_utf16().collect();
+    let module = GetModuleHandleW(module.as_ptr());
+    if module.is_null() {
         std::ptr::null_mut()
     } else {
-        GetProcAddress(module, b"SetWindowCompositionAttribute\0".as_ptr())
-    };
+        GetProcAddress(module, name.as_ptr())
+    }
+}
+
+// color 为 AccentPolicy 的 GradientColor（ABGR）；仅 state 4（Acrylic）使用它。
+unsafe fn set_accent(handle: *mut c_void, state: i32, color: u32) -> bool {
+    let proc = resolve_user32_proc(b"SetWindowCompositionAttribute\0");
     if proc.is_null() {
         return state == 0;
     }
@@ -100,9 +106,9 @@ unsafe fn set_accent(handle: *mut c_void, state: i32) -> bool {
     let mut policy = AccentPolicy {
         state,
         flags: 0,
-        // window-vibrancy's legacy Acrylic path requires nonzero tint alpha.
-        // Use the smallest alpha; application surfaces supply the theme color.
-        color: if state == 4 { 0x01000000 } else { 0 },
+        // window-vibrancy's legacy Acrylic path requires nonzero tint alpha;
+        // 失焦保持模式传入主题化的着色，贴近 system backdrop 的提亮观感。
+        color: if state == 4 { color } else { 0 },
         animation: 0,
     };
     let mut data = AttributeData {
@@ -115,14 +121,16 @@ unsafe fn set_accent(handle: *mut c_void, state: i32) -> bool {
 
 // Suspend expensive legacy Acrylic during the OS modal move/resize loop.
 // Unlike a JS debounce, these messages also cover a paused mouse inside the loop.
-// Data bits: 1 = suspended, 2 = last native operation failed.
+// 失焦保持（keep 位，bit 3）：常驻 Acrylic(4，带主题着色)——真实 alpha 着色下
+// accent 4 失焦不失效（Win11 实测）。着色存于 data 高 32 位，恢复时原样复用。
+// Data bits: 1 = suspended, 2 = last failed, 4 = keep on blur; bits 32+ = tint ABGR.
 unsafe extern "system" fn acrylic_drag_proc(
     hwnd: *mut c_void,
     message: u32,
     wparam: usize,
     lparam: isize,
     id: usize,
-    _data: usize,
+    ref_data: usize,
 ) -> isize {
     if message == 0x0082 {
         RemoveWindowSubclass(hwnd, acrylic_drag_proc, id); // WM_NCDESTROY
@@ -130,18 +138,30 @@ unsafe extern "system" fn acrylic_drag_proc(
     }
     if message == 0x0231 {
         // WM_ENTERSIZEMOVE: disable before the modal loop.
-        let ok = set_accent(hwnd, 0);
-        SetWindowSubclass(hwnd, acrylic_drag_proc, id, 1 | if ok { 0 } else { 2 });
+        let ok = set_accent(hwnd, 0, 0);
+        SetWindowSubclass(hwnd, acrylic_drag_proc, id, (ref_data & !3) | 1 | if ok { 0 } else { 2 });
     }
     let result = DefSubclassProc(hwnd, message, wparam, lparam);
     let mut data = 0;
-    if matches!(message, 0x0232 | 0x031e) // WM_EXITSIZEMOVE / WM_DWMCOMPOSITIONCHANGED
+    if matches!(message, 0x0006 | 0x0232 | 0x031e) // WM_ACTIVATE / WM_EXITSIZEMOVE / WM_DWMCOMPOSITIONCHANGED
         && IsWindow(hwnd) != 0
         && GetWindowSubclass(hwnd, acrylic_drag_proc, id, &mut data) != 0
-        && (message == 0x0232 || data & 1 == 0)
     {
-        let ok = set_accent(hwnd, 4);
-        SetWindowSubclass(hwnd, acrylic_drag_proc, id, if ok { 0 } else { 2 });
+        let suspended = data & 1 != 0;
+        let restore = match message {
+            0x0232 => true,       // 拖动/缩放结束，无条件恢复
+            0x031e => !suspended, // 合成状态变化，暂停期间不抢恢复
+            // WM_ACTIVATE：accent 4 常驻，焦点变化不重设。实测（Win11 24H2）
+            // accent 4 应用一次后失焦不失效；失焦期间重设反而会打成灰罩，
+            // 之后的再次重设甚至会清掉材质。
+            _ => false,
+        };
+        if restore {
+            // 未存着色的遗留安装（mode 8/10 非 keep）回退到 0x01000000。
+            let tint = (data >> 32) as u32;
+            let ok = set_accent(hwnd, 4, if tint == 0 { 0x01000000 } else { tint });
+            SetWindowSubclass(hwnd, acrylic_drag_proc, id, (data & !3) | if ok { 0 } else { 2 });
+        }
     }
     result
 }
@@ -186,7 +206,7 @@ unsafe extern "system" fn legacy_composition_proc(
             GetForegroundWindow() == hwnd
         };
         let repaired = if message == 0x031e {
-            set_window_composition((hwnd as usize).to_string(), mode as u32)
+            set_window_composition((hwnd as usize).to_string(), mode as u32, None, None)
         } else {
             refresh_legacy_frame(hwnd, mode as u32, active, false)
         };
@@ -248,6 +268,7 @@ pub struct WindowCompositionDiagnostics {
     pub acrylic_drag_handler_installed: bool,
     pub acrylic_suspended: bool,
     pub acrylic_last_operation_succeeded: Option<bool>,
+    pub acrylic_keep_on_blur: bool,
     pub legacy_frame_repair_installed: bool,
     pub legacy_frame_repair_last_succeeded: Option<bool>,
     pub layered: bool,
@@ -256,6 +277,7 @@ pub struct WindowCompositionDiagnostics {
     pub composition_enabled: Option<bool>,
     pub accent_state: Option<i32>,
     pub system_backdrop: Option<u32>,
+    pub force_active_appearance: Option<bool>,
 }
 
 /// Read back state without changing styles, materials, or capturing other windows.
@@ -278,13 +300,7 @@ pub fn get_window_composition_diagnostics(hwnd: String) -> Option<WindowComposit
             size_of::<u32>() as u32,
         ) >= 0)
             .then_some(backdrop);
-        let name: Vec<u16> = "user32.dll\0".encode_utf16().collect();
-        let module = GetModuleHandleW(name.as_ptr());
-        let proc = if module.is_null() {
-            std::ptr::null_mut()
-        } else {
-            GetProcAddress(module, b"GetWindowCompositionAttribute\0".as_ptr())
-        };
+        let proc = resolve_user32_proc(b"GetWindowCompositionAttribute\0");
         let mut accent_state = None;
         if !proc.is_null() {
             let get: SetComposition = transmute(proc);
@@ -301,6 +317,20 @@ pub fn get_window_composition_diagnostics(hwnd: String) -> Option<WindowComposit
             };
             if get(handle, &mut data) != 0 {
                 accent_state = Some(policy.state);
+            }
+        }
+        // WCA_FORCE_ACTIVEWINDOW_APPEARANCE(15) 回读；数据是单个 BOOL。
+        let mut force_active_appearance = None;
+        if !proc.is_null() {
+            let get: SetComposition = transmute(proc);
+            let mut value: i32 = 0;
+            let mut data = AttributeData {
+                attribute: 15,
+                data: (&mut value as *mut i32).cast(),
+                size: size_of::<i32>(),
+            };
+            if get(handle, &mut data) != 0 {
+                force_active_appearance = Some(value != 0);
             }
         }
         let mut legacy_mode = 0;
@@ -322,6 +352,7 @@ pub fn get_window_composition_diagnostics(hwnd: String) -> Option<WindowComposit
             acrylic_suspended: acrylic_drag_handler_installed && acrylic_data & 1 != 0,
             acrylic_last_operation_succeeded: acrylic_drag_handler_installed
                 .then_some(acrylic_data & 2 == 0),
+            acrylic_keep_on_blur: acrylic_drag_handler_installed && acrylic_data & 4 != 0,
             legacy_frame_repair_installed,
             legacy_frame_repair_last_succeeded: legacy_frame_repair_installed
                 .then_some(legacy_mode & 0x100 == 0),
@@ -331,6 +362,7 @@ pub fn get_window_composition_diagnostics(hwnd: String) -> Option<WindowComposit
             composition_enabled,
             accent_state,
             system_backdrop,
+            force_active_appearance,
         })
     }
 }
@@ -362,12 +394,24 @@ unsafe fn set_alpha_composition(handle: *mut c_void, enabled: bool) -> bool {
 
 /// mode: 0=off, 5=Win11 DWM clear, 6=legacy DWM clear+frame repair, 7=legacy blur+frame repair,
 /// 8=old opaque-window Acrylic; 10/11=enable/clear Accent on an Electron transparent
-/// window without modifying Electron's DWM alpha or frame margins.
+/// window without modifying Electron's DWM alpha or frame margins;
+/// 12=Accent Acrylic on a Win11 material-prepared window: clear only the system
+/// backdrop, enable per-pixel alpha, then stack Accent Acrylic (keep-on-blur always on).
+/// keep_on_blur 仅对 10/12 有意义：子类不再在失焦时切换材质，accent 4 常驻
+/// （真实 alpha 着色下实测失焦不失效）。
+/// tint 为 keep 模式 AccentPolicy 的 GradientColor（ABGR），必须使用真实 alpha
+/// （建议 ≥0x50：24H2 会把近零 alpha 的 accent 4 退化成无模糊灰罩）；缺省沿用
+/// 遗留的 0x01000000（与旧 addon 行为一致，仅兼容旧调用方）。
 /// Modes 6/7 deliberately differ from the former legacy 4/2 protocol:
 /// old addons reject them, causing an explicit fallback instead of silent failure.
 #[napi]
-pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
-    if !matches!(mode, 0 | 5 | 6 | 7 | 8 | 10 | 11) {
+pub fn set_window_composition(
+    hwnd: String,
+    mode: u32,
+    keep_on_blur: Option<bool>,
+    tint: Option<u32>,
+) -> bool {
+    if !matches!(mode, 0 | 5 | 6 | 7 | 8 | 10 | 11 | 12) {
         return false;
     }
     let Ok(address) = hwnd.parse::<usize>() else {
@@ -378,25 +422,8 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
         if handle.is_null() || IsWindow(handle) == 0 {
             return false;
         }
-        if matches!(mode, 10 | 11) {
-            // Electron owns the alpha surface and margins of this window. Never
-            // reset them on entry, exit or rollback; doing so can break clear.
-            if !remove_acrylic_drag(handle) {
-                return false;
-            }
-            if mode == 11 {
-                return set_accent(handle, 0);
-            }
-            if set_accent(handle, 4)
-                && SetWindowSubclass(handle, acrylic_drag_proc, ACRYLIC_DRAG_SUBCLASS, 0) != 0
-            {
-                return true;
-            }
-            let _ = remove_acrylic_drag(handle);
-            let _ = set_accent(handle, 0);
-            return false;
-        }
-        let accent = |state: i32| set_accent(handle, state);
+        // 非 keep 路径沿用遗留 0x01000000 着色（仅 mode 8 的 accent 4 会用到）。
+        let accent = |state: i32| set_accent(handle, state, 0x01000000);
         let margins = |edge: i32| {
             DwmExtendFrameIntoClientArea(
                 handle,
@@ -408,6 +435,62 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
                 },
             ) >= 0
         };
+        if matches!(mode, 10 | 11 | 12) {
+            // Electron owns the alpha surface and margins of mode 10/11 windows. Never
+            // reset them on entry, exit or rollback; doing so can break clear.
+            if !remove_acrylic_drag(handle) {
+                return false;
+            }
+            if mode == 11 {
+                return set_accent(handle, 0, 0);
+            }
+            let keep = mode == 12 || keep_on_blur.unwrap_or(false);
+            let tint = tint.unwrap_or(0x01000000);
+            if mode == 12 {
+                // Win11 material-prepared window: Electron already prepared the
+                // translucent surface via setBackgroundMaterial('acrylic'); clear only
+                // the system backdrop, then enable per-pixel alpha and stack Accent
+                // Acrylic on top. Margins(-1) matches mode 5 and is idempotent.
+                let applied = {
+                    let none: u32 = 1; // DWMSBT_NONE
+                    DwmSetWindowAttribute(
+                        handle,
+                        38,
+                        (&none as *const u32).cast(),
+                        size_of::<u32>() as u32,
+                    ) >= 0 && margins(-1)
+                        && set_alpha_composition(handle, true)
+                        && set_accent(handle, 4, tint)
+                };
+                if applied
+                    && SetWindowSubclass(
+                        handle,
+                        acrylic_drag_proc,
+                        ACRYLIC_DRAG_SUBCLASS,
+                        ((tint as usize) << 32) | 4,
+                    ) != 0
+                {
+                    return true;
+                }
+                // Best-effort rollback; the backdrop stays DWMSBT_NONE like mode 5's.
+                let _ = set_alpha_composition(handle, false);
+                let _ = set_accent(handle, 0, 0);
+                return false;
+            }
+            if set_accent(handle, 4, tint)
+                && SetWindowSubclass(
+                    handle,
+                    acrylic_drag_proc,
+                    ACRYLIC_DRAG_SUBCLASS,
+                    if keep { ((tint as usize) << 32) | 4 } else { 0 },
+                ) != 0
+            {
+                return true;
+            }
+            let _ = remove_acrylic_drag(handle);
+            let _ = set_accent(handle, 0, 0);
+            return false;
+        }
         let success = (|| {
             if !remove_legacy_frame_repair(handle) {
                 return false;
@@ -474,5 +557,32 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
             let _ = margins(0);
         }
         success
+    }
+}
+
+/// WCA_FORCE_ACTIVEWINDOW_APPEARANCE(15)：未公开的组合属性，强制 DWM 始终按激活态
+/// 渲染窗口，使 Acrylic/system backdrop 在窗口失焦时不降级为灰色。数据为单个 BOOL。
+#[napi]
+pub fn set_window_force_active_appearance(hwnd: String, enabled: bool) -> bool {
+    let Ok(address) = hwnd.parse::<usize>() else {
+        return false;
+    };
+    let handle = address as *mut c_void;
+    unsafe {
+        if handle.is_null() || IsWindow(handle) == 0 {
+            return false;
+        }
+        let proc = resolve_user32_proc(b"SetWindowCompositionAttribute\0");
+        if proc.is_null() {
+            return false;
+        }
+        let set: SetComposition = transmute(proc);
+        let mut value: i32 = i32::from(enabled);
+        let mut data = AttributeData {
+            attribute: 15,
+            data: (&mut value as *mut i32).cast(),
+            size: size_of::<i32>(),
+        };
+        set(handle, &mut data) != 0
     }
 }

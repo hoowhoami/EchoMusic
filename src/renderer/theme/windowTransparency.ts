@@ -1,8 +1,17 @@
 import { normalizeWindowBackground, type WindowBackground } from '../../shared/windowBackground';
 
 /** One amount drives both the skin and the alpha-capable native window. */
-export const windowBackgroundFromTransparency = (transparency: number, frosted: boolean) => {
-  const background = normalizeWindowBackground({ transparency, frosted, color: '' });
+export const windowBackgroundFromTransparency = (
+  transparency: number,
+  frosted: boolean,
+  keepOnBlur = false,
+) => {
+  const background = normalizeWindowBackground({
+    transparency,
+    frosted,
+    keepFrostedOnBlur: keepOnBlur,
+    color: '',
+  });
   return { ...background, enabled: background.transparency > 0 || background.frosted };
 };
 
