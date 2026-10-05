@@ -64,7 +64,6 @@ export default defineConfig({
             emptyOutDir: true,
             rollupOptions: {
               external: [
-                '@resvg/resvg-js',
                 'electron',
                 'font-list',
                 'music-metadata',

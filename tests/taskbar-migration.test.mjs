@@ -133,8 +133,7 @@ test('recreating main window rebinds show events and rejects stale renderer mess
 });
 
 test('new main snapshot integration sanitizes and forwards state without an extra IPC channel', () => {
-  const states = [],
-    cards = [];
+  const states = [];
   const api = load('../src/main/nowPlaying.ts', {
     electron: { BrowserWindow: { getAllWindows: () => [] } },
     './ipc/registry': {},
@@ -145,7 +144,6 @@ test('new main snapshot integration sanitizes and forwards state without an extr
     '../shared/opencc': load('../src/shared/opencc.ts', {}),
     './taskbarThumbnail': {
       isCoverPreviewEnabled: () => true,
-      setTaskbarCardPlayback: (state) => cards.push(state),
     },
     './taskbarProgress': {},
     './thumbar': { updateThumbarPlayback: (state) => states.push(state) },
@@ -153,30 +151,8 @@ test('new main snapshot integration sanitizes and forwards state without an extr
   api.syncNowPlayingSnapshot({ playback: { ...playback, currentTime: -8, duration: Infinity } });
   assert.equal(states[0].currentTime, 0);
   assert.equal(states[0].duration, 0);
-  assert.equal(cards[0], states[0]);
   api.syncNowPlayingSnapshot({ appearance: { isDark: true } });
   assert.equal(states[1], states[0]);
   api.syncNowPlayingSnapshot({ playback: null });
   assert.equal(states[2], null);
-});
-
-test('hover card escapes metadata and clamps non-finite progress', async () => {
-  const { buildTaskbarCardSvg, cardProgressPixel } = await import('../src/main/taskbarCard.ts');
-  const svg = buildTaskbarCardSvg({ ...playback, title: '<script>&"', artist: "A'B" });
-  assert.ok(svg.includes('&lt;script&gt;&amp;&quot;'));
-  assert.ok(svg.includes('A&apos;B'));
-  assert.equal(cardProgressPixel({ ...playback, currentTime: Infinity }), 0);
-  assert.equal(cardProgressPixel({ ...playback, currentTime: -1 }), 0);
-  assert.equal(cardProgressPixel({ ...playback, currentTime: 200 }), 495);
-});
-
-test('real renderer produces a valid, changing PNG including Chinese metadata without Electron or desktop', async () => {
-  const { renderTaskbarCard } = await import('../src/main/taskbarCard.ts');
-  const first = await renderTaskbarCard(playback);
-  const second = await renderTaskbarCard({ ...playback, title: '另一首歌', currentTime: 80 });
-  assert.deepEqual(first.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-  assert.equal(first.readUInt32BE(16), 511);
-  assert.equal(first.readUInt32BE(20), 85);
-  assert.ok(first.length > 1000);
-  assert.notDeepEqual(first, second);
 });
