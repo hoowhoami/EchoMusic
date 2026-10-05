@@ -1,6 +1,6 @@
 # Windows taskbar player
 
-Settings → Window → **任务栏快捷播控（独立横条）** enables an optional standalone horizontal player. It is separate from the taskbar icon's thumbnail controls and does not replace Mini mode. The existing three thumbnail transport buttons remain, with an additional favorite toggle; the cover-preview setting controls the compact preview card.
+Settings → Window → **任务栏快捷播控（独立横条）** enables an optional standalone horizontal player. It is separate from the taskbar icon's thumbnail controls and does not replace Mini mode. The existing three thumbnail transport buttons remain, with an additional favorite toggle; the cover-preview setting controls album artwork in the taskbar hover preview and Aero Peek.
 
 ## Behavior
 
@@ -18,20 +18,22 @@ The read-only helper at `native/taskbar-layout/TaskbarLayout.cs` queries Win32 a
 
 On Windows, run `pnpm run build:taskbar-helper` before development or direct packaging. It uses the .NET Framework C# compiler and WPF UI Automation assemblies supplied with Windows. `build`, `build:win`, and the release workflow already include this step. Other platforms skip compilation and do not ship the helper.
 
-Preview cards use `@resvg/resvg-js` to produce a real PNG (Electron does not decode these SVG cards through `nativeImage`). Keep the native optional dependency in packaged builds; license information is in `THIRD_PARTY_NOTICES.md`.
+Cover previews pass the original album image to the native DWM integration, which scales it proportionally to the requested bounds. They do not render the standalone player's horizontal layout into the preview. Turning off cover preview restores the live window preview without removing the four thumbnail buttons or the independent player. While a new cover is downloading, the previous cover is retained; before any album is available, the application fallback cover is used when available.
 
 ## Verification
 
 With Node 24 and installed dependencies:
 
 ```sh
-node --test tests/taskbar-seek.test.mjs tests/taskbar-shell.test.mjs tests/taskbar-window.test.mjs tests/taskbar-helper-build.test.mjs tests/taskbar-dock.test.ts tests/taskbar-migration.test.mjs tests/window-bounds-persistence.test.ts tests/window-frame.test.mjs
+node --test tests/taskbar-thumbnail.test.mjs tests/taskbar-seek.test.mjs tests/taskbar-shell.test.mjs tests/taskbar-window.test.mjs tests/taskbar-helper-build.test.mjs tests/taskbar-dock.test.ts tests/taskbar-migration.test.mjs tests/window-bounds-persistence.test.ts tests/window-frame.test.mjs
 pnpm exec vue-tsc --noEmit
 pnpm exec vite build
 pnpm run build:taskbar-helper
 ```
 
-Tests cover geometry/DPI, isolated-window lifecycle and recovery, command routing, favorite state, real preview PNG generation, system theme selection and deferred seeking. They do not replace Windows desktop acceptance.
+Tests cover geometry/DPI, isolated-window lifecycle and recovery, command routing, favorite state, original cover bytes and requested DWM sizes, cover switching/fallback/toggling, system theme selection and deferred seeking. They do not replace Windows desktop acceptance.
+
+For cover previews, hover the taskbar icon while playing several albums: the artwork should be recognizable and proportionally scaled rather than a thin green strip. Check minimize/restore, cover-preview off/on, all four buttons, and the independent player. Repeat at different display scale factors. Albums without a downloaded cover retain the previous image or use the fallback as described above.
 
 Manual checks before release: enable/disable/reopen, minimize/restore the main app, fullscreen recovery, transport/favorite/seek/lyric synchronization, detach/redock, and small/large taskbars with multiple monitors and different scale factors. Also verify crowded, vertical and auto-hidden fallback layouts and independent system/application theme choices. macOS/Linux should retain their existing behavior with no taskbar player window.
 
