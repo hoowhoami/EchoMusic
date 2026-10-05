@@ -5,7 +5,9 @@ import Switch from '@/components/ui/Switch.vue';
 import { useWindowAppearance } from './useWindowAppearance';
 const setting = useSettingStore();
 const theme = useThemeStore();
-const { frosted, error, setFrosted } = useWindowAppearance();
+const { frosted, frostedKeepOnBlur, error, setFrosted, setFrostedKeepOnBlur } =
+  useWindowAppearance();
+const isWindows = window.electron?.platform === 'win32';
 </script>
 <template>
   <section class="window-effects">
@@ -19,6 +21,18 @@ const { frosted, error, setFrosted } = useWindowAppearance();
         @update:model-value="setFrosted"
       />
     </div>
+    <template v-if="isWindows && frosted">
+      <div class="effects-row">
+        <label for="window-frosted-keep">失焦时保持毛玻璃效果</label>
+        <Switch
+          id="window-frosted-keep"
+          :model-value="frostedKeepOnBlur"
+          aria-label="失焦时保持毛玻璃效果"
+          @update:model-value="setFrostedKeepOnBlur"
+        />
+      </div>
+      <p class="effects-status">实验性选项，开启后在移动窗口时会暂时丢失模糊，切换立即生效</p>
+    </template>
     <p
       v-if="error || setting.windowBackgroundUnavailableReason"
       role="status"

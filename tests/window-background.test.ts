@@ -20,7 +20,13 @@ test('invalid persisted values cannot generate invalid CSS or out-of-range alpha
   assert.equal(normalizeWindowBackground({ color: 'url(https://example.com)' }).color, '');
 });
 test('frost preserves the color and transparency to restore on exit', () => {
-  const saved = { enabled: true, transparency: 65, frosted: true, color: '#aAbBcC' };
+  const saved = {
+    enabled: true,
+    transparency: 65,
+    frosted: true,
+    color: '#aAbBcC',
+    keepFrostedOnBlur: false,
+  };
   assert.deepEqual(normalizeWindowBackground(saved), saved);
   assert.deepEqual(normalizeWindowBackground({ ...saved, frosted: false }), {
     ...saved,
@@ -36,7 +42,13 @@ test('legacy transparency settings remain saved but default to disabled', () => 
 });
 
 test('switching native mode takes effect only after recreation', () => {
-  const saved = { enabled: true, transparency: 65, frosted: true, color: '#aAbBcC' };
+  const saved = {
+    enabled: true,
+    transparency: 65,
+    frosted: true,
+    color: '#aAbBcC',
+    keepFrostedOnBlur: false,
+  };
   assert.deepEqual(resolveWindowBackground(saved, false), DEFAULT_WINDOW_BACKGROUND);
   assert.deepEqual(resolveWindowBackground(saved, true), saved);
   const disabled = { ...saved, enabled: false };
@@ -72,7 +84,13 @@ test('Windows clear and Acrylic preserve a non-layered native window', () => {
 });
 
 test('explicit active frost state takes precedence over saved preferences', () => {
-  const saved = { enabled: true, frosted: true, transparency: 62, color: '#123456' };
+  const saved = {
+    enabled: true,
+    frosted: true,
+    transparency: 62,
+    color: '#123456',
+    keepFrostedOnBlur: false,
+  };
   assert.equal(resolveWindowBackground(saved, true, false).frosted, false);
   const pendingClear = { ...saved, frosted: false };
   assert.equal(resolveWindowBackground(pendingClear, true, true).frosted, true);
@@ -81,7 +99,13 @@ test('explicit active frost state takes precedence over saved preferences', () =
   assert.equal(resolveWindowBackground(pendingClear, true, false).transparency, 62);
 });
 
-const clear = { enabled: true, frosted: false, transparency: 60, color: '' };
+const clear = {
+  enabled: true,
+  frosted: false,
+  transparency: 60,
+  color: '',
+  keepFrostedOnBlur: false,
+};
 const frost = { ...clear, frosted: true };
 test('legacy Windows keeps an alpha surface while all effects toggle live', () => {
   for (const build of [19045, 22000, 22620]) {
@@ -233,4 +257,26 @@ test('a window created with effects off can traverse all supported modes without
       }
     }
   }
+});
+
+test('keepFrostedOnBlur 归一化并在解析链路中透传', () => {
+  assert.equal(DEFAULT_WINDOW_BACKGROUND.keepFrostedOnBlur, false);
+  assert.equal(normalizeWindowBackground({ keepFrostedOnBlur: true }).keepFrostedOnBlur, true);
+  assert.equal(
+    normalizeWindowBackground({ keepFrostedOnBlur: undefined }).keepFrostedOnBlur,
+    false,
+  );
+  const saved = { ...frost, keepFrostedOnBlur: true };
+  assert.deepEqual(normalizeWindowBackground(saved), saved);
+  assert.equal(
+    resolveRunningWindowBackground(saved, 'win32', false, 26100).background.keepFrostedOnBlur,
+    true,
+  );
+  assert.equal(resolveRunningWindowBackground(saved, 'win32', false, 26100).restartRequired, false);
+  // 开关不影响窗口创建参数（透明/systemMaterial 决策与 frosted 一致）。
+  assert.deepEqual(getWindowComposition(saved, 'win32', 26100), {
+    transparent: false,
+    systemMaterial: true,
+    clientCornerRadius: 0,
+  });
 });
