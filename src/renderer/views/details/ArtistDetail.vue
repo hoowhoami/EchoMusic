@@ -289,9 +289,7 @@ const fetchData = async () => {
 
       const detailRaw = extractFirstObject(res);
       const meta = detailRaw && mapArtistDetailMeta(detailRaw);
-      if (!meta || !meta.id) {
-        throw new Error('Artist detail response contains no artist');
-      }
+      if (!meta?.id) return;
       artist.value = meta;
     })
     .catch(() => {
@@ -883,13 +881,13 @@ onUnmounted(() => {
   <PageScrollContainer class="artist-detail-page">
     <div class="artist-detail-container bg-bg-main min-h-full">
       <DetailPageSkeleton
-        v-if="loading && !artist"
+        v-if="loading && !artist?.id"
         typeLabel="ARTIST"
         cover="round"
         :expandedHeight="196"
       />
 
-      <DetailPageError v-else-if="!artist" resource-name="歌手" @retry="fetchData" />
+      <DetailPageError v-else-if="!artist?.id" resource-name="歌手" @retry="fetchData" />
 
       <template v-else-if="artist">
         <SliverHeader

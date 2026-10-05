@@ -221,6 +221,10 @@ test('discover GET requests bypass cached batches, even within the same millisec
   const requests = [];
   const api = compile('../src/renderer/api/music.ts', {
     '@/utils/request': { get: (...args) => requests.push(args) },
+    './user': {},
+    '@/stores/user': {},
+    '@/utils/userSession': {},
+    '@/utils/serverInterceptors': {},
   });
   api.getHomeDiscover();
   api.getHomeDiscover();

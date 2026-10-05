@@ -337,9 +337,8 @@ const fetchData = async () => {
 
       const detailRaw = extractFirstObject(detailRes);
       const meta = detailRaw && mapAlbumDetailMeta(detailRaw);
-      if (!meta || !meta.id) {
-        throw new Error('Album detail response contains no album');
-      }
+      // Empty detail is unavailable content, not an album with a fabricated zero ID.
+      if (!meta?.id) return;
       album.value = meta;
       albumArtists.value = parseAlbumArtists(detailRaw);
     })
@@ -572,9 +571,9 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 <template>
   <PageScrollContainer class="album-detail-page">
     <div class="album-detail-container bg-bg-main min-h-full">
-      <DetailPageSkeleton v-if="loading && !album" typeLabel="ALBUM" :expandedHeight="196" />
+      <DetailPageSkeleton v-if="loading && !album?.id" typeLabel="ALBUM" :expandedHeight="196" />
 
-      <DetailPageError v-else-if="!album" resource-name="专辑" @retry="fetchData" />
+      <DetailPageError v-else-if="!album?.id" resource-name="专辑" @retry="fetchData" />
 
       <template v-else-if="album">
         <!-- 1. Sliver Header -->

@@ -47,17 +47,17 @@ export const useVideoCollectionStore = defineStore('videoCollection', () => {
         if (requestGeneration !== generation) return;
         assertVideoCollectionSuccess(response);
         const data = toRecord(toRecord(response).data);
-        if (!Array.isArray(data.info)) throw new Error('收藏视频列表格式异常');
+        const items = Array.isArray(data.info) ? data.info : [];
         const previousSize = ids.size;
-        for (const item of data.info) {
+        for (const item of items) {
           const id = normalizeVideoId(toRecord(item).video_id);
           if (id) ids.add(id);
         }
-        count += data.info.length;
+        count += items.length;
         const total = Number(data.ctotal);
         if (
-          data.info.length === 0 ||
-          (Number.isFinite(total) && total >= 0 ? count >= total : data.info.length < pageSize)
+          items.length === 0 ||
+          (Number.isFinite(total) && total >= 0 ? count >= total : items.length < pageSize)
         )
           break;
         if (ids.size === previousSize) throw new Error('收藏视频分页未推进');

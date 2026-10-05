@@ -29,6 +29,7 @@ import CommentList from '@/components/music/CommentList.vue';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import DetailPageError from '@/components/music/DetailPageError.vue';
+import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
 import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
@@ -66,7 +67,9 @@ const detailSong = ref<Song | null>(null);
 const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
 
-const songTitle = computed(() => String(route.query.title ?? detailSong.value?.name ?? ''));
+const songTitle = computed(
+  () => String(route.query.title ?? '').trim() || detailSong.value?.name?.trim() || '',
+);
 const songArtist = computed(() => String(route.query.artist ?? detailSong.value?.artist ?? ''));
 const songAlbum = computed(() => String(route.query.album ?? detailSong.value?.album ?? ''));
 const songHash = computed(() =>
@@ -103,6 +106,7 @@ const headerTypeLabel = computed(() => {
 });
 
 const headerTitle = computed(() => resourceTitle.value || title.value);
+const hasSongContent = computed(() => Boolean(songTitle.value.trim()));
 
 const commentTabValues = ['all', 'classify', 'hotword'] as const;
 const {
@@ -308,11 +312,11 @@ const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
   const title = readText(
     route.query.title,
     base.audio_name,
+    base.songname,
     record.audio_name,
     record.songname,
     record.name,
     record.filename,
-    '未知歌曲',
   );
   const albumName = readText(
     route.query.album,
@@ -421,7 +425,7 @@ const openAlbumDetail = () => {
 };
 
 const actionSong = computed<Song | null>(() => {
-  if (!isMusicType.value) return null;
+  if (!isMusicType.value || !hasSongContent.value) return null;
   if (detailSong.value) return detailSong.value;
 
   const targetId = getValidMixSongId();
@@ -1167,8 +1171,13 @@ const fetchDetailData = async () => {
         if (!item || Object.keys(item).length === 0) {
           detailFailed.value = true;
         } else {
-          privilegeData.value = item;
-          detailSong.value = buildSongFromPrivilege(item);
+          const song = buildSongFromPrivilege(item);
+          if (!song.name?.trim()) {
+            detailFailed.value = true;
+          } else {
+            privilegeData.value = item;
+            detailSong.value = song;
+          }
         }
       } catch {
         if (!isCurrent()) return;
@@ -1281,7 +1290,19 @@ watch(total, (value) => {
 <template>
   <PageScrollContainer class="comment-page-container" :back-to-top-threshold="360">
     <div class="comment-page bg-bg-main min-h-full">
+      <DetailPageSkeleton
+        v-if="isMusicType && detailLoading && !hasSongContent"
+        typeLabel="SONG"
+        :expandedHeight="196"
+        :showList="false"
+      />
+      <DetailPageError
+        v-else-if="isMusicType && !hasSongContent"
+        resource-name="歌曲"
+        @retry="fetchDetailData"
+      />
       <SliverHeader
+        v-if="!isMusicType || hasSongContent"
         ref="sliverHeaderRef"
         :typeLabel="headerTypeLabel"
         :title="headerTitle"
@@ -1373,7 +1394,10 @@ watch(total, (value) => {
         </template>
       </SliverHeader>
 
-      <div class="comment-content-wrap comment-content-wrap--music">
+      <div
+        v-if="!isMusicType || hasSongContent"
+        class="comment-content-wrap comment-content-wrap--music"
+      >
         <template v-if="isMusicType">
           <Tabs
             :model-value="mainTab"
@@ -1479,7 +1503,9 @@ watch(total, (value) => {
                             class="ranking-filter-row"
                           >
                             <div class="ranking-filter-main">
-                              <div class="ranking-filter-title">{{ item.name || '未知榜单' }}</div>
+                              <div class="ranking-filter-title">
+                                {{ item.name || '未知榜单' }}
+                              </div>
                               <div class="ranking-filter-meta">
                                 <span>{{ item.platformName || '未知平台' }}</span>
                                 <span>累计上榜 {{ item.count }} 次</span>
@@ -1501,8 +1527,8 @@ watch(total, (value) => {
               </div>
               <DetailPageError
                 v-if="detailFailed && !detailLoading"
-                :resource-name="hasDetailContent ? '部分歌曲详情' : '歌曲详情'"
-                :compact="hasDetailContent"
+                :resource-name="hasSongContent || hasDetailContent ? '部分歌曲详情' : '歌曲详情'"
+                :compact="hasSongContent || hasDetailContent"
                 @retry="fetchDetailData"
               />
               <p

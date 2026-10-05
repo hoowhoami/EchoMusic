@@ -240,14 +240,14 @@ export async function getBlacklistPage(options: GetBlacklistPageOptions): Promis
       },
     }),
   );
-  if (!isRecord(response.data)) throw new Error('偏好设置列表返回了无效数据');
-  const rawItems = Array.isArray(response.data.items) ? response.data.items : [];
+  const data = isRecord(response.data) ? response.data : {};
+  const rawItems = Array.isArray(data.items) ? data.items : [];
   const entries = rawItems
     .map((item) => normalizeEntry(label, item))
     .filter((item): item is BlacklistEntry => item !== null);
-  const totalValue = Number(response.data.total);
-  const responsePage = Number(response.data.page);
-  const responsePageSize = Number(response.data.pagesize);
+  const totalValue = Number(data.total);
+  const responsePage = Number(data.page);
+  const responsePageSize = Number(data.pagesize);
 
   return {
     label,

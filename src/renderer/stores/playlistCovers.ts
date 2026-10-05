@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { PlaylistMeta } from '@/models/playlist';
+import type { Song } from '@/models/song';
 import {
   buildPlaylistCoverEntry,
   playlistCoverKey,
@@ -60,6 +61,7 @@ export const usePlaylistCoversStore = defineStore('playlist-covers', () => {
     userId: number | undefined,
     pages: readonly unknown[],
     isCurrent: () => boolean,
+    enrichedSongs?: readonly Song[],
   ) {
     const key = playlistCoverKey(playlist, userId);
     if (!key || playlist.hasCustomCover) return;
@@ -69,10 +71,20 @@ export const usePlaylistCoversStore = defineStore('playlist-covers', () => {
     if (manualKey && entries.value[manualKey]) return;
     const version = readPlaylistPageVersion(pages[0]);
     const cached = entries.value[key];
-    if (version === undefined || (cached?.listVer === version && cached.selection === 'sort'))
+    if (
+      version === undefined ||
+      (cached && cached.listVer > version) ||
+      (!enrichedSongs && cached?.listVer === version && cached.selection === 'sort')
+    )
       return;
-    const entry = buildPlaylistCoverEntry(pages);
+    const entry = buildPlaylistCoverEntry(pages, enrichedSongs);
     if (!entry || !isCurrent()) return;
+    if (
+      cached?.listVer === entry.listVer &&
+      cached.coverUrl === entry.coverUrl &&
+      cached.selection === 'sort'
+    )
+      return;
     entries.value = { ...entries.value, [key]: { ...entry, selection: 'sort' } };
     await persist();
   }

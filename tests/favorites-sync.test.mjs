@@ -48,7 +48,11 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const flush = () => new Promise((resolve) => setImmediate(resolve));
-function setup(overrides = {}) {
+function setup(
+  overrides = {},
+  completeMetadata = async (songs) => songs,
+  coverStore = { updateFromPages: async () => {} },
+) {
   const api = {
     addPlaylistTrack: async () => ({ status: 1 }),
     deletePlaylistTrack: async () => ({ status: 1 }),
@@ -56,6 +60,7 @@ function setup(overrides = {}) {
     ...overrides,
   };
   const { favoritesActions } = compile('../src/renderer/stores/playlist/favoritesActions.ts', {
+    '@/services/songMetadata': { completeSongMetadata: completeMetadata },
     './accountScope': compile('../src/renderer/stores/playlist/accountScope.ts', {
       '@/utils/userSession': compile('../src/renderer/utils/userSession.ts'),
       '@/stores/user': { useUserStore: () => ({ info: { userid: 7 } }) },
@@ -71,7 +76,7 @@ function setup(overrides = {}) {
     '@/utils/PagedSongLoader': loader,
     '@/stores/user': { useUserStore: () => ({ info: { userid: 7 } }) },
     '@/stores/playlistCovers': {
-      usePlaylistCoversStore: () => ({ updateFromPages: async () => {} }),
+      usePlaylistCoversStore: () => coverStore,
     },
     '@/utils/song': songUtils,
     '@/utils/logger': logger,
@@ -122,6 +127,137 @@ function setupResolver(store, state, albumAudioId = '900') {
   });
   return createResolver(state, store, {});
 }
+
+test('favorites publish completed page metadata without changing playlist identity', async () => {
+  const original = { ...track(1), coverUrl: '' };
+  const store = setup(
+    { getPlaylistTracksNew: async () => page([original]) },
+    async (songs, isCurrent) => {
+      assert.equal(isCurrent(), true);
+      return songs.map((song) => ({
+        ...song,
+        coverUrl: 'real-cover',
+        albumId: '2603117',
+        artists: [{ name: '云朵', id: '6743' }],
+      }));
+    },
+  );
+  assert.equal(await store.fetchLikedPlaylistSongs(true), true);
+  await flush();
+  assert.equal(store.favorites[0].coverUrl, 'real-cover');
+  assert.equal(store.favorites[0].fileId, original.fileId);
+  assert.equal(store.favorites[0].hash, original.hash);
+  assert.equal(store.isFavoriteSong(original), true);
+});
+
+test('slow background metadata cannot block favorite pages or overwrite fresh playback permissions', async () => {
+  const pending = deferred();
+  const song = { ...track(1), coverUrl: '', privilege: 0 };
+  const store = setup(
+    { getPlaylistTracksNew: async () => page([song]) },
+    async () => pending.promise,
+  );
+  const loaded = store.fetchLikedPlaylistSongs(true);
+  assert.equal(await loaded, true);
+  assert.equal(store.favoritesLoaded, true);
+  assert.equal(store.favorites[0].coverUrl, '');
+  store.favorites[0].privilege = 10;
+  store.favorites[0].relateGoods = [{ hash: 'new-flac', quality: 'flac' }];
+  const before = store.favorites;
+  pending.resolve([{ ...song, privilege: 0, relateGoods: [], coverUrl: 'real-cover' }]);
+  await flush();
+  assert.notEqual(store.favorites, before);
+  assert.equal(store.favorites[0].coverUrl, 'real-cover');
+  assert.equal(store.favorites[0].privilege, 10);
+  assert.equal(store.favorites[0].relateGoods[0].hash, 'new-flac');
+});
+
+test('unexpected background metadata failure leaves the complete favorite list available', async () => {
+  const song = track(1);
+  const store = setup({ getPlaylistTracksNew: async () => page([song]) }, async () => {
+    throw Error('unexpected');
+  });
+  assert.equal(await store.fetchLikedPlaylistSongs(true), true);
+  await flush();
+  assert.equal(store.favorites[0], song);
+  assert.equal(store.favoritesLoaded, true);
+});
+
+test('favorites update the automatic cover once after background artwork without blocking or reloading pages', async () => {
+  const pending = deferred();
+  const updates = [];
+  let requests = 0;
+  const song = { ...track(1), coverUrl: '' };
+  const store = setup(
+    {
+      getPlaylistTracksNew: async () => {
+        requests++;
+        return page([song]);
+      },
+    },
+    async () => pending.promise,
+    { updateFromPages: async (...args) => updates.push(args) },
+  );
+  assert.equal(await store.fetchLikedPlaylistSongs(true), true);
+  assert.equal(updates.length, 1);
+  pending.resolve([{ ...song, coverUrl: 'real-cover' }]);
+  await flush();
+  assert.equal(requests, 1);
+  assert.equal(updates.length, 2);
+  assert.equal(updates[1][4][0].coverUrl, 'real-cover');
+  assert.equal(updates[1][3](), true);
+});
+
+test('favorite edits invalidate late automatic cover updates', async () => {
+  const pending = deferred(),
+    updates = [];
+  const song = { ...track(1), coverUrl: '' };
+  const store = setup(
+    { getPlaylistTracksNew: async () => page([song]) },
+    async () => pending.promise,
+    { updateFromPages: async (...args) => updates.push(args) },
+  );
+  store.favorites = [song];
+  await store.fetchLikedPlaylistSongs(true);
+  await store.removeFavoriteSong(song);
+  pending.resolve([{ ...song, coverUrl: 'removed-cover' }]);
+  await flush();
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0][3](), false);
+});
+
+test('account reset while completing metadata cannot repopulate favorites', async () => {
+  const pending = deferred();
+  const store = setup(
+    { getPlaylistTracksNew: async () => page([track(1)]) },
+    async () => pending.promise,
+  );
+  const loading = store.fetchLikedPlaylistSongs(true);
+  await flush();
+  store.resetUserCollections();
+  pending.resolve([{ ...track(1), coverUrl: 'stale-cover' }]);
+  await loading;
+  await flush();
+  assert.deepEqual(store.favorites, []);
+  assert.equal(store.favoritesLoaded, false);
+});
+
+test('favorite removal during metadata completion remains removed from the completed refresh', async () => {
+  const pending = deferred();
+  const song = track(1);
+  const store = setup(
+    { getPlaylistTracksNew: async () => page([song]) },
+    async () => pending.promise,
+  );
+  store.favorites = [song];
+  const loading = store.fetchLikedPlaylistSongs(true);
+  await flush();
+  assert.equal(await store.removeFavoriteSong(song), true);
+  pending.resolve([{ ...song, coverUrl: 'real-cover' }]);
+  await loading;
+  await flush();
+  assert.deepEqual(store.favorites, []);
+});
 
 test('favorites match a normalized hash even when playback and playlist IDs differ or are incomplete', () => {
   const store = setup();
