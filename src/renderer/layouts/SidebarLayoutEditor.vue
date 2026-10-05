@@ -329,7 +329,7 @@ onBeforeUnmount(destroySortables);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
   background: transparent;
   transition:
     color 0.18s ease,
@@ -341,7 +341,7 @@ onBeforeUnmount(destroySortables);
   width: 38px;
   height: 30px;
   border-radius: 11px;
-  color: color-mix(in srgb, var(--color-text-main) 68%, transparent);
+  color: var(--icon-main);
 }
 
 .sidebar-layout-entry:hover {
@@ -353,7 +353,7 @@ onBeforeUnmount(destroySortables);
   width: 38px;
   height: 38px;
   border-radius: 12px;
-  color: color-mix(in srgb, var(--color-text-main) 66%, transparent);
+  color: var(--icon-main);
 }
 </style>
 
@@ -410,7 +410,7 @@ onBeforeUnmount(destroySortables);
 
 .sidebar-layout-section-copy small {
   font-size: 11px;
-  color: color-mix(in srgb, var(--color-text-main) 52%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .sidebar-layout-reset,
@@ -420,7 +420,7 @@ onBeforeUnmount(destroySortables);
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: color-mix(in srgb, var(--color-text-main) 58%, transparent);
+  color: var(--color-text-secondary);
   background: transparent;
   cursor: pointer;
   transition:
@@ -487,7 +487,7 @@ onBeforeUnmount(destroySortables);
 }
 
 .sidebar-layout-item-row.is-hidden {
-  color: color-mix(in srgb, var(--color-text-main) 62%, transparent);
+  color: var(--color-text-secondary);
   background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
 }
 
@@ -513,7 +513,7 @@ onBeforeUnmount(destroySortables);
   justify-content: center;
   flex-shrink: 0;
   cursor: grab;
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--icon-main);
   border-radius: 9px;
   background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
 }
@@ -573,7 +573,7 @@ onBeforeUnmount(destroySortables);
   min-height: 32px;
   border-radius: 10px;
   padding: 2px 0 2px 3px;
-  color: color-mix(in srgb, var(--color-text-main) 82%, transparent);
+  color: var(--color-text-main);
 }
 
 .sidebar-layout-item-row:hover {

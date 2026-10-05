@@ -865,7 +865,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
   transition:
     background 0.2s,
     color 0.2s;
@@ -996,11 +996,12 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 }
 
 .settings-search-trigger-icon {
-  @apply text-text-main opacity-60 transition-opacity;
+  color: var(--icon-main);
+  transition: color var(--motion-duration-fast);
 }
 
 .settings-search-icon-button:hover .settings-search-trigger-icon {
-  @apply opacity-100;
+  color: var(--text-main);
 }
 
 .settings-search {
@@ -1050,11 +1051,11 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 }
 
 .settings-search-icon {
-  @apply shrink-0 text-text-secondary pointer-events-none opacity-60;
+  @apply shrink-0 text-[var(--icon-main)] pointer-events-none;
 }
 
 .settings-search-input {
-  @apply h-full min-w-0 flex-1 bg-transparent px-2 text-[12px] font-medium text-text-main placeholder:text-text-secondary border-0 outline-none;
+  @apply h-full min-w-0 flex-1 bg-transparent px-2 text-[12px] font-medium text-text-main placeholder:text-text-secondary placeholder:opacity-100 border-0 outline-none;
 }
 
 .settings-search-input::-webkit-search-cancel-button {

@@ -678,7 +678,7 @@ const confirmRemoveFromPlaylist = async () => {
 }
 
 .batch-close {
-  @apply h-8 w-8 min-w-0 p-0 text-text-main/50 hover:text-text-main;
+  @apply h-8 w-8 min-w-0 p-0 text-[var(--icon-main)] hover:text-text-main;
 }
 
 .batch-selection {

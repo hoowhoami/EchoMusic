@@ -221,7 +221,7 @@ const playerAreaStyle = computed(() =>
   <div class="amll-mode">
     <!-- 左侧：封面 + 歌曲信息（复刻 Apple Music 歌词页结构） -->
     <section class="amll-side">
-      <div class="amll-cover-wrapper">
+      <div class="amll-cover-wrapper" data-lyric-cover>
         <DynamicAlbumCover
           :enabled="settings.dynamicAlbumCover"
           :url="currentTrack?.coverUrl"
@@ -290,7 +290,7 @@ const playerAreaStyle = computed(() =>
 .amll-song-title {
   font-size: 22px;
   font-weight: 700;
-  color: white;
+  color: var(--color-text-main);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -300,7 +300,7 @@ const playerAreaStyle = computed(() =>
   margin-top: 6px;
   font-size: 14px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

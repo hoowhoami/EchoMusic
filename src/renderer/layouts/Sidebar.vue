@@ -1017,7 +1017,7 @@ watch(
             <div v-for="group in allMenuGroups" :key="group.id" class="mb-1.5 last:mb-0">
               <h2
                 v-if="group.id !== 'library'"
-                class="sidebar-section-header px-3.5 text-[11px] font-semibold text-text-main/60 uppercase tracking-[0.5px] mb-2 flex items-center gap-1 select-none"
+                class="sidebar-section-header px-3.5 text-[11px] font-semibold text-text-secondary uppercase tracking-[0.5px] mb-2 flex items-center gap-1 select-none"
                 :class="group.collapsible ? 'cursor-pointer' : 'cursor-default'"
                 @click="toggleSection(group)"
               >
@@ -1053,10 +1053,10 @@ watch(
                       :class="[
                         'sidebar-nav-item w-full flex items-center gap-3.5 px-3.5 py-2 rounded-[14px] transition-all duration-200 group active:scale-[0.98]',
                         isMenuItemDisabled(item)
-                          ? 'is-disabled cursor-not-allowed opacity-35 text-text-main/55'
+                          ? 'is-disabled cursor-not-allowed opacity-35 text-text-main'
                           : isMenuItemActive(item)
                             ? 'is-active cursor-pointer bg-primary/12 text-primary-text'
-                            : 'cursor-pointer text-text-main/90',
+                            : 'cursor-pointer text-text-main',
                       ]"
                       @click="handleMenuClick(item)"
                     >
@@ -1067,10 +1067,10 @@ watch(
                         height="18"
                         :class="[
                           isMenuItemDisabled(item)
-                            ? 'text-text-main opacity-40'
+                            ? 'text-[var(--icon-main)]'
                             : isMenuItemActive(item)
                               ? 'text-primary-text'
-                              : 'text-text-main opacity-60 group-hover:opacity-100',
+                              : 'text-[var(--icon-main)] group-hover:text-text-main',
                         ]"
                       />
                       <PluginIcon
@@ -1080,16 +1080,13 @@ watch(
                         height="18"
                         :class="[
                           isMenuItemDisabled(item)
-                            ? 'text-text-main opacity-40'
+                            ? 'text-[var(--icon-main)]'
                             : isMenuItemActive(item)
                               ? 'text-primary-text'
-                              : 'text-text-main opacity-60 group-hover:opacity-100',
+                              : 'text-[var(--icon-main)] group-hover:text-text-main',
                         ]"
                       />
-                      <span
-                        class="text-[14px]"
-                        :class="[isMenuItemActive(item) ? 'font-semibold' : 'font-normal']"
-                      >
+                      <span class="sidebar-item-label">
                         {{ item.title }}
                       </span>
                     </Button>
@@ -1106,8 +1103,8 @@ watch(
                 :class="[
                   'sidebar-playlist-tab',
                   activePlaylistTab === 0
-                    ? 'text-primary-text opacity-100'
-                    : 'text-text-main opacity-60 hover:opacity-80',
+                    ? 'text-primary-text'
+                    : 'text-text-secondary hover:text-text-main',
                 ]"
                 @click="activePlaylistTab = 0"
               >
@@ -1120,8 +1117,8 @@ watch(
                 :class="[
                   'sidebar-playlist-tab',
                   activePlaylistTab === 1
-                    ? 'text-primary-text opacity-100'
-                    : 'text-text-main opacity-60 hover:opacity-80',
+                    ? 'text-primary-text'
+                    : 'text-text-secondary hover:text-text-main',
                 ]"
                 @click="activePlaylistTab = 1"
               >
@@ -1228,7 +1225,7 @@ watch(
                   'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
                   isActivePlaylist(playlist)
                     ? 'is-active bg-primary/12 text-primary-text'
-                    : 'text-text-main/90',
+                    : 'text-text-main',
                 ]"
                 @click="navigateToPlaylist(playlist)"
               >
@@ -1243,8 +1240,8 @@ watch(
                 <div class="sidebar-playlist-label-wrap">
                   <span
                     :class="[
-                      'text-[13px] truncate w-full font-medium tracking-tight',
-                      isActivePlaylist(playlist) ? 'text-primary-text' : 'text-text-main/90',
+                      'sidebar-item-label truncate w-full',
+                      isActivePlaylist(playlist) ? 'text-primary-text' : 'text-text-main',
                     ]"
                   >
                     {{ playlist.name }}
@@ -1266,7 +1263,7 @@ watch(
                   'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
                   isActivePlaylist(playlist)
                     ? 'is-active bg-primary/12 text-primary-text'
-                    : 'text-text-main/90',
+                    : 'text-text-main',
                 ]"
                 @click="navigateToPlaylist(playlist)"
               >
@@ -1286,8 +1283,8 @@ watch(
                 >
                   <span
                     :class="[
-                      'text-[13px] truncate w-full font-medium tracking-tight',
-                      isActivePlaylist(playlist) ? 'text-primary-text' : 'text-text-main/90',
+                      'sidebar-item-label truncate w-full',
+                      isActivePlaylist(playlist) ? 'text-primary-text' : 'text-text-main',
                     ]"
                   >
                     {{ playlist.name }}
@@ -1309,7 +1306,7 @@ watch(
                 v-if="
                   visibleCreatedPinnedPlaylists.length === 0 && createdPlaylists.normal.length === 0
                 "
-                class="py-8 text-center opacity-40 text-[12px] italic"
+                class="py-8 text-center text-text-secondary text-[12px] italic"
               >
                 暂无自建歌单
               </div>
@@ -1323,7 +1320,7 @@ watch(
                   'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
                   isActivePlaylist(playlist)
                     ? 'is-active bg-primary/12 text-primary-text'
-                    : 'text-text-main/90',
+                    : 'text-text-main',
                 ]"
                 @click="navigateToPlaylist(playlist)"
               >
@@ -1338,8 +1335,8 @@ watch(
                 <div class="sidebar-playlist-label-wrap has-action">
                   <span
                     :class="[
-                      'text-[13px] truncate w-full font-medium tracking-tight',
-                      isActivePlaylist(playlist) ? 'text-primary-text' : 'text-text-main/90',
+                      'sidebar-item-label truncate w-full',
+                      isActivePlaylist(playlist) ? 'text-primary-text' : 'text-text-main',
                     ]"
                   >
                     {{ playlist.name }}
@@ -1360,7 +1357,7 @@ watch(
 
               <div
                 v-if="favoritedPlaylists.length === 0"
-                class="py-8 text-center opacity-40 text-[12px] italic"
+                class="py-8 text-center text-text-secondary text-[12px] italic"
               >
                 暂无收藏内容
               </div>
@@ -1368,9 +1365,7 @@ watch(
           </nav>
 
           <div v-else class="sidebar-scroll-empty px-3.5 py-8 text-center">
-            <span class="text-[12px] font-normal text-text-main opacity-50 italic"
-              >登录同步云端歌单</span
-            >
+            <span class="text-[12px] font-normal text-text-secondary italic">登录同步云端歌单</span>
           </div>
         </Scrollbar>
         <div class="sidebar-layout-toolbar no-drag">
@@ -1400,7 +1395,7 @@ watch(
       >
         <div class="flex flex-col gap-1">
           <span class="text-[14px] font-medium text-text-main">设为隐私歌单</span>
-          <span class="text-[12px] text-text-secondary/80">仅自己可见</span>
+          <span class="text-[12px] text-text-secondary">仅自己可见</span>
         </div>
         <Switch v-model="newPlaylistIsPrivate" :disabled="isCreatingPlaylist" />
       </div>
@@ -1663,7 +1658,7 @@ watch(
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: color-mix(in srgb, var(--color-text-main) 56%, transparent);
+  color: var(--icon-main);
   background: transparent;
   transition:
     color 0.18s ease,
@@ -1722,7 +1717,7 @@ watch(
   align-items: center;
   justify-content: center;
   border-radius: 12px;
-  color: color-mix(in srgb, var(--color-text-main) 36%, transparent);
+  color: var(--icon-main);
   background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
 }
 
@@ -1738,7 +1733,7 @@ watch(
   align-items: center;
   justify-content: center;
   border-radius: 12px;
-  color: color-mix(in srgb, var(--color-text-main) 66%, transparent);
+  color: var(--icon-main);
   background: transparent;
   transition: all 0.18s ease;
 }
@@ -1902,7 +1897,7 @@ watch(
 
 .sidebar-nav-item:not(.is-active):not(.is-disabled):hover,
 .sidebar-library-item:not(.is-active):hover {
-  background-color: color-mix(in srgb, var(--color-text-main) 7%, transparent);
+  background-color: var(--row-hover-bg);
 }
 
 .sidebar-user-link:hover {
@@ -1921,7 +1916,18 @@ watch(
 
 .sidebar-section-action {
   @apply h-6 w-6 min-w-0 shrink-0 rounded-md flex items-center justify-center;
-  @apply text-text-main opacity-60 transition-all disabled:opacity-30;
+  @apply transition-all disabled:opacity-30;
+  color: var(--icon-main);
+}
+
+/* Menu and playlist labels share typography and active-state emphasis. */
+.sidebar-item-label {
+  @apply text-[14px] font-normal tracking-normal;
+}
+
+.sidebar-nav-item.is-active .sidebar-item-label,
+.sidebar-library-item.is-active .sidebar-item-label {
+  @apply font-semibold;
 }
 
 .sidebar-playlist-label-wrap {
@@ -1933,7 +1939,7 @@ watch(
 }
 
 .sidebar-playlist-action {
-  @apply absolute right-2.5 top-1/2 -translate-y-1/2 h-7 w-7 min-w-0 rounded-lg flex items-center justify-center text-text-main/55;
+  @apply absolute right-2.5 top-1/2 -translate-y-1/2 h-7 w-7 min-w-0 rounded-lg flex items-center justify-center text-[var(--icon-main)];
   @apply opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto hover:text-red-500 transition-all;
 }
 
@@ -1958,7 +1964,7 @@ watch(
 
 .sidebar-create-menu-title {
   @apply px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider;
-  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .sidebar-create-menu-item {
@@ -1988,7 +1994,7 @@ watch(
 }
 
 .sidebar-create-menu-desc {
-  @apply text-[11px] text-text-secondary/75 leading-tight mt-0.5;
+  @apply text-[11px] text-text-secondary leading-tight mt-0.5;
 }
 
 .sidebar-section-body {
@@ -2038,7 +2044,7 @@ watch(
   padding: 4px 10px 4px;
   font-size: 11px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+  color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }

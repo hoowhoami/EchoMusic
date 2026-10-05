@@ -223,7 +223,7 @@ const handleCopyError = async () => {
   max-width: 540px;
   font-size: 14px;
   line-height: 1.75;
-  color: color-mix(in srgb, var(--color-text-secondary) 92%, transparent);
+  color: var(--color-text-secondary);
   word-break: break-word;
 }
 
@@ -247,7 +247,7 @@ const handleCopyError = async () => {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .error-meta-value {
@@ -314,7 +314,7 @@ const handleCopyError = async () => {
   margin: 16px 0 0;
   font-size: 12px;
   line-height: 1.6;
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .error-ambient {

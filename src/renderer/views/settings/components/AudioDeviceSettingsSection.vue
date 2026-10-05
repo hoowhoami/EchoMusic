@@ -99,7 +99,7 @@ onMounted(() => {
       <div class="space-y-1">
         <h3 class="font-semibold">输出设备</h3>
         <p class="text-sm text-text-secondary">选择音频播放输出设备</p>
-        <p class="text-xs text-text-secondary/80">当前使用：{{ currentOutputDeviceLabel }}</p>
+        <p class="text-xs text-text-secondary">当前使用：{{ currentOutputDeviceLabel }}</p>
       </div>
       <Select
         class="w-45 shrink-0"
@@ -115,8 +115,8 @@ onMounted(() => {
         <p class="text-sm text-text-secondary">
           {{
             linuxSoundServerOutputSelected
-              ? '当前输出设备通过系统音频服务输出，不支持独占模式'
-              : '绕过系统混音器直接输出，可获得更高音质，但开启后其他应用将无法播放声音'
+              ? '当前设备使用系统音频服务，不支持独占'
+              : '绕过系统混音器；开启后其他应用无法发声'
           }}
         </p>
       </div>
@@ -130,7 +130,7 @@ onMounted(() => {
       <div class="space-y-1">
         <h3 class="font-semibold">设备断开时暂停</h3>
         <p class="text-sm text-text-secondary">
-          开启后，输出设备断开或不可用时立即暂停播放；关闭时自动重连，失败后切回系统默认设备继续播放。
+          设备不可用时暂停；关闭后尝试重连，失败则切回默认设备继续播放。
         </p>
       </div>
       <Switch v-model="settingStore.pauseOnOutputDeviceDisconnect" />

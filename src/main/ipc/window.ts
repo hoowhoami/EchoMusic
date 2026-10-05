@@ -54,6 +54,8 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     if (!win || win !== getMainWindow()) return null;
     const readState = (): WindowFrameState => ({
       clientCorners: getMainWindowClientCornerRadius() > 0,
+      maximized: win.isMaximized(),
+      fullscreen: isWindowFullscreen(win),
       // Windows owns the complete DWM frame, including maximized/snapped corners.
       // Keep the decorative alpha-frame only on platforms that still need it.
       visible: process.platform !== 'win32' && !win.isMaximized() && !win.isFullScreen(),
@@ -70,7 +72,12 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
       const publish = () => {
         if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
           const state = readState();
-          if (state.visible === previousState.visible && state.radius === previousState.radius)
+          if (
+            state.visible === previousState.visible &&
+            state.radius === previousState.radius &&
+            state.maximized === previousState.maximized &&
+            state.fullscreen === previousState.fullscreen
+          )
             return;
           previousState = state;
           win.webContents.send('window:frame-state-changed', state);

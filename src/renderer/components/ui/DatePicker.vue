@@ -286,7 +286,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   font-weight: 500;
   white-space: nowrap;
   pointer-events: none;
-  opacity: 0.65;
+  opacity: 1;
 }
 
 .echo-date-picker-segments {
@@ -338,7 +338,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   width: 28px;
   height: 28px;
   padding: 0;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
   background: transparent;
   border: 0;
   border-radius: 8px;
@@ -399,7 +399,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   width: 34px;
   height: 34px;
   padding: 0;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
   background: transparent;
   border: 0;
   border-radius: 9px;

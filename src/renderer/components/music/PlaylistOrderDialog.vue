@@ -605,7 +605,7 @@ watch(account, () => {
   box-shadow: inset 2px 0 var(--color-primary);
 }
 .order-row.selected .order-number {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .order-row.dragging {
   visibility: hidden;
@@ -666,8 +666,7 @@ watch(account, () => {
   gap: 3px;
   padding: 6px 2px 6px 10px;
   flex-shrink: 0;
-  color: var(--color-text-secondary);
-  opacity: 0.4;
+  color: var(--icon-main);
 }
 .order-grip span {
   width: 2px;
@@ -677,7 +676,7 @@ watch(account, () => {
 }
 .order-row:hover .order-grip,
 .order-row.selected .order-grip {
-  opacity: 0.8;
+  color: var(--text-main);
 }
 .order-number {
   width: 34px;

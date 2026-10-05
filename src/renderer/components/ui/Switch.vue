@@ -39,7 +39,7 @@ const handleUpdate = (next: unknown) => {
 @reference "@/style.css";
 
 .switch-root {
-  @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors outline-none;
+  @apply relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors outline-none;
   @apply data-disabled:opacity-60 data-disabled:cursor-not-allowed;
   @apply focus-visible:outline-none;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 26%, var(--control-border));
@@ -61,7 +61,7 @@ const handleUpdate = (next: unknown) => {
 }
 
 .switch-thumb {
-  @apply block h-4 w-4 rounded-full bg-white shadow-sm transition-transform;
+  @apply block h-4 w-4 shrink-0 rounded-full bg-white shadow-sm transition-transform;
   @apply data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-1;
 }
 </style>

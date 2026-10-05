@@ -888,13 +888,15 @@ watch(
                     playlist.nickname || 'Unknown'
                   }}</span>
                 </div>
-                <span class="text-[11px] font-semibold text-text-main/60"
+                <span class="text-[11px] font-semibold text-text-secondary"
                   >{{ formatDate(playlist.publishDate || playlist.createTime, 'YYYY-MM-DD') }}
                   {{ playlist.publishDate ? '发布' : '创建' }}</span
                 >
               </div>
               <div class="flex items-center flex-wrap gap-2 text-[11px] font-semibold">
-                <span class="playlist-song-count inline-flex items-center gap-1 text-text-main/50">
+                <span
+                  class="playlist-song-count inline-flex items-center gap-1 text-text-secondary"
+                >
                   <Icon :icon="iconMusic" width="12" height="12" />
                   <span>{{ songTotalCount }}</span>
                   <Tooltip v-if="playlistFilteredInvalidCount > 0" side="bottom" align="center">
@@ -950,7 +952,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 @click="openBatchDrawer"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -985,7 +987,7 @@ watch(
               tooltip="编辑歌单"
               aria-label="编辑歌单"
               @click="showPlaylistEdit = true"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconPencil" width="18" height="18" />
             </Button>
@@ -993,7 +995,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="handleSharePlaylist"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconShare" width="18" height="18" />
             </Button>
@@ -1248,7 +1250,7 @@ watch(
 .comment-end-hint {
   font-size: 12px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .comment-loading-spinner {

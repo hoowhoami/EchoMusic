@@ -68,9 +68,7 @@ const { activeValue, activeTitle, isOpen, dynamicOption, presets, open, close, a
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">封面模糊背景</h3>
-        <p class="text-sm text-text-secondary">
-          将封面图片模糊化作为播放页背景，关闭时使用主题色纯色背景
-        </p>
+        <p class="text-sm text-text-secondary">使用模糊封面作为背景，关闭后使用主题色</p>
       </div>
       <Switch v-model="settingStore.lyricPageBackgroundBlur" />
     </div>
@@ -78,9 +76,7 @@ const { activeValue, activeTitle, isOpen, dynamicOption, presets, open, close, a
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">背景律动</h3>
-        <p class="text-sm text-text-secondary">
-          开启后，播放页封面模糊背景会变成无规律色块流动效果，此功能会增加性能消耗
-        </p>
+        <p class="text-sm text-text-secondary">让模糊背景色块流动，会增加性能消耗</p>
       </div>
       <Switch
         v-model="settingStore.lyricPageBackgroundRhythm"

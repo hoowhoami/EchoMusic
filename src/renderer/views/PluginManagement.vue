@@ -323,18 +323,6 @@ const getPluginAccentStyle = (pluginId: string) => {
             <Icon :icon="iconFolderOpen" width="16" height="16" />
           </Button>
 
-          <!-- 插件源 -->
-          <Button
-            v-if="activeView === 'marketplace'"
-            variant="ghost"
-            size="sm"
-            class="h-8"
-            tooltip="管理插件源"
-            @click="openSourceDialog"
-          >
-            <Icon :icon="iconCloud" width="16" height="16" />
-          </Button>
-
           <!-- 刷新 -->
           <Button
             variant="ghost"
@@ -412,7 +400,7 @@ const getPluginAccentStyle = (pluginId: string) => {
           <!-- 空状态 -->
           <div v-if="records.length === 0" class="plugin-empty-state">
             <Icon :icon="iconPlugin" width="48" height="48" class="text-text-main/20" />
-            <p class="text-text-main/60 mt-4 font-medium">暂无插件</p>
+            <p class="text-text-secondary mt-4 font-medium">暂无插件</p>
             <p class="text-text-secondary text-sm mt-2">将插件文件夹放入上方目录后点击刷新</p>
           </div>
 
@@ -461,11 +449,22 @@ const getPluginAccentStyle = (pluginId: string) => {
               class="marketplace-search"
               input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
             />
-            <Select
-              v-model="marketplaceSourceFilter"
-              class="marketplace-source-select"
-              :options="sourceSelectOptions"
-            />
+            <div class="marketplace-source-controls">
+              <Select
+                v-model="marketplaceSourceFilter"
+                class="marketplace-source-select"
+                :options="sourceSelectOptions"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                class="h-9! w-9! p-0! shrink-0"
+                tooltip="管理插件源"
+                @click="openSourceDialog"
+              >
+                <Icon :icon="iconCloud" width="16" height="16" />
+              </Button>
+            </div>
             <Button
               v-if="updatableMarketplaceCount > 0 || isUpdatingAllMarketplace"
               variant="primary"
@@ -548,7 +547,7 @@ const getPluginAccentStyle = (pluginId: string) => {
 
           <div v-else-if="filteredMarketplacePlugins.length === 0" class="plugin-empty-state">
             <Icon :icon="iconCloud" width="48" height="48" class="text-text-main/20" />
-            <p class="text-text-main/60 mt-4 font-medium">暂无在线插件</p>
+            <p class="text-text-secondary mt-4 font-medium">暂无在线插件</p>
             <p class="text-text-secondary text-sm mt-2">添加插件源或刷新在线列表后再试</p>
           </div>
 

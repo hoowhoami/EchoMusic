@@ -469,7 +469,7 @@ onActivated(() => {
                 实时推送契合口味的音乐，随反馈动态更新专属歌单。
               </div>
               <div
-                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
               >
                 <div class="inline-flex items-center gap-1.5">
                   <Icon :icon="iconPulse" width="12" height="12" />
@@ -838,7 +838,7 @@ onActivated(() => {
   background-clip: padding-box;
   font-size: 12px;
   font-weight: 700;
-  color: color-mix(in srgb, var(--color-text-main) 62%, transparent);
+  color: var(--color-text-secondary);
   transition: all 0.2s ease;
 }
 
@@ -1159,7 +1159,7 @@ onActivated(() => {
 .fm-now-artist {
   font-size: 15px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-main) 74%, transparent);
+  color: var(--color-text-secondary);
   word-break: break-word;
 }
 
@@ -1167,7 +1167,7 @@ onActivated(() => {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.5;
-  color: color-mix(in srgb, var(--color-text-main) 56%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .fm-now-reason {
@@ -1194,13 +1194,13 @@ onActivated(() => {
   background: color-mix(in srgb, var(--color-text-main) 2.2%, transparent);
   font-size: 12px;
   font-weight: 700;
-  color: color-mix(in srgb, var(--color-text-main) 68%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .fm-panel-empty {
   font-size: 13px;
   line-height: 1.6;
-  color: color-mix(in srgb, var(--color-text-main) 58%, transparent);
+  color: var(--color-text-secondary);
   min-height: 180px;
   display: flex;
   align-items: center;

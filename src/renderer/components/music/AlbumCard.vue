@@ -79,7 +79,7 @@ const handleClick = () => {
 }
 
 .subtitle {
-  @apply text-[11px] font-semibold text-text-secondary line-clamp-1 opacity-80;
+  @apply text-[11px] font-semibold text-text-secondary line-clamp-1;
   margin-top: 2px;
 }
 </style>

@@ -942,7 +942,7 @@ const handleDeleteComment = async (comment: Comment) => {
 .comment-time {
   margin-top: 2px;
   font-size: 10px;
-  color: color-mix(in srgb, var(--color-text-main) 45%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .comment-like {
@@ -1007,7 +1007,7 @@ const handleDeleteComment = async (comment: Comment) => {
 
 .comment-delete,
 .floor-target-delete {
-  color: var(--text-secondary);
+  color: var(--icon-main);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1017,7 +1017,6 @@ const handleDeleteComment = async (comment: Comment) => {
 .comment-delete {
   width: 24px;
   height: 24px;
-  opacity: 0.72;
 }
 
 .floor-target-delete {
@@ -1203,7 +1202,7 @@ const handleDeleteComment = async (comment: Comment) => {
   height: 14px;
   border-radius: 999px;
   border: 2px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
-  border-top-color: var(--color-primary);
+  border-top-color: var(--color-primary-text);
   animation: comment-spin 0.8s linear infinite;
 }
 
@@ -1245,14 +1244,14 @@ const handleDeleteComment = async (comment: Comment) => {
   text-align: center;
   font-size: 11px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-main) 38%, transparent);
+  color: var(--color-text-secondary);
 }
 .floor-target-reply {
   color: var(--text-secondary);
   font-size: 12px;
 }
 .floor-target-reply:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .comment-actions {
   display: flex;
@@ -1281,7 +1280,6 @@ const handleDeleteComment = async (comment: Comment) => {
 .comment-floor-heading span:last-child {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  opacity: 0.7;
 }
 .comment-floor-reply-footer {
   display: flex;

@@ -75,9 +75,7 @@ const updateLyricOffsetStep = (value: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">显示翻译</h3>
-        <p class="text-sm text-text-secondary">
-          有翻译时在播放页、桌面歌词和 Mini 歌词中显示翻译行
-        </p>
+        <p class="text-sm text-text-secondary">有翻译时显示，播放页、桌面和 Mini 歌词共用</p>
       </div>
       <Switch
         :model-value="wantsTranslation"
@@ -88,9 +86,7 @@ const updateLyricOffsetStep = (value: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">显示音译</h3>
-        <p class="text-sm text-text-secondary">
-          有音译时在播放页、桌面歌词和 Mini 歌词中显示音译行
-        </p>
+        <p class="text-sm text-text-secondary">有音译时显示，播放页、桌面和 Mini 歌词共用</p>
       </div>
       <Switch
         :model-value="wantsRomanization"
@@ -175,9 +171,7 @@ const updateLyricOffsetStep = (value: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">歌词过滤</h3>
-        <p class="text-sm text-text-secondary">
-          播放页和桌面歌词过滤非歌词内容（如制作人信息、版权声明等）
-        </p>
+        <p class="text-sm text-text-secondary">过滤播放页和桌面歌词中的制作、版权等信息</p>
       </div>
       <Switch v-model="settingStore.lyricFilterEnabled" />
     </div>

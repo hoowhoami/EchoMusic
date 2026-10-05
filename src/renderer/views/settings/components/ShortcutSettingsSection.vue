@@ -132,7 +132,7 @@ const handleResetBoth = (command: ShortcutCommand) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">启用全局快捷键</h3>
-        <p class="text-sm text-text-secondary">允许应用在后台响应系统级快捷键</p>
+        <p class="text-sm text-text-secondary">应用在后台也可响应快捷键</p>
       </div>
       <Switch v-model="settingStore.globalShortcutsEnabled" />
     </div>
@@ -148,9 +148,7 @@ const handleResetBoth = (command: ShortcutCommand) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">屏蔽浏览器默认按键行为</h3>
-        <p class="text-sm text-text-secondary">
-          关闭后空格、方向键、翻页键等恢复浏览器默认的滚动与激活行为
-        </p>
+        <p class="text-sm text-text-secondary">关闭后，空格、方向键等恢复默认滚动或激活行为</p>
       </div>
       <Switch v-model="settingStore.suppressDefaultKeyBehaviors" />
     </div>

@@ -27,7 +27,7 @@ const shared = compile('../src/renderer/utils/mappers/shared.ts', {
   '../cover': cover,
   '../../../shared/object': compile('../src/shared/object.ts'),
 });
-const { mapPlaylistSong } = compile('../src/renderer/utils/mappers/song.ts', {
+const { mapPlaylistSong, mapCloudSong } = compile('../src/renderer/utils/mappers/song.ts', {
   './shared': shared,
 });
 const mapping = compile('../src/renderer/utils/mappers/songMetadata.ts', { './shared': shared });
@@ -97,6 +97,56 @@ const deferred = () => {
   });
   return { promise, resolve };
 };
+
+test('matched cloud metadata preserves the uploaded file, playback source and ordering', async () => {
+  const song = mapCloudSong({
+    hash: 'private-file-hash',
+    audio_id: 363820878,
+    album_audio_id: 0,
+    mixsongid: 64323384,
+    kv_id: 99,
+    filename: '云朵 - 我的楼兰.flac',
+    add_time: 123,
+    sort_order: 4,
+    bitrate: 900,
+    ext: 'flac',
+  });
+  assert.equal(song.albumAudioId, '64323384');
+  const requests = [];
+  const complete = setup(async (ids) => {
+    requests.push(ids);
+    return { status: 1, data: [metadata] };
+  });
+  const privateSong = mapCloudSong({ hash: 'private', audio_id: 64323384 });
+  const [completed, untouched] = await complete([song, privateSong]);
+  assert.deepEqual(requests, [['64323384']]);
+  assert.equal(completed.albumName, '倔强');
+  assert.equal(completed.artists[0].id, '6743');
+  assert.ok(completed.coverUrl);
+  assert.equal(untouched, privateSong, 'audio_id alone is not an album_audio_id');
+  for (const key of [
+    'id',
+    'hash',
+    'source',
+    'cloudFileId',
+    'cloudAudioSource',
+    'albumAudioId',
+    'mixSongId',
+    'cloudAddedAt',
+    'cloudSortOrder',
+    'duration',
+    'audioUrl',
+  ])
+    assert.equal(completed[key], song[key], key);
+});
+
+test('exact metadata replaces unknown artist placeholders but preserves named artists', () => {
+  const song = mapCloudSong({ hash: 'cloud', album_audio_id: 64323384 });
+  const [completed] = applyMissingSongMetadata([song], { data: [metadata] });
+  assert.equal(completed.artist, '云朵');
+  assert.equal(completed.artists[0].name, '云朵');
+  assert.equal(completed.artists[0].id, '6743');
+});
 
 test('invalid albuminfo ID does not hide the real outer album ID', () => {
   const song = mapPlaylistSong(favorite);
@@ -175,7 +225,7 @@ test('existing metadata and artist IDs remain intact; different artist names do 
   assert.equal(applyMissingSongMetadata([unknown], { data: [metadata] })[0], unknown);
 });
 
-test('only incomplete catalog entries are requested in bounded, deduplicated batches', async () => {
+test('incomplete catalog and matched cloud entries share bounded, deduplicated batches', async () => {
   const song = mapPlaylistSong(favorite);
   const filled = applyMissingSongMetadata([song], { data: [metadata] })[0];
   const requests = [];
@@ -197,6 +247,7 @@ test('only incomplete catalog entries are requested in bounded, deduplicated bat
   assert.equal(requests[1].length, 1);
   assert.equal(new Set(requests.flat()).size, 101);
   assert.equal(result[3].artists[0].id, '6743');
+  assert.equal(result[1].artists[0].id, '6743');
   requests.length = 0;
   await complete([filled]);
   assert.equal(requests.length, 0);

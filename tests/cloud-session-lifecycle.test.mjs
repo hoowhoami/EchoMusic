@@ -141,6 +141,8 @@ function pageFixture(t) {
     deletes = [],
     indexCalls = [],
     progress = [];
+  let metadata = async (rows) => rows;
+  const metadataRequests = [];
   let get = async () => page([1]),
     remove = async () => ({ status: 1 });
   const upload = vue.reactive({
@@ -184,6 +186,13 @@ function pageFixture(t) {
       ]),
     ),
     '@/utils/userSession': session,
+    '@/utils/logger': log,
+    '@/services/songMetadata': {
+      completeSongMetadata: (rows, isCurrent) => {
+        metadataRequests.push({ rows, isCurrent });
+        return metadata(rows, isCurrent);
+      },
+    },
 
     '@/utils/cover': { createThemedIconCoverUrl: () => '' },
     '@/utils/mappers': { mapCloudSong: (value) => value },
@@ -205,6 +214,10 @@ function pageFixture(t) {
     deletes,
     indexCalls,
     progress,
+    metadataRequests,
+    metadata: (fn) => {
+      metadata = fn;
+    },
     get: (fn) => {
       get = fn;
     },
@@ -396,6 +409,94 @@ const uploadFile = (name = 'a.mp3') => ({
   extension: '.mp3',
   modifiedAt: 1,
 });
+
+test('cloud artwork completes accepted pages in the background without blocking paging', async (t) => {
+  const f = pageFixture(t);
+  const gates = [];
+  f.metadata((rows) => {
+    const gate = deferred();
+    gates.push({ gate, rows });
+    return gate.promise;
+  });
+  f.get(async (n) => (n === 1 ? page([1], 3) : page([1, 2], 3)));
+  await f.view.loadCloud();
+  await flush();
+  assert.equal(f.view.loading.value, false);
+  assert.equal(f.view.hasMore.value, false);
+  assert.equal(gates.length, 2);
+  assert.equal(f.requests.length, 2);
+  const original = f.view.songs.value[0];
+  gates[1].gate.resolve(gates[1].rows.map((song) => ({ ...song, coverUrl: 'second' })));
+  gates[0].gate.resolve(gates[0].rows.map((song) => ({ ...song, coverUrl: 'first' })));
+  await flush();
+  assert.deepEqual(
+    f.view.songs.value.map((song) => [song.id, song.coverUrl]),
+    [
+      ['1', 'first'],
+      ['1_2', 'second'],
+      ['2', 'second'],
+    ],
+  );
+  assert.notEqual(f.view.songs.value[0], original, 'shallowRef rows must invalidate card props');
+});
+
+for (const kind of ['revision', 'token', 'logout', 'unmount', 'deactivate', 'refresh', 'remove']) {
+  test(`cloud metadata cannot patch stale or deleted rows after ${kind}`, async (t) => {
+    const f = pageFixture(t),
+      gate = deferred();
+    let original;
+    f.metadata((rows) => {
+      original ??= rows;
+      return rows === original ? gate.promise : Promise.resolve(rows);
+    });
+    await f.view.loadCloud();
+    if (kind === 'unmount') f.stop();
+    else if (kind === 'deactivate') f.deactivate();
+    else if (kind === 'refresh') {
+      f.get(async () => page([9]));
+      await f.view.loadCloud();
+    } else if (kind === 'remove') f.view.songs.value = [];
+    else changeUser(f.user, kind);
+    gate.resolve(original.map((song) => ({ ...song, coverUrl: 'stale' })));
+    await flush();
+    assert.equal(
+      f.view.songs.value.some((song) => song.coverUrl === 'stale'),
+      false,
+    );
+    if (kind === 'remove') assert.equal(f.view.songs.value.length, 0);
+  });
+}
+
+test('optional cloud metadata failure preserves the loaded list and error state', async (t) => {
+  const f = pageFixture(t);
+  f.metadata(async () => {
+    throw new Error('metadata unavailable');
+  });
+  await f.view.loadCloud();
+  await flush();
+  assert.equal(f.view.songs.value[0].id, '1');
+  assert.equal(f.view.loadError.value, '');
+});
+
+for (const batch of [false, true]) {
+  test(`metadata replacement preserves ${batch ? 'batch selection' : 'open deletion dialog'} ownership`, async (t) => {
+    const f = pageFixture(t),
+      gate = deferred();
+    let rows;
+    f.metadata((songs) => {
+      rows = songs;
+      return gate.promise;
+    });
+    await f.view.loadCloud();
+    const selected = f.view.songs.value[0];
+    if (!batch) f.view.openDeleteCloudSongDialog(selected);
+    gate.resolve(rows.map((song) => ({ ...song, coverUrl: 'new' })));
+    await flush();
+    if (batch) await f.view.handleBatchDeleteCloudSongs([selected]);
+    else await f.view.confirmDeleteCloudSong();
+    assert.equal(f.deletes.length, 1);
+  });
+}
 const searchRow = (title = 'match') => ({
   SongName: title,
   Auditoid: '7',

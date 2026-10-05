@@ -346,8 +346,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  color: var(--color-text-main);
-  opacity: 0.5;
+  color: var(--icon-main);
   transition: all 0.2s;
 }
 
@@ -364,18 +363,17 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  color: var(--color-text-main);
-  opacity: 0.55;
+  color: var(--icon-main);
   transition: all 0.2s;
 }
 
 .settings-header-action:hover {
-  opacity: 1;
+  color: var(--color-primary-text);
   background: var(--control-hover-bg);
 }
 
 .settings-close-btn:hover {
-  opacity: 1;
+  color: var(--color-primary-text);
   background: var(--control-hover-bg);
 }
 

@@ -571,6 +571,7 @@ onUnmounted(() => {
       <!-- 1. 左侧：歌曲信息 - 弹性增长 -->
       <div class="flex-1 flex items-center gap-3 min-w-30 max-w-[320px] overflow-hidden">
         <div
+          data-player-cover
           class="relative w-14 h-14 shrink-0 cursor-pointer group rounded-[10px] overflow-hidden bg-[var(--control-muted-bg)]"
           @click="navigateToLyric"
         >
@@ -600,23 +601,23 @@ onUnmounted(() => {
               <Tooltip :content="isCurrentAlbumClickable ? '查看专辑' : ''">
                 <template #trigger>
                   <span
-                    class="text-[14px] font-bold text-primary-text cursor-pointer transition-colors"
-                    :class="{ 'hover:text-primary-text/80': isCurrentAlbumClickable }"
+                    class="text-[14px] font-bold text-text-main cursor-pointer transition-colors"
+                    :class="{ 'hover:text-primary-text': isCurrentAlbumClickable }"
                     @click="goToCurrentAlbum"
                   >
                     {{ currentTrack ? currentTrack.name : '未在播放' }}
                   </span>
                 </template>
               </Tooltip>
-              <span v-if="currentTrack" class="text-[14px] text-primary-text/60 mx-0.5">-</span>
+              <span v-if="currentTrack" class="text-[14px] text-text-secondary mx-0.5">-</span>
               <div v-if="currentTrack" class="flex items-center">
                 <template v-for="(artist, index) in artistList" :key="index">
                   <span
                     class="text-[13px] transition-colors"
                     :class="
                       isArtistClickable(artist)
-                        ? 'text-primary-text/70 hover:text-primary-text cursor-pointer'
-                        : 'text-primary-text/70'
+                        ? 'text-text-secondary hover:text-primary-text cursor-pointer'
+                        : 'text-text-secondary'
                     "
                     @click="isArtistClickable(artist) && goToArtist(artist)"
                   >
@@ -624,7 +625,7 @@ onUnmounted(() => {
                   </span>
                   <span
                     v-if="index < artistList.length - 1"
-                    class="text-[13px] text-text-main/50 mx-0.5"
+                    class="text-[13px] text-text-secondary mx-0.5"
                     >/</span
                   >
                 </template>
@@ -640,7 +641,8 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               @click="toggleFavoritePB"
-              class="p-0.5 text-red-500 transition-all hover:scale-110 active:scale-90"
+              class="playback-action p-0.5 transition-all hover:scale-110 active:scale-90"
+              :class="{ 'is-favorite': isFavorite }"
               tooltip="收藏"
             >
               <Icon :icon="isFavorite ? iconHeartFilled : iconHeart" width="20" height="20" />
@@ -660,10 +662,8 @@ onUnmounted(() => {
                 <Button
                   variant="unstyled"
                   size="none"
-                  class="p-0.5 transition-all hover:scale-110 active:scale-90"
-                  :class="
-                    item.active ? 'text-primary-text' : 'text-text-main/25 hover:text-primary-text'
-                  "
+                  class="playback-action p-0.5 transition-all hover:scale-110 active:scale-90"
+                  :class="{ 'is-active': item.active }"
                   :disabled="item.disabled"
                   :tooltip="item.tooltip || item.title"
                   @click="activatePlayerBarAction(item)"
@@ -681,7 +681,7 @@ onUnmounted(() => {
 
             <Tooltip v-if="currentTrack?.source === 'cloud'" content="云盘歌曲">
               <template #trigger>
-                <div class="text-primary-text/60">
+                <div class="text-[var(--icon-main)]">
                   <Icon :icon="iconCloud" width="20" height="20" />
                 </div>
               </template>
@@ -734,9 +734,9 @@ onUnmounted(() => {
                 size="none"
                 :class="[
                   item.id === 'play-toggle'
-                    ? 'player-toggle w-9.5 h-9.5 rounded-full flex items-center justify-center hover:scale-110 hover:text-primary-text active:scale-95 transition-all border'
-                    : 'p-2 transition-all hover:scale-110 active:scale-90',
-                  item.active ? 'text-primary-text' : 'text-text-main/50 hover:text-primary-text',
+                    ? 'playback-action player-toggle w-9.5 h-9.5 rounded-full flex items-center justify-center hover:scale-110 hover:text-primary-text active:scale-95 transition-all border'
+                    : 'playback-action p-2 transition-all hover:scale-110 active:scale-90',
+                  { 'is-active': item.active },
                   {
                     'player-step-busy': isPlaybackLoading && ['previous', 'next'].includes(item.id),
                     'is-loading': isPlaybackLoading && item.id === 'play-toggle',
@@ -773,7 +773,7 @@ onUnmounted(() => {
         <!-- 进度条系统 - 动态伸缩至最大值 -->
         <div class="w-full max-w-120 flex items-center gap-3 px-1 h-3.5 min-w-0">
           <span
-            class="text-[10px] font-medium text-text-main/50 w-9 shrink-0 text-right tabular-nums"
+            class="text-[10px] font-medium text-text-secondary w-9 shrink-0 text-right tabular-nums"
             >{{
               formatTime(
                 isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : player.currentTime,
@@ -822,7 +822,7 @@ onUnmounted(() => {
             />
           </SliderRoot>
           <span
-            class="text-[10px] font-medium text-text-main/50 w-9 shrink-0 text-left tabular-nums"
+            class="text-[10px] font-medium text-text-secondary w-9 shrink-0 text-left tabular-nums"
             >{{ formatTime(player.duration) }}</span
           >
         </div>
@@ -847,10 +847,8 @@ onUnmounted(() => {
             <Button
               variant="unstyled"
               size="none"
-              class="p-2 transition-all hover:scale-110 active:scale-90"
-              :class="
-                item.active ? 'text-primary-text' : 'text-text-main/50 hover:text-primary-text'
-              "
+              class="playback-action p-2 transition-all hover:scale-110 active:scale-90"
+              :class="{ 'is-active': item.active }"
               :disabled="item.disabled"
               :tooltip="item.tooltip || item.title"
               @click="activatePlayerBarAction(item)"
@@ -1021,10 +1019,6 @@ onUnmounted(() => {
 .player-toggle {
   background-color: var(--control-muted-bg);
   border-color: transparent;
-}
-
-.player-toggle.is-loading {
-  color: var(--color-primary-text);
 }
 
 .player-toggle-spinner {

@@ -244,7 +244,18 @@ test('cleanup-only decisions remove invalid queued-next markers even without a t
 });
 
 test('single mode advances only for an explicit next action', () => {
-  assert.equal(resolveOrderedPlaybackMode('single', false), null);
+  const repeatMode = resolveOrderedPlaybackMode('single', false);
+  assert.equal(repeatMode, 'single');
+  const repeat = resolveNextTrackDecision({
+    tracks,
+    currentTrackId: 'a',
+    queuedNextTrackIds: ['c'],
+    mode: repeatMode!,
+    getTrackId: (track) => track.id,
+    isPlayable: (track) => track.playable !== false,
+  });
+  assert.equal(repeat?.targetTrackId, 'a');
+  assert.deepEqual(repeat?.queuedNextTrackIdsToConsume, []);
   const explicitMode = resolveOrderedPlaybackMode('single', true);
   assert.equal(explicitMode, 'list');
   assert.equal(

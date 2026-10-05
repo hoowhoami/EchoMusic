@@ -5,8 +5,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --surface-sidebar-base: var(--theme-shell, #f0f0f3);
-  --surface-main-base: #f5f5f7; /* 浅色主体浅灰白 */
+  --surface-sidebar-base: var(--theme-shell, #f6f6f6);
+  --surface-main-base: #ffffff;
   --surface-card-base: #ffffff;
   --surface-elevated-base: #ffffff;
   --surface-dialog-base: #ffffff;
@@ -57,9 +57,9 @@
   --floating-text-main: var(--text-main);
   --floating-text-secondary: var(--text-secondary);
   --floating-accent-text: var(--color-primary-text);
-  --text-main: #1d1d1f;
-  --text-secondary: #4b5563;
-  --border-light: #e5e5ea;
+  --text-main: #000000;
+  --text-secondary: #666666;
+  --border-light: #dedede;
   --control-thumb-bg: #ffffff;
   --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
   --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.22);
@@ -93,20 +93,20 @@
   --floating-text-main: var(--text-main);
   --floating-text-secondary: var(--text-secondary);
   --floating-accent-text: var(--color-primary-text);
-  --surface-sidebar-base: var(--theme-shell, #202024);
-  --surface-main-base: #26262a;
-  --surface-card-base: #36363a;
-  --surface-elevated-base: #36363a;
-  --surface-dialog-base: #2f2f34;
-  --surface-player-base: #36363a;
+  --surface-sidebar-base: var(--theme-shell, #171718);
+  --surface-main-base: #29292b;
+  --surface-card-base: #343436;
+  --surface-elevated-base: #29292b;
+  --surface-dialog-base: #29292b;
+  --surface-player-base: #29292b;
   --surface-overlay-bg: rgba(0, 0, 0, 0.36);
   --surface-scrim-bg: rgba(0, 0, 0, 0.28);
-  --text-main: #f5f5f7;
-  --text-secondary: #a8b0bf;
+  --text-main: #ffffff;
+  --text-secondary: #bcbcbc;
   --color-brand-text: #54a3f1;
-  --color-primary-text: #54a3f1;
+  --color-primary-text: #00cc65;
   --color-on-primary: #000000;
-  --border-light: #3a3a3d;
+  --border-light: #444446;
   --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.36), 0 2px 6px rgba(0, 0, 0, 0.18);
   --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.42);
   --shadow-card: 0 10px 28px rgba(0, 0, 0, 0.34);
@@ -118,12 +118,12 @@
 }
 
 @theme {
-  --color-primary: #0071e3;
-  --color-primary-text: #0b6fd5;
-  --color-on-primary: #ffffff;
-  --color-primary-hover: #0077ed;
-  --color-primary-light: rgba(0, 113, 227, 0.15);
-  --color-primary-dark: rgba(0, 113, 227, 0.36);
+  --color-primary: #00cc65;
+  --color-primary-text: #00823c;
+  --color-on-primary: #000000;
+  --color-primary-hover: #00db6c;
+  --color-primary-light: rgba(0, 204, 101, 0.15);
+  --color-primary-dark: rgba(0, 204, 101, 0.36);
   --color-secondary: #5ac8fa;
   --color-bg-sidebar: var(--bg-sidebar);
   --color-bg-main: var(--bg-main);
@@ -391,7 +391,8 @@
   }
 
   .song-search-input::placeholder {
-    color: color-mix(in srgb, var(--color-text-main) 50%, transparent) !important;
+    color: var(--text-placeholder) !important;
+    opacity: 1;
   }
 
   .song-search-input:focus-visible {
@@ -403,7 +404,7 @@
     background-color: var(--control-muted-bg);
     border: 1px solid var(--content-panel-border);
     box-shadow: none;
-    color: color-mix(in srgb, var(--color-text-main) 70%, transparent);
+    color: var(--icon-main);
     transition: all 0.2s ease;
     backdrop-filter: var(--surface-backdrop-filter);
   }
@@ -411,7 +412,7 @@
   .song-locate-btn:hover {
     border-color: var(--control-border-hover);
     background-color: var(--control-hover-bg);
-    color: color-mix(in srgb, var(--color-text-main) 90%, transparent);
+    color: var(--color-text-main);
   }
 
   .song-search-input:hover:not(:focus-visible) {
@@ -429,7 +430,7 @@
     width: 18px;
     height: 18px;
     border-radius: 999px;
-    color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+    color: var(--icon-main);
     transform: translateY(-50%);
     transition:
       color 0.15s ease,
@@ -867,7 +868,9 @@ html.app-background-frosted::before {
 }
 /* A lyric overlay replaces the page rather than exposing its retained content.
    Keep the page mounted for scroll/cache state, but remove it from painting and input. */
-html.app-background-transparent body:has(.lyric-overlay-host:not([data-leaving])) .main-layout {
+html.app-background-transparent
+  body:has(.lyric-overlay-host:not([data-leaving], [data-entering]))
+  .main-layout {
   visibility: hidden;
   pointer-events: none;
   /* Suppress the whole composited subtree immediately, including descendants
@@ -875,7 +878,9 @@ html.app-background-transparent body:has(.lyric-overlay-host:not([data-leaving])
   opacity: 0 !important;
   transition: none !important;
 }
-html.app-background-transparent:has(.lyric-overlay-host:not([data-leaving]))::before {
+html.app-background-transparent:has(
+    .lyric-overlay-host:not([data-leaving], [data-entering])
+  )::before {
   display: none;
 }
 html.app-background-transparent .lyric-page:not(.is-portrait) .lyric-background {

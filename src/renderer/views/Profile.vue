@@ -1327,7 +1327,7 @@ onUnmounted(() => {
                   variant="unstyled"
                   size="none"
                   @click="openProfileEditor"
-                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
                   tooltip="编辑个人资料"
                   aria-label="编辑个人资料"
                 >
@@ -1337,7 +1337,7 @@ onUnmounted(() => {
                   variant="unstyled"
                   size="none"
                   @click="showListeningPreferences = true"
-                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
                   tooltip="听歌偏好"
                   aria-label="听歌偏好"
                 >
@@ -1347,7 +1347,7 @@ onUnmounted(() => {
                   variant="unstyled"
                   size="none"
                   @click="openDeviceManager"
-                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
                   tooltip="登录设备"
                   aria-label="登录设备"
                 >
@@ -1420,7 +1420,7 @@ onUnmounted(() => {
                   <div class="flex flex-col">
                     <p
                       v-if="detail.descri"
-                      class="text-[12px] opacity-70 font-medium line-clamp-2 mb-3"
+                      class="text-[12px] text-text-secondary font-medium line-clamp-2 mb-3"
                     >
                       {{ detail.descri }}
                     </p>
@@ -1508,26 +1508,26 @@ onUnmounted(() => {
                   class="profile-archive-card space-y-0.5 p-2 rounded-[18px] bg-[var(--content-panel-bg)] border border-[var(--content-panel-border)] shadow-sm"
                 >
                   <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] opacity-60 font-bold">用户 ID</span>
+                    <span class="text-[13px] text-text-secondary font-bold">用户 ID</span>
                     <span class="text-[13px] font-black">{{ userInfo.userid }}</span>
                   </div>
                   <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] opacity-60 font-bold">性别</span>
+                    <span class="text-[13px] text-text-secondary font-bold">性别</span>
                     <span class="text-[13px] font-black">{{ gender }}</span>
                   </div>
                   <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] opacity-60 font-bold">乐龄</span>
+                    <span class="text-[13px] text-text-secondary font-bold">乐龄</span>
                     <RollingNumber
                       class="text-[13px] font-black"
                       :value="formatAccountAge(detail.rtime)"
                     />
                   </div>
                   <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] opacity-60 font-bold">累计听歌</span>
+                    <span class="text-[13px] text-text-secondary font-bold">累计听歌</span>
                     <RollingNumber class="text-[13px] font-black" :value="listeningDuration" />
                   </div>
                   <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] opacity-60 font-bold">所在地区</span>
+                    <span class="text-[13px] text-text-secondary font-bold">所在地区</span>
                     <span class="text-[13px] font-black">{{ location }}</span>
                   </div>
                 </div>
@@ -1546,7 +1546,7 @@ onUnmounted(() => {
                       'flex items-center gap-3 p-3 rounded-2xl border',
                       tvip
                         ? 'bg-green-500/10 border-green-500/20'
-                        : 'bg-[var(--control-muted-bg)] border-transparent opacity-60',
+                        : 'bg-[var(--control-muted-bg)] border-transparent',
                     ]"
                   >
                     <div
@@ -1554,7 +1554,7 @@ onUnmounted(() => {
                         'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
                         tvip
                           ? 'bg-green-500/20 text-green-500'
-                          : 'bg-[var(--control-hover-bg)] opacity-60',
+                          : 'bg-[var(--control-hover-bg)] text-[var(--icon-main)]',
                       ]"
                     >
                       <Icon :icon="iconHome" width="18" height="18" />
@@ -1573,22 +1573,27 @@ onUnmounted(() => {
                         >
                           <template #trigger>
                             <span
-                              class="inline-flex items-center gap-1 text-[11px] opacity-60 font-bold uppercase cursor-pointer hover:opacity-100 transition-opacity"
+                              class="inline-flex items-center gap-1 text-[11px] text-text-secondary font-bold uppercase cursor-pointer hover:text-text-main transition-colors"
                             >
                               {{ getVipExpireText(tvip) }}
-                              <Icon :icon="iconInfo" width="14" height="14" class="opacity-70" />
+                              <Icon
+                                :icon="iconInfo"
+                                width="14"
+                                height="14"
+                                class="text-[var(--icon-main)]"
+                              />
                             </span>
                           </template>
 
                           <div class="min-w-45 space-y-1.5 text-[13px] normal-case">
                             <div class="flex items-center justify-between gap-3">
-                              <span class="font-bold opacity-60">开始时间</span>
+                              <span class="font-bold text-text-secondary">开始时间</span>
                               <span class="font-black">{{
                                 formatVipDate(tvip.vip_begin_time)
                               }}</span>
                             </div>
                             <div class="flex items-center justify-between gap-3">
-                              <span class="font-bold opacity-60">到期时间</span>
+                              <span class="font-bold text-text-secondary">到期时间</span>
                               <span class="font-black text-green-500">{{
                                 formatVipDate(tvip.vip_end_time)
                               }}</span>
@@ -1596,7 +1601,9 @@ onUnmounted(() => {
                           </div>
                         </Popover>
                       </div>
-                      <p v-else class="text-[11px] opacity-60 font-bold uppercase">未开通</p>
+                      <p v-else class="text-[11px] text-text-secondary font-bold uppercase">
+                        未开通
+                      </p>
                     </div>
                     <div v-if="tvip" class="text-green-500">
                       <Icon :icon="iconCheck" width="16" height="16" />
@@ -1609,7 +1616,7 @@ onUnmounted(() => {
                       'flex items-center gap-3 p-3 rounded-2xl border',
                       svip
                         ? 'bg-orange-500/10 border-orange-500/20'
-                        : 'bg-[var(--control-muted-bg)] border-transparent opacity-60',
+                        : 'bg-[var(--control-muted-bg)] border-transparent',
                     ]"
                   >
                     <div
@@ -1617,7 +1624,7 @@ onUnmounted(() => {
                         'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
                         svip
                           ? 'bg-orange-500/20 text-orange-500'
-                          : 'bg-[var(--control-hover-bg)] opacity-60',
+                          : 'bg-[var(--control-hover-bg)] text-[var(--icon-main)]',
                       ]"
                     >
                       <Icon :icon="iconScan" width="18" height="18" />
@@ -1636,22 +1643,27 @@ onUnmounted(() => {
                         >
                           <template #trigger>
                             <span
-                              class="inline-flex items-center gap-1 text-[11px] opacity-60 font-bold uppercase cursor-pointer hover:opacity-100 transition-opacity"
+                              class="inline-flex items-center gap-1 text-[11px] text-text-secondary font-bold uppercase cursor-pointer hover:text-text-main transition-colors"
                             >
                               {{ getVipExpireText(svip) }}
-                              <Icon :icon="iconInfo" width="14" height="14" class="opacity-70" />
+                              <Icon
+                                :icon="iconInfo"
+                                width="14"
+                                height="14"
+                                class="text-[var(--icon-main)]"
+                              />
                             </span>
                           </template>
 
                           <div class="min-w-45 space-y-1.5 text-[13px] normal-case">
                             <div class="flex items-center justify-between gap-3">
-                              <span class="font-bold opacity-60">开始时间</span>
+                              <span class="font-bold text-text-secondary">开始时间</span>
                               <span class="font-black">{{
                                 formatVipDate(svip.vip_begin_time)
                               }}</span>
                             </div>
                             <div class="flex items-center justify-between gap-3">
-                              <span class="font-bold opacity-60">到期时间</span>
+                              <span class="font-bold text-text-secondary">到期时间</span>
                               <span class="font-black text-orange-500">{{
                                 formatVipDate(svip.vip_end_time)
                               }}</span>
@@ -1659,7 +1671,9 @@ onUnmounted(() => {
                           </div>
                         </Popover>
                       </div>
-                      <p v-else class="text-[11px] opacity-60 font-bold uppercase">未开通</p>
+                      <p v-else class="text-[11px] text-text-secondary font-bold uppercase">
+                        未开通
+                      </p>
                     </div>
                     <div v-if="svip" class="text-orange-500">
                       <Icon :icon="iconCheck" width="16" height="16" />
@@ -1672,7 +1686,10 @@ onUnmounted(() => {
         </div>
       </template>
 
-      <div v-else class="h-full flex flex-col items-center justify-center opacity-40 italic">
+      <div
+        v-else
+        class="h-full flex flex-col items-center justify-center text-text-secondary italic"
+      >
         <Icon :icon="iconUser" width="64" height="64" class="mb-4" />
         <span class="text-[16px] font-bold">请先登录以查看个人中心</span>
         <Button
@@ -2064,7 +2081,7 @@ onUnmounted(() => {
           <Button
             variant="unstyled"
             size="none"
-            class="w-8 h-8 rounded-full flex items-center justify-center text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main"
+            class="w-8 h-8 rounded-full flex items-center justify-center text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main"
             tooltip="刷新登录设备"
             aria-label="刷新登录设备"
             :disabled="loginDeviceStore.loading"
@@ -2085,13 +2102,13 @@ onUnmounted(() => {
 
         <div
           v-if="loginDeviceStore.loading && loginDevices.length === 0"
-          class="py-10 text-center text-[13px] opacity-50 font-bold"
+          class="py-10 text-center text-[13px] text-text-secondary font-bold"
         >
           正在获取登录设备
         </div>
         <div
           v-else-if="loginDevices.length === 0"
-          class="py-10 text-center text-[13px] opacity-50 font-bold"
+          class="py-10 text-center text-[13px] text-text-secondary font-bold"
         >
           暂无登录设备记录
         </div>
@@ -2125,10 +2142,10 @@ onUnmounted(() => {
                   >新设备</span
                 >
               </div>
-              <p class="text-[11px] opacity-60 font-bold truncate">
+              <p class="text-[11px] text-text-secondary font-bold truncate">
                 {{ formatDeviceDetailLine(device) }}
               </p>
-              <p class="text-[11px] opacity-45 font-bold truncate">
+              <p class="text-[11px] text-text-secondary font-bold truncate">
                 {{ formatDeviceActivityLine(device) }}
               </p>
             </div>
@@ -2212,8 +2229,8 @@ onUnmounted(() => {
   font-weight: 700;
   line-height: 14px;
   letter-spacing: 0.05em;
-  opacity: 0.6;
   white-space: nowrap;
+  color: var(--color-text-secondary);
 }
 .grade-entry {
   border-radius: 8px;
@@ -2311,7 +2328,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
   transition:
     background-color 160ms,
     color 160ms;
@@ -2393,7 +2410,7 @@ onUnmounted(() => {
 .profile-social-user-main p {
   overflow: hidden;
   margin-top: 3px;
-  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+  color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 700;
   text-overflow: ellipsis;
@@ -2462,14 +2479,14 @@ onUnmounted(() => {
 }
 .profile-chat-meta strong {
   overflow: hidden;
-  color: color-mix(in srgb, var(--color-text-main) 64%, transparent);
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .profile-chat-meta time {
-  color: color-mix(in srgb, var(--color-text-main) 34%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 700;
 }
@@ -2535,8 +2552,8 @@ onUnmounted(() => {
   user-select: text;
 }
 .profile-chat-textarea::placeholder {
-  color: var(--text-secondary);
-  opacity: 0.75;
+  color: var(--color-text-secondary);
+  opacity: 1;
 }
 .profile-chat-count {
   flex-shrink: 0;

@@ -932,7 +932,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
                 </template>
                 <template v-else>
                   <span
-                    class="absolute inset-0 flex items-center justify-center text-[12px] opacity-60 transition-opacity group-hover:opacity-0"
+                    class="absolute inset-0 flex items-center justify-center text-[12px] text-text-secondary transition-opacity group-hover:opacity-0"
                   >
                     {{ entry.index + 1 }}
                   </span>
@@ -969,7 +969,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
               variant="unstyled"
               size="none"
               type="button"
-              class="min-w-0 hidden md:block pr-3 text-[13px] text-left text-text-main/70 truncate"
+              class="min-w-0 hidden md:block pr-3 text-[13px] text-left text-text-secondary truncate"
               :class="isAlbumClickable(entry.data) ? 'song-list-meta-link' : ''"
               :disabled="!isAlbumClickable(entry.data)"
               @click.stop="openAlbumDetail(entry.data)"
@@ -979,14 +979,14 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 
             <div
               v-if="showLyricColumn && showAlbum"
-              class="min-w-0 hidden md:block pr-3 text-[12px] text-left text-text-main/45 truncate"
+              class="min-w-0 hidden md:block pr-3 text-[12px] text-left text-text-secondary truncate"
             >
               {{ entry.data.lyricSnippet || '' }}
             </div>
 
             <div
               v-if="showDuration"
-              class="pl-2 text-[12px] opacity-60 text-left whitespace-nowrap"
+              class="pl-2 text-[12px] text-text-secondary text-left whitespace-nowrap"
             >
               {{ formatDuration(entry.data.duration) }}
             </div>
@@ -1009,7 +1009,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
     <!-- 暂无数据 -->
     <div
       v-else-if="filteredSongsRef.length === 0"
-      class="py-20 text-center opacity-50 text-[14px] italic"
+      class="py-20 text-center text-text-secondary text-[14px] italic"
     >
       {{ hasSearchQuery ? '未找到相关歌曲' : '暂无歌曲' }}
     </div>

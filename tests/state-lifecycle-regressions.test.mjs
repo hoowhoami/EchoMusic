@@ -242,7 +242,7 @@ test('login to another account does not inherit personal data from the prior acc
   assert.equal(s.store.info.extendsInfo.vip, undefined);
 });
 
-function historyFixture() {
+function historyFixture(completeSongMetadata = async (songs) => songs) {
   setActivePinia(createPinia());
   const clock = fakeTimers();
   const load = deferred();
@@ -259,12 +259,94 @@ function historyFixture() {
   };
   const store = compile(
     '../src/renderer/stores/historyStore.ts',
-    { '@/utils/logger': logger },
+    {
+      '@/utils/logger': logger,
+      '@/services/songMetadata': { completeSongMetadata },
+      '@/utils/mappers/songMetadata': { needsSongMetadata: (song) => !!song.albumAudioId },
+    },
     { ...clock, electron: { storage } },
   ).useHistoryStore();
   return { store, clock, load, writes };
 }
 const entry = (id) => ({ song: { id }, historyKey: `${id}:1`, lastPlayedAt: 1, playCount: 1 });
+const metadataEntry = (id) => ({
+  ...entry(id),
+  song: { id, albumAudioId: id, hash: `hash-${id}` },
+});
+test('history completion is on demand and preserves order, playback statistics and animation version', async () => {
+  const gate = deferred();
+  let originals,
+    calls = 0;
+  const s = historyFixture((songs) => {
+    calls++;
+    originals = songs;
+    return gate.promise;
+  });
+  const load = s.store.hydrate();
+  s.load.resolve([metadataEntry('1'), metadataEntry('2')]);
+  await load;
+  assert.equal(calls, 0, 'hydration at player startup must not trigger remote completion');
+  const complete = s.store.completeMetadata(() => true);
+  gate.resolve(originals.map((song) => ({ ...song, coverUrl: `cover-${song.id}` })));
+  await complete;
+  assert.deepEqual(
+    s.store.entries.map((item) => [
+      item.song.id,
+      item.song.coverUrl,
+      item.historyKey,
+      item.lastPlayedAt,
+      item.playCount,
+    ]),
+    [
+      ['1', 'cover-1', '1:1', 1, 1],
+      ['2', 'cover-2', '2:1', 1, 1],
+    ],
+  );
+  assert.equal(s.store.playRecordVersion, 0);
+  assert.equal(s.writes.length, 0, 'metadata must never be recorded as another play');
+});
+
+for (const kind of ['clear', 'remove', 'replay', 'scope']) {
+  test(`history completion discards obsolete song snapshots after ${kind}`, async () => {
+    const gate = deferred();
+    let originals,
+      current = true;
+    const s = historyFixture((songs) => {
+      originals = songs;
+      return gate.promise;
+    });
+    const load = s.store.hydrate();
+    s.load.resolve([metadataEntry('1'), metadataEntry('2')]);
+    await load;
+    const completion = s.store.completeMetadata(() => current);
+    if (kind === 'clear') s.store.clear();
+    if (kind === 'remove') s.store.removeEntry('1:1');
+    if (kind === 'scope') current = false;
+    if (kind === 'replay') {
+      const play = s.store.recordPlay({ id: '1' });
+      await flush();
+      s.writes[0].resolve({ ...metadataEntry('1'), playCount: 5, lastPlayedAt: 9 });
+      await play;
+    }
+    gate.resolve(originals.map((song) => ({ ...song, coverUrl: 'old-metadata' })));
+    await completion;
+    const first = s.store.entries.find((item) => item.song.id === '1');
+    assert.equal(first?.song.coverUrl, undefined);
+    if (kind === 'replay') {
+      assert.equal(first.playCount, 5);
+      assert.equal(first.lastPlayedAt, 9);
+    }
+    if (kind === 'remove') {
+      assert.equal(s.store.entries[1].song.coverUrl, 'old-metadata');
+      s.clock.run();
+      assert.deepEqual(
+        s.store.entries.map((item) => item.song.id),
+        ['2'],
+      );
+    }
+    if (kind === 'clear') assert.equal(s.store.entries.length, 0);
+  });
+}
 test('rapid individual and batch history removals remove every marked entry', async () => {
   const s = historyFixture();
   const load = s.store.hydrate();

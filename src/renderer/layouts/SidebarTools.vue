@@ -41,7 +41,7 @@ const router = useRouter();
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  color: var(--text-secondary);
+  color: var(--icon-main);
 }
 .sidebar-app-tools button {
   display: grid;

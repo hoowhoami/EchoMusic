@@ -24,3 +24,15 @@ body.plugin-window {
 #app {
   display: block;
 }
+
+/* Host diagnostics have a readable pair; successful plugin windows own their canvas. */
+.plugin-window-status {
+  box-sizing: border-box;
+  margin: 12px;
+  padding: 16px;
+  border: 1px solid;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}

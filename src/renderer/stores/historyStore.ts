@@ -3,6 +3,8 @@ import { ref } from 'vue';
 import type { Song } from '@/models/song';
 import type { StorageHistoryEntry } from '../../shared/storage';
 import logger from '@/utils/logger';
+import { completeSongMetadata } from '@/services/songMetadata';
+import { needsSongMetadata } from '@/utils/mappers/songMetadata';
 
 export interface LocalHistoryEntry {
   /** 歌曲完整信息（可独立渲染，不依赖远端 API） */
@@ -63,6 +65,37 @@ export const useHistoryStore = defineStore('history', () => {
   let pendingPromotion: LocalHistoryEntry | null = null;
   let removeTimer: ReturnType<typeof setTimeout> | null = null;
   let generation = 0;
+
+  /** 页面按需发起补全；不写播放记录，避免改变次数、时间和置顶动画。 */
+  const completeMetadata = async (isCurrent: () => boolean) => {
+    const requestGeneration = generation;
+    const ownsScope = () => requestGeneration === generation && isCurrent();
+    if (!ownsScope()) return;
+    const snapshot = entries.value.filter(
+      (entry) => !removingKeys.value.has(entry.historyKey) && needsSongMetadata(entry.song),
+    );
+    if (!snapshot.length) return;
+    try {
+      const originals = snapshot.map((entry) => entry.song);
+      const completed = await completeSongMetadata(originals, ownsScope);
+      if (!ownsScope()) return;
+      const updates = new Map<Song, Song>();
+      completed.forEach((song, index) => {
+        if (song !== originals[index]) updates.set(originals[index], song);
+      });
+      if (!updates.size) return;
+      let changed = false;
+      const next = entries.value.map((entry) => {
+        const song = updates.get(entry.song);
+        if (!song || removingKeys.value.has(entry.historyKey)) return entry;
+        changed = true;
+        return { ...entry, song };
+      });
+      if (changed) entries.value = next;
+    } catch (error) {
+      if (ownsScope()) logger.warn('HistoryStore', 'Complete song metadata failed', error);
+    }
+  };
 
   const hydrate = async () => {
     if (hydrated.value) return;
@@ -206,6 +239,7 @@ export const useHistoryStore = defineStore('history', () => {
     promotedKey,
     removingKeys,
     hydrate,
+    completeMetadata,
     recordPlay,
     clear,
     removeEntry,

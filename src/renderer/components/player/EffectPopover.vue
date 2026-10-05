@@ -804,12 +804,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
         variant="unstyled"
         size="none"
         type="button"
-        class="relative p-2 transition-all hover:scale-110 active:scale-90"
-        :class="
-          variant === 'lyric'
-            ? 'text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white'
-            : 'text-text-main/50 hover:text-primary-text'
-        "
+        class="playback-action relative p-2 transition-all hover:scale-110 active:scale-90"
         aria-label="音效与均衡器"
       >
         <span class="inline-flex w-5 h-5 items-center justify-center">
@@ -1785,8 +1780,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   border-radius: 6px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-main);
-  opacity: 0.6;
+  color: var(--color-text-secondary);
   transition: all 0.2s;
   cursor: pointer;
   border: none;
@@ -1794,8 +1788,8 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 }
 
 .sidebar-item:hover {
-  opacity: 1;
   background: var(--row-hover-bg);
+  color: var(--color-text-main);
 }
 
 .sidebar-item.is-active {
@@ -1921,7 +1915,6 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-primary-text);
-  opacity: 0.8;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -1971,7 +1964,6 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   border: 1px solid var(--control-border);
   background: var(--control-muted-bg);
   color: var(--color-text-main);
-  opacity: 0.82;
   align-items: center;
   justify-content: center;
   transition:
@@ -2413,8 +2405,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  color: var(--color-text-main);
-  opacity: 0.42;
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 700;
 }
@@ -2824,7 +2815,6 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   flex-shrink: 0;
   font-size: 10px;
   font-weight: 700;
-  color: var(--color-text-main);
-  opacity: 0.4;
+  color: var(--color-text-secondary);
 }
 </style>

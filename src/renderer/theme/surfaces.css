@@ -1,6 +1,7 @@
 /* Every surface derives its controls locally. Inherited computed CSS variables do
  * not re-evaluate when a floating surface overrides its foreground or palette. */
 :root,
+.lyric-page,
 .echo-popover-content,
 .drawer-panel,
 .dialog-content,
@@ -10,6 +11,10 @@
 .titlebar-more-menu,
 .tb-search-panel,
 .toast-card {
+  /* One foreground hierarchy per surface; never attenuate secondary text twice. */
+  --icon-main: color-mix(in srgb, var(--text-main) 80%, transparent);
+  --icon-secondary: color-mix(in srgb, var(--text-main) 60%, transparent);
+  --text-placeholder: var(--text-secondary);
   --content-panel-bg: color-mix(in srgb, var(--content-tone) 5%, transparent);
   --content-panel-border: color-mix(in srgb, var(--content-tone) 10%, transparent);
   --content-selected-bg: color-mix(in srgb, var(--content-tone) 12%, transparent);
@@ -35,11 +40,39 @@
   --control-checkbox-border-hover: var(--color-primary);
   --control-checkbox-indicator: var(--color-on-primary);
   --row-hover-bg: color-mix(in srgb, var(--content-tone) 5%, transparent);
-  --row-active-bg: color-mix(in srgb, var(--content-tone) 8%, transparent);
-  --row-selected-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --row-active-bg: color-mix(in srgb, var(--content-tone) 10%, transparent);
+  --row-selected-bg: var(--row-active-bg);
   --scrollbar-thumb-bg: color-mix(in srgb, var(--content-tone) 22%, transparent);
   --scrollbar-thumb-bg-hover: color-mix(in srgb, var(--content-tone) 28%, transparent);
   --scrollbar-thumb-bg-active: color-mix(in srgb, var(--content-tone) 45%, transparent);
+}
+
+/* Ordinary icon actions share a foreground across headers, lists and dialogs.
+ * Opacity is reserved for disabled/reveal/animation states, not normal brightness. */
+.icon-action {
+  color: var(--icon-main);
+}
+
+.icon-action:hover:not(:disabled),
+.icon-action:focus-visible:not(:disabled) {
+  color: var(--text-main);
+}
+
+/* Every player action uses the same foreground in every toolbar position.
+ * Persistent states remain explicit; quality/effect buttons only highlight on hover. */
+.playback-action {
+  color: var(--icon-main);
+}
+
+.playback-action:hover,
+.playback-action.is-active,
+.playback-action.is-loading {
+  color: var(--color-primary-text);
+}
+
+.playback-action.is-favorite,
+.playback-action.is-favorite:hover {
+  color: var(--state-danger);
 }
 
 .echo-popover-content,

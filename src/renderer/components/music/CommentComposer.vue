@@ -114,7 +114,7 @@ textarea {
 }
 textarea::placeholder {
   color: var(--text-secondary);
-  opacity: 0.75;
+  opacity: 1;
 }
 textarea:focus {
   outline: none;

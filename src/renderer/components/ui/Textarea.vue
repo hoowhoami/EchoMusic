@@ -58,7 +58,7 @@ const value = useVModel(props, 'modelValue', emits);
 }
 
 .textarea-root::placeholder {
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .textarea-root:focus {

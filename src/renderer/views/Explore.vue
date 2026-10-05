@@ -897,7 +897,7 @@ const filteredArtistCards = computed(() => {
           </template>
         </VirtualGrid>
 
-        <div v-else class="py-20 text-center opacity-50 text-[14px] italic">暂无歌手</div>
+        <div v-else class="py-20 text-center text-text-secondary text-[14px] italic">暂无歌手</div>
       </div>
 
       <CustomPicker

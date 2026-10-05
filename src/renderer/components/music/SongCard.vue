@@ -349,7 +349,7 @@ const handleFavorite = () => {
       </div>
       <div
         class="song-subline text-[12px] flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap"
-        :class="props.active ? 'text-primary-text/70' : 'text-text-secondary'"
+        :class="props.active ? 'text-primary-text' : 'text-text-secondary'"
       >
         <span class="song-artist-list">
           <span
@@ -359,7 +359,7 @@ const handleFavorite = () => {
             @click.stop="isArtistClickable(artistItem) && goToArtist(artistItem)"
           >
             {{ artistItem.name }}
-            <span v-if="index < artistList.length - 1" class="mx-1 opacity-50">/</span>
+            <span v-if="index < artistList.length - 1" class="mx-1">/</span>
           </span>
         </span>
         <Button
@@ -367,7 +367,7 @@ const handleFavorite = () => {
           size="none"
           v-if="showAlbum && songAlbum"
           type="button"
-          :class="isAlbumClickable ? 'song-album song-link opacity-60' : 'song-album opacity-60'"
+          :class="isAlbumClickable ? 'song-album song-link' : 'song-album'"
           @click.stop="isAlbumClickable && goToAlbum()"
         >
           • {{ songAlbum }}
@@ -420,7 +420,7 @@ const handleFavorite = () => {
     <!-- 时长 -->
     <div
       v-if="showDuration && songDuration"
-      class="text-[11px] text-text-secondary opacity-60 px-2 group-hover:opacity-80 motion-control-feedback"
+      class="text-[11px] text-text-secondary px-2 motion-control-feedback"
     >
       {{ formatDuration(songDuration) }}
     </div>
@@ -529,8 +529,8 @@ const handleFavorite = () => {
   font-weight: 500;
 }
 
-.song-card .song-subline.text-primary-text\/70 {
-  color: color-mix(in srgb, var(--color-primary-text) 70%, transparent);
+.song-card .song-subline.text-primary-text {
+  color: var(--color-primary-text);
 }
 
 .song-content {

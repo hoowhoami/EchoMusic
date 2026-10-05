@@ -54,16 +54,8 @@ const popoverOpen = computed({
         variant="unstyled"
         size="none"
         type="button"
-        class="p-2 transition-all"
-        :class="
-          player.playbackRate !== 1
-            ? props.variant === 'lyric'
-              ? 'text-black dark:text-white hover:scale-110 active:scale-90'
-              : 'text-primary-text hover:scale-110 active:scale-90'
-            : props.variant === 'lyric'
-              ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
-              : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90'
-        "
+        class="playback-action p-2 transition-all hover:scale-110 active:scale-90"
+        :class="{ 'is-active': player.playbackRate !== 1 }"
         aria-label="倍速播放"
       >
         <Icon :icon="iconSpeedometer" width="20" height="20" />
@@ -72,18 +64,20 @@ const popoverOpen = computed({
 
     <div class="space-y-3">
       <div class="flex items-center justify-between">
-        <span class="text-[11px] font-bold opacity-50">倍速播放</span>
+        <span class="text-[11px] font-bold text-text-secondary">倍速播放</span>
         <Button
           variant="unstyled"
           size="none"
           class="text-[13px] font-extrabold px-1.5 py-0.5 rounded-md transition-colors"
-          :class="player.playbackRate === 1 ? 'opacity-40' : 'hover:bg-[var(--control-hover-bg)]'"
+          :class="
+            player.playbackRate === 1 ? 'text-text-secondary' : 'hover:bg-[var(--control-hover-bg)]'
+          "
           @click="resetPlaybackRate"
           >{{ playbackRateDisplay }}</Button
         >
       </div>
       <div class="flex items-center gap-2">
-        <span class="text-[10px] font-semibold opacity-40 shrink-0">0.1</span>
+        <span class="text-[10px] font-semibold text-text-secondary shrink-0">0.1</span>
         <SliderRoot
           class="relative flex items-center select-none touch-none cursor-pointer flex-1 h-5"
           :model-value="[Math.round(player.playbackRate * 10)]"
@@ -100,7 +94,7 @@ const popoverOpen = computed({
             class="speed-thumb block w-3 h-3 cursor-pointer border rounded-full shadow-md focus-visible:outline-none"
           />
         </SliderRoot>
-        <span class="text-[10px] font-semibold opacity-40 shrink-0">5x</span>
+        <span class="text-[10px] font-semibold text-text-secondary shrink-0">5x</span>
       </div>
       <div class="flex items-center justify-between">
         <Button
@@ -112,7 +106,7 @@ const popoverOpen = computed({
           :class="
             Math.abs(player.playbackRate - r) < 0.01
               ? 'bg-[var(--row-selected-bg)]'
-              : 'opacity-50 hover:bg-[var(--row-hover-bg)] hover:opacity-100'
+              : 'text-text-secondary hover:bg-[var(--row-hover-bg)] hover:text-text-main'
           "
           @click="setPlaybackRate(r)"
           >{{ r === Math.floor(r) ? r.toFixed(1) : r }}x</Button

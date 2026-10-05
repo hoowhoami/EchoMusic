@@ -165,9 +165,24 @@
   width: min(22rem, 100%);
 }
 
+.marketplace-source-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-shrink: 0;
+  width: 19.875rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.marketplace-source-controls > .echo-popover-trigger {
+  flex: 1;
+  min-width: 0;
+}
+
 .marketplace-source-select {
-  width: min(17rem, 100%);
-  min-width: 14rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .marketplace-source-errors {
@@ -443,7 +458,6 @@
 .plugin-card-meta {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
-  opacity: 0.8;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -460,7 +474,7 @@
 .plugin-card-id {
   font-size: 0.6875rem;
   font-weight: 400;
-  color: color-mix(in srgb, var(--color-text-secondary) 82%, transparent);
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -759,7 +773,7 @@
   width: 2rem;
   min-width: 2rem;
   padding: 0;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
 }
 
 .plugin-source-empty {
@@ -917,7 +931,7 @@
   }
 
   .marketplace-search,
-  .marketplace-source-select {
+  .marketplace-source-controls {
     width: 100%;
     min-width: 0;
   }

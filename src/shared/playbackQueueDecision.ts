@@ -1,5 +1,6 @@
 export type OrderedPlaybackMode = 'list' | 'sequential';
-export type PlaybackMode = OrderedPlaybackMode | 'single' | 'random';
+export type NonRandomPlaybackMode = OrderedPlaybackMode | 'single';
+export type PlaybackMode = NonRandomPlaybackMode | 'random';
 export type QueueAdvanceAuthority = 'local' | 'dynamic-provider' | 'remote-session';
 
 export const resolveQueueAdvanceAuthority = (options: {
@@ -25,9 +26,9 @@ export const canPrepareGaplessTransition = (options: {
 export const resolveOrderedPlaybackMode = (
   playMode: PlaybackMode,
   explicitAdvance: boolean,
-): OrderedPlaybackMode | null => {
+): NonRandomPlaybackMode | null => {
   if (playMode === 'random') return null;
-  if (playMode === 'single') return explicitAdvance ? 'list' : null;
+  if (playMode === 'single') return explicitAdvance ? 'list' : 'single';
   return playMode;
 };
 
@@ -78,7 +79,7 @@ type ResolveNextTrackDecisionOptions<T> = {
   tracks: readonly T[];
   currentTrackId: string | number | null | undefined;
   queuedNextTrackIds?: readonly string[];
-  mode: OrderedPlaybackMode;
+  mode: NonRandomPlaybackMode;
   getTrackId: (track: T) => string | number;
   isPlayable: (track: T) => boolean;
 };
@@ -135,6 +136,22 @@ export const resolveNextTrackDecision = <T>(
   if (tracks.length === 0) return null;
 
   const currentTrackId = normalizeTrackId(options.currentTrackId);
+  // Automatic repeat keeps its current track; explicit next resolves as list mode.
+  if (mode === 'single') {
+    const targetIndex = tracks.findIndex(
+      (track) => normalizeTrackId(getTrackId(track)) === currentTrackId,
+    );
+    const track = tracks[targetIndex];
+    if (!track || !isPlayable(track)) return null;
+    return {
+      track,
+      targetTrackId: currentTrackId,
+      targetIndex,
+      reason: 'queue-order',
+      queuedNextTrackId: null,
+      queuedNextTrackIdsToConsume: [],
+    };
+  }
   const queuedDecision = resolveQueuedNextTrackDecision(options);
   if (queuedDecision?.reason === 'queued-next') return queuedDecision;
   const queuedNextTrackIdsToConsume = queuedDecision?.queuedNextTrackIdsToConsume ?? [];
@@ -235,7 +252,7 @@ export const buildNextTrackDecisionKey = (options: {
   queueRevision: number;
   currentTrackId: string | number | null | undefined;
   targetTrackId: string | number | null | undefined;
-  mode: OrderedPlaybackMode;
+  mode: PlaybackMode;
   reason: NextTrackTargetDecision<unknown>['reason'];
   queuedNextTrackId?: string | null;
 }): string =>

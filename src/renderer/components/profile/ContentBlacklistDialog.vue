@@ -288,7 +288,7 @@ watch(activeTab, () => {
             <div class="blacklist-scroll-inner" :aria-busy="bucket.loading">
               <div
                 v-if="bucket.loading && !bucket.loaded"
-                class="blacklist-list-state text-text-main/45"
+                class="blacklist-list-state text-text-secondary"
                 role="status"
                 aria-live="polite"
               >
@@ -315,14 +315,14 @@ watch(activeTab, () => {
 
               <div
                 v-else-if="bucket.entries.length === 0"
-                class="blacklist-list-state text-center text-text-main/40"
+                class="blacklist-list-state text-center text-text-secondary"
                 role="status"
               >
                 <div class="blacklist-empty-icon">
                   <Icon :icon="activeMeta.icon" width="22" height="22" />
                 </div>
                 <p class="text-[12px] font-black">{{ activeMeta.empty }}</p>
-                <p class="mt-1 text-[10px] font-medium text-text-main/30">
+                <p class="mt-1 text-[10px] font-medium text-text-secondary">
                   你可以随时在歌曲或歌手页面添加
                 </p>
               </div>
@@ -351,7 +351,7 @@ watch(activeTab, () => {
                       </Tooltip>
                       <p
                         v-if="formatTime(entry.createdAt)"
-                        class="mt-0.5 text-[10px] font-medium text-text-main/35"
+                        class="mt-0.5 text-[10px] font-medium text-text-secondary"
                       >
                         {{ entry.label === 'song' ? '标记于' : '屏蔽于' }}
                         {{ formatTime(entry.createdAt) }}
@@ -476,7 +476,6 @@ watch(activeTab, () => {
   font-size: 11px;
   font-weight: 500;
   line-height: 1.55;
-  opacity: 0.72;
 }
 
 .blacklist-refresh-button {
@@ -487,7 +486,7 @@ watch(activeTab, () => {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: color-mix(in srgb, var(--color-text-main) 60%, transparent);
+  color: var(--icon-main);
 }
 
 .blacklist-refresh-button:hover {
@@ -574,7 +573,7 @@ watch(activeTab, () => {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: color-mix(in srgb, var(--color-text-main) 55%, transparent);
+  color: var(--icon-main);
   background: var(--control-muted-bg);
 }
 
@@ -586,7 +585,7 @@ watch(activeTab, () => {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: color-mix(in srgb, var(--color-text-main) 60%, transparent);
+  color: var(--icon-main);
 }
 
 .blacklist-entry-action:hover {

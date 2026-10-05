@@ -726,7 +726,7 @@ onBeforeUnmount(() => {
           @click="handleSelectPlaylist(entry.listid ?? entry.id)"
         >
           <span class="text-[13px] font-semibold text-text-main truncate">{{ entry.name }}</span>
-          <span class="text-[11px] text-text-secondary/60">{{ entry.count ?? 0 }} 首</span>
+          <span class="text-[11px] text-text-secondary">{{ entry.count ?? 0 }} 首</span>
         </Button>
       </div>
     </Dialog>
@@ -934,9 +934,9 @@ onBeforeUnmount(() => {
 }
 
 .rec-source-arrow {
-  opacity: 0.5;
   margin-left: 2px;
   transition: transform 0.2s ease;
+  color: var(--icon-main);
 }
 
 /* 音源选择下拉菜单 */
@@ -955,7 +955,6 @@ onBeforeUnmount(() => {
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-secondary);
-  opacity: 0.6;
   user-select: none;
 }
 

@@ -153,13 +153,13 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   height: 100%;
   font-size: 13px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-main) 47%, transparent);
+  color: var(--color-text-secondary);
   border-radius: 9px;
   transition: color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .custom-tab-item:hover {
-  color: color-mix(in srgb, var(--color-text-main) 85%, transparent);
+  color: var(--color-text-main);
 }
 
 .custom-tab-item.active {
@@ -171,7 +171,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 .dark .custom-tab-item:hover {
-  color: color-mix(in srgb, #ffffff 88%, transparent);
+  color: var(--color-text-main);
 }
 
 .dark .custom-tab-item.active:hover {

@@ -812,9 +812,10 @@ export const mapCloudSong = (json: unknown): Song => {
   const audioId = parseOptionalInt(
     pickValue(record.audio_id, record.audioid, audioInfo.audio_id, audioInfo.audioid),
   );
-  const albumAudioId = readString(
-    pickValue(record.album_audio_id, record.mixsongid, audioInfo.album_audio_id, ''),
-    '',
+  const albumAudioId = readPositiveId(
+    record.album_audio_id,
+    record.mixsongid,
+    audioInfo.album_audio_id,
   );
   const cloudFileId = parseOptionalInt(pickValue(record.kv_id, record.kvid, record.cloud_file_id));
   const cloudAddedAt = parseOptionalInt(pickValue(record.add_time, record.addtime));

@@ -762,38 +762,8 @@ export const usePlayerStore = defineStore(
           await playbackManager.next({ gaplessTransition: true });
           return;
         }
-        if (state.playMode === 'single') {
-          if (state.currentPlaybackSource || state.currentAudioUrl) {
-            const restartTrackId = state.currentTrackId;
-            const restartSeq = state.playbackRequestSeq;
-            beginNativeTrackLoad(state);
-            let nativeLoadCompleted = false;
-            void (async () => {
-              await engine.setSource(state.currentPlaybackSource ?? state.currentAudioUrl, {
-                force: true,
-              });
-              nativeLoadCompleted = true;
-              if (
-                restartSeq !== state.playbackRequestSeq ||
-                String(state.currentTrackId ?? '') !== String(restartTrackId ?? '')
-              ) {
-                return;
-              }
-              await engine.play();
-            })().catch((error) => {
-              if (
-                restartSeq === state.playbackRequestSeq &&
-                String(state.currentTrackId ?? '') === String(restartTrackId ?? '') &&
-                !nativeLoadCompleted
-              ) {
-                abortNativeTrackLoad(state);
-              }
-              logger.warn('PlayerStore', 'Loop restart failed:', error);
-            });
-          }
-          return;
-        }
         await playbackManager.next({
+          automatic: true,
           gaplessTransition: settingStore.effectiveTrackTransitionMode !== 'none',
         });
       } finally {
@@ -1203,11 +1173,7 @@ export const usePlayerStore = defineStore(
       })();
       engine.setVolumeNormalization(settingStore.volumeNormalization);
       engine.setReferenceLufs(settingStore.volumeNormalizationLufs);
-      engine.setLoopFile(
-        state.playMode === 'single' &&
-          state.currentSourceQueueId !== PERSONAL_FM_QUEUE_ID &&
-          state.currentSourceQueueId !== DISCOVER_QUEUE_ID,
-      );
+      engine.setLoopFile(false);
       engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
       registerSettingWatchers();
       if (!audioDeviceListListenerRegistered) {

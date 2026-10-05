@@ -3,6 +3,15 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 
+const dragModule = { exports: {} };
+new Function(
+  'module',
+  transformSync(
+    readFileSync(new URL('../src/renderer/layouts/windowDrag.ts', import.meta.url), 'utf8'),
+    { loader: 'ts', format: 'cjs' },
+  ).code,
+)(dragModule);
+
 const source = readFileSync(
   new URL('../src/renderer/layouts/TitleBar.vue', import.meta.url),
   'utf8',
@@ -46,6 +55,7 @@ function setup() {
   };
   const pending = [];
   const bindings = {
+    isWindowDragTarget: dragModule.exports.isWindowDragTarget,
     logger: { info() {} },
     ...state,
     flatSuggestions: {
@@ -116,7 +126,7 @@ test('refocusing cancels delayed dismissal and keeps suggestions visible', () =>
 test('native titlebar click dismisses search without changing drag regions', () => {
   const s = setup();
   s.api.handleSearchFocus();
-  s.setNativeTarget({ closest: (selector) => selector.includes('.native-titlebar .drag-region') });
+  s.setNativeTarget({ closest: (selector) => selector.includes('.drag-region') });
   s.api.handleNativePointerDown({ x: 500, y: 20 });
   assert.equal(s.isSearchFocused.value, false);
   assert.equal(s.wasBlurred(), true);
@@ -125,7 +135,7 @@ test('native titlebar click dismisses search without changing drag regions', () 
 test('native click on the central titlebar spacer dismisses search', () => {
   const s = setup();
   s.api.handleSearchFocus();
-  s.setNativeTarget({ closest: (selector) => selector.includes('.titlebar-drag-space') });
+  s.setNativeTarget({ closest: (selector) => selector.includes('.window-drag-area') });
   s.api.handleNativePointerDown({ x: 500, y: 20 });
   assert.equal(s.isSearchFocused.value, false);
   assert.equal(s.wasBlurred(), true);
@@ -137,6 +147,17 @@ test('delayed native notification after history removal does not dismiss search'
   s.api.clearSearchHistory();
   s.setNativeTarget({ closest: () => null });
   s.api.handleNativePointerDown({ x: 200, y: 100 });
+  assert.equal(s.isSearchFocused.value, true);
+  assert.equal(s.wasBlurred(), false);
+});
+
+test('native notification on a caption button is excluded from titlebar drag handling', () => {
+  const s = setup();
+  s.api.handleSearchFocus();
+  s.setNativeTarget({
+    closest: (selector) => selector.includes('.window-drag-area') || selector.includes('button'),
+  });
+  s.api.handleNativePointerDown({ x: 1064, y: 30 });
   assert.equal(s.isSearchFocused.value, true);
   assert.equal(s.wasBlurred(), false);
 });

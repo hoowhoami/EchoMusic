@@ -80,7 +80,7 @@
 
 .listen-hero p {
   max-width: 560px;
-  color: color-mix(in srgb, var(--color-text-main) 62%, transparent);
+  color: var(--color-text-secondary);
   font-size: 15px;
   font-weight: 600;
   line-height: 1.7;
@@ -101,7 +101,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: color-mix(in srgb, var(--color-text-main) 62%, transparent);
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 800;
 }
@@ -217,7 +217,7 @@
   align-items: center;
   gap: 10px;
   padding: 0 15px;
-  color: color-mix(in srgb, var(--color-text-main) 45%, transparent);
+  color: var(--icon-main);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
   background: var(--control-muted-bg);
@@ -244,7 +244,7 @@
 }
 
 .listen-search-shell input::placeholder {
-  color: color-mix(in srgb, var(--color-text-main) 40%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .listen-tag-row {
@@ -272,7 +272,7 @@
   text-align: left;
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
-  color: color-mix(in srgb, var(--color-text-main) 65%, transparent);
+  color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   transition: all 0.18s ease;
 }
@@ -313,7 +313,7 @@
   padding: 0 15px;
   border: 1px solid transparent;
   border-radius: 999px;
-  color: color-mix(in srgb, var(--color-text-main) 64%, transparent);
+  color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   font-size: 12px;
   font-weight: 800;
@@ -520,7 +520,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 800;
 }
@@ -528,7 +528,7 @@
 .listen-room-owner {
   margin-top: 4px;
   overflow: hidden;
-  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+  color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 650;
   text-overflow: ellipsis;
@@ -562,7 +562,7 @@
 .listen-room-tags > span {
   padding: 4px 8px;
   border-radius: 999px;
-  color: color-mix(in srgb, var(--color-text-main) 62%, transparent);
+  color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   font-size: 9px;
   font-weight: 800;
@@ -574,12 +574,12 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: color-mix(in srgb, var(--color-text-main) 34%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .listen-empty-state h2 {
   margin-top: 14px;
-  color: color-mix(in srgb, var(--color-text-main) 72%, transparent);
+  color: var(--color-text-main);
   font-size: 16px;
   font-weight: 850;
 }
@@ -637,7 +637,7 @@
 
 .listen-session-title p {
   margin-top: 2px;
-  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+  color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 700;
 }
@@ -744,7 +744,7 @@
 
 .listen-now-info > p {
   margin-top: 7px;
-  color: color-mix(in srgb, var(--color-text-main) 56%, transparent);
+  color: var(--color-text-secondary);
   font-size: 13px;
   font-weight: 700;
 }
@@ -757,7 +757,7 @@
   margin-top: 22px;
   padding: 9px 11px;
   border-radius: 10px;
-  color: color-mix(in srgb, var(--color-text-main) 52%, transparent);
+  color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   font-size: 10px;
   font-weight: 650;
@@ -806,7 +806,7 @@
 }
 
 .listen-panel-kicker {
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.7px;
@@ -878,7 +878,7 @@
   width: 22px;
   flex-shrink: 0;
   text-align: center;
-  color: color-mix(in srgb, var(--color-text-main) 40%, transparent);
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 800;
 }
@@ -904,14 +904,14 @@
 }
 
 .listen-queue-meta small {
-  color: color-mix(in srgb, var(--color-text-main) 47%, transparent);
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 650;
 }
 
 .listen-request-label {
   flex-shrink: 0;
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 800;
 }
@@ -928,7 +928,7 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: color-mix(in srgb, var(--color-text-main) 30%, transparent);
+  color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 700;
 }
@@ -948,7 +948,7 @@
   align-items: center;
   gap: 8px;
   padding: 12px 15px 15px;
-  color: color-mix(in srgb, var(--color-text-main) 36%, transparent);
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 700;
 }
@@ -986,7 +986,7 @@
 .listen-member-avatar-placeholder {
   display: grid;
   place-items: center;
-  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+  color: var(--icon-main);
   background: var(--control-muted-bg);
 }
 
@@ -1019,7 +1019,7 @@
 }
 
 .listen-member-item small {
-  color: color-mix(in srgb, var(--color-text-main) 43%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 650;
 }
@@ -1055,7 +1055,7 @@
   min-height: 76px;
   align-items: center;
   justify-content: center;
-  color: color-mix(in srgb, var(--color-text-main) 34%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 650;
 }
@@ -1085,7 +1085,7 @@
 
 .listen-message p strong {
   overflow: hidden;
-  color: color-mix(in srgb, var(--color-text-main) 70%, transparent);
+  color: var(--color-text-main);
   font-size: 9px;
   font-weight: 850;
   text-overflow: ellipsis;
@@ -1093,7 +1093,7 @@
 }
 
 .listen-message time {
-  color: color-mix(in srgb, var(--color-text-main) 30%, transparent);
+  color: var(--color-text-secondary);
   font-size: 8px;
   font-weight: 650;
 }
@@ -1128,7 +1128,7 @@
 
 .listen-message.is-system {
   justify-content: center;
-  color: color-mix(in srgb, var(--color-text-main) 38%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 650;
   text-align: center;
@@ -1179,7 +1179,7 @@
 }
 
 .listen-chat-composer textarea::placeholder {
-  color: color-mix(in srgb, var(--color-text-main) 36%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .listen-chat-composer button {
@@ -1275,7 +1275,7 @@
 }
 
 .listen-preview-owner small {
-  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 650;
 }
@@ -1284,7 +1284,7 @@
   margin-top: 14px;
   padding: 11px 12px;
   border-radius: 11px;
-  color: color-mix(in srgb, var(--color-text-main) 66%, transparent);
+  color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   font-size: 10px;
   font-weight: 650;
@@ -1308,7 +1308,7 @@
 
 .listen-preview-members > span {
   margin-left: 15px;
-  color: color-mix(in srgb, var(--color-text-main) 46%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 750;
 }
@@ -1374,7 +1374,7 @@
   gap: 4px;
   padding: 11px 12px;
   text-align: left;
-  color: color-mix(in srgb, var(--color-text-main) 66%, transparent);
+  color: var(--color-text-secondary);
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   background: var(--control-muted-bg);
@@ -1461,7 +1461,7 @@
 }
 
 .listen-channel-results small {
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
   font-size: 8px;
   font-weight: 650;
 }
@@ -1485,7 +1485,7 @@
   padding: 7px 11px;
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
-  color: color-mix(in srgb, var(--color-text-main) 62%, transparent);
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 800;
   transition: all 0.16s ease;
@@ -1561,7 +1561,7 @@
 }
 
 .listen-create-playlist-copy small {
-  color: color-mix(in srgb, var(--color-text-main) 46%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 650;
 }
@@ -1593,7 +1593,7 @@
 }
 
 .listen-create-summary small {
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
   font-size: 8px;
   font-weight: 650;
 }
@@ -1607,7 +1607,7 @@
 }
 
 .listen-create-summary > small {
-  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 750;
 }
@@ -1645,7 +1645,7 @@
   flex: 1;
   padding: 8px 10px;
   border-radius: 9px;
-  color: color-mix(in srgb, var(--color-text-main) 52%, transparent);
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 800;
   transition: all 0.16s ease;
@@ -1678,7 +1678,7 @@
 .listen-song-picker-source {
   justify-content: space-between;
   padding: 0 4px;
-  color: color-mix(in srgb, var(--color-text-main) 58%, transparent);
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 750;
 }
@@ -1717,7 +1717,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: color-mix(in srgb, var(--color-text-main) 68%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 820;
   cursor: pointer;
@@ -1730,7 +1730,7 @@
 
 .listen-song-picker-bulk-actions span,
 .listen-song-picker-selected-total {
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 700;
 }
@@ -1745,7 +1745,7 @@
   display: grid;
   place-items: center;
   border-radius: 8px;
-  color: color-mix(in srgb, var(--color-text-main) 58%, transparent);
+  color: var(--color-text-secondary);
   background: var(--control-muted-bg);
 }
 
@@ -1760,7 +1760,7 @@
 
 .listen-song-picker-pagination span {
   min-width: 42px;
-  color: color-mix(in srgb, var(--color-text-main) 52%, transparent);
+  color: var(--color-text-secondary);
   text-align: center;
   font-size: 9px;
   font-weight: 800;
@@ -1791,7 +1791,7 @@
 .listen-song-picker-index {
   width: 21px;
   flex: 0 0 auto;
-  color: color-mix(in srgb, var(--color-text-main) 35%, transparent);
+  color: var(--color-text-secondary);
   text-align: center;
   font-size: 9px;
   font-weight: 750;
@@ -1828,7 +1828,7 @@
 }
 
 .listen-song-picker-song small {
-  color: color-mix(in srgb, var(--color-text-main) 44%, transparent);
+  color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 650;
 }
@@ -1846,7 +1846,7 @@
   display: grid;
   place-items: center;
   border-radius: 8px;
-  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+  color: var(--icon-main);
 }
 
 .listen-song-picker-controls button:hover:not(:disabled) {
@@ -1865,13 +1865,13 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: color-mix(in srgb, var(--color-text-main) 36%, transparent);
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 700;
 }
 
 .listen-leave-copy {
-  color: color-mix(in srgb, var(--color-text-main) 62%, transparent);
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 650;
   line-height: 1.7;
@@ -2009,7 +2009,6 @@
 
 .listen-filter-panel .listen-tag-button small {
   margin-left: 4px;
-  opacity: 0.62;
   font-size: 8px;
 }
 
@@ -2150,7 +2149,7 @@
   margin-top: 0;
   padding: 9px 10px;
   border-radius: 11px;
-  color: color-mix(in srgb, var(--color-text-main) 72%, transparent);
+  color: var(--color-text-main);
   background: var(--control-muted-bg);
   font-size: 10px;
   font-weight: 650;
@@ -2314,7 +2313,7 @@
 }
 
 .listen-room-type-tabs button:not(.is-active) .listen-room-type-icon {
-  color: color-mix(in srgb, var(--color-text-main) 58%, transparent);
+  color: var(--icon-main);
   background: var(--control-muted-bg);
 }
 
@@ -2739,7 +2738,6 @@
 
 .listen-browser-panel .listen-tag-button small {
   margin-left: 3px;
-  opacity: 0.58;
   font-size: 8px;
 }
 

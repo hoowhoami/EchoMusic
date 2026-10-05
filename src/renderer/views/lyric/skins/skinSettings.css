@@ -25,6 +25,7 @@
   flex-direction: column;
   gap: 3px;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .setting-label {

@@ -597,7 +597,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
             />
           </template>
           <template #details>
-            <div class="flex flex-col gap-1.5 text-text-main/60">
+            <div class="flex flex-col gap-1.5 text-text-secondary">
               <div class="album-artist-line">
                 <template
                   v-for="(artistItem, index) in albumArtists"
@@ -656,7 +656,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                 variant="unstyled"
                 size="none"
                 @click="openBatchDrawer"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -675,7 +675,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
               variant="unstyled"
               size="none"
               @click="handleShareAlbum"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconShare" width="18" height="18" />
             </Button>
@@ -870,7 +870,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 .album-artist-separator {
   font-size: 13px;
   font-weight: 600;
-  opacity: 0.5;
+  color: var(--color-text-secondary);
 }
 
 .search-expand-enter-active,
@@ -906,7 +906,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 .comment-end-hint {
   font-size: 12px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .comment-loading-spinner {

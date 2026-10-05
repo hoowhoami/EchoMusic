@@ -306,7 +306,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>

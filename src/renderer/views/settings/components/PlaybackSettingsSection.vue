@@ -228,7 +228,7 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">启动时自动播放</h3>
-        <p class="text-sm text-text-secondary">打开应用时如果有恢复的播放会话则自动开始播放</p>
+        <p class="text-sm text-text-secondary">启动后自动播放恢复的会话</p>
       </div>
       <Switch v-model="settingStore.autoPlayOnLaunch" />
     </div>
@@ -237,7 +237,7 @@ const handleRemoveImpulseResponse = (id: string) => {
       <div class="space-y-1">
         <h3 class="font-semibold">蝰蛇母带</h3>
         <p class="text-sm text-text-secondary">
-          默认关闭。该音质需要转码，文件更大、起播更慢，且仅部分歌曲提供。开启后才会出现在默认音质和播放器音质列表中。
+          开启后可选择母带音质；需转码，文件较大、起播较慢，仅部分歌曲支持。
         </p>
       </div>
       <Switch
@@ -249,9 +249,7 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">默认音质</h3>
-        <p class="text-sm text-text-secondary">
-          新歌曲默认按此音质解析，播放器中可临时覆盖当前歌曲
-        </p>
+        <p class="text-sm text-text-secondary">新歌曲使用此音质，当前歌曲可在播放器中调整</p>
       </div>
       <Select
         class="w-45 shrink-0"
@@ -319,7 +317,7 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">开始播放时淡入</h3>
-        <p class="text-sm text-text-secondary">点击播放一首新歌时音量从静音渐起</p>
+        <p class="text-sm text-text-secondary">播放新歌曲时，音量从静音渐起</p>
       </div>
       <Switch v-model="settingStore.volumeFade" />
     </div>
@@ -348,7 +346,7 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">音量均衡</h3>
-        <p class="text-sm text-text-secondary">自动调整不同歌曲的音量，使播放响度保持一致</p>
+        <p class="text-sm text-text-secondary">自动平衡不同歌曲的播放响度</p>
       </div>
       <Switch
         :model-value="settingStore.volumeNormalization"
@@ -361,7 +359,7 @@ const handleRemoveImpulseResponse = (id: string) => {
         <div class="space-y-1">
           <h3 class="font-semibold">参考响度</h3>
           <p class="text-sm text-text-secondary">设定歌曲的目标响度；仅对带有响度信息的音源生效</p>
-          <p class="text-xs text-text-secondary/70">{{ volumeNormalizationStatus }}</p>
+          <p class="text-xs text-text-secondary">{{ volumeNormalizationStatus }}</p>
         </div>
         <Slider
           class="w-48"

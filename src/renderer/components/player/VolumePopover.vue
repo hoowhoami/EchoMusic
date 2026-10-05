@@ -73,10 +73,10 @@ const handleWheel = (e: WheelEvent) => {
           size="none"
           type="button"
           :class="[
-            'transition-colors',
+            'playback-action transition-colors',
             props.variant === 'lyric'
-              ? 'flex h-10 w-10 items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90 text-black/55 dark:text-white/55'
-              : 'flex h-9 w-9 items-center justify-center text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90',
+              ? 'flex h-10 w-10 items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90'
+              : 'flex h-9 w-9 items-center justify-center hover:scale-110 active:scale-90',
           ]"
           @click.stop="toggleMute"
           :aria-label="player.volume === 0 ? '取消静音' : '静音'"
@@ -168,7 +168,6 @@ const handleWheel = (e: WheelEvent) => {
   font-size: 10px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-main);
-  opacity: 0.6;
+  color: var(--color-text-secondary);
 }
 </style>

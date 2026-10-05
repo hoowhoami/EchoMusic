@@ -695,7 +695,7 @@ watch(selectedKey, () => {
   align-items: center;
   gap: 1px;
   margin-left: auto;
-  color: color-mix(in srgb, var(--color-text-secondary) 48%, transparent);
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1;
 }

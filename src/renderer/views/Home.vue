@@ -366,7 +366,7 @@ const handleRejectAgreement = () => {
     <div class="home-view px-10 pt-4 pb-10">
       <div class="home-header motion-section-enter">
         <div class="text-[22px] font-semibold tracking-tight text-text-main">{{ greeting }}</div>
-        <div class="text-[12px] text-text-secondary/80 mt-1">由此开启好心情 ~</div>
+        <div class="text-[12px] text-text-secondary mt-1">由此开启好心情 ~</div>
       </div>
 
       <div class="home-feature-row motion-section-enter" style="--motion-order: 1">
@@ -642,7 +642,7 @@ const handleRejectAgreement = () => {
 .feature-sub {
   font-size: 12px;
   font-weight: 500;
-  color: color-mix(in srgb, var(--color-text-main) 60%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .feature-action {
@@ -708,7 +708,7 @@ const handleRejectAgreement = () => {
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  color: color-mix(in srgb, var(--color-text-main) 60%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .style-recommend-section {
@@ -842,7 +842,7 @@ const handleRejectAgreement = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: color-mix(in srgb, var(--color-text-main) 56%, transparent);
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 

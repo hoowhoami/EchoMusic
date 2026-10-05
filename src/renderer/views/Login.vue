@@ -643,7 +643,7 @@ onUnmounted(() => {
           @click="closeLoginPage"
           variant="unstyled"
           size="none"
-          class="no-drag h-10 w-10 min-w-0 rounded-full p-0 flex items-center justify-center text-text-main dark:text-white bg-[var(--control-hover-bg)] hover:bg-[var(--control-hover-bg)]"
+          class="no-drag h-10 w-10 min-w-0 rounded-full p-0 flex items-center justify-center text-text-main bg-[var(--control-hover-bg)] hover:bg-[var(--control-hover-bg)]"
         >
           <Icon :icon="iconChevronLeft" width="24" height="24" />
         </Button>
@@ -682,12 +682,12 @@ onUnmounted(() => {
               <TabsContent value="kugou" class="w-full animate-fade-in flex flex-col items-center">
                 <div class="text-center mb-4">
                   <h1 class="text-[26px] font-black tracking-tight leading-tight mb-1">扫码登录</h1>
-                  <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
+                  <p class="text-[13px] text-text-secondary font-bold uppercase tracking-[1.5px]">
                     使用酷狗概念版扫码
                   </p>
                 </div>
                 <div
-                  class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
+                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
                 >
                   <Image :src="qrUrl" class="w-full h-full rounded-xl" />
                   <div
@@ -705,7 +705,7 @@ onUnmounted(() => {
                     v-if="qrStatus === 0"
                     class="absolute inset-0 bg-white/95 rounded-2xl flex flex-col items-center justify-center space-y-4 z-30"
                   >
-                    <span class="text-[13px] font-black opacity-60">{{
+                    <span class="text-[13px] font-black text-text-secondary">{{
                       qrError || '二维码已过期'
                     }}</span>
                     <Button
@@ -725,11 +725,11 @@ onUnmounted(() => {
                     >
                       <Icon :icon="iconCheck" width="32" height="32" />
                     </div>
-                    <p class="text-[14px] font-black opacity-80">请在手机端确认</p>
+                    <p class="text-[14px] font-black text-text-main">请在手机端确认</p>
                   </div>
                 </div>
                 <div class="mt-6 w-full relative flex items-center justify-center">
-                  <span class="text-[11px] font-black opacity-40 uppercase tracking-[3px]">
+                  <span class="text-[11px] font-black text-text-secondary uppercase tracking-[3px]">
                     {{
                       isLoadingQr
                         ? '正在生成二维码'
@@ -739,7 +739,7 @@ onUnmounted(() => {
                     }}
                   </span>
                   <button
-                    class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-primary-text hover:bg-primary/10 transition-all active:scale-90"
+                    class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-[var(--icon-main)] hover:text-primary-text hover:bg-primary/10 transition-all active:scale-90"
                     :disabled="isLoadingQr"
                     @click="loadQrCode"
                   >
@@ -752,7 +752,7 @@ onUnmounted(() => {
               <TabsContent value="sms" class="w-full animate-fade-in pb-2">
                 <div class="text-center mb-4">
                   <h1 class="text-[26px] font-black mb-1">验证码登录</h1>
-                  <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
+                  <p class="text-[13px] text-text-secondary font-bold uppercase tracking-[1.5px]">
                     无需密码，快捷安全
                   </p>
                 </div>
@@ -833,7 +833,7 @@ onUnmounted(() => {
               <TabsContent value="account" class="w-full animate-fade-in pb-2">
                 <div class="text-center mb-4">
                   <h1 class="text-[26px] font-black mb-1">账号登录</h1>
-                  <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
+                  <p class="text-[13px] text-text-secondary font-bold uppercase tracking-[1.5px]">
                     可能需要安全验证
                   </p>
                 </div>
@@ -872,12 +872,12 @@ onUnmounted(() => {
               <TabsContent value="qq" class="w-full animate-fade-in flex flex-col items-center">
                 <div class="text-center mb-4">
                   <h1 class="text-[26px] font-black mb-1">QQ 登录</h1>
-                  <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
+                  <p class="text-[13px] text-text-secondary font-bold uppercase tracking-[1.5px]">
                     请使用 QQ 扫描二维码
                   </p>
                 </div>
                 <div
-                  class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
+                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
                 >
                   <Image :src="qqQr.url" class="w-full h-full rounded-xl" />
                   <div
@@ -919,13 +919,13 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <div class="mt-6 w-full relative flex items-center justify-center">
-                  <span class="text-[11px] font-black opacity-40 uppercase tracking-[3px]">
+                  <span class="text-[11px] font-black text-text-secondary uppercase tracking-[3px]">
                     {{ qqQr.isLoading ? '正在生成二维码' : qqQr.message || '等待 QQ 扫码' }}
                   </span>
                   <Tooltip content="刷新 QQ 二维码">
                     <template #trigger>
                       <button
-                        class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-[#12B7F5] hover:bg-[#12B7F5]/10 transition-all active:scale-90 disabled:opacity-40"
+                        class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-[var(--icon-main)] hover:text-[#12B7F5] hover:bg-[#12B7F5]/10 transition-all active:scale-90 disabled:opacity-40"
                         :disabled="qqQr.isLoading"
                         aria-label="刷新 QQ 二维码"
                         @click="loadQqQr"
@@ -941,12 +941,12 @@ onUnmounted(() => {
               <TabsContent value="wechat" class="w-full animate-fade-in flex flex-col items-center">
                 <div class="text-center mb-4">
                   <h1 class="text-[26px] font-black mb-1">微信登录</h1>
-                  <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
+                  <p class="text-[13px] text-text-secondary font-bold uppercase tracking-[1.5px]">
                     请使用微信扫描二维码
                   </p>
                 </div>
                 <div
-                  class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
+                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
                 >
                   <Image :src="wxQr.url" class="w-full h-full rounded-xl" />
                   <div
@@ -964,7 +964,7 @@ onUnmounted(() => {
                     v-else-if="wxQr.status === 3"
                     class="absolute inset-0 bg-white/95 rounded-2xl flex flex-col items-center justify-center space-y-4 z-30"
                   >
-                    <span class="text-[13px] font-black opacity-60">{{
+                    <span class="text-[13px] font-black text-text-secondary">{{
                       wxQr.error || '二维码已过期'
                     }}</span>
                     <Button
@@ -984,11 +984,11 @@ onUnmounted(() => {
                     >
                       <Icon :icon="iconCheck" width="32" height="32" />
                     </div>
-                    <p class="text-[14px] font-black opacity-80">请在手机端确认</p>
+                    <p class="text-[14px] font-black text-text-main">请在手机端确认</p>
                   </div>
                 </div>
                 <div class="mt-6 w-full relative flex items-center justify-center">
-                  <span class="text-[11px] font-black opacity-40 uppercase tracking-[3px]">
+                  <span class="text-[11px] font-black text-text-secondary uppercase tracking-[3px]">
                     {{
                       wxQr.isLoading
                         ? '正在生成二维码'
@@ -998,7 +998,7 @@ onUnmounted(() => {
                     }}
                   </span>
                   <button
-                    class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-[#07C160] hover:bg-[#07C160]/10 transition-all active:scale-90"
+                    class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-[var(--icon-main)] hover:text-[#07C160] hover:bg-[#07C160]/10 transition-all active:scale-90"
                     :disabled="wxQr.isLoading"
                     @click="loadWxQr"
                   >
@@ -1013,7 +1013,7 @@ onUnmounted(() => {
               <div
                 class="pt-5 border-t border-[var(--border-subtle)] flex flex-col items-center space-y-3"
               >
-                <span class="text-[11px] font-black opacity-45 uppercase tracking-[3px]"
+                <span class="text-[11px] font-black text-text-secondary uppercase tracking-[3px]"
                   >选择登录方式</span
                 >
                 <TabsList
@@ -1047,6 +1047,15 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.login-qr-surface {
+  --text-main: #000000;
+  --text-secondary: #666666;
+  --color-text-main: var(--text-main);
+  --color-text-secondary: var(--text-secondary);
+  --color-primary-text: #000000;
+  color: var(--text-main);
+}
+
 .login-panel-card {
   display: flex;
   flex-direction: column;

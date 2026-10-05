@@ -44,6 +44,8 @@ import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 import { clearCloudAudioIndex, refreshCloudAudioIndex } from '@/services/cloudAudioIndex';
+import { completeSongMetadata } from '@/services/songMetadata';
+import logger from '@/utils/logger';
 
 const PAGE_SIZE = 100;
 
@@ -76,6 +78,12 @@ const totalSongCount = ref(0);
 const cloudCapacity = ref(0);
 const cloudAvailable = ref(0);
 const songs = shallowRef<Song[]>([]);
+// 展示字段更新会替换行对象；保留同一加载批次的身份，让已选中行仍可操作。
+const cloudRowOrigins = new WeakMap<Song, Song>();
+const getCloudRowOrigin = (song: Song) => {
+  const raw = toRaw(song);
+  return cloudRowOrigins.get(raw) ?? raw;
+};
 const searchQuery = ref('');
 const showBatchDrawer = ref(false);
 const deleteTarget = ref<Song | null>(null);
@@ -203,6 +211,32 @@ const deduplicateCloudSongs = (batch: Song[], seenIds: Set<string>): Song[] => {
   return result;
 };
 
+const completeCloudPage = (batch: Song[], isCurrent: () => boolean) => {
+  void completeSongMetadata(batch, isCurrent)
+    .then((completed) => {
+      if (!isCurrent()) return;
+      const updates = new Map<Song, Song>();
+      completed.forEach((song, index) => {
+        if (song !== batch[index]) {
+          cloudRowOrigins.set(song, getCloudRowOrigin(batch[index]));
+          updates.set(batch[index], song);
+        }
+      });
+      if (!updates.size) return;
+      let changed = false;
+      const next = songs.value.map((song) => {
+        const completed = updates.get(song);
+        if (!completed) return song;
+        changed = true;
+        return completed;
+      });
+      if (changed) songs.value = next;
+    })
+    .catch((error) => {
+      if (isCurrent()) logger.warn('Cloud', 'Complete song metadata failed', error);
+    });
+};
+
 const resolveAllCloudSongs = async (totalCount: number) => {
   if (
     disposed ||
@@ -231,7 +265,9 @@ const resolveAllCloudSongs = async (totalCount: number) => {
         hasMore.value = false;
         break;
       }
-      songs.value = [...songs.value, ...deduplicateCloudSongs(nextBatch, seenIds)];
+      const acceptedBatch = deduplicateCloudSongs(nextBatch, seenIds);
+      songs.value = [...songs.value, ...acceptedBatch];
+      completeCloudPage(acceptedBatch, isCurrent);
       currentPage.value = page;
       hasMore.value = songs.value.length < totalCount;
       page++;
@@ -257,6 +293,7 @@ const loadCloud = async () => {
     if (!isCurrent()) return;
     const parsed = mapCloudPage(res);
     songs.value = deduplicateCloudSongs(parsed.songs, new Set<string>());
+    completeCloudPage(songs.value, isCurrent);
     currentPage.value = 1;
     totalSongCount.value = parsed.total;
     cloudCapacity.value = parsed.capacity;
@@ -321,7 +358,7 @@ const openDeleteCloudSongDialog = (song: Song) => {
     disposed ||
     !active ||
     !isLoggedIn.value ||
-    !songs.value.some((item) => toRaw(item) === toRaw(song))
+    !songs.value.some((item) => getCloudRowOrigin(item) === getCloudRowOrigin(song))
   )
     return;
   if (!canDeleteCloudSong(song)) {
@@ -344,7 +381,7 @@ const confirmDeleteCloudSong = async () => {
     !isLoggedIn.value ||
     !song ||
     deletingCloudSong.value ||
-    !songs.value.some((item) => toRaw(item) === toRaw(song)) ||
+    !songs.value.some((item) => getCloudRowOrigin(item) === getCloudRowOrigin(song)) ||
     !canDeleteCloudSong(song)
   )
     return;
@@ -380,8 +417,8 @@ const handleBatchDeleteCloudSongs = async (
 ) => {
   if (disposed || !active || !isLoggedIn.value) return;
   const isCurrent = captureScope();
-  const visible = new Set(songs.value.map((song) => toRaw(song)));
-  if (selectedSongs.some((song) => !visible.has(toRaw(song))))
+  const visible = new Set(songs.value.map(getCloudRowOrigin));
+  if (selectedSongs.some((song) => !visible.has(getCloudRowOrigin(song))))
     throw new Error('云盘歌曲列表已改变，请重新选择');
   const removableSongs = selectedSongs.filter(canDeleteCloudSong);
   const skippedCount = selectedSongs.length - removableSongs.length;
@@ -549,7 +586,7 @@ onBeforeUnmount(() => {
                 支持云端音乐浏览、播放与容量查看，随时畅听个人珍藏。
               </div>
               <div
-                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
               >
                 <div class="inline-flex items-center gap-1.5">
                   <Icon :icon="iconPlay" width="12" height="12" />
@@ -584,7 +621,7 @@ onBeforeUnmount(() => {
               variant="unstyled"
               size="none"
               @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
@@ -614,7 +651,7 @@ onBeforeUnmount(() => {
               <div class="cloud-progress-value" :style="{ width: `${usageRatio * 100}%` }"></div>
             </div>
             <div
-              class="flex items-center justify-between text-[11px] font-medium text-text-secondary/80"
+              class="flex items-center justify-between text-[11px] font-medium text-text-secondary"
             >
               <span>{{ formatBytes(usedCapacity) }} / {{ formatBytes(cloudCapacity) }}</span>
               <span>可用 {{ formatBytes(cloudAvailable) }}</span>
@@ -680,9 +717,7 @@ onBeforeUnmount(() => {
                 <Icon :icon="iconCloud" width="28" height="28" />
               </div>
               <div class="text-[18px] font-semibold text-text-main">云盘暂无歌曲</div>
-              <div class="mt-2 text-[13px] font-medium text-text-secondary/75">
-                上传后会展示在这里
-              </div>
+              <div class="mt-2 text-[13px] font-medium text-text-secondary">上传后会展示在这里</div>
               <Button
                 variant="primary"
                 size="md"
@@ -717,7 +752,7 @@ onBeforeUnmount(() => {
               "
             />
             <div v-if="!loading && isBackgroundResolving" class="flex justify-center pt-4">
-              <div class="text-[12px] font-semibold text-text-secondary/70">
+              <div class="text-[12px] font-semibold text-text-secondary">
                 正在后台补全剩余云盘歌曲...
               </div>
             </div>

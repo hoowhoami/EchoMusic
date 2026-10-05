@@ -229,7 +229,7 @@ watch(
   transform: scale(0.9);
 }
 .barrage-trigger.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .barrage-toolbar.is-lyric :deep(.barrage-trigger) {
   display: inline-flex;

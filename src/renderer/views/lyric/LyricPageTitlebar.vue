@@ -32,11 +32,11 @@ defineEmits<{ close: [] }>();
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  color: var(--window-action-color, rgba(255, 255, 255, 0.7));
+  color: var(--window-action-color, var(--icon-main));
   transition: all 0.2s ease;
 }
 .close-btn:hover {
-  color: var(--window-action-hover-color, #fff);
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--window-action-hover-color, var(--color-primary-text));
+  background: var(--control-hover-bg);
 }
 </style>

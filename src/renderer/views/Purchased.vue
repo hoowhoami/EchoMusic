@@ -377,7 +377,7 @@ onMounted(() => {
                 浏览您已购买的单曲和专辑，随时畅听。
               </div>
               <div
-                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
               >
                 <div class="inline-flex items-center gap-1.5">
                   <Icon :icon="iconShoppingBag" width="12" height="12" />
@@ -410,7 +410,7 @@ onMounted(() => {
                 variant="unstyled"
                 size="none"
                 @click="openBatchDrawer"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -486,7 +486,7 @@ onMounted(() => {
                   <Icon :icon="iconShoppingBag" width="28" height="28" />
                 </div>
                 <div class="text-[18px] font-semibold text-text-main">暂无已购单曲</div>
-                <div class="mt-2 text-[13px] font-medium text-text-secondary/75">
+                <div class="mt-2 text-[13px] font-medium text-text-secondary">
                   购买的单曲会展示在这里
                 </div>
               </div>
@@ -540,7 +540,7 @@ onMounted(() => {
                 <Icon :icon="iconShoppingBag" width="28" height="28" />
               </div>
               <div class="text-[18px] font-semibold text-text-main">暂无已购专辑</div>
-              <div class="mt-2 text-[13px] font-medium text-text-secondary/75">
+              <div class="mt-2 text-[13px] font-medium text-text-secondary">
                 购买的专辑会展示在这里
               </div>
             </div>

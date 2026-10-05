@@ -1078,7 +1078,6 @@ onBeforeUnmount(() => {
   width: 54px;
   font-size: 11px;
   color: var(--color-text-secondary);
-  opacity: 0.86;
   white-space: nowrap;
   line-height: 1;
   flex-shrink: 0;
@@ -1097,7 +1096,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
   background: transparent;
   transition: color 0.18s ease;
   border-radius: 4px;
@@ -1128,7 +1127,7 @@ onBeforeUnmount(() => {
   min-width: 32px;
   padding: 0;
   border-radius: 12px;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
 }
 
 @media (max-width: 760px) {
@@ -1227,7 +1226,7 @@ onBeforeUnmount(() => {
 
 .queue-inline-resume-text {
   min-width: 0;
-  color: color-mix(in srgb, var(--color-text-main) 62%, transparent);
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

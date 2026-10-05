@@ -185,7 +185,7 @@ const logout = () => {
   flex: none;
   width: 28px;
   height: 44px;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
   cursor: pointer;
 }
 .account-trigger:hover {

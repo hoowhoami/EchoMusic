@@ -32,7 +32,7 @@ defineProps<{ action: ResolvedTitlebarAction; badge?: boolean }>();
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
   transition:
     background-color 0.12s,
     color 0.12s;

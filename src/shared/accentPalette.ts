@@ -189,7 +189,11 @@ const onColor = (hex: string) =>
   contrastRatio(parseAccent(hex), parseAccent('#000'))
     ? '#ffffff'
     : '#000000';
-export const createAccentPaletteFromPrimary = (primary: string, dark: boolean): AccentPalette => {
+export const createAccentPaletteFromPrimary = (
+  primary: string,
+  dark: boolean,
+  surfaces?: string[],
+): AccentPalette => {
   const lab = rgbToOklab(parseAccent(primary));
   // Background tint shares the accent hue, with less chroma and a mode-specific lightness.
   // Do not raise chroma: neutral / muted seeds must remain neutral / muted.
@@ -211,11 +215,11 @@ export const createAccentPaletteFromPrimary = (primary: string, dark: boolean): 
   const subtle = accentHex(
     compositeAccent(
       parseAccent(primary),
-      parseAccent(dark ? '#36363a' : '#f5f5f7'),
+      parseAccent(surfaces?.[0] ?? (dark ? '#36363a' : '#f5f5f7')),
       dark ? 0.18 : 0.12,
     ),
   );
-  const primaryText = readable(primary, [...accentSurfaces(dark), subtle], dark);
+  const primaryText = readable(primary, [...(surfaces ?? accentSurfaces(dark)), subtle], dark);
   return {
     primary,
     atmosphere,
