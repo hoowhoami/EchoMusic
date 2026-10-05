@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { DEFAULT_THEME_ACCENT } from '../../shared/themePalette';
+import { independentWindowColorVariables } from '@/theme/colors';
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
@@ -392,9 +394,20 @@ const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
       'floating-surfaces-frosted',
       appearance.value.floatingSurfaceFrosted === true,
     );
-    for (const [key, value] of Object.entries(appearance.value.colors ?? {}))
+    for (const [key, value] of Object.entries(
+      independentWindowColorVariables(appearance.value.colors ?? {}),
+    ))
       document.documentElement.style.setProperty(key, value);
-    applyAccentToRoot(appearance.value.accentColor || '#0071e3', appearance.value.isDark);
+    const surfaces = [
+      appearance.value.colors?.['--surface-elevated-base'],
+      appearance.value.colors?.['--floating-card-base'],
+    ].filter((value): value is string => Boolean(value));
+    applyAccentToRoot(
+      appearance.value.accentColor || DEFAULT_THEME_ACCENT,
+      appearance.value.isDark,
+      true,
+      surfaces.length ? surfaces : undefined,
+    );
     document.documentElement.style.fontFamily = appearance.value.fontFamily || '';
   }
 };
@@ -1027,6 +1040,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="mini-action-btn mini-fav-btn no-drag"
+                :class="{ 'is-favorite': playback?.isFavorite }"
                 :disabled="!playback"
                 aria-label="收藏当前歌曲"
                 @click="toggleFavorite"
@@ -1120,7 +1134,6 @@ onUnmounted(() => {
         :artist="lyricArtist"
         :cover-url="lyricCoverUrl"
         :visible="isLyricOpen"
-        :is-dark="appearance?.isDark ?? false"
         :expand-direction="expandDirection"
         :timeline-ms="liveLyricTimelineMs"
         :seek-timestamp="playback?.seekTimestamp ?? 0"
@@ -1224,9 +1237,9 @@ onUnmounted(() => {
   box-sizing: border-box;
   /* 无投影，仅描边 + 圆角，铺满窗口，风格与主窗口一致（只是小窗） */
   border-radius: 10px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  background: #f5f5f5;
-  color: #1d1d1f;
+  border: 1px solid var(--control-border);
+  background: var(--surface-elevated-base);
+  color: var(--text-main);
   overflow: hidden;
   transition: height 0.24s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: height;
@@ -1271,7 +1284,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  color: rgba(138, 138, 138, 0.76);
+  color: var(--icon-main);
 }
 
 .mini-window-btn,
@@ -1302,13 +1315,13 @@ onUnmounted(() => {
   top: 6px;
   right: 7px;
   z-index: 4;
-  color: rgba(84, 84, 88, 0.64);
+  color: var(--icon-main);
 }
 
 .mini-window-btn:hover,
 .mini-action-btn:hover,
 .mini-center-btn:hover {
-  color: #222;
+  color: var(--text-main);
   opacity: 1;
 }
 
@@ -1368,8 +1381,8 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.06);
-  color: rgba(29, 29, 31, 0.28);
+  background: var(--control-muted-bg);
+  color: var(--text-secondary);
 }
 
 .mini-center {
@@ -1402,7 +1415,7 @@ button:disabled {
   font-size: 11px;
   line-height: 15px;
   font-weight: 600;
-  color: rgba(29, 29, 31, 0.58);
+  color: var(--text-secondary);
 }
 
 .mini-info,
@@ -1426,7 +1439,7 @@ button:disabled {
   gap: 10px;
   opacity: 0;
   pointer-events: none;
-  color: rgba(76, 76, 76, 0.9);
+  color: var(--icon-main);
 }
 
 .mini-shell.is-hovered .mini-info,
@@ -1448,7 +1461,7 @@ button:disabled {
   justify-content: center;
   border-radius: 999px;
   /* 与主窗口一致：上一首/下一首默认中性色，hover 才跟随主题色 */
-  color: rgba(29, 29, 31, 0.6);
+  color: var(--icon-main);
 }
 
 .mini-center-btn:hover {
@@ -1460,9 +1473,9 @@ button:disabled {
   width: 30px;
   height: 30px;
   /* 圆形背景用中性底色 + 细边框（不跟随主题色）；图标默认中性、hover/播放时才主题色 */
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  color: rgba(29, 29, 31, 0.7);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--control-border);
+  color: var(--icon-main);
 }
 
 .mini-center-play:hover {
@@ -1482,7 +1495,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 9px;
-  color: rgba(84, 84, 88, 0.78);
+  color: var(--icon-main);
   /* 与中间区一致上移，给贴底进度条留白 */
   margin-bottom: 8px;
 }
@@ -1499,13 +1512,13 @@ button:disabled {
   color: var(--color-primary-text);
 }
 
-/* 收藏按钮始终红色（无论是否已收藏，由实心/空心爱心区分状态） */
-.mini-fav-btn {
-  color: #fa2d48;
+.mini-fav-btn:hover {
+  color: var(--color-primary-text);
 }
 
-.mini-fav-btn:hover {
-  color: #fa2d48;
+.mini-fav-btn.is-favorite,
+.mini-fav-btn.is-favorite:hover {
+  color: var(--state-danger);
 }
 
 /* 音量：图标 + 内联横向滑块。保持在 mini 窗口内部，避免 hover 触发窗口尺寸变化。 */
@@ -1527,7 +1540,7 @@ button:disabled {
   width: 132px;
   padding: 7px 10px 7px 12px;
   border-radius: 999px;
-  background: var(--mini-volume-pop-bg, rgba(248, 248, 248, 0.96));
+  background: var(--surface-elevated-base);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
   z-index: 6;
   opacity: 0;
@@ -1596,7 +1609,7 @@ button:disabled {
   font-size: 10px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: rgba(84, 84, 88, 0.78);
+  color: var(--text-secondary);
 }
 
 .mini-progress {
@@ -1672,14 +1685,14 @@ button:disabled {
 }
 
 .mini-shell.is-expanded .mini-queue {
-  border-top-color: rgba(0, 0, 0, 0.08);
+  border-top-color: var(--control-border);
   opacity: 1;
   transform: none;
 }
 
 .mini-shell.is-expanded.expand-up .mini-queue {
   border-top-color: transparent;
-  border-bottom-color: rgba(0, 0, 0, 0.08);
+  border-bottom-color: var(--control-border);
   transform: none;
 }
 
@@ -1713,11 +1726,11 @@ button:disabled {
 }
 
 .mini-queue-item:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--row-hover-bg);
 }
 
 .mini-queue-item.active {
-  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  background: var(--row-active-bg);
 }
 
 .mini-queue-cover {
@@ -1770,99 +1783,17 @@ button:disabled {
   white-space: nowrap;
   font-size: 10px;
   line-height: 14px;
-  color: rgba(29, 29, 31, 0.55);
+  color: var(--text-secondary);
 }
 
 .mini-queue-empty {
   padding: 24px 0;
   text-align: center;
   font-size: 12px;
-  color: rgba(29, 29, 31, 0.45);
-}
-
-.dark .mini-card {
-  background: #2c2c30;
-  color: #f5f5f7;
-  border-color: rgba(255, 255, 255, 0.14);
-}
-
-.dark .mini-cover-placeholder {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.dark .mini-artist {
-  color: rgba(245, 245, 247, 0.58);
-}
-
-.dark .mini-left-actions,
-.dark .mini-right-actions,
-.dark .mini-hover-controls {
-  color: rgba(245, 245, 247, 0.72);
-}
-
-.dark .mini-volume-label {
-  color: rgba(245, 245, 247, 0.72);
+  color: var(--text-secondary);
 }
 
 .dark .mini-volume-slider {
-  --mini-volume-pop-bg: rgba(50, 50, 54, 0.96);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-}
-
-.dark .mini-window-btn:hover,
-.dark .mini-action-btn:hover {
-  color: #fff;
-}
-
-.dark .mini-window-btn.active,
-.dark .mini-window-btn.active:hover {
-  color: var(--color-primary-text);
-}
-
-/* 收藏按钮在深色下也始终保持红色 */
-.dark .mini-fav-btn,
-.dark .mini-fav-btn:hover {
-  color: #fa2d48;
-}
-
-/* 深色下中间控制：默认浅色中性、hover/播放跟随主题色；播放键圆形背景用浅色半透明中性底 */
-.dark .mini-center-btn {
-  color: rgba(245, 245, 247, 0.7);
-}
-
-.dark .mini-center-btn:hover,
-.dark .mini-center-play.playing {
-  color: var(--color-primary-text);
-}
-
-.dark .mini-center-play {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: rgba(245, 245, 247, 0.85);
-}
-
-.dark .mini-progress::before {
-  background: rgba(255, 255, 255, 0.18);
-}
-
-.dark .mini-shell.is-expanded .mini-queue {
-  border-top-color: rgba(255, 255, 255, 0.08);
-}
-
-.dark .mini-shell.is-expanded.expand-up .mini-queue {
-  border-top-color: transparent;
-  border-bottom-color: rgba(255, 255, 255, 0.08);
-}
-
-.dark .mini-queue-artist {
-  color: rgba(245, 245, 247, 0.55);
-}
-
-.dark .mini-queue-empty {
-  color: rgba(245, 245, 247, 0.45);
-}
-
-.dark .mini-queue-item:hover {
-  background: rgba(255, 255, 255, 0.07);
 }
 </style>

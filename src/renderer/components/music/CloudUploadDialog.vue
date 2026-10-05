@@ -808,7 +808,7 @@ const statusLabel = (item: CloudUploadItem) => {
           </div>
           <div class="min-w-0 flex-1 text-left">
             <div class="text-[13px] font-semibold text-text-main">上传歌曲</div>
-            <div class="text-[11px] text-text-secondary/75">
+            <div class="text-[11px] text-text-secondary">
               上传时自动匹配歌曲信息，支持多选，单文件不超过 100MB
             </div>
           </div>
@@ -819,7 +819,7 @@ const statusLabel = (item: CloudUploadItem) => {
           </div>
           <div class="min-w-0 flex-1 text-left">
             <div class="text-[13px] font-semibold text-text-main">上传文件夹</div>
-            <div class="text-[11px] text-text-secondary/75">
+            <div class="text-[11px] text-text-secondary">
               收集文件夹内所有音频文件后自动匹配上传
             </div>
           </div>
@@ -830,7 +830,7 @@ const statusLabel = (item: CloudUploadItem) => {
           </div>
           <div class="min-w-0 flex-1 text-left">
             <div class="text-[13px] font-semibold text-text-main">匹配上传</div>
-            <div class="text-[11px] text-text-secondary/75">
+            <div class="text-[11px] text-text-secondary">
               上传时手动匹配歌曲信息，单文件不超过 100MB
             </div>
           </div>
@@ -848,7 +848,7 @@ const statusLabel = (item: CloudUploadItem) => {
         "
       >
         <div class="cloud-manual-file-info" v-if="manualFile">
-          <span class="text-[12px] text-text-secondary/70 truncate">
+          <span class="text-[12px] text-text-secondary truncate">
             {{ manualFile.name }}（{{ (manualFile.size / 1024 / 1024).toFixed(1) }} MB）
           </span>
         </div>
@@ -913,11 +913,11 @@ const statusLabel = (item: CloudUploadItem) => {
             >
               <div class="min-w-0 flex-1">
                 <div class="text-[13px] font-medium text-text-main truncate">{{ item.title }}</div>
-                <div class="text-[11px] text-text-secondary/70 truncate">
+                <div class="text-[11px] text-text-secondary truncate">
                   {{ [item.artist, item.album].filter(Boolean).join(' · ') }}
                 </div>
               </div>
-              <span class="text-[11px] text-text-secondary/60 shrink-0">
+              <span class="text-[11px] text-text-secondary shrink-0">
                 {{ formatDuration(item.duration) }}
               </span>
             </div>
@@ -974,14 +974,14 @@ const statusLabel = (item: CloudUploadItem) => {
                 >
                   {{ item.error }}
                 </div>
-                <div v-else class="text-[11px] text-text-secondary/70 truncate">
+                <div v-else class="text-[11px] text-text-secondary truncate">
                   {{
                     [item.artist, item.title ? item.name : ''].filter(Boolean).join(' · ') ||
                     formatBytes(item.size)
                   }}
                 </div>
               </div>
-              <span class="text-[11px] text-text-secondary/80 shrink-0">
+              <span class="text-[11px] text-text-secondary shrink-0">
                 {{ statusLabel(item) }}
               </span>
             </div>
@@ -1015,7 +1015,7 @@ const statusLabel = (item: CloudUploadItem) => {
                 :style="{ width: `${progressRatio * 100}%` }"
               ></div>
             </div>
-            <span class="text-[11px] font-semibold text-text-secondary/80 shrink-0">
+            <span class="text-[11px] font-semibold text-text-secondary shrink-0">
               {{ doneCount + failedCount }} / {{ items.length }}
             </span>
           </div>
@@ -1196,7 +1196,7 @@ const statusLabel = (item: CloudUploadItem) => {
 
 .cloud-manual-input::placeholder {
   color: var(--color-text-secondary);
-  opacity: 0.6;
+  opacity: 1;
 }
 
 .cloud-manual-input:focus {

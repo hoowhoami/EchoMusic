@@ -160,7 +160,7 @@ const valueLabel = computed(() =>
 }
 
 .slider-value-label {
-  @apply absolute top-0 right-0 text-[11px] font-semibold text-text-main/70 tabular-nums leading-none pointer-events-none;
+  @apply absolute top-0 right-0 text-[11px] font-semibold text-text-secondary tabular-nums leading-none pointer-events-none;
 }
 
 .slider-thumb:focus-visible {

@@ -37,12 +37,12 @@ const clear = () => {
       :placeholder="placeholder"
       :aria-label="resolvedAriaLabel"
       :class="[
-        'song-search-input h-9 pl-8 pr-8 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all',
+        'song-search-input h-9 pl-8 pr-8 rounded-lg text-text-main placeholder:text-text-secondary placeholder:opacity-100 outline-none text-[12px] transition-all',
         inputClass,
       ]"
     />
     <Icon
-      class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+      class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--icon-main)]"
       :icon="iconSearch"
       width="14"
       height="14"

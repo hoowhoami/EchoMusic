@@ -1,3 +1,4 @@
+import { DEFAULT_THEME_ACCENT } from '../../../shared/themePalette';
 import { computed } from 'vue';
 import type { Pinia } from 'pinia';
 import { createPluginSpectrumSubscription } from './spectrumSubscription';
@@ -178,7 +179,9 @@ const createFallbackLyricSnapshot = (): NowPlayingLyricPayload => ({
 
 const createFallbackAppearanceSnapshot = (): NowPlayingAppearancePayload => ({
   isDark: document.documentElement.classList.contains('dark'),
-  accentColor: '#31cfa1',
+  accentColor:
+    document.documentElement.style.getPropertyValue('--color-primary').trim() ||
+    DEFAULT_THEME_ACCENT,
 });
 
 const createFallbackNowPlayingSnapshot = (): NowPlayingSnapshot => ({

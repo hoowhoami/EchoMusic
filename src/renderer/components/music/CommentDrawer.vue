@@ -255,7 +255,7 @@ watch(
   align-items: center;
   justify-content: center;
   padding: 0;
-  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+  color: var(--icon-main);
   background: transparent;
   border: 0;
   box-shadow: none;
@@ -318,7 +318,7 @@ watch(
   padding: 0 4px;
   font-size: 13px;
   font-weight: 700;
-  color: color-mix(in srgb, var(--color-text-main) 70%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .comment-drawer-divider {
@@ -360,6 +360,6 @@ watch(
 .comment-drawer-end-hint {
   font-size: 12px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
 }
 </style>

@@ -565,7 +565,6 @@ const commitRename = (id: string) => {
 .file-tab small {
   font-size: 10px;
   font-weight: 500;
-  opacity: 0.7;
 }
 .file-tab:focus-visible {
   outline: 2px solid var(--color-primary);

@@ -1,3 +1,4 @@
+import { DEFAULT_THEME_ACCENT, neutralThemePalette } from '../shared/themePalette';
 import * as Vue from 'vue';
 import './style.css';
 import type {
@@ -30,7 +31,7 @@ import { createPluginNetworkApi } from '../renderer/plugins/runtime/network';
 import { createPluginBackupsApi } from '../renderer/plugins/runtime/backups';
 import { createPluginWebServerApi } from '../renderer/plugins/runtime/runtimeServices';
 
-const DEFAULT_PLUGIN_WINDOW_COVER_COLOR = '#0071e3';
+const DEFAULT_PLUGIN_WINDOW_COVER_COLOR = DEFAULT_THEME_ACCENT;
 
 type PluginWindowModule =
   | {
@@ -168,7 +169,15 @@ installInputBehaviorGuard();
 
 const setStatus = (message: string) => {
   if (!root) return;
-  root.textContent = message;
+  const palette = neutralThemePalette(window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const status = document.createElement('div');
+  status.className = 'plugin-window-status';
+  status.setAttribute('role', 'status');
+  status.style.color = palette.text;
+  status.style.backgroundColor = palette.main;
+  status.style.borderColor = palette.border;
+  status.textContent = message;
+  root.replaceChildren(status);
 };
 
 const addDisposable = (dispose: () => void) => {

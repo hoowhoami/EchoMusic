@@ -73,7 +73,7 @@ const applyDesktopLyricColor = async (value: string) => {
         <p class="text-sm text-text-secondary">
           关闭后桌面歌词不会固定显示在其他窗口或全屏应用之上
         </p>
-        <p v-if="isLinux" class="text-xs text-text-secondary/70">
+        <p v-if="isLinux" class="text-xs text-text-secondary">
           原生 Wayland 下置顶和鼠标穿透受协议限制
         </p>
       </div>

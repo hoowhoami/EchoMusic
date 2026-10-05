@@ -534,7 +534,7 @@ onBeforeUnmount(() => {
   padding: 8px;
   border-radius: 10px;
   background: var(--control-muted-bg);
-  color: var(--text-secondary);
+  color: var(--icon-main);
   cursor: pointer;
   border: 0;
 }

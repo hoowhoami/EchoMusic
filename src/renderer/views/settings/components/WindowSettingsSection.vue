@@ -91,7 +91,7 @@ const setBar = async (value: boolean) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">记住窗口大小</h3>
-        <p class="text-sm text-text-secondary">在下次启动时自动恢复窗口大小和位置</p>
+        <p class="text-sm text-text-secondary">下次启动时恢复窗口大小和位置</p>
       </div>
       <Switch v-model="settingStore.rememberWindowSize" />
     </div>
@@ -111,7 +111,7 @@ const setBar = async (value: boolean) => {
         <div class="space-y-1">
           <h3 class="font-semibold">任务栏快捷播控（独立横条）</h3>
           <p class="text-sm text-text-secondary">
-            在任务栏空闲区显示，可拖出小窗；不影响图标悬停播控。空间不足时显示在任务栏旁。
+            在任务栏空闲区显示，可拖出小窗；空间不足时移至任务栏旁。不影响悬停播控。
           </p>
           <p v-if="barMessage" role="status" class="text-sm text-text-secondary">
             {{ barMessage }}
@@ -207,8 +207,7 @@ const setBar = async (value: boolean) => {
         v-if="settingStore.hideDockInBackground && settingStore.hideMenuBarInBackground"
         class="text-sm text-text-secondary"
       >
-        两个图标均隐藏时，可通过 Finder 或 Spotlight 再次打开
-        EchoMusic，或使用已配置的显示窗口全局快捷键恢复窗口和图标。
+        两个图标均隐藏时，可通过 Finder、Spotlight 或显示窗口全局快捷键恢复。
       </p>
     </template>
     <div class="settings-divider"></div>
@@ -226,7 +225,7 @@ const setBar = async (value: boolean) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">启动时最小化到托盘</h3>
-        <p class="text-sm text-text-secondary">启动后不显示主窗口，直接最小化到系统托盘</p>
+        <p class="text-sm text-text-secondary">启动后隐藏主窗口，在托盘中运行</p>
       </div>
       <Switch
         v-model="settingStore.startMinimized"

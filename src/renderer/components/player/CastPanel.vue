@@ -372,7 +372,7 @@ onUnmounted(() => {
   width: 24px;
   height: 24px;
   border-radius: 7px;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
 }
 
 .cast-panel-icon-button:hover:not(:disabled) {
@@ -576,7 +576,7 @@ onUnmounted(() => {
   right: 5px;
   width: 20px;
   height: 20px;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
 }
 
 .cast-pin-input :deep(button[type='button']:hover) {

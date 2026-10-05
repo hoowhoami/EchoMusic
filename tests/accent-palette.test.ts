@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
+import { neutralThemePalette } from '../src/shared/themePalette.ts';
 import {
   getAccentPalette,
   createAccentPaletteFromPrimary,
@@ -8,6 +9,7 @@ import {
   normalizeAccent,
   parseAccent,
   contrastRatio,
+  compositeAccent,
   rgbToOklab,
   oklabToRgb,
   accentSurfaces,
@@ -80,6 +82,34 @@ test('intermediate animation colors retain readable text and fill foregrounds', 
       for (const bg of accentSurfaces(dark))
         assert.ok(contrastRatio(parseAccent(p.primaryText), parseAccent(bg)) >= 4.5);
       assert.ok(contrastRatio(parseAccent(p.onPrimary), rgb) >= 4.5);
+    }
+  }
+});
+
+test('adaptive accent text preserves vivid fills across actual neutral panel and interaction colors', () => {
+  for (const dark of [false, true]) {
+    const neutral = neutralThemePalette(dark);
+    const panel = compositeAccent(parseAccent(neutral.main), parseAccent(neutral.shell), 0.5);
+    const surfaces = [
+      accentHex(panel),
+      accentHex(compositeAccent(parseAccent(neutral.text), panel, 0.1)),
+    ];
+    const from = rgbToOklab(parseAccent(normalizeAccent('#dd3322', dark)));
+    const to = rgbToOklab(parseAccent(normalizeAccent('#3377dd', dark)));
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const primary = accentHex(
+        oklabToRgb({
+          l: from.l + (to.l - from.l) * t,
+          a: from.a + (to.a - from.a) * t,
+          b: from.b + (to.b - from.b) * t,
+        }),
+      );
+      const palette = createAccentPaletteFromPrimary(primary, dark, surfaces);
+      assert.equal(palette.primary, primary);
+      for (const surface of surfaces)
+        assert.ok(contrastRatio(parseAccent(palette.primaryText), parseAccent(surface)) >= 4.5);
+      assert.ok(contrastRatio(parseAccent(palette.onPrimary), parseAccent(primary)) >= 4.5);
     }
   }
 });

@@ -343,6 +343,6 @@ const handleInteractOutside = (event: Event) => {
 }
 
 .dialog-close {
-  @apply absolute top-4 right-4 h-8 w-8 min-w-0 p-0 text-text-main/50 hover:text-text-main z-10;
+  @apply absolute top-4 right-4 h-8 w-8 min-w-0 p-0 text-[var(--icon-main)] hover:text-text-main z-10;
 }
 </style>

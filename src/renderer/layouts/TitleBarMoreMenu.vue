@@ -189,7 +189,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
 }
 .more-trigger:hover,
 .more-trigger[data-state='open'] {

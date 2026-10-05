@@ -899,7 +899,7 @@ onUnmounted(() => {
           :expandedHeight="196"
         >
           <template #details>
-            <div class="flex flex-col gap-1.5 text-text-main/60">
+            <div class="flex flex-col gap-1.5 text-text-secondary">
               <div class="text-[13px] font-semibold text-primary-text">
                 {{ artist.songCount || songs.length }} 歌曲 •
                 {{ artist.albumCount || albums.length }} 专辑
@@ -907,7 +907,7 @@ onUnmounted(() => {
               </div>
               <div class="flex items-center gap-3 text-[12px] text-text-secondary">
                 <span v-if="artist.fansCount" class="flex items-center gap-1">
-                  <span class="font-semibold text-text-main/80">{{
+                  <span class="font-semibold text-text-main">{{
                     formatFansCount(artist.fansCount)
                   }}</span>
                   粉丝
@@ -940,7 +940,7 @@ onUnmounted(() => {
                 variant="unstyled"
                 size="none"
                 @click="openBatchDrawer"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -963,7 +963,7 @@ onUnmounted(() => {
               :tooltip="artistBlacklistStatus === 'present' ? '取消屏蔽' : '屏蔽歌手'"
               :aria-label="artistBlacklistStatus === 'present' ? '取消屏蔽' : '屏蔽歌手'"
               @click="toggleArtistBlacklist"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconEyeOff" width="18" height="18" />
             </Button>
@@ -971,7 +971,7 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               @click="handleShareArtist"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconShare" width="18" height="18" />
             </Button>
@@ -1166,7 +1166,7 @@ onUnmounted(() => {
                     </button>
                   </div>
                 </Popover>
-                <span v-if="albumFetched" class="text-[11px] text-text-secondary/60 ml-auto">
+                <span v-if="albumFetched" class="text-[11px] text-text-secondary ml-auto">
                   共 {{ artist.albumCount || albums.length }} 张
                 </span>
               </div>
@@ -1210,7 +1210,7 @@ onUnmounted(() => {
                     {{ opt.label }}
                   </Button>
                 </div>
-                <span v-if="mvFetched" class="text-[11px] text-text-secondary/60 ml-auto">
+                <span v-if="mvFetched" class="text-[11px] text-text-secondary ml-auto">
                   共 {{ mvTotal }} 个
                 </span>
               </div>
@@ -1273,12 +1273,12 @@ onUnmounted(() => {
 }
 
 .mv-tag-btn {
-  @apply px-3 py-1.5 rounded-lg text-[12px] font-semibold text-text-secondary/80 transition-all;
+  @apply px-3 py-1.5 rounded-lg text-[12px] font-semibold text-text-secondary transition-all;
   background: transparent;
 }
 
 .artist-sort-trigger {
-  @apply inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold text-text-main/75 transition-all;
+  @apply inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold text-text-secondary transition-all;
   background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
 }
@@ -1292,7 +1292,7 @@ onUnmounted(() => {
 .artist-sort-trigger-arrow {
   width: 13px;
   height: 13px;
-  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+  color: var(--icon-main);
 }
 
 .mv-tag-btn:hover {
@@ -1323,7 +1323,7 @@ onUnmounted(() => {
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .artist-sort-menu-item {

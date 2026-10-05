@@ -25,6 +25,11 @@
   @apply flex items-center justify-between gap-6 py-1;
 }
 
+.settings-item > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .settings-divider {
   @apply h-0 shrink-0;
   border-top: 1px solid var(--settings-divider-color);

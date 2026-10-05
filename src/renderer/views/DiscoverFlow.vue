@@ -687,7 +687,7 @@ onBeforeUnmount(() => {
 }
 
 .discover-reel-action.active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .discover-reel-loading {

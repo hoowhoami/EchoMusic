@@ -117,10 +117,8 @@ const selectAction = (action: SleepTimerAction) => {
         variant="unstyled"
         size="none"
         type="button"
-        class="sleep-timer-trigger relative p-2 transition-all hover:scale-110 active:scale-90"
-        :class="
-          active ? 'text-primary-text bar-func-active' : 'text-text-main/50 hover:text-primary-text'
-        "
+        class="playback-action sleep-timer-trigger relative p-2 transition-all hover:scale-110 active:scale-90"
+        :class="{ 'is-active': active }"
         :aria-label="triggerLabel"
         :aria-expanded="open"
         aria-haspopup="dialog"
@@ -135,7 +133,7 @@ const selectAction = (action: SleepTimerAction) => {
         <div class="sleep-timer-moon"><Icon :icon="iconMoon" width="22" height="22" /></div>
         <div class="flex-1">
           <h2 class="text-[15px] font-bold">定时关闭</h2>
-          <p class="sleep-timer-secondary text-[11px] opacity-50 mt-0.5">让音乐陪你入睡</p>
+          <p class="sleep-timer-secondary text-[11px] text-text-secondary mt-0.5">让音乐陪你入睡</p>
         </div>
       </header>
 
@@ -144,13 +142,13 @@ const selectAction = (action: SleepTimerAction) => {
           <fieldset class="sleep-timer-time" :disabled="busy">
             <div class="sleep-timer-status" :class="{ 'is-active': active }">
               <template v-if="active">
-                <span class="sleep-timer-secondary text-[11px] opacity-60">{{
+                <span class="sleep-timer-secondary text-[11px]">{{
                   waiting ? '时间到了，晚安' : `距离${actionLabel}还有`
                 }}</span>
                 <strong class="sleep-timer-countdown" :class="{ 'is-waiting': waiting }">{{
                   waiting ? '等待本首结束' : countdown
                 }}</strong>
-                <span class="sleep-timer-secondary text-[11px] opacity-55">{{
+                <span class="sleep-timer-secondary text-[11px]">{{
                   waiting
                     ? `本首结束后${actionLabel}`
                     : `预计 ${endTime}${player.sleepTimer.finishTrack ? ' 后，播完本首' : ' '}${actionLabel}`
@@ -158,7 +156,7 @@ const selectAction = (action: SleepTimerAction) => {
               </template>
               <template v-else>
                 <span class="text-[13px] font-semibold">今晚，听多久？</span>
-                <span class="sleep-timer-secondary text-[11px] opacity-50 mt-1"
+                <span class="sleep-timer-secondary text-[11px] text-text-secondary mt-1"
                   >选择时长与到时动作</span
                 >
               </template>
@@ -178,7 +176,7 @@ const selectAction = (action: SleepTimerAction) => {
                   <span class="text-[17px] font-bold tabular-nums">{{
                     duration === 60 ? 1 : duration
                   }}</span>
-                  <span class="sleep-timer-secondary text-[10px] opacity-60">{{
+                  <span class="sleep-timer-secondary text-[10px]">{{
                     duration === 60 ? '小时' : '分钟'
                   }}</span>
                 </button>
@@ -192,7 +190,7 @@ const selectAction = (action: SleepTimerAction) => {
               >
                 <span>自定义时长</span>
                 <Icon v-if="selected === 'custom'" :icon="iconCheckMark" width="16" height="16" />
-                <span v-else class="sleep-timer-secondary text-[11px] opacity-40">1–180 分钟</span>
+                <span v-else class="sleep-timer-secondary text-[11px]">1–180 分钟</span>
               </button>
               <div v-if="selected === 'custom'">
                 <label class="sleep-timer-input-row">
@@ -208,7 +206,7 @@ const selectAction = (action: SleepTimerAction) => {
                     :aria-invalid="!valid"
                     class="app-focus-ring-soft"
                   />
-                  <span class="sleep-timer-secondary text-[12px] opacity-60">分钟后执行</span>
+                  <span class="sleep-timer-secondary text-[12px]">分钟后执行</span>
                 </label>
                 <p v-if="!valid" class="text-[11px] mt-1 text-[var(--state-danger)]">
                   请输入 1–180 之间的整数
@@ -217,9 +215,7 @@ const selectAction = (action: SleepTimerAction) => {
             </div>
           </fieldset>
           <div class="sleep-timer-actions">
-            <h3 class="sleep-timer-secondary text-[11px] font-semibold opacity-50 mb-2">
-              到时动作
-            </h3>
+            <h3 class="sleep-timer-secondary text-[11px] font-semibold mb-2">到时动作</h3>
             <div class="space-y-2" role="group" aria-label="到时动作">
               <button
                 v-for="option in actionOptions"
@@ -236,7 +232,7 @@ const selectAction = (action: SleepTimerAction) => {
                   <span class="block text-[12px] font-semibold">{{
                     sleepTimerActionLabels[option.value]
                   }}</span>
-                  <span class="sleep-timer-secondary block text-[10px] opacity-50 mt-1">{{
+                  <span class="sleep-timer-secondary block text-[10px] mt-1">{{
                     option.description
                   }}</span>
                 </span>
@@ -253,9 +249,7 @@ const selectAction = (action: SleepTimerAction) => {
                 <label :for="finishTrackId" class="text-[12px] font-semibold"
                   >播完整首歌再执行</label
                 >
-                <p class="sleep-timer-secondary text-[10px] opacity-45 mt-1">
-                  到时不打断正在播放的歌曲
-                </p>
+                <p class="sleep-timer-secondary text-[10px] mt-1">到时不打断正在播放的歌曲</p>
               </div>
               <Switch
                 :id="finishTrackId"
@@ -271,7 +265,7 @@ const selectAction = (action: SleepTimerAction) => {
           {{ player.sleepTimer.error }}
         </p>
         <div class="sleep-timer-footer">
-          <span class="sleep-timer-secondary text-[11px] opacity-50 flex-1">{{
+          <span class="sleep-timer-secondary text-[11px] text-text-secondary flex-1">{{
             player.sleepTimer.executing
               ? `正在请求${actionLabel}…`
               : active
@@ -506,6 +500,11 @@ const selectAction = (action: SleepTimerAction) => {
   margin-top: 14px;
   padding: 14px 0;
   border-top: 1px solid var(--sleep-timer-divider);
+}
+
+.sleep-timer-finish > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Keep small supporting text readable, including inside accent-colored selections. */

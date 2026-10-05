@@ -303,7 +303,7 @@ onBeforeUnmount(() => {
 }
 
 .input-number-field::placeholder {
-  color: color-mix(in srgb, var(--color-text-main) 40%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .input-number.is-small {
@@ -337,7 +337,7 @@ onBeforeUnmount(() => {
 
 .input-number-btn {
   @apply flex items-center justify-center flex-1;
-  color: var(--color-text-secondary);
+  color: var(--icon-main);
   background: transparent;
   border: none;
   outline: none;

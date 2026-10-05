@@ -25,6 +25,7 @@ const stubs = {
   '@/stores/lyric':
     'export const useLyricStore = () => fixture.lyric; export const LYRIC_COVER_COLOR_VALUE = "__cover__";',
   '@/stores/toast': 'export const useToastStore = () => fixture.toast;',
+  '@/stores/theme': 'export const useThemeStore = () => fixture.theme;',
   '@/composables/usePlayerControls': 'export const usePlayerControls = () => fixture.controls;',
   '@/plugins/coverFallback': 'export const coverFallbackRevision = { value: 0 };',
   '@/utils/cover': 'export const resolveCoverDisplayUrl = () => "";',
@@ -187,6 +188,7 @@ function setupFixture(t) {
     },
   });
   fixture.toast = { warning: (value) => calls.push(['warning', value]), success() {} };
+  fixture.theme = reactive({ accentColor: '#00cc65' });
   const player = reactive({
     currentTime: 2,
     duration: 120,

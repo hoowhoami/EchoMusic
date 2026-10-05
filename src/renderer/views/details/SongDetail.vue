@@ -1370,7 +1370,7 @@ watch(total, (value) => {
           </Button>
           <Button
             type="button"
-            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
             variant="unstyled"
             size="none"
             tooltip="添加到"
@@ -1382,7 +1382,7 @@ watch(total, (value) => {
           </Button>
           <Button
             type="button"
-            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
             variant="unstyled"
             size="none"
             tooltip="分享"
@@ -1763,7 +1763,7 @@ watch(total, (value) => {
 }
 
 .comment-main-tab-trigger {
-  @apply h-auto! pb-2! text-[15px] font-semibold text-text-main/55 data-[state=active]:text-text-main;
+  @apply h-auto! pb-2! text-[15px] font-semibold text-text-secondary data-[state=active]:text-text-main;
 }
 
 .song-detail-header {
@@ -1806,7 +1806,7 @@ watch(total, (value) => {
 .song-detail-meta-line > *:not(:last-child)::after {
   content: '•';
   margin-left: 8px;
-  color: color-mix(in srgb, var(--color-text-secondary) 65%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .song-detail-meta-link {
@@ -1891,7 +1891,6 @@ watch(total, (value) => {
 .comment-chip-count {
   margin-left: 5px;
   font-size: 10px;
-  opacity: 0.72;
   font-family: monospace;
 }
 
@@ -1900,7 +1899,7 @@ watch(total, (value) => {
   padding: 0 12px;
   font-size: 13px;
   font-weight: 700;
-  color: color-mix(in srgb, var(--color-text-main) 70%, transparent);
+  color: var(--color-text-main);
 }
 
 .comment-singer-divider {
@@ -1938,7 +1937,7 @@ watch(total, (value) => {
 .comment-end-hint {
   font-size: 12px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .comment-loading-spinner {

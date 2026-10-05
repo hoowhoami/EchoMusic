@@ -367,6 +367,35 @@ fn prepare_and_arm(rig: &Rig, a_url: &str, b_url: &str, request_id: u64) -> f64 
 }
 
 #[test]
+fn same_source_repeat_runs_every_selected_transition_mode() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let wav = TestWav::new(36.0, 440.0, 120.0, 1.0, 1.0);
+    for mode in [
+        TransitionMode::Gapless,
+        TransitionMode::Fade,
+        TransitionMode::AutomixBasic,
+        TransitionMode::AutomixPro,
+    ] {
+        set_mode(mode, 3.0);
+        let mut rig = Rig::start(&wav.url());
+        let start = prepare_and_arm(&rig, &wav.url(), &wav.url(), 1);
+        let (out, switch) = rig.drain(90.0);
+        let (info, at_samples) = switch.expect("same-source playback boundary");
+        assert_eq!(info.seq, 2);
+        assert_eq!(info.url, wav.url());
+        assert!((info.start_position_secs - start).abs() < 0.05);
+        let transition = info.transition.expect("selected repeat mode");
+        assert_eq!(transition.mode, mode.as_str());
+        assert_eq!(transition.overlap_secs > 0.0, mode.overlaps());
+        assert!(at_samples > 0 && at_samples < out.len());
+        assert!(out.iter().all(|sample| sample.is_finite()));
+        assert!(rms(&out) > 0.01, "repeat must produce audio for {mode:?}");
+        assert_eq!(rig.shared.current_track_seq(), 2);
+        rig.stop();
+    }
+}
+
+#[test]
 fn gapless_mode_trims_silence_and_switches_track_seq_continuously() {
     let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     set_mode(TransitionMode::Gapless, 0.0);

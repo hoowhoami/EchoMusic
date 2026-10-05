@@ -949,19 +949,19 @@ watch(
   gap: 3px;
   padding: 5px 12px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--control-border);
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
 }
 
 .lyric-time-tag-fixed:hover {
-  background: rgba(255, 255, 255, 0.22);
-  color: white;
+  background: var(--control-hover-bg);
+  color: var(--color-primary-text);
 }
 
 .lyric-yrc-char {

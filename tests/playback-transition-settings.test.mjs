@@ -13,10 +13,43 @@ const code = transformSync(
   readFileSync(new URL('../src/renderer/stores/player/playback.ts', import.meta.url), 'utf8'),
   { loader: 'ts', format: 'cjs' },
 ).code;
+const audioCode = transformSync(
+  readFileSync(new URL('../src/renderer/stores/player/audio.ts', import.meta.url), 'utf8'),
+  { loader: 'ts', format: 'cjs' },
+).code;
 const noop = () => {};
 const flush = async () => {
   for (let i = 0; i < 12; i++) await Promise.resolve();
 };
+
+function naturalEndHandler(e) {
+  const source = readFileSync(new URL('../src/renderer/stores/player.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('    let handlingPlaybackEnd = false;');
+  const end = source.indexOf('    const registerSettingWatchers =', start);
+  const handlerCode = transformSync(source.slice(start, end), { loader: 'ts' }).code;
+  return new Function(
+    'state',
+    'settingStore',
+    'playbackManager',
+    'playlistStore',
+    'resolvePlaybackSourceQueueId',
+    'PERSONAL_FM_QUEUE_ID',
+    'DISCOVER_QUEUE_ID',
+    'setPlaybackIntentPlayback',
+    'setEnginePlaybackStatus',
+    `${handlerCode}; return handlePlaybackEnded;`,
+  )(
+    e.state,
+    e.settings,
+    e.manager,
+    e.playlist,
+    decisions.resolvePlaybackSourceQueueId,
+    constants.PERSONAL_FM_QUEUE_ID,
+    constants.DISCOVER_QUEUE_ID,
+    stateMachine.setPlaybackIntentPlayback,
+    stateMachine.setEnginePlaybackStatus,
+  );
+}
 
 function setup({
   prepare,
@@ -28,10 +61,12 @@ function setup({
   discover = false,
   replenish,
   fetch,
+  playable = () => true,
   timers = { setTimeout, clearTimeout },
 } = {}) {
   const calls = {
     prepared: [],
+    commits: [],
     cancelled: [],
     cleared: 0,
     adopted: [],
@@ -111,6 +146,11 @@ function setup({
       calls.cleared++;
     },
     cancelNextSourcePreparation: (id) => calls.cancelled.push(id),
+    commitPreparedNextSource: async (duration) => {
+      calls.commits.push(duration);
+      manager.activateGaplessPreparedTransition(100 + requestId);
+      return true;
+    },
     adoptPreparedSource: (source) => calls.adopted.push(source),
     applyTrackLoudness: (value) => calls.appliedLoudness.push(value),
     adoptPreparedTrackLoudness: (value) => calls.adoptedLoudness.push(value),
@@ -138,7 +178,7 @@ function setup({
     '../../../shared/playbackQueueDecision': decisions,
     '../../../shared/playbackQueueExecution': execution,
     '../../../shared/trackTransition': transitions,
-    '@/utils/song': { isPlayableSong: () => true },
+    '@/utils/song': { isPlayableSong: playable },
     '@/utils/player': { normalizePlayerErrorPayload: (error) => error },
     '../playlist': constants,
     '../playlist/helpers': {
@@ -186,12 +226,402 @@ function setup({
     noop,
     noop,
   );
+  const audioModule = { exports: {} };
+  new Function('require', 'module', 'exports', audioCode)(
+    (name) =>
+      name === '../../../shared/playback' ? { DEFAULT_PLAYER_VOLUME: 75 } : dependencies[name],
+    audioModule,
+    audioModule.exports,
+  );
+  const audioManager = audioModule.exports.createAudioManager(state, engine, noop, settings);
   const changeSettings = () => {
     settings.effectiveTrackTransitionMode = 'gapless';
     manager.invalidateGaplessForSettings();
   };
-  return { manager, state, settings, queue, calls, changeSettings, playlist, engine, fmStore };
+  return {
+    manager,
+    audioManager,
+    state,
+    settings,
+    queue,
+    calls,
+    changeSettings,
+    playlist,
+    engine,
+    fmStore,
+  };
 }
+
+test('single repeat applies every transition mode to the same track across consecutive rounds', async () => {
+  for (const mode of ['gapless', 'fade', 'automix-basic', 'automix-pro']) {
+    const e = setup();
+    e.state.playMode = 'single';
+    e.settings.effectiveTrackTransitionMode = mode;
+    const unwatch = watch(
+      () => e.manager.getGaplessInvalidationKey(),
+      () => e.manager.clearGaplessPreparedSource(),
+      { flush: 'sync' },
+    );
+    for (let round = 1; round <= 3; round++) {
+      e.state.currentTime = 80;
+      await e.manager.prepareGaplessNext();
+      await flush();
+      assert.equal(e.calls.prepared.length, round, mode);
+      assert.equal(e.calls.prepared.at(-1).source.url, 'https://audio.test/a.flac', mode);
+      assert.equal(e.calls.prepared.at(-1).mode, mode);
+      const position = mode.startsWith('automix') ? 2.5 : 0;
+      assert.equal(
+        e.manager.activateGaplessPreparedTransition(100 + round, position, {
+          mode,
+          overlapSecs: mode === 'gapless' ? 0 : 3,
+        }),
+        true,
+      );
+      assert.equal(e.state.currentTrackId, 'a');
+      assert.equal(e.state.currentTime, position);
+      assert.equal(e.state.nativeTrackSeq, 100 + round);
+      assert.equal(e.manager.activateGaplessPreparedTransition(100 + round), true);
+      assert.equal(e.calls.history.length, round);
+    }
+    assert.equal(e.calls.loads.length, 0);
+    assert.deepEqual(e.calls.loops, [false, false, false]);
+    unwatch();
+  }
+});
+
+test('random playback prepares a stable next song without consuming the shuffle queue', async () => {
+  for (const mode of ['gapless', 'fade', 'automix-basic', 'automix-pro']) {
+    const e = setup();
+    e.state.playMode = 'random';
+    e.settings.effectiveTrackTransitionMode = mode;
+    await e.manager.prepareGaplessNext();
+    await flush();
+    const targetId = e.calls.prepared[0]?.source.url.split('/').at(-1).split('.')[0];
+    const targetIndex = ['a', 'b', 'c'].indexOf(targetId);
+    const originalQueue = [...(e.state.shuffleQueue ?? [])];
+    await e.manager.prepareGaplessNext();
+    await flush();
+    assert.equal(e.calls.prepared.length, 1, mode);
+    assert.notEqual(targetId, 'a', mode);
+    assert.deepEqual([...e.state.shuffleQueue], originalQueue, mode);
+    assert.deepEqual([...e.state.shufflePlayed], [0], mode);
+    assert.deepEqual([...e.state.shuffleHistory], [], mode);
+    assert.equal(e.manager.activateGaplessPreparedTransition(101), true, mode);
+    assert.equal(e.state.currentTrackId, targetId, mode);
+    assert.deepEqual([...e.state.shuffleQueue], originalQueue.slice(1), mode);
+    assert.deepEqual([...e.state.shufflePlayed], [0, targetIndex], mode);
+    assert.deepEqual([...e.state.shuffleHistory], ['a'], mode);
+    assert.equal(e.calls.loads.length, 0, mode);
+    assert.equal(e.manager.activateGaplessPreparedTransition(101), true, mode);
+    assert.deepEqual([...e.state.shuffleHistory], ['a'], mode);
+  }
+});
+
+test('single natural EOF repeats through the common prepared commit path', async () => {
+  const e = setup();
+  e.state.playMode = 'single';
+  await e.manager.prepareGaplessNext();
+  await flush();
+  await naturalEndHandler(e)();
+  assert.equal(e.state.currentTrackId, 'a');
+  assert.deepEqual(e.calls.commits, [15]);
+  assert.equal(e.calls.loads.length, 0);
+  assert.deepEqual(e.calls.history, ['a']);
+});
+
+test('switching playback mode keeps native auto-loop disabled and prepares the new target', async () => {
+  const e = setup();
+  const unwatch = watch(
+    () => e.manager.getGaplessInvalidationKey(),
+    () => e.manager.clearGaplessPreparedSource(),
+    { flush: 'sync' },
+  );
+  for (const mode of ['single', 'list', 'single', 'sequential']) {
+    e.audioManager.setPlayMode(mode);
+    assert.equal(e.calls.loops.at(-1), false);
+    await e.manager.prepareGaplessNext();
+    await flush();
+    assert.equal(
+      e.calls.prepared.at(-1).source.url,
+      `https://audio.test/${mode === 'single' ? 'a' : 'b'}.flac`,
+    );
+  }
+  e.audioManager.setPlayMode('random');
+  assert.equal(e.calls.loops.at(-1), false);
+  await e.manager.prepareGaplessNext();
+  await flush();
+  assert.match(e.calls.prepared.at(-1).source.url, /\/(b|c)\.flac$/);
+  unwatch();
+});
+
+test('single none and failed preparation both repeat A through ordinary playback', async () => {
+  for (const mode of ['none', 'fade']) {
+    const e = setup({ prepare: () => Promise.reject(new Error('decode failed')) });
+    e.state.playMode = 'single';
+    e.settings.effectiveTrackTransitionMode = mode;
+    await e.manager.prepareGaplessNext();
+    await flush();
+    await naturalEndHandler(e)();
+    assert.equal(e.state.currentTrackId, 'a', mode);
+    assert.equal(e.calls.loads[0].url, 'https://audio.test/a.flac', mode);
+    assert.equal(e.calls.loads.length, 1, mode);
+    assert.deepEqual(e.calls.commits, []);
+    assert.deepEqual(e.calls.loops, [false]);
+  }
+});
+
+test('single manual next advances and consumes queued-next instead of adopting its repeat', async () => {
+  for (const queued of [false, true]) {
+    const e = setup();
+    e.state.playMode = 'single';
+    e.queue.queuedNextTrackIds = queued ? ['c'] : [];
+    await e.manager.prepareGaplessNext();
+    await flush();
+    assert.equal(e.calls.prepared[0].source.url, 'https://audio.test/a.flac');
+    assert.deepEqual([...e.queue.queuedNextTrackIds], queued ? ['c'] : []);
+    await e.manager.next();
+    assert.equal(e.state.currentTrackId, queued ? 'c' : 'b');
+    assert.deepEqual(e.calls.commits, []);
+    assert.deepEqual(e.calls.loops, [false]);
+  }
+});
+
+test('single repeat preserves the current quality and source selection', async () => {
+  const e = setup();
+  e.state.playMode = 'single';
+  e.state.currentAudioQualityOverride = '320';
+  e.state.currentCatalogSourceOverrideTrackId = 'a';
+  e.state.currentCloudSourceOverrideTrackId = 'a';
+  await e.manager.prepareGaplessNext();
+  await flush();
+  assert.equal(e.manager.activateGaplessPreparedTransition(101), true);
+  assert.equal(e.state.currentAudioQualityOverride, '320');
+  assert.equal(e.state.currentCatalogSourceOverrideTrackId, 'a');
+  assert.equal(e.state.currentCloudSourceOverrideTrackId, 'a');
+});
+
+test('single retained preparation cannot adopt a boundary from an earlier native occurrence', async () => {
+  const e = setup();
+  e.state.playMode = 'single';
+  await e.manager.prepareGaplessNext();
+  await flush();
+  e.changeSettings();
+  e.state.nativeTrackSeq = 77;
+  e.state.awaitingTrackLoad = true;
+  assert.equal(e.manager.activateGaplessPreparedTransition(101), true);
+  assert.equal(e.state.nativeTrackSeq, 77);
+  assert.deepEqual(e.calls.adopted, []);
+});
+
+test('single settings-only invalidation accepts a running repeat under its original mode', async () => {
+  const e = setup();
+  e.state.playMode = 'single';
+  await e.manager.prepareGaplessNext();
+  await flush();
+  e.changeSettings();
+  assert.equal(
+    e.manager.activateGaplessPreparedTransition(101, 1.5, { mode: 'fade', overlapSecs: 3 }),
+    true,
+  );
+  assert.equal(e.state.currentTrackId, 'a');
+  assert.equal(e.state.currentTime, 1.5);
+  assert.deepEqual(e.calls.loads, []);
+  assert.deepEqual(e.calls.history, ['a']);
+});
+
+test('random EOF commits the exact prepared source and records history once', async () => {
+  const e = setup();
+  e.state.playMode = 'random';
+  const unwatch = watch(
+    () => e.manager.getGaplessInvalidationKey(),
+    () => e.manager.clearGaplessPreparedSource(),
+    { flush: 'sync' },
+  );
+  await e.manager.prepareGaplessNext();
+  await flush();
+  const targetIndex = e.state.shuffleQueue[0];
+  await e.manager.next({ gaplessTransition: true });
+  assert.equal(e.state.currentTrackId, ['a', 'b', 'c'][targetIndex]);
+  assert.deepEqual(e.calls.commits, [15]);
+  assert.equal(e.calls.loads.length, 0);
+  assert.deepEqual([...e.state.shuffleHistory], ['a']);
+  await e.manager.prev();
+  await flush();
+  assert.equal(e.state.currentTrackId, 'a');
+  assert.deepEqual([...e.state.shuffleHistory], []);
+  unwatch();
+});
+
+test('random failed preparation loads the same candidate using its resolved URL', async () => {
+  let resolutions = 0;
+  const e = setup({
+    prepare: () => Promise.reject(new Error('decode failed')),
+    resolve: async (song) => {
+      resolutions++;
+      return { url: `https://audio.test/${song.id}.flac` };
+    },
+  });
+  e.state.playMode = 'random';
+  await e.manager.prepareGaplessNext();
+  await flush();
+  const targetIndex = e.state.shuffleQueue[0];
+  await e.manager.next({ gaplessTransition: true });
+  assert.equal(e.state.currentTrackId, ['a', 'b', 'c'][targetIndex]);
+  assert.equal(resolutions, 1);
+  assert.equal(e.calls.loads.length, 1);
+  assert.deepEqual(e.calls.commits, []);
+  assert.deepEqual([...e.state.shuffleHistory], ['a']);
+  assert.equal(e.state.shuffleQueue.length, 1);
+});
+
+test('random manual skips advance each click without waiting for native preparation', async () => {
+  const e = setup();
+  e.state.playMode = 'random';
+  await e.manager.prepareGaplessNext();
+  await flush();
+  const firstId = ['a', 'b', 'c'][e.state.shuffleQueue[0]];
+  const secondId = ['a', 'b', 'c'][e.state.shuffleQueue[1]];
+  const first = e.manager.next();
+  assert.equal(e.state.currentTrackId, firstId);
+  const second = e.manager.next();
+  assert.equal(e.state.currentTrackId, secondId);
+  await Promise.all([first, second]);
+  assert.deepEqual(e.calls.commits, []);
+  assert.deepEqual([...e.state.shuffleHistory], ['a', firstId]);
+  assert.equal(e.state.shuffleQueue.length, 0);
+});
+
+test('random queued-next wins during preparation and does not consume another random candidate', async () => {
+  const e = setup();
+  e.state.playMode = 'random';
+  await e.manager.prepareGaplessNext();
+  await flush();
+  const originalQueue = [...e.state.shuffleQueue];
+  const queuedId = ['a', 'b', 'c'][originalQueue[1]];
+  e.queue.queuedNextTrackIds = [queuedId];
+  e.queue.playbackRevision++;
+  e.playlist.consumeQueuedNextTrackIds = (ids) => {
+    e.queue.queuedNextTrackIds = e.queue.queuedNextTrackIds.filter((id) => !ids.includes(id));
+  };
+  await e.manager.prepareGaplessNext();
+  await flush();
+  assert.equal(e.calls.prepared.at(-1).source.url, `https://audio.test/${queuedId}.flac`);
+  assert.deepEqual([...e.state.shuffleQueue], originalQueue);
+  assert.deepEqual([...e.queue.queuedNextTrackIds], [queuedId]);
+  assert.equal(e.manager.activateGaplessPreparedTransition(102), true);
+  assert.equal(e.state.currentTrackId, queuedId);
+  assert.deepEqual([...e.queue.queuedNextTrackIds], []);
+  e.state.currentTime = 80;
+  await e.manager.prepareGaplessNext();
+  await flush();
+  assert.equal(
+    e.calls.prepared.at(-1).source.url,
+    `https://audio.test/${['a', 'b', 'c'][originalQueue[0]]}.flac`,
+  );
+  assert.equal(e.manager.activateGaplessPreparedTransition(103), true);
+  assert.deepEqual([...e.state.shuffleHistory], ['a', queuedId]);
+});
+
+test('random settings invalidation retains the candidate without consuming the cycle', async () => {
+  const e = setup();
+  e.state.playMode = 'random';
+  await e.manager.prepareGaplessNext();
+  await flush();
+  const originalQueue = [...e.state.shuffleQueue];
+  e.changeSettings();
+  await e.manager.prepareGaplessNext();
+  await flush();
+  assert.equal(e.calls.prepared[0].source.url, e.calls.prepared[1].source.url);
+  assert.deepEqual([...e.state.shuffleQueue], originalQueue);
+  assert.equal(e.manager.activateGaplessPreparedTransition(101), true);
+  assert.deepEqual([...e.state.shuffleQueue], originalQueue.slice(1));
+  assert.deepEqual([...e.state.shuffleHistory], ['a']);
+});
+
+test('random preparation after direct selection skips the song already selected', async () => {
+  const e = setup();
+  e.state.playMode = 'random';
+  await e.manager.prepareGaplessNext();
+  await flush();
+  const originalQueue = [...e.state.shuffleQueue];
+  const selectedId = ['a', 'b', 'c'][originalQueue[0]];
+  await e.manager.playTrack(selectedId, e.queue.songs, { sourceQueueId: e.queue.id });
+  e.state.duration = 100;
+  e.state.currentTime = 80;
+  await e.manager.prepareGaplessNext();
+  await flush();
+  assert.equal(
+    e.calls.prepared.at(-1).source.url,
+    `https://audio.test/${['a', 'b', 'c'][originalQueue[1]]}.flac`,
+  );
+  assert.deepEqual([...e.state.shuffleQueue], originalQueue.slice(1));
+});
+
+test('random queue append preserves pending candidates and adds new tracks', async () => {
+  const e = setup();
+  e.state.playMode = 'random';
+  await e.manager.prepareGaplessNext();
+  await flush();
+  const originalQueue = [...e.state.shuffleQueue];
+  e.queue.songs = [...e.queue.songs, { id: 'd', hash: 'd', duration: 100 }];
+  e.queue.playbackRevision++;
+  await e.manager.prepareGaplessNext();
+  await flush();
+  assert.deepEqual([...e.state.shuffleQueue], [...originalQueue, 3]);
+  assert.equal(e.calls.prepared[0].source.url, e.calls.prepared[1].source.url);
+});
+
+test('random queue replacement discards stale index mappings before preparing', async () => {
+  const e = setup();
+  e.state.playMode = 'random';
+  await e.manager.prepareGaplessNext();
+  await flush();
+  e.queue.songs = ['a', 'd', 'e'].map((id) => ({ id, hash: id, duration: 100 }));
+  e.queue.playbackRevision++;
+  await e.manager.prepareGaplessNext();
+  await flush();
+  assert.match(e.calls.prepared.at(-1).source.url, /\/(d|e)\.flac$/);
+  assert.equal(e.manager.activateGaplessPreparedTransition(102), true);
+  assert.ok(['d', 'e'].includes(e.state.currentTrackId));
+});
+
+test('random preparation skips unplayable songs even when the current song is absent', async () => {
+  const e = setup({ playable: (song) => !!song && song.id !== 'b' });
+  e.state.playMode = 'random';
+  e.state.currentTrackId = 'removed';
+  e.queue.songs = e.queue.songs.slice(1);
+  await e.manager.prepareGaplessNext();
+  await flush();
+  assert.equal(e.calls.prepared[0].source.url, 'https://audio.test/c.flac');
+  assert.equal(e.manager.activateGaplessPreparedTransition(101), true);
+  assert.equal(e.state.currentTrackId, 'c');
+});
+
+test('random none uses ordinary playback and does not repeat within a shuffle cycle', async () => {
+  const e = setup();
+  e.state.playMode = 'random';
+  e.settings.effectiveTrackTransitionMode = 'none';
+  await e.manager.prepareGaplessNext();
+  assert.equal(e.calls.prepared.length, 0);
+  await e.manager.next();
+  const firstId = e.state.currentTrackId;
+  await e.manager.next();
+  assert.notEqual(e.state.currentTrackId, firstId);
+  assert.notEqual(e.state.currentTrackId, 'a');
+  await e.manager.next();
+  assert.equal(e.state.shuffleQueue.length, 1, 'starts a new cycle excluding its current track');
+});
+
+test('random single-song queues can prepare and adopt the same song', async () => {
+  const e = setup();
+  e.state.playMode = 'random';
+  e.queue.songs = e.queue.songs.slice(0, 1);
+  await e.manager.prepareGaplessNext();
+  await flush();
+  assert.equal(e.calls.prepared[0].source.url, 'https://audio.test/a.flac');
+  assert.equal(e.manager.activateGaplessPreparedTransition(101), true);
+  assert.equal(e.state.currentTrackId, 'a');
+});
 
 test('discover always advances forward under list, single and random playback modes', async () => {
   for (const mode of ['list', 'single', 'random']) {

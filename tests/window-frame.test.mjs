@@ -112,6 +112,7 @@ for (const platform of ['darwin', 'linux', 'win32']) {
         if (name === '../window')
           return { getMainWindowClientCornerRadius: () => (platform === 'win32' ? 8 : 0) };
         if (name === 'node:os') return { release: () => '10.0.22631' };
+        if (name === '../window/fullscreen') return { isWindowFullscreen: () => fullscreen };
         if (name === './registry')
           return {
             ipcRegistry: {
@@ -125,15 +126,21 @@ for (const platform of ['darwin', 'linux', 'win32']) {
     module.exports.registerWindowHandlers({ getMainWindow: () => win });
     const query = () => handlers.get('window:frame-state')({ sender: {} });
     assert.equal(query().visible, platform !== 'win32');
+    assert.equal(query().maximized, false);
+    assert.equal(query().fullscreen, false);
     assert.equal(query().radius, platform === 'darwin' ? 10 : platform === 'win32' ? 8 : 0);
     maximized = true;
     events.get('maximize')();
+    assert.equal(sent.at(-1).maximized, true);
     if (platform !== 'win32') assert.equal(sent.at(-1).visible, false);
     maximized = false;
     events.get('unmaximize')();
+    assert.equal(sent.at(-1).maximized, false);
     if (platform !== 'win32') assert.equal(sent.at(-1).visible, true);
     fullscreen = true;
+    assert.equal(query().fullscreen, true);
     events.get('enter-full-screen')();
+    assert.equal(sent.at(-1).fullscreen, true);
     if (platform !== 'win32') assert.equal(sent.at(-1).visible, false);
     fullscreen = false;
     if (platform === 'win32') {

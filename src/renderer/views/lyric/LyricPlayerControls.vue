@@ -534,7 +534,8 @@ useResizeObserver(
               variant="unstyled"
               size="none"
               @click="toggleFavorite"
-              class="bar-action-btn text-red-500"
+              class="playback-action bar-action-btn"
+              :class="{ 'is-favorite': isFavorite }"
               tooltip="收藏"
             >
               <Icon :icon="isFavorite ? iconHeartFilled : iconHeart" width="20" height="20" />
@@ -554,8 +555,8 @@ useResizeObserver(
                 <Button
                   variant="unstyled"
                   size="none"
-                  class="bar-action-btn"
-                  :class="item.active ? 'bar-func-active' : 'bar-action-muted'"
+                  class="playback-action bar-action-btn"
+                  :class="{ 'is-active': item.active }"
                   :disabled="item.disabled"
                   :tooltip="item.tooltip || item.title"
                   @click="activatePlayerBarAction(item)"
@@ -616,10 +617,10 @@ useResizeObserver(
                 variant="unstyled"
                 size="none"
                 :class="[
+                  'playback-action',
                   item.id === 'play-toggle' ? 'bar-play-btn' : 'bar-ctrl-btn',
-                  item.active ? 'bar-func-active' : 'bar-ctrl-muted',
                   {
-                    'bar-ctrl-main': ['previous', 'next'].includes(item.id),
+                    'is-active': item.active,
                     'is-busy': isPlaybackLoading && ['previous', 'next'].includes(item.id),
                     'is-loading': isPlaybackLoading && item.id === 'play-toggle',
                   },
@@ -672,8 +673,8 @@ useResizeObserver(
             <Button
               variant="unstyled"
               size="none"
-              class="bar-func-btn"
-              :class="item.active ? 'bar-func-active' : 'bar-func-muted'"
+              class="playback-action bar-func-btn"
+              :class="{ 'is-active': item.active }"
               :disabled="item.disabled"
               :tooltip="item.tooltip || item.title"
               @click="activatePlayerBarAction(item)"
@@ -713,10 +714,6 @@ useResizeObserver(
 /* 顶部进度条 */
 .bar-progress-top {
   --bar-progress-tooltip-edge-gap: 46px;
-  --control-track-bg: rgba(255, 255, 255, 0.18);
-  --control-thumb-bg: #ffffff;
-  --control-border: rgba(0, 0, 0, 0.14);
-  --shadow-control: 0 2px 4px rgba(0, 0, 0, 0.18);
   width: 100%;
   position: relative;
   overflow: visible;
@@ -834,14 +831,14 @@ useResizeObserver(
   max-width: calc(100% - 16px);
   font-size: 14px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--color-text-main);
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .bar-song-sep {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 
@@ -849,7 +846,7 @@ useResizeObserver(
   display: block;
   flex: 1 10 auto;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--color-text-secondary);
   min-width: 0;
   max-width: 52%;
   overflow: hidden;
@@ -862,7 +859,7 @@ useResizeObserver(
 }
 
 .bar-song-clickable:hover {
-  color: white;
+  color: var(--color-primary-text);
 }
 
 .bar-song-actions {
@@ -884,26 +881,14 @@ useResizeObserver(
   transform: scale(0.9);
 }
 
-:deep(.bar-action-muted) {
-  color: rgba(255, 255, 255, 0.4);
-}
-
-:deep(.bar-action-muted:hover) {
-  color: rgba(255, 255, 255, 0.9);
-}
-
 .bar-error-indicator {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 2px;
-  color: #ef4444;
+  color: var(--state-danger);
   opacity: 0.92;
   cursor: help;
-}
-
-:global(.dark) .bar-error-indicator {
-  color: #f87171;
 }
 
 /* 2. 中间 */
@@ -972,22 +957,6 @@ useResizeObserver(
   opacity: 0.75;
 }
 
-.bar-ctrl-muted {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.bar-ctrl-muted:hover {
-  color: rgba(255, 255, 255, 0.95);
-}
-
-.bar-ctrl-main {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.bar-ctrl-main:hover {
-  color: white;
-}
-
 .bar-play-btn {
   width: 38px;
   height: 38px;
@@ -995,15 +964,14 @@ useResizeObserver(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: white;
+  background: var(--control-muted-bg);
+  border: 1px solid transparent;
   transition: all 0.2s ease;
 }
 
 .bar-play-btn:hover {
   transform: scale(1.1);
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--control-hover-bg);
 }
 
 .bar-play-btn:active {
@@ -1011,7 +979,7 @@ useResizeObserver(
 }
 
 .bar-play-btn.is-loading {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--control-hover-bg);
 }
 
 .bar-play-spinner {
@@ -1061,61 +1029,17 @@ useResizeObserver(
 :deep(.bar-func-btn:active) {
   transform: scale(0.9);
 }
-
-:deep(.bar-func-muted) {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-:deep(.bar-func-muted:hover) {
-  color: white;
-}
-
-:deep(.bar-func-active) {
-  color: white;
-}
 </style>
 
 <style>
-/* 歌词页底部控制栏内的徽标颜色覆盖 */
+/* The immersive player uses a local foreground, independent of the app mode. */
 .lyric-bar .badge {
-  background-color: rgba(255, 255, 255, 0.9) !important;
-  color: #000 !important;
+  background-color: var(--text-main);
+  color: var(--lyric-badge-foreground, #171718);
 }
 
-/* 写真模式下去掉控制栏分隔线 */
 .is-portrait .lyric-bar {
   border-top-color: transparent;
-}
-
-/* 右侧 SpeedPopover / QualityPopover / EffectPopover / VolumePopover 按钮颜色 */
-.lyric-bar .bar-right button,
-.lyric-bar .bar-right [role='button'],
-.lyric-bar .bar-controls button,
-.lyric-bar .bar-controls [role='button'] {
-  color: rgba(255, 255, 255, 0.5) !important;
-}
-
-.lyric-bar .bar-right button:hover,
-.lyric-bar .bar-right [role='button']:hover,
-.lyric-bar .bar-controls button:hover,
-.lyric-bar .bar-controls [role='button']:hover {
-  color: white !important;
-}
-
-/* 保留特定按钮的颜色不被覆盖 */
-.lyric-bar .bar-play-btn,
-.lyric-bar .bar-play-btn:hover {
-  color: white !important;
-}
-
-.lyric-bar .text-red-500,
-.lyric-bar .text-red-500:hover {
-  color: #ef4444 !important;
-}
-
-.lyric-bar .bar-func-active,
-.lyric-bar .bar-func-active:hover {
-  color: white !important;
 }
 
 /* 确保弹出层在歌词页之上 */

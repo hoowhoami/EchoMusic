@@ -17,6 +17,7 @@ import {
   copyAppearance,
   type AppThemeAppearance,
 } from './model';
+import { DEFAULT_THEME_ACCENT } from '../../shared/themePalette';
 export interface AppThemeContext<T extends Record<string, unknown> = Record<string, unknown>> {
   key: string;
   isDark: ComputedRef<boolean>;
@@ -58,7 +59,7 @@ const failed = shallowReactive(new Set<number>());
 let revision = 0;
 const variant = (dark: boolean): AppThemeAppearance => ({
   tokens: neutralTokens(dark),
-  accent: '#0071e3',
+  accent: DEFAULT_THEME_ACCENT,
 });
 export const builtinAppThemes: AppThemeEntry[] = [
   {

@@ -246,7 +246,6 @@ defineExpose({
 .queue-index {
   font-size: 12px;
   color: var(--color-text-secondary);
-  opacity: 0.75;
   transition: opacity 0.16s ease;
 }
 
@@ -355,7 +354,6 @@ defineExpose({
   align-items: center;
   gap: 12px;
   color: var(--color-text-secondary);
-  opacity: 0.72;
 }
 
 .queue-empty-icon {

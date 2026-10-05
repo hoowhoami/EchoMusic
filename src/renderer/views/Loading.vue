@@ -241,7 +241,7 @@ onUnmounted(() => {
             {{ canForceEnter ? '启动未完全就绪' : '启动失败' }}
           </h2>
           <p class="text-sm text-text-secondary max-w-xs">{{ statusMessage }}</p>
-          <p v-if="forceEnterHint" class="text-xs leading-5 text-text-secondary/80 max-w-xs">
+          <p v-if="forceEnterHint" class="text-xs leading-5 text-text-secondary max-w-xs">
             {{ forceEnterHint }}
           </p>
         </div>

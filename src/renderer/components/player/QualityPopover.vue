@@ -83,11 +83,7 @@ const isPendingQuality = (quality: string) =>
   !isSwitchingToCloud.value &&
   requestedAudioQuality.value === quality;
 
-const buttonClass = computed(() =>
-  props.variant === 'lyric'
-    ? 'text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white hover:scale-110 active:scale-90'
-    : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90',
-);
+const buttonClass = 'playback-action hover:scale-110 active:scale-90';
 </script>
 
 <template>
@@ -252,8 +248,7 @@ const buttonClass = computed(() =>
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
-  color: inherit;
-  opacity: 0.7;
+  color: var(--color-text-main);
   background: transparent;
   border: none;
   cursor: pointer;

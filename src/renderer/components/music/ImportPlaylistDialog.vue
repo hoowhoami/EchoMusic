@@ -888,12 +888,12 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
             <div class="text-[13px] font-medium text-text-main truncate">
               {{ item.external.title }}
             </div>
-            <div class="text-[11px] text-text-secondary/80 truncate">
+            <div class="text-[11px] text-text-secondary truncate">
               {{ item.external.artist || '未知歌手' }}
               <template v-if="item.error"> · {{ item.error }}</template>
             </div>
           </div>
-          <span class="text-[11px] text-text-secondary/80 shrink-0">
+          <span class="text-[11px] text-text-secondary shrink-0">
             {{ itemStatusLabel(item.status) }}
           </span>
         </div>
@@ -1049,7 +1049,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-mode-card small {
-  @apply text-[11px] text-text-secondary/80 truncate;
+  @apply text-[11px] text-text-secondary truncate;
 }
 
 .import-textarea {
@@ -1082,7 +1082,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-dropzone span {
-  @apply text-[11px] text-text-secondary/75;
+  @apply text-[11px] text-text-secondary;
 }
 
 .import-file-list {
@@ -1110,7 +1110,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-hint {
-  @apply text-[12px] text-text-secondary/80 leading-relaxed;
+  @apply text-[12px] text-text-secondary leading-relaxed;
 }
 
 .import-platforms {
@@ -1118,7 +1118,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-platforms-label {
-  @apply text-[11px] text-text-secondary/70 mr-0.5;
+  @apply text-[11px] text-text-secondary mr-0.5;
 }
 
 .import-platform-chip {
@@ -1139,7 +1139,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 
 .import-step-pill {
   @apply inline-flex items-center px-2.5 h-6 rounded-full text-[11px] font-medium;
-  color: color-mix(in srgb, var(--color-text-main) 55%, transparent);
+  color: var(--color-text-secondary);
   background: var(--control-muted-bg);
 }
 
@@ -1175,7 +1175,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-current-label {
-  @apply text-[10px] text-text-secondary/75;
+  @apply text-[10px] text-text-secondary;
 }
 
 .import-current-title {
@@ -1183,7 +1183,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-current-artist {
-  @apply text-[11px] text-text-secondary/75;
+  @apply text-[11px] text-text-secondary;
 }
 
 .import-current-wave {

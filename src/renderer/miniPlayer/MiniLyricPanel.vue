@@ -11,7 +11,6 @@ const props = defineProps<{
   artist: string;
   coverUrl: string;
   visible: boolean;
-  isDark: boolean;
   expandDirection?: MiniPlayerExpandDirection;
   timelineMs?: number;
   seekTimestamp?: number;
@@ -373,7 +372,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="mini-lyric no-drag" :class="{ dark: isDark, 'expand-up': expandDirection === 'up' }">
+  <div class="mini-lyric no-drag" :class="{ 'expand-up': expandDirection === 'up' }">
     <div class="mini-lyric-bg" :style="lyricBackgroundStyle"></div>
     <div class="mini-lyric-scrim"></div>
     <div class="mini-lyric-content">
@@ -534,7 +533,7 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  border-top: 1px solid var(--control-border);
   border-bottom: 1px solid transparent;
   isolation: isolate;
   contain: paint;
@@ -542,7 +541,7 @@ onBeforeUnmount(() => {
 
 .mini-lyric.expand-up {
   border-top-color: transparent;
-  border-bottom-color: rgba(0, 0, 0, 0.08);
+  border-bottom-color: var(--control-border);
 }
 
 .mini-lyric-bg,
@@ -562,9 +561,11 @@ onBeforeUnmount(() => {
 
 .mini-lyric-scrim {
   inset: 0;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(245, 245, 245, 0.94)),
-    radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.62), transparent 46%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-elevated-base) 84%, transparent),
+    color-mix(in srgb, var(--surface-elevated-base) 95%, transparent)
+  );
 }
 
 .mini-lyric-content {
@@ -602,9 +603,9 @@ onBeforeUnmount(() => {
 .mini-lyric-mode-btn {
   appearance: none;
   flex: 0 0 auto;
-  border: 1px solid rgba(60, 60, 67, 0.16);
-  background: rgba(255, 255, 255, 0.6);
-  color: rgba(60, 60, 67, 0.72);
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
+  color: var(--text-secondary);
   font-size: 10px;
   line-height: 1;
   font-weight: 700;
@@ -618,13 +619,13 @@ onBeforeUnmount(() => {
 }
 
 .mini-lyric-mode-btn:hover {
-  color: var(--color-primary, #31cfa1);
-  border-color: rgba(0, 0, 0, 0.28);
+  color: var(--color-primary-text);
+  border-color: var(--control-border-hover);
 }
 
 .mini-lyric-mode-btn.active {
-  color: #fff;
-  background: var(--color-primary, #31cfa1);
+  color: var(--color-on-primary);
+  background: var(--color-primary);
   border-color: transparent;
 }
 
@@ -649,7 +650,7 @@ onBeforeUnmount(() => {
   font-size: 11px;
   line-height: 15px;
   font-weight: 650;
-  color: rgba(29, 29, 31, 0.58);
+  color: var(--text-secondary);
 }
 
 .mini-lyric-lines {
@@ -673,8 +674,8 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 7px 0;
   text-align: center;
-  color: rgba(60, 60, 67, 0.6);
-  --mini-lyric-unplayed: rgba(60, 60, 67, 0.6);
+  color: var(--text-secondary);
+  --mini-lyric-unplayed: var(--text-secondary);
   cursor: pointer;
   transition:
     color 0.18s ease,
@@ -686,7 +687,7 @@ onBeforeUnmount(() => {
 }
 
 .mini-lyric-line:hover {
-  color: rgba(29, 29, 31, 0.82);
+  color: var(--text-main);
 }
 
 .mini-lyric-line.active {
@@ -753,7 +754,7 @@ onBeforeUnmount(() => {
   background-color: transparent;
   background-image: linear-gradient(
     to right,
-    var(--color-primary) 50%,
+    var(--color-primary-text) 50%,
     var(--mini-lyric-unplayed) 50%
   );
   background-clip: text;
@@ -775,11 +776,11 @@ onBeforeUnmount(() => {
   font-size: 11px;
   line-height: 15px;
   font-weight: 650;
-  color: rgba(60, 60, 67, 0.45);
+  color: var(--text-secondary);
 }
 
 .mini-lyric-line.active .mini-lyric-secondary {
-  color: color-mix(in srgb, var(--color-primary-text) 74%, #1d1d1f);
+  color: var(--color-primary-text);
 }
 
 .mini-lyric-empty {
@@ -790,64 +791,6 @@ onBeforeUnmount(() => {
   text-align: center;
   font-size: 13px;
   font-weight: 700;
-  color: rgba(29, 29, 31, 0.52);
-}
-
-.mini-lyric.dark {
-  border-top-color: rgba(255, 255, 255, 0.08);
-}
-
-.mini-lyric.dark.expand-up {
-  border-top-color: transparent;
-  border-bottom-color: rgba(255, 255, 255, 0.08);
-}
-
-.mini-lyric.dark .mini-lyric-scrim {
-  background:
-    linear-gradient(180deg, rgba(36, 36, 40, 0.84), rgba(24, 24, 28, 0.95)),
-    radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.12), transparent 46%);
-}
-
-.mini-lyric.dark .mini-lyric-artist,
-.mini-lyric.dark .mini-lyric-secondary {
-  color: rgba(245, 245, 247, 0.45);
-}
-
-.mini-lyric.dark .mini-lyric-mode-btn {
-  border-color: rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(245, 245, 247, 0.72);
-}
-
-.mini-lyric.dark .mini-lyric-mode-btn:hover {
-  color: var(--color-primary, #31cfa1);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-.mini-lyric.dark .mini-lyric-mode-btn.active {
-  color: #fff;
-  background: var(--color-primary, #31cfa1);
-  border-color: transparent;
-}
-
-.mini-lyric.dark .mini-lyric-line {
-  color: rgba(245, 245, 247, 0.55);
-  --mini-lyric-unplayed: rgba(245, 245, 247, 0.55);
-}
-
-.mini-lyric.dark .mini-lyric-line:hover {
-  color: rgba(245, 245, 247, 0.82);
-}
-
-.mini-lyric.dark .mini-lyric-line.active {
-  color: var(--color-primary-text);
-}
-
-.mini-lyric.dark .mini-lyric-line.active .mini-lyric-secondary {
-  color: color-mix(in srgb, var(--color-primary-text) 72%, #f5f5f7);
-}
-
-.mini-lyric.dark .mini-lyric-empty {
-  color: rgba(245, 245, 247, 0.5);
+  color: var(--text-secondary);
 }
 </style>

@@ -13,7 +13,6 @@ import ThemeContent from '@/theme/ThemeContent.vue';
 import { useThemeStore } from '@/stores/theme';
 import TitleBar from './TitleBar.vue';
 import PlayerBar from './PlayerBar.vue';
-import TrafficLights from './TrafficLights.vue';
 import { provideWindowAppearance } from '@/theme/useWindowAppearance';
 
 provideWindowAppearance();
@@ -165,9 +164,7 @@ watch(routeViewKey, () => {
     <div class="layout-window-drag-strip window-drag-area" aria-hidden="true" />
     <!-- Compose all decorative layers together; transparency never wraps business content. -->
     <div class="layout-skin" aria-hidden="true">
-      <ThemeBackground>
-        <div ref="gradientRef" class="layout-accent-gradient frame-atmosphere" />
-      </ThemeBackground>
+      <ThemeBackground />
       <div class="layout-surface-effects">
         <div class="skin-sidebar-decoration">
           <ThemeContent
@@ -187,6 +184,9 @@ watch(routeViewKey, () => {
           </div>
         </div>
       </div>
+      <!-- Tint the finished skin/material once, below all business content.
+           Panel colors and image backgrounds must not attenuate cover atmosphere. -->
+      <div ref="gradientRef" class="layout-accent-gradient frame-atmosphere" />
     </div>
 
     <div
@@ -224,9 +224,6 @@ watch(routeViewKey, () => {
         <PlayerBar />
       </div>
     </div>
-    <!-- Electron combines app-region rectangles in DOM order. Keep these no-drag
-         controls after the sidebar/titlebar drag regions so their holes remain clickable. -->
-    <TrafficLights />
   </div>
 </template>
 
@@ -311,7 +308,7 @@ watch(routeViewKey, () => {
   transition: width var(--motion-duration-panel) var(--motion-ease-enter);
 }
 .frame-atmosphere {
-  /* Tint the base once; images, theme artwork and panels remain above it. */
+  /* The final decorative pass shares one viewport gradient across every panel. */
   z-index: auto;
 }
 .player-theme-decoration {

@@ -52,12 +52,12 @@ const gridTemplate = computed(() =>
 <template>
   <div :class="props.paddingClass">
     <div
-      class="grid items-center h-11 text-[12px] text-text-main/80 font-bold border-b border-[var(--border-subtle)]"
+      class="grid items-center h-11 text-[12px] text-text-secondary font-bold border-b border-[var(--border-subtle)]"
       :style="{ gridTemplateColumns: gridTemplate }"
     >
       <div
         v-if="showIndex"
-        class="pl-2 cursor-pointer hover:opacity-100 transition-opacity flex items-center gap-1"
+        class="pl-2 cursor-pointer hover:text-text-main transition-colors flex items-center gap-1"
         @click="handleSort('index')"
       >
         <span>#</span>
@@ -128,7 +128,7 @@ const gridTemplate = computed(() =>
 
       <div
         v-if="showAlbum"
-        class="min-w-0 hidden md:flex pr-3 cursor-pointer hover:opacity-100 transition-opacity items-center gap-1 whitespace-nowrap"
+        class="min-w-0 hidden md:flex pr-3 cursor-pointer hover:text-text-main transition-colors items-center gap-1 whitespace-nowrap"
         @click="handleSort('album')"
       >
         <span>{{ albumLabel }}</span>
@@ -147,7 +147,7 @@ const gridTemplate = computed(() =>
       </div>
 
       <div
-        class="pl-2 cursor-pointer hover:opacity-100 transition-opacity flex items-center justify-start gap-1 whitespace-nowrap"
+        class="pl-2 cursor-pointer hover:text-text-main transition-colors flex items-center justify-start gap-1 whitespace-nowrap"
         @click="handleSort('duration')"
       >
         <span>时长</span>
@@ -193,15 +193,15 @@ const gridTemplate = computed(() =>
 }
 
 .sort-icon-idle {
-  opacity: 0.58;
+  color: var(--icon-main);
 }
 
 .song-sort-choice:hover .sort-icon-idle {
-  opacity: 1;
+  color: inherit;
 }
 
 .song-sort-separator {
-  color: color-mix(in srgb, var(--color-text-main) 28%, transparent);
+  color: var(--text-secondary);
   font-weight: 500;
 }
 </style>

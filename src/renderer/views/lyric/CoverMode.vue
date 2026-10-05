@@ -17,7 +17,7 @@ const { settings } = useLyricSkin(HOST_SKIN_KEYS.cover, LYRIC_SKIN_COVER_DEFAULT
   <div class="cover-mode">
     <!-- 左侧：封面 + 歌曲信息 -->
     <section class="cover-side">
-      <div class="cover-wrapper">
+      <div class="cover-wrapper" data-lyric-cover>
         <DynamicAlbumCover
           :enabled="settings.dynamicAlbumCover"
           :url="currentTrack?.coverUrl"
@@ -95,7 +95,7 @@ const { settings } = useLyricSkin(HOST_SKIN_KEYS.cover, LYRIC_SKIN_COVER_DEFAULT
 .song-title {
   font-size: 22px;
   font-weight: 700;
-  color: white;
+  color: var(--color-text-main);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -105,7 +105,7 @@ const { settings } = useLyricSkin(HOST_SKIN_KEYS.cover, LYRIC_SKIN_COVER_DEFAULT
   margin-top: 6px;
   font-size: 14px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

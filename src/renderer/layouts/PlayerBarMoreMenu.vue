@@ -580,7 +580,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  color: color-mix(in srgb, var(--color-text-main) 56%, transparent);
+  color: var(--icon-main);
   transition:
     background-color 0.12s ease,
     color 0.12s ease,
@@ -983,7 +983,7 @@ onBeforeUnmount(() => {
   padding: 0;
   border: 0;
   border-radius: 0;
-  color: color-mix(in srgb, var(--color-text-secondary) 82%, transparent);
+  color: var(--color-text-secondary);
   background: transparent;
   cursor: pointer;
   font-size: 10px;
@@ -1078,7 +1078,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   border: 1px dashed color-mix(in srgb, var(--color-text-main) 16%, transparent);
   border-radius: 10px;
-  color: color-mix(in srgb, var(--color-text-secondary) 76%, transparent);
+  color: var(--color-text-secondary);
   pointer-events: none;
 }
 

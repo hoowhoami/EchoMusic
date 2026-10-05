@@ -166,9 +166,7 @@ const confirmResetDeviceIdentity = async () => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">页面缓存</h3>
-        <p class="text-sm text-text-secondary">
-          缓存已访问的页面，返回时无需重新加载，关闭后所有页面不缓存
-        </p>
+        <p class="text-sm text-text-secondary">保留已访问的页面，返回时无需重新加载</p>
       </div>
       <Switch v-model="settingStore.keepAliveEnabled" />
     </div>
@@ -307,7 +305,7 @@ const confirmResetDeviceIdentity = async () => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">开发者工具</h3>
-        <p class="text-sm text-text-secondary">开启后允许打开开发者工具进行调试，重启后生效</p>
+        <p class="text-sm text-text-secondary">允许打开开发者工具，重启后生效</p>
       </div>
       <Switch
         :model-value="settingStore.devToolsEnabled"

@@ -63,7 +63,6 @@ const style = computed(() => {
         backgroundColor: theme.appearance.background?.color ?? theme.appearance.tokens.shell,
       }"
     />
-    <slot />
     <div class="theme-background-image" :style="style" />
     <div
       v-if="imageUrl && isCustom && theme.override.background.shade"
@@ -95,9 +94,7 @@ const style = computed(() => {
   transition: background-color 0.2s;
 }
 .theme-background:deep(
-  > *:not(.theme-background-base):not(.theme-background-image):not(.theme-background-shade):not(
-      .layout-accent-gradient
-    )
+  > *:not(.theme-background-base):not(.theme-background-image):not(.theme-background-shade)
 ) {
   position: absolute;
   inset: 0;

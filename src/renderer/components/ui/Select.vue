@@ -425,19 +425,20 @@ watch(open, (val) => {
 }
 
 .echo-select-input::placeholder {
-  @apply text-text-main/50 font-semibold;
+  @apply text-text-secondary font-semibold;
+  opacity: 1;
 }
 
 .echo-select-value {
-  @apply flex-1 truncate text-text-main/80;
+  @apply flex-1 truncate text-text-main;
 }
 
 .echo-select-value.is-placeholder {
-  @apply text-text-secondary/70;
+  @apply text-text-secondary;
 }
 
 .echo-select-placeholder {
-  @apply flex-1 text-text-secondary/70 truncate;
+  @apply flex-1 text-text-secondary truncate;
 }
 
 .echo-select-clear {

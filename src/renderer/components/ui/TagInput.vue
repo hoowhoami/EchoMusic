@@ -189,7 +189,7 @@ defineExpose({ commit });
 }
 .tag-input input::placeholder {
   color: var(--color-text-secondary);
-  opacity: 0.65;
+  opacity: 1;
 }
 .tag-input-hint {
   display: block;

@@ -51,6 +51,6 @@ const handleClick = () => {
 }
 
 .custom-selector-icon {
-  @apply text-text-secondary/70;
+  color: var(--icon-secondary);
 }
 </style>

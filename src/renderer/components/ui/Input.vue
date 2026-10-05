@@ -57,7 +57,7 @@ const handleClear = () => {
       :disabled="disabled"
       :readonly="readonly"
       :class="[
-        'w-full h-14 pl-6 pr-12 bg-[var(--control-muted-bg)] border border-transparent rounded-2xl outline-none motion-control-feedback font-medium text-[15px] placeholder:opacity-50',
+        'w-full h-14 pl-6 pr-12 bg-[var(--control-muted-bg)] border border-transparent rounded-2xl outline-none motion-control-feedback font-medium text-[15px] text-text-main placeholder:text-text-secondary placeholder:opacity-100',
         props.inputClass,
       ]"
     />
@@ -67,7 +67,7 @@ const handleClear = () => {
       v-if="canClear"
       type="button"
       aria-label="清空输入"
-      class="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full text-text-main opacity-40 hover:opacity-70 motion-control-feedback"
+      class="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full icon-action motion-control-feedback"
       @click="handleClear"
     >
       <Icon :icon="iconX" width="14" height="14" />

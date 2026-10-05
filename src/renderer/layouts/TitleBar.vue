@@ -591,44 +591,30 @@ onUnmounted(() => {
         variant="unstyled"
         size="none"
         @click="goBack"
-        class="nav-btn group"
+        class="nav-btn group icon-action"
         :disabled="!canGoBack"
         tooltip="后退"
       >
-        <Icon
-          :icon="iconChevronLeft"
-          width="22"
-          height="22"
-          :class="[
-            'text-text-main transition-opacity',
-            canGoBack ? 'opacity-60 group-hover:opacity-100' : 'opacity-40',
-          ]"
-        />
+        <Icon :icon="iconChevronLeft" width="22" height="22" class="transition-colors" />
       </Button>
       <Button
         variant="unstyled"
         size="none"
         @click="goForward"
-        class="nav-btn group"
+        class="nav-btn group icon-action"
         :disabled="!canGoForward"
         tooltip="前进"
       >
-        <Icon
-          :icon="iconChevronRight"
-          width="22"
-          height="22"
-          :class="[
-            'text-text-main transition-opacity',
-            canGoForward ? 'opacity-60 group-hover:opacity-100' : 'opacity-40',
-          ]"
-        />
+        <Icon :icon="iconChevronRight" width="22" height="22" class="transition-colors" />
       </Button>
-      <Button variant="unstyled" size="none" @click="refresh" class="nav-btn group" tooltip="刷新">
-        <RefreshIcon
-          width="20"
-          height="20"
-          class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity"
-        />
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="refresh"
+        class="nav-btn group icon-action"
+        tooltip="刷新"
+      >
+        <RefreshIcon width="20" height="20" class="transition-colors" />
       </Button>
 
       <!-- 输入框保持紧凑，发现面板独立展开并传送到顶层。 -->
@@ -918,8 +904,12 @@ onUnmounted(() => {
 
 <style scoped>
 .title-bar {
+  container-type: inline-size;
+  container-name: main-titlebar;
   -webkit-app-region: drag;
   height: max(46px, calc(35px / var(--window-zoom-factor, 1)));
+  padding-right: 12px;
+  box-sizing: border-box;
 }
 
 .titlebar-drag-space {
@@ -1004,6 +994,7 @@ onUnmounted(() => {
 }
 .titlebar-window-actions {
   height: 100%;
+  -webkit-app-region: no-drag;
 }
 
 .titlebar-tools {
@@ -1037,8 +1028,7 @@ onUnmounted(() => {
 
 .tb-search-icon {
   flex-shrink: 0;
-  color: var(--color-text-secondary);
-  opacity: 0.6;
+  color: var(--icon-secondary);
 }
 
 .tb-search-input {
@@ -1055,8 +1045,8 @@ onUnmounted(() => {
 }
 
 .tb-search-input::placeholder {
-  color: var(--color-text-secondary);
-  opacity: 0.5;
+  color: var(--text-placeholder);
+  opacity: 1;
 }
 
 .tb-search-clear {
@@ -1259,7 +1249,6 @@ onUnmounted(() => {
 }
 .tb-query-empty span + span {
   font-size: 12px;
-  opacity: 0.7;
 }
 
 :global(.dialog-content.task-panel-dialog) {
@@ -1399,5 +1388,22 @@ onUnmounted(() => {
 .task-text-action:disabled {
   opacity: 0.4;
   cursor: default;
+}
+@container main-titlebar (max-width: 520px) {
+  .nav-btn {
+    display: none;
+  }
+  .tb-search {
+    margin-inline: 0;
+    min-width: 0;
+  }
+}
+@container main-titlebar (max-width: 400px) {
+  .titlebar-nav,
+  .titlebar-primary-actions,
+  .titlebar-tools,
+  .titlebar-window-divider {
+    display: none;
+  }
 }
 </style>

@@ -333,11 +333,12 @@ onUnmounted(() => {
 }
 
 .toast-close {
-  @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-full opacity-50 transition;
+  @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition;
+  color: var(--icon-main);
 }
 
 .toast-close:hover {
-  @apply opacity-100;
+  color: var(--text-main);
   background: var(--control-hover-bg);
 }
 

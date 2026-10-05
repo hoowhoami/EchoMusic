@@ -8,6 +8,8 @@ import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useLyricStore } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
+import { useThemeStore } from '@/stores/theme';
+import { lyricPageColorVariables } from '@/theme/colors';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useLyricBackground } from './composables/useLyricBackground';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
@@ -65,6 +67,7 @@ const barrageEnabled = computed({
 });
 const lyricStore = useLyricStore();
 const toastStore = useToastStore();
+const themeStore = useThemeStore();
 
 const controls = usePlayerControls();
 const {
@@ -172,6 +175,14 @@ const backgroundStyle = computed(() => {
   }
   return { backgroundColor: '#1a1d22' };
 });
+
+const pageStyle = computed(() => ({
+  ...lyricPageColorVariables(
+    themeStore.accentColor,
+    (isBuiltinSkin.value && backgroundStyle.value.backgroundColor) || '#171718',
+  ),
+  ...(isBuiltinSkin.value && viewMode.value === 'portrait' ? backgroundStyle.value : {}),
+}));
 
 // 设置 Drawer：'skins' 为换肤面板（点皮肤卡进入该皮肤设置），'settings' 直接进入当前皮肤设置
 const isSettingsOpen = ref(false);
@@ -422,11 +433,14 @@ onUnmounted(() => {
 <template>
   <div
     class="lyric-page fixed inset-0 z-1300 h-screen w-screen overflow-hidden select-none transition-colors duration-500"
+    :data-lyric-transition="
+      isBuiltinSkin && ['cover', 'amll'].includes(viewMode) ? 'cover' : 'panel'
+    "
     :class="{
       'is-portrait': isBuiltinSkin && viewMode === 'portrait',
       'is-plugin-page': !!pluginPage,
     }"
-    :style="isBuiltinSkin && viewMode === 'portrait' ? backgroundStyle : undefined"
+    :style="pageStyle"
     @mousemove="handlePageMouseMove"
   >
     <div
@@ -860,7 +874,7 @@ onUnmounted(() => {
 
 <style scoped>
 .lyric-page {
-  color: white;
+  color: var(--color-text-main);
 }
 
 .lyric-page.is-portrait {
@@ -907,12 +921,6 @@ onUnmounted(() => {
   inset: 0;
   z-index: 3;
   background: rgba(0, 0, 0, 0.5);
-}
-
-/* The return/close, Mini and fullscreen actions share the same foreground states. */
-.lyric-page {
-  --window-action-color: rgba(255, 255, 255, 0.7);
-  --window-action-hover-color: #fff;
 }
 
 .is-plugin-page {
@@ -962,7 +970,7 @@ onUnmounted(() => {
   display: block;
   font-size: 18px;
   font-weight: 700;
-  color: white;
+  color: var(--color-text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -973,7 +981,7 @@ onUnmounted(() => {
   display: block;
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--color-text-secondary);
   white-space: nowrap;
   max-width: 100%;
   overflow: hidden;
@@ -1026,15 +1034,15 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.8);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--control-border);
+  color: var(--icon-main);
   transition: all 0.2s ease;
 }
 
 .top-right-btn:hover {
-  background: rgba(255, 255, 255, 0.18);
-  color: white;
+  background: var(--control-hover-bg);
+  color: var(--color-primary-text);
 }
 
 .top-right-group {
@@ -1044,8 +1052,8 @@ onUnmounted(() => {
   padding: 3px 4px;
   height: 36px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--control-border);
 }
 
 .top-right-group-btn {
@@ -1055,19 +1063,19 @@ onUnmounted(() => {
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--icon-main);
   transition: all 0.2s ease;
 }
 
 .top-right-group-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: white;
+  background: var(--control-hover-bg);
+  color: var(--color-primary-text);
 }
 
 .top-right-group-label {
   font-size: 12px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--icon-main);
   min-width: 2em;
   text-align: center;
   padding: 0 2px;
@@ -1118,9 +1126,9 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.6);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--control-border);
+  color: var(--icon-main);
   font-size: 12px;
   font-weight: 700;
   font-family:
@@ -1132,13 +1140,13 @@ onUnmounted(() => {
 }
 
 .lyric-page-tool-btn:hover {
-  background: rgba(255, 255, 255, 0.18);
-  color: white;
+  background: var(--control-hover-bg);
+  color: var(--color-primary-text);
 }
 
 .lyric-page-tool-btn.active {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border-color: rgba(255, 255, 255, 0.3);
+  background: var(--control-active-bg);
+  color: var(--color-primary-text);
+  border-color: var(--color-primary-text);
 }
 </style>

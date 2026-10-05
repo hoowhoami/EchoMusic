@@ -1,3 +1,5 @@
+import { neutralThemePalette } from '../../shared/themePalette';
+
 export type AppearanceMode = 'theme' | 'system' | 'light' | 'dark';
 export type AccentSource = 'theme' | 'cover' | 'custom';
 // QQMusic 11.10 skinChanged: rightBgColorView uses skin alpha * 0.5.
@@ -123,7 +125,7 @@ const readableSurface = (color: string, text: string, dark: boolean) => {
 };
 export function paletteFromSeed(seed: string, dark: boolean): ThemeTokens {
   const color = validColor(seed) ? seed : '#6b9bd1';
-  const text = dark ? '#f5f5f7' : '#1d1d1f';
+  const text = neutralThemePalette(dark).text;
   const main = readableSurface(dark ? mixColor(color, '#111114', 0.62) : color, text, dark);
   const shell = mixColor(main, dark ? '#111114' : '#ffffff', 0.12);
   const sidebar = shell;
@@ -155,30 +157,7 @@ export function paletteFromSeed(seed: string, dark: boolean): ThemeTokens {
     border: mixColor(main, text, 0.18),
   };
 }
-export const neutralTokens = (dark: boolean): ThemeTokens =>
-  dark
-    ? {
-        shell: '#202024',
-        sidebar: '#202024',
-        main: '#26262a',
-        card: '#36363a',
-        elevated: '#36363a',
-        player: '#2f2f34',
-        text: '#f5f5f7',
-        secondary: '#b8bfcb',
-        border: '#48484e',
-      }
-    : {
-        shell: '#f0f0f3',
-        sidebar: '#f0f0f3',
-        main: '#ffffff',
-        card: '#f5f5f7',
-        elevated: '#ffffff',
-        player: '#ffffff',
-        text: '#1d1d1f',
-        secondary: '#555963',
-        border: '#dedee5',
-      };
+export const neutralTokens = (dark: boolean): ThemeTokens => neutralThemePalette(dark);
 export function normalizeOverride(value: ThemeOverride): ThemeOverride {
   const base = defaultOverride();
   if (!value || typeof value !== 'object') return base;

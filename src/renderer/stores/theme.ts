@@ -1,8 +1,10 @@
 import { legacySurfaceVariables } from '@/plugins/runtime/theme';
+import { DEFAULT_THEME_ACCENT } from '../../shared/themePalette';
 import { defineStore } from 'pinia';
 import {
   resolveThemeColors,
   themeColorVariables,
+  themeContentSurfaces,
   usesLightForeground,
   type ResolvedThemeColors,
 } from '@/theme/colors';
@@ -170,7 +172,7 @@ export const useThemeStore = defineStore('appearance', {
         ? this.coverColor
         : pref.source === 'custom'
           ? pref.color
-          : (this.appearance.accent ?? '#0071e3');
+          : (this.appearance.accent ?? DEFAULT_THEME_ACCENT);
     },
     accentColor(): string {
       return this.accentMode === 'theme'
@@ -178,7 +180,20 @@ export const useThemeStore = defineStore('appearance', {
         : getNormalizedAccent(this.sourceColor, this.isDark);
     },
     accentTextColor(): string {
-      return createAccentPaletteFromPrimary(this.accentColor, this.isDark).primaryText;
+      return createAccentPaletteFromPrimary(this.accentColor, this.isDark, this.accentSurfaces)
+        .primaryText;
+    },
+    accentSurfaces(): string[] {
+      const atmosphere = this.activePreferences.atmosphere;
+      return themeContentSurfaces(
+        this.resolvedColors,
+        atmosphere.source === 'cover'
+          ? {
+              color: getAccentPalette(this.coverColor, this.isDark).atmosphere,
+              opacity: ((this.isDark ? 0.3 : 0.32) * clamp(atmosphere.strength, 20, 200)) / 100,
+            }
+          : undefined,
+      );
     },
     onAccentColor(): string {
       return createAccentPaletteFromPrimary(this.accentColor, this.isDark).onPrimary;
@@ -205,7 +220,7 @@ export const useThemeStore = defineStore('appearance', {
       return base;
     },
     cssTokens(): Record<string, string> {
-      return themeColorVariables(this.resolvedColors, this.accentColor);
+      return themeColorVariables(this.resolvedColors, this.accentColor, this.accentSurfaces);
     },
   },
   actions: {
@@ -345,7 +360,12 @@ export const useThemeStore = defineStore('appearance', {
         'echo-surface-translucent',
         Object.values(this.surfaceVariables).some((value) => value !== '100%' && value !== 'none'),
       );
-      applyAccentToRoot(this.sourceColor, this.isDark, this.accentMode === 'theme');
+      applyAccentToRoot(
+        this.sourceColor,
+        this.isDark,
+        this.accentMode === 'theme',
+        this.accentSurfaces,
+      );
       const atmos = this.activePreferences.atmosphere;
       const enabled = atmos.source === 'cover';
       const strength = clamp(atmos.strength, 20, 200);

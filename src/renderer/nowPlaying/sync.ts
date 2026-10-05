@@ -241,7 +241,7 @@ export const initNowPlayingSync = async () => {
       isDark: themeStore.isDark,
       colors: themeStore.cssTokens,
       floatingSurfaceFrosted: themeStore.floatingSurfaceFrosted,
-      accentColor: themeStore.sourceColor || themeStore.coverColor || '#31cfa1',
+      accentColor: themeStore.accentColor,
       fontFamily: settingStore.buildGlobalFontFamily(),
     };
     const nextKey = JSON.stringify(appearance);

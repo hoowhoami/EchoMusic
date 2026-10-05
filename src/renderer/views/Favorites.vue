@@ -556,7 +556,7 @@ watch(
                 集中管理收藏的歌曲、歌手、用户、专辑与视频。
               </div>
               <div
-                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
               >
                 <div class="inline-flex items-center gap-1.5">
                   <Icon :icon="iconHeart" width="12" height="12" />
@@ -591,7 +591,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 @click="openBatchDrawer"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -820,7 +820,7 @@ watch(
               </div>
               <div
                 v-else-if="videosLoaded && !videosHasMore && videos.length > 0"
-                class="flex justify-center py-6 text-[12px] text-text-secondary opacity-60"
+                class="flex justify-center py-6 text-[12px] text-text-secondary"
               >
                 没有更多了
               </div>

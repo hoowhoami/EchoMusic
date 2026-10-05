@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { neutralThemePalette, DEFAULT_THEME_ACCENT } from '../../shared/themePalette';
+import { createAccentPaletteFromPrimary } from '../../shared/accentPalette';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import type { NowPlayingCommand, NowPlayingSnapshot } from '../../shared/nowPlaying';
@@ -6,6 +8,20 @@ import { useTaskbarSeek } from './useTaskbarSeek';
 
 const snapshot = ref<NowPlayingSnapshot | null>(null);
 const dark = ref(false);
+const colors = computed(() => {
+  const palette = neutralThemePalette(dark.value);
+  return {
+    '--fg': palette.text,
+    '--muted': palette.secondary,
+    '--bg': palette.main,
+    '--accent': snapshot.value?.appearance.accentColor || DEFAULT_THEME_ACCENT,
+    '--accent-text': createAccentPaletteFromPrimary(
+      snapshot.value?.appearance.accentColor || DEFAULT_THEME_ACCENT,
+      dark.value,
+      [palette.main],
+    ).primaryText,
+  };
+});
 const coverFailed = ref('');
 const error = ref('');
 const playback = computed(() => snapshot.value?.playback);
@@ -61,7 +77,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="bar" :class="{ dark }" aria-label="任务栏快捷播控">
+  <section class="bar" :class="{ dark }" :style="colors" aria-label="任务栏快捷播控">
     <div
       class="metadata"
       :aria-label="`${title}（拖动可移出任务栏，双击打开主窗口）`"
@@ -149,9 +165,6 @@ body,
   box-sizing: border-box;
 }
 .bar {
-  --fg: #383838;
-  --muted: #777;
-  --bg: #eeeeee;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -161,11 +174,6 @@ body,
   color: var(--fg);
   font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
   user-select: none;
-}
-.bar.dark {
-  --fg: #eee;
-  --muted: #aaa;
-  --bg: #252525;
 }
 .metadata {
   -webkit-app-region: drag;
@@ -218,14 +226,15 @@ button {
   height: clamp(22px, 65vh, 32px);
   border-radius: 50%;
   background: transparent;
-  color: inherit;
+  color: color-mix(in srgb, var(--fg) 80%, transparent);
   cursor: pointer;
 }
 button:hover {
-  background: #8883;
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
 }
 button:focus-visible {
-  outline: 2px solid #e82b5b;
+  outline: 2px solid var(--fg);
   outline-offset: -2px;
 }
 button:disabled {
@@ -247,7 +256,7 @@ button.play {
   stroke-width: 1.6;
 }
 .favorite.active {
-  color: #e82b5b;
+  color: #ef4444;
 }
 .favorite.active svg {
   fill: currentColor;
@@ -263,7 +272,7 @@ button.play {
   align-items: flex-end;
   touch-action: none;
   margin: 0;
-  accent-color: #e82b5b;
+  accent-color: var(--accent);
   opacity: 0;
   cursor: pointer;
 }
@@ -280,14 +289,14 @@ button.play {
 .progress-range {
   position: absolute;
   height: 100%;
-  background: #e82b5b;
+  background: var(--accent);
 }
 .progress-thumb {
   display: block;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #e82b5b;
+  background: var(--accent);
 }
 .progress-thumb:focus-visible {
   outline: 1px solid var(--fg);
@@ -328,9 +337,12 @@ button.play {
 @media (forced-colors: active) {
   .bar,
   .bar.dark {
-    --fg: CanvasText;
-    --muted: CanvasText;
-    --bg: Canvas;
+    --fg: CanvasText !important;
+    --muted: CanvasText !important;
+    --bg: Canvas !important;
+  }
+  button:hover {
+    color: ButtonText;
   }
   button.play {
     background: ButtonFace;

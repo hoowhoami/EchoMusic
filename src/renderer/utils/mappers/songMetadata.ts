@@ -10,7 +10,6 @@ import {
 } from './shared';
 
 export const needsSongMetadata = (song: Song): boolean =>
-  song.source !== 'cloud' &&
   !!readPositiveId(song.albumAudioId) &&
   (!song.coverUrl ||
     !readPositiveId(song.albumId) ||
@@ -51,15 +50,19 @@ export const applyMissingSongMetadata = (songs: readonly Song[], payload: unknow
     const artists = buildArtists({ authors }, {});
     if (artists.length) {
       const current = song.artists?.length ? song.artists : song.singers;
-      const merged = current?.length
-        ? current.map((artist) => {
-            const match = artists.find((candidate) => candidate.name === artist.name);
-            return match && !readPositiveId(artist.id) && readPositiveId(match.id)
-              ? { ...artist, id: match.id, pic: artist.pic || match.pic }
-              : artist;
-          })
-        : artists;
-      if (!current?.length || merged.some((artist, index) => artist !== current[index])) {
+      const hasKnownArtists = current?.some(
+        (artist) => readPositiveId(artist.id) || (artist.name && artist.name !== '未知歌手'),
+      );
+      const merged =
+        current?.length && hasKnownArtists
+          ? current.map((artist) => {
+              const match = artists.find((candidate) => candidate.name === artist.name);
+              return match && !readPositiveId(artist.id) && readPositiveId(match.id)
+                ? { ...artist, id: match.id, pic: artist.pic || match.pic }
+                : artist;
+            })
+          : artists;
+      if (!hasKnownArtists || merged.some((artist, index) => artist !== current?.[index])) {
         patch.artists = merged;
         patch.singers = merged;
         if (!song.artist || song.artist === '未知歌手')

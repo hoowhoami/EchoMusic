@@ -34,14 +34,7 @@ const remoteActive = computed(() => output.snapshot && output.snapshot.protocol 
 const triggerMode = computed(() =>
   props.hoverClose || props.open === undefined ? 'hover' : 'click',
 );
-const buttonClass = computed(() => {
-  if (remoteActive.value) {
-    return props.variant === 'lyric' ? 'text-black dark:text-white' : 'text-primary-text';
-  }
-  return props.variant === 'lyric'
-    ? 'text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white'
-    : 'text-text-main/50 hover:text-primary-text';
-});
+const buttonClass = computed(() => ({ 'is-active': remoteActive.value }));
 
 function closePopover(): void {
   popoverRef.value?.close();
@@ -67,7 +60,7 @@ function closePopover(): void {
         variant="unstyled"
         size="none"
         type="button"
-        class="relative inline-flex items-center justify-center p-2 leading-none transition-all hover:scale-110 active:scale-90"
+        class="playback-action relative inline-flex items-center justify-center p-2 leading-none transition-all hover:scale-110 active:scale-90"
         :class="buttonClass"
         :aria-label="remoteActive ? `正在投放到${output.snapshot?.displayName}` : '投放'"
       >

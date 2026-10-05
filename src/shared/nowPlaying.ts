@@ -149,5 +149,6 @@ export const DEFAULT_NOW_PLAYING_LYRIC: NowPlayingLyricPayload = {
 
 export const DEFAULT_NOW_PLAYING_APPEARANCE: NowPlayingAppearancePayload = {
   isDark: false,
-  accentColor: '#31cfa1',
+  // A renderer-free startup snapshot; aligned with the default host theme.
+  accentColor: '#00cc65',
 };

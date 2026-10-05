@@ -2,7 +2,16 @@
 import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'history' });
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  onActivated,
+  onDeactivated,
+  ref,
+  watch,
+} from 'vue';
 import { useRoute } from 'vue-router';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
@@ -11,6 +20,8 @@ import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
 import { createThemedIconCoverUrl } from '@/utils/cover';
 import { useHistoryStore, type LocalHistoryEntry } from '@/stores/historyStore';
+import { useUserStore } from '@/stores/user';
+import { captureUserSession } from '@/utils/userSession';
 import { registerSongContextMenuExtension } from '@/components/music/songContextMenuExtensions';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
@@ -52,6 +63,42 @@ const toastStore = useToastStore();
 const themeStore = useThemeStore();
 const historyStore = useHistoryStore();
 const route = useRoute();
+const userStore = useUserStore();
+const metadataActive = ref(true);
+let metadataGeneration = 0;
+let metadataDisposed = false;
+watch(
+  [
+    () => historyStore.entries,
+    () => route.name,
+    metadataActive,
+    () => userStore.isLoggedIn,
+    () => userStore.accountRevision,
+    () => userStore.info?.userid ?? userStore.info?.userId,
+    () => userStore.info?.token,
+  ],
+  () => {
+    const generation = ++metadataGeneration;
+    if (metadataDisposed || !metadataActive.value || route.name !== 'history') return;
+    const ownsSession = captureUserSession(userStore);
+    void historyStore.completeMetadata(
+      () =>
+        !metadataDisposed &&
+        metadataActive.value &&
+        route.name === 'history' &&
+        generation === metadataGeneration &&
+        ownsSession(),
+    );
+  },
+  { immediate: true },
+);
+onActivated(() => {
+  metadataActive.value = true;
+});
+onDeactivated(() => {
+  metadataActive.value = false;
+  metadataGeneration++;
+});
 
 /** 动画状态：切歌置顶时触发列表滚动效果 */
 const animatingList = ref(false);
@@ -589,6 +636,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  metadataDisposed = true;
+  metadataGeneration++;
   unregisterContextMenu?.();
   if (clearCountdownTimer) clearInterval(clearCountdownTimer);
   if (animTimer) clearTimeout(animTimer);
@@ -613,7 +662,7 @@ onUnmounted(() => {
               记录过往播放轨迹，快速回溯曾听过的歌曲与内容。
             </div>
             <div
-              class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+              class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
             >
               <div class="inline-flex items-center gap-1.5">
                 <Icon :icon="iconPlay" width="12" height="12" />
@@ -654,7 +703,7 @@ onUnmounted(() => {
               size="none"
               :disabled="songCount === 0"
               @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
@@ -666,7 +715,7 @@ onUnmounted(() => {
             size="none"
             :disabled="sharingStats"
             @click="handleShareStats"
-            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-70"
+            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
             tooltip="分享听歌统计"
             aria-label="分享听歌统计"
           >
@@ -722,7 +771,7 @@ onUnmounted(() => {
                     size="none"
                     :disabled="songCount === 0"
                     @click="showClearDialog = true"
-                    class="song-locate-btn p-2 rounded-lg text-text-main/40 hover:text-danger transition-colors"
+                    class="song-locate-btn p-2 rounded-lg text-[var(--icon-main)] hover:text-danger transition-colors"
                     tooltip="清空播放历史"
                   >
                     <Icon :icon="iconTrash" width="16" height="16" />
@@ -730,7 +779,7 @@ onUnmounted(() => {
                 </div>
                 <div
                   v-else
-                  class="hidden sm:flex items-center gap-1.5 text-[12px] font-semibold text-text-secondary/80"
+                  class="hidden sm:flex items-center gap-1.5 text-[12px] font-semibold text-text-secondary"
                 >
                   <Icon :icon="iconClock" width="14" height="14" />
                   <span>最近 {{ historyStats.latestPlayedLabel }}</span>
@@ -761,7 +810,7 @@ onUnmounted(() => {
                 <Icon :icon="iconClock" width="28" height="28" />
               </div>
               <div class="text-[18px] font-semibold text-text-main">暂无播放历史</div>
-              <div class="mt-2 text-[13px] font-medium text-text-secondary/75">
+              <div class="mt-2 text-[13px] font-medium text-text-secondary">
                 最近播放的歌曲会展示在这里
               </div>
             </div>
@@ -775,7 +824,7 @@ onUnmounted(() => {
                 <Icon :icon="iconSearch" width="28" height="28" />
               </div>
               <div class="text-[18px] font-semibold text-text-main">未找到相关歌曲</div>
-              <div class="mt-2 text-[13px] font-medium text-text-secondary/75">换个关键词试试</div>
+              <div class="mt-2 text-[13px] font-medium text-text-secondary">换个关键词试试</div>
             </div>
             <div
               v-else
@@ -894,7 +943,7 @@ onUnmounted(() => {
                       <div class="history-panel-title">常听歌手</div>
                       <div class="history-panel-subtitle">按本地累计播放次数排序</div>
                     </div>
-                    <Icon class="text-primary-text/75" :icon="iconMusic" width="18" height="18" />
+                    <Icon class="text-primary-text" :icon="iconMusic" width="18" height="18" />
                   </div>
                   <div class="history-rank-list">
                     <div
@@ -1101,7 +1150,6 @@ onUnmounted(() => {
   margin-top: 6px;
   font-size: 12px;
   font-weight: 600;
-  opacity: 0.78;
 }
 
 .history-stats-layout {
@@ -1138,7 +1186,6 @@ onUnmounted(() => {
   margin-top: 4px;
   font-size: 12px;
   font-weight: 600;
-  opacity: 0.72;
 }
 
 .history-week-chart {
@@ -1192,7 +1239,6 @@ onUnmounted(() => {
 .history-week-date {
   font-size: 11px;
   font-weight: 700;
-  opacity: 0.68;
 }
 
 .history-time-list,
@@ -1238,7 +1284,6 @@ onUnmounted(() => {
   margin-top: 5px;
   font-size: 11px;
   font-weight: 700;
-  opacity: 0.64;
 }
 
 .history-rank-row,
@@ -1291,7 +1336,6 @@ onUnmounted(() => {
   margin-top: 3px;
   font-size: 11px;
   font-weight: 700;
-  opacity: 0.72;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1354,7 +1398,6 @@ onUnmounted(() => {
 .history-album-label {
   font-size: 11px;
   font-weight: 800;
-  opacity: 0.74;
 }
 
 .history-album-title {

@@ -8,7 +8,7 @@ import { parse, compileScript } from '@vue/compiler-sfc';
 const require = createRequire(import.meta.url);
 const output = await build({
   stdin: {
-    contents: `export {default as ThemeContent} from './src/renderer/theme/ThemeContent.vue';export * from './src/renderer/theme/model';export * from './src/renderer/theme/colors';export * from './src/renderer/theme/registry';export * from './src/renderer/stores/theme';export * from './src/renderer/layouts/sidebarLayout';export {createThemeApi,legacySurfaceVariables,legacyAccentGradientVariables} from './src/renderer/plugins/runtime/theme';`,
+    contents: `export {default as ThemeContent} from './src/renderer/theme/ThemeContent.vue';export * from './src/renderer/theme/model';export { DEFAULT_NOW_PLAYING_APPEARANCE } from './src/shared/nowPlaying';export { DEFAULT_THEME_ACCENT } from './src/shared/themePalette';export * from './src/renderer/theme/colors';export * from './src/renderer/theme/registry';export * from './src/renderer/stores/theme';export * from './src/renderer/layouts/sidebarLayout';export {createThemeApi,legacySurfaceVariables,legacyAccentGradientVariables} from './src/renderer/plugins/runtime/theme';`,
     resolveDir: process.cwd(),
     loader: 'ts',
   },
@@ -94,6 +94,80 @@ function register(id = 'test', options = {}) {
   const dispose = registry.register(entry);
   return { registry, entry, dispose, key: JSON.stringify([id, 'one']), errors };
 }
+
+test('immersive player foreground uses its own dark surface while retaining the current accent', () => {
+  const s = store();
+  for (const mode of ['light', 'dark']) {
+    s.updateGeneralPreferences({ mode, accent: { source: 'cover', color: '#0071e3' } });
+    for (const cover of ['#ff2222', '#00ff88', '#2244ff', '#ffcc22']) {
+      s.coverColor = cover;
+      for (const background of ['#171718', '#000000', '#203d49', '#402d31']) {
+        const vars = api.lyricPageColorVariables(s.accentColor, background);
+        assert.equal(vars['--text-main'], '#ffffff');
+        for (const surface of [background, api.mixColor(background, '#ffffff', 0.1)]) {
+          assert.ok(api.contrast(vars['--text-secondary'], surface) >= 4.5);
+          assert.ok(api.contrast(vars['--color-primary-text'], surface) >= 4.5);
+        }
+        assert.equal(vars['--floating-text-main'], undefined);
+        assert.equal(vars['--floating-accent-text'], undefined);
+      }
+    }
+  }
+});
+
+test('neutral skin uses clear mode-specific foregrounds on the composited shell and panels', () => {
+  const s = store();
+  for (const mode of ['light', 'dark']) {
+    s.updateGeneralPreferences({ mode });
+    assert.equal(s.accentColor, '#00cc65');
+    assert.equal(s.appearance.tokens.text, mode === 'dark' ? '#ffffff' : '#000000');
+    assert.equal(s.appearance.tokens.shell, mode === 'dark' ? '#171718' : '#f6f6f6');
+    for (const surface of s.accentSurfaces) {
+      assert.ok(api.contrast(s.cssTokens['--text-main'], surface) >= 7);
+      assert.ok(api.contrast(s.cssTokens['--text-secondary'], surface) >= 4.5);
+      assert.ok(api.contrast(s.accentTextColor, surface) >= 4.5);
+    }
+  }
+});
+
+test('cover colors retain distinct accents and readable text across neutral panels and atmosphere strengths', () => {
+  const s = store();
+  const covers = ['#dd3322', '#3377dd', '#55aa22', '#ddcc11', '#cc22cc', '#ffffff', '#000000'];
+  for (const mode of ['light', 'dark']) {
+    s.updateGeneralPreferences({ mode, accent: { source: 'cover', color: '#0071e3' } });
+    const accents = new Set();
+    for (const cover of covers) {
+      s.coverColor = cover;
+      for (const strength of [20, 100, 200]) {
+        s.updateGeneralPreferences({ atmosphere: { source: 'cover', height: 100, strength } });
+        accents.add(s.accentColor);
+        assert.equal(
+          document.documentElement.style.getPropertyValue('--color-primary'),
+          s.accentColor,
+        );
+        assert.equal(
+          document.documentElement.style.getPropertyValue('--color-primary-text'),
+          s.accentTextColor,
+        );
+        for (const surface of s.accentSurfaces) {
+          assert.ok(
+            api.contrast(s.accentTextColor, surface) >= 4.5,
+            `${mode} ${cover} ${strength} accent`,
+          );
+          assert.ok(
+            api.contrast(s.cssTokens['--text-secondary'], surface) >= 4.5,
+            `${mode} ${cover} ${strength} secondary`,
+          );
+        }
+        const floating = s.resolvedColors.floating;
+        assert.ok(api.contrast(s.cssTokens['--floating-accent-text'], floating.background) >= 4.5);
+        assert.ok(api.contrast(floating.secondary, floating.card) >= 4.5);
+      }
+    }
+    assert.ok(accents.size >= 5, 'cover accents must not collapse to one neutral color');
+  }
+});
+
 test('adaptive mode releases a native dark override and continues following OS changes', () => {
   const oldMatchMedia = window.matchMedia,
     oldSend = window.electron.ipcRenderer.send;
@@ -1117,4 +1191,32 @@ test('real cover sampling updates accent CSS through theme changes and discards 
     window.setTimeout = originalSetTimeout;
     window.clearTimeout = originalClearTimeout;
   }
+});
+
+test('independent windows pair image/plugin accents with their floating foreground and surface', () => {
+  for (const dark of [false, true]) {
+    const s = store();
+    s.updateGeneralPreferences({ mode: dark ? 'dark' : 'light' });
+    s.setCustomBackground('file:///fixture.png');
+    s.updateOverride({ background: { ...s.override.background, textColor: '#fefefe' } });
+    s.updateGeneralPreferences({ accent: { source: 'cover', color: '#ffdd00' } });
+    s.coverColor = '#ffdd00';
+    const vars = api.independentWindowColorVariables(s.cssTokens);
+    assert.equal(vars['--text-main'], s.resolvedColors.floating.text);
+    assert.equal(vars['--text-secondary'], s.resolvedColors.floating.secondary);
+    assert.equal(vars['--content-tone'], s.resolvedColors.floatingTone);
+    for (const surface of [vars['--surface-elevated-base'], vars['--floating-card-base']]) {
+      assert.ok(api.contrast(vars['--text-main'], surface) >= 4.5);
+      assert.ok(api.contrast(vars['--text-secondary'], surface) >= 4.5);
+      assert.ok(api.contrast(vars['--floating-accent-text'], surface) >= 4.5);
+    }
+    assert.equal(s.override.background.textColor, '#fefefe');
+    assert.equal(vars['--control-thumb-bg'], vars['--text-main']);
+    assert.equal(vars['--theme-shell'], s.cssTokens['--theme-shell']);
+  }
+  assert.deepEqual(api.independentWindowColorVariables({}), {});
+});
+
+test('the renderer-free playback snapshot uses the host default accent before theme synchronization', () => {
+  assert.equal(api.DEFAULT_NOW_PLAYING_APPEARANCE.accentColor, api.DEFAULT_THEME_ACCENT);
 });

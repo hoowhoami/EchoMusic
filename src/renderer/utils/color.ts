@@ -308,9 +308,13 @@ const brandPalettes = [
 ];
 
 // 直接写入 CSS 变量（无动画）
-const setAccentVars = (rgb: { r: number; g: number; b: number }, isDark: boolean) => {
+const setAccentVars = (
+  rgb: { r: number; g: number; b: number },
+  isDark: boolean,
+  surfaces?: string[],
+) => {
   const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
-  const palette = createAccentPaletteFromPrimary(hex, isDark);
+  const palette = createAccentPaletteFromPrimary(hex, isDark, surfaces);
   const hoverHex = palette.hover;
   const lightValue = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`;
   const darkValue = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.36)`;
@@ -370,7 +374,12 @@ const setAccentVars = (rgb: { r: number; g: number; b: number }, isDark: boolean
 };
 
 // 带 600ms 插值动画的主题色应用
-export const applyAccentToRoot = (hex: string, isDark: boolean, preservePrimary = false) => {
+export const applyAccentToRoot = (
+  hex: string,
+  isDark: boolean,
+  preservePrimary = false,
+  surfaces?: string[],
+) => {
   const normalized = preservePrimary ? hex : normalizeAccent(hex, isDark);
   const targetRgb = hexToRgb(normalized);
   if (!targetRgb) return;
@@ -388,7 +397,7 @@ export const applyAccentToRoot = (hex: string, isDark: boolean, preservePrimary 
       targetRgb.g === lastAppliedRgb.g &&
       targetRgb.b === lastAppliedRgb.b)
   ) {
-    setAccentVars(targetRgb, isDark);
+    setAccentVars(targetRgb, isDark, surfaces);
     lastAppliedRgb = targetRgb;
     return;
   }
@@ -415,7 +424,7 @@ export const applyAccentToRoot = (hex: string, isDark: boolean, preservePrimary 
             b: lerp(fromLab.b, toLab.b, eased),
           });
 
-    setAccentVars(currentRgb, isDark);
+    setAccentVars(currentRgb, isDark, surfaces);
     lastAppliedRgb = currentRgb;
 
     if (progress < 1) {

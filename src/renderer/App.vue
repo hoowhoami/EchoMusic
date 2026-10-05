@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { setOpenThemesHandler } from '@/theme/registry';
 import { settingsDialogOpen } from '@/composables/useSettingsDialog';
+import { useLyricPageTransition } from '@/composables/useLyricPageTransition';
 import { setupStartupPluginUpdateCheck } from '@/stores/pluginUpdates';
 let disposePluginUpdateCheck: (() => void) | undefined;
 import TooltipScope from '@/components/ui/TooltipScope.vue';
@@ -57,6 +58,7 @@ const LyricView = defineAsyncComponent(() => import('@/views/lyric/LyricPage.vue
 const route = useRoute();
 const router = useRouter();
 const player = shallowRef<PlayerStore | null>(null);
+const lyricTransition = useLyricPageTransition();
 const settings = useSettingStore();
 const updateStore = useUpdateStore();
 const themeStore = useThemeStore();
@@ -536,13 +538,17 @@ watch(
     </RouterView>
     <Teleport v-if="!isMiniPlayerRoute" to="body">
       <Transition
-        name="lyric-overlay"
-        @before-enter="(el) => el.removeAttribute('data-leaving')"
-        @before-leave="(el) => el.setAttribute('data-leaving', '')"
+        :css="false"
+        appear
+        @before-enter="lyricTransition.beforeEnter"
+        @enter="lyricTransition.enter"
+        @leave="lyricTransition.leave"
+        @enter-cancelled="lyricTransition.cancel"
+        @leave-cancelled="lyricTransition.cancel"
       >
         <!-- Mount the host synchronously, even while the lyric chunk is loading.
              Reveal the retained page as soon as the leave transition starts. -->
-        <div v-if="player?.isLyricViewOpen" class="lyric-overlay-host">
+        <div v-if="player?.isLyricViewOpen" class="lyric-overlay-host" data-entering>
           <LyricView />
         </div>
       </Transition>
@@ -563,29 +569,36 @@ watch(
   z-index: 1300;
 }
 
-.lyric-overlay-enter-active {
-  transition:
-    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform, opacity;
-  backface-visibility: hidden;
+.lyric-overlay-host[data-leaving] {
+  pointer-events: none;
 }
 
-.lyric-overlay-leave-active {
-  transition:
-    transform 0.3s cubic-bezier(0.4, 0, 0.6, 1),
-    opacity 0.2s cubic-bezier(0.4, 0, 1, 1);
-  will-change: transform, opacity;
-  backface-visibility: hidden;
+.lyric-cover-flight {
+  position: fixed;
+  z-index: 1350;
+  contain: layout paint;
+  pointer-events: none;
+  transform-origin: top left;
+  will-change: transform;
 }
 
-.lyric-overlay-enter-from {
-  opacity: 0;
-  transform: translateY(100%);
+.lyric-cover-flight-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  will-change: opacity;
 }
 
-.lyric-overlay-leave-to {
-  opacity: 0;
-  transform: translateY(100%);
+.lyric-cover-flight-clip * {
+  animation: none !important;
+  transition: none !important;
+}
+
+.lyric-overlay-host[data-motion='cover'] {
+  will-change: opacity;
+}
+
+.lyric-overlay-host[data-motion='panel'] {
+  will-change: transform;
 }
 </style>

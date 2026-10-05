@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DEFAULT_THEME_ACCENT } from '../../shared/themePalette';
 import { computed, ref, watch } from 'vue';
 import { neutralTokens, PANEL_MATERIAL, type AppThemeAppearance } from './model';
 const props = defineProps<{ appearance: AppThemeAppearance; image?: string; dark?: boolean }>();
@@ -17,7 +18,7 @@ const style = computed(() => {
     '--preview-player': `color-mix(in srgb, ${t.player} ${PANEL_MATERIAL.opacity}%, transparent)`,
     '--preview-text': t.text,
     '--preview-secondary': t.secondary,
-    '--preview-accent': props.appearance.accent ?? '#0071e3',
+    '--preview-accent': props.appearance.accent ?? DEFAULT_THEME_ACCENT,
     backgroundImage: props.appearance.background?.image
       ? `url(${JSON.stringify(props.appearance.background.image)})`
       : props.appearance.background?.gradient,

@@ -186,7 +186,7 @@ defineExpose({
 }
 
 .virtual-grid-state--empty {
-  color: color-mix(in srgb, var(--color-text-main) 45%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .virtual-grid-state-text {
@@ -196,7 +196,7 @@ defineExpose({
   width: 100%;
   font-size: 14px;
   font-weight: 500;
-  color: color-mix(in srgb, var(--color-text-main) 45%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .will-change-transform {

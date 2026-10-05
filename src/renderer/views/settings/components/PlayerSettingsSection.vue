@@ -193,9 +193,7 @@ const updatePlaybackStallMaxAttempts = (value: string | number) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">缓存耗尽时暂停</h3>
-        <p class="text-sm text-text-secondary">
-          仅控制网络缓存不足时是否等待；音频输出缓冲由音频设备缓冲控制
-        </p>
+        <p class="text-sm text-text-secondary">网络缓存不足时等待，不影响音频输出缓冲</p>
       </div>
       <Switch v-model="settingStore.cachePause" />
     </div>

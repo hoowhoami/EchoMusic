@@ -22,7 +22,7 @@
 .search-section-title {
   font-size: 15px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-main) 88%, transparent);
+  color: var(--color-text-main);
 }
 
 .search-history-clear {
@@ -33,7 +33,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: color-mix(in srgb, var(--color-text-main) 55%, transparent);
+  color: var(--icon-main);
   transition: all 0.18s ease;
 }
 
@@ -56,7 +56,7 @@
   min-height: 32px;
   border-radius: 16px;
   background: color-mix(in srgb, var(--color-text-main) 10%, transparent);
-  color: color-mix(in srgb, var(--color-text-main) 90%, transparent);
+  color: var(--color-text-main);
   font-size: 12px;
   font-weight: 500;
   transition: all 0.18s ease;
@@ -77,7 +77,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+  color: var(--icon-main);
 }
 
 .history-chip-close {
@@ -86,7 +86,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: color-mix(in srgb, var(--color-text-main) 55%, transparent);
+  color: var(--icon-main);
   transition: all 0.18s ease;
 }
 
@@ -219,7 +219,7 @@
 .search-placeholder {
   font-size: 14px;
   font-weight: 500;
-  color: color-mix(in srgb, var(--color-text-main) 45%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .search-song-list {
@@ -295,11 +295,11 @@
   text-align: center;
   font-size: 13px;
   font-weight: 500;
-  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .search-load-more-status--end {
-  color: color-mix(in srgb, var(--color-text-main) 38%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .rank-song-tab {

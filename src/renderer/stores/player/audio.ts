@@ -5,7 +5,6 @@ import type { AudioEffectValue, AudioQualityValue, PlayMode } from '../../types'
 import { buildMediaState, clampNumber, normalizeEffect, normalizeQuality } from './utils';
 import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
 import { getPlaybackIsLoading } from './stateMachine';
-import { DISCOVER_QUEUE_ID, PERSONAL_FM_QUEUE_ID } from '../playlist/constants';
 
 export const createAudioManager = (
   state: PlayerState,
@@ -59,11 +58,8 @@ export const createAudioManager = (
     state.shuffleQueueLength = 0;
     state.shufflePlayed = new Set();
     state.shuffleHistory = [];
-    engine.setLoopFile(
-      mode === 'single' &&
-        state.currentSourceQueueId !== PERSONAL_FM_QUEUE_ID &&
-        state.currentSourceQueueId !== DISCOVER_QUEUE_ID,
-    );
+    // Queue decisions own repeats so native looping cannot bypass song transitions.
+    engine.setLoopFile(false);
   };
 
   const setVolumeNormalization = (enabled: boolean) => {

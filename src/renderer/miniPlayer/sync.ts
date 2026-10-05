@@ -421,7 +421,7 @@ export const initMiniPlayerSync = async () => {
         isDark: themeStore.isDark,
         colors: themeStore.cssTokens,
         floatingSurfaceFrosted: themeStore.floatingSurfaceFrosted,
-        accentColor: themeStore.sourceColor || '#0071e3',
+        accentColor: themeStore.accentColor,
         fontFamily: settingStore.buildGlobalFontFamily(),
       },
     });
