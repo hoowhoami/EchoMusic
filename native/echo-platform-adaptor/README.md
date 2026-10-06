@@ -40,7 +40,10 @@ does not initialize or tear down this addon.
 
 `SetWindowCompositionAttribute` is dynamically resolved and its Accent policy is
 undocumented. Windows 10 uses Accent Acrylic, suspended during native move/resize.
-Windows 11 22H2+ Acrylic uses Electron's official `setBackgroundMaterial` instead.
+On Windows 11 22H2+ the keep-on-blur mode (12) swaps that suspended state to
+Electron's system backdrop instead of leaving nothing behind, so the frosted look
+survives the drag. Windows 11 22H2+ Acrylic uses Electron's official
+`setBackgroundMaterial` elsewhere.
 An unavailable DLL export, invalid HWND, or failed native operation returns false;
 the application displays a solid background and a status message. OS policy,
 graphics drivers and remote sessions can affect visible results even after a
@@ -82,7 +85,9 @@ not initialize Chromium Widget opacity. See the
 [investigation and controlled reproduction](../../docs/win10-composition-investigation.md).
 
 Mode 5 is the Win11 DWM-clear protocol; mode 6 includes legacy frame repair;
-modes 10/11 manage Accent on transparent windows. Modes 6/7/8 are comparison-only.
+modes 10/11 manage Accent on transparent windows; mode 12 stacks Accent Acrylic over
+a Win11 window whose system backdrop was cleared (keep-on-blur).
+Modes 6/7/8 are comparison-only.
 Rebuild and package the
 addon with the application: older binaries reject the new modes and trigger an
 explicit fallback. This change needs Windows visual validation; successful API
@@ -137,6 +142,19 @@ effects removes the subclass before clearing Accent; closing removes it at
 `WM_NCDESTROY`. This uses OS move/resize boundaries rather than a polling timer.
 Diagnostics expose `acrylicDragHandlerInstalled`, `acrylicSuspended` and
 `acrylicLastOperationSucceeded`; these remain API observations, not visual proof.
+
+Mode 12 (keep-on-blur) carries one extra subclass bit so the suspended state becomes
+the non-keep look instead of a bare transparent window: while the modal loop runs it
+hands the system backdrop back to DWM (`DWMWA_SYSTEMBACKDROP_TYPE`, acrylic) and drops
+Accent plus the blur-behind alpha, because an active blur-behind region suppresses the
+system backdrop. `WM_EXITSIZEMOVE` then restores Accent 4, the alpha composition and
+the cleared backdrop in reverse order. Verified on the reported Windows 11 24H2
+machine with real mouse drags sampled over white and black backing windows: 146/54
+during the drag versus 146/54 for the non-keep reference and 146/55 for the keep
+state. Note that a synthetic `WM_ENTERSIZEMOVE` without real movement is not a valid
+check: with no repaint DWM keeps the previous composite and the measurements mislead.
+This path is not reachable by resizing, since the application disables `thickFrame`
+on transparent windows and therefore never enters a size modal loop.
 
 Both clear and frost now have production implementations, but Windows 10 visual
 regression is still required. Clear uses Electron transparency; frost uses Accent

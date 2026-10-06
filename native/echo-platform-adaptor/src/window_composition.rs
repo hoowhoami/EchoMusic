@@ -84,6 +84,9 @@ extern "system" {
 }
 const LEGACY_COMPOSITION_SUBCLASS: usize = 0x4543484f;
 const ACRYLIC_DRAG_SUBCLASS: usize = 0x45434841;
+// DWMWA_SYSTEMBACKDROP_TYPE (38) 取值：0 = auto, 1 = none, 2 = mica, 3 = acrylic, 4 = mica alt。
+const SYSTEM_BACKDROP_NONE: u32 = 1;
+const SYSTEM_BACKDROP_ACRYLIC: u32 = 3;
 
 // 组合属性相关 API 未公开，按名称运行时解析；缺失时由调用方按失败处理。
 unsafe fn resolve_user32_proc(name: &[u8]) -> *mut c_void {
@@ -123,7 +126,11 @@ unsafe fn set_accent(handle: *mut c_void, state: i32, color: u32) -> bool {
 // Unlike a JS debounce, these messages also cover a paused mouse inside the loop.
 // 失焦保持（keep 位，bit 3）：常驻 Acrylic(4，带主题着色)——真实 alpha 着色下
 // accent 4 失焦不失效（Win11 实测）。着色存于 data 高 32 位，恢复时原样复用。
-// Data bits: 1 = suspended, 2 = last failed, 4 = keep on blur; bits 32+ = tint ABGR.
+// bit 8（仅 mode 12）：暂停期间整体换成「关闭失焦保持」的状态——系统 backdrop 交还
+// 系统、撤掉会被它压住的 per-pixel alpha，拖动时保留毛玻璃观感而不是变成纯透明；
+// 退出时逆序恢复（叠 accent 4 → 恢复 alpha → 收回 backdrop）。
+// Data bits: 1 = suspended, 2 = last failed, 4 = keep on blur, 8 = system backdrop
+// while suspended; bits 32+ = tint ABGR.
 unsafe extern "system" fn acrylic_drag_proc(
     hwnd: *mut c_void,
     message: u32,
@@ -137,8 +144,16 @@ unsafe extern "system" fn acrylic_drag_proc(
         return DefSubclassProc(hwnd, message, wparam, lparam);
     }
     if message == 0x0231 {
-        // WM_ENTERSIZEMOVE: disable before the modal loop.
-        let ok = set_accent(hwnd, 0, 0);
+        // WM_ENTERSIZEMOVE: legacy Accent Acrylic 在模态循环里逐帧重算代价高，拖动期间停用。
+        // mode 12（bit 8）把状态换成「关闭失焦保持」：交还系统 backdrop、撤掉 per-pixel
+        // alpha（blur-behind 会压掉系统 backdrop，实测只留 backdrop 仍是纯透明）再撤 accent；
+        // WM_EXITSIZEMOVE 时逆序恢复。
+        let mut ok = true;
+        if ref_data & 8 != 0 {
+            ok = set_system_backdrop(hwnd, SYSTEM_BACKDROP_ACRYLIC)
+                && set_alpha_composition(hwnd, false);
+        }
+        ok = set_accent(hwnd, 0, 0) && ok;
         SetWindowSubclass(hwnd, acrylic_drag_proc, id, (ref_data & !3) | 1 | if ok { 0 } else { 2 });
     }
     let result = DefSubclassProc(hwnd, message, wparam, lparam);
@@ -159,7 +174,12 @@ unsafe extern "system" fn acrylic_drag_proc(
         if restore {
             // 未存着色的遗留安装（mode 8/10 非 keep）回退到 0x01000000。
             let tint = (data >> 32) as u32;
-            let ok = set_accent(hwnd, 4, if tint == 0 { 0x01000000 } else { tint });
+            // mode 12：先叠回 accent 4，再恢复 per-pixel alpha、收回系统 backdrop（进入的逆序）。
+            let mut ok = set_accent(hwnd, 4, if tint == 0 { 0x01000000 } else { tint });
+            if data & 8 != 0 {
+                ok = set_alpha_composition(hwnd, true) && ok;
+                ok = set_system_backdrop(hwnd, SYSTEM_BACKDROP_NONE) && ok;
+            }
             SetWindowSubclass(hwnd, acrylic_drag_proc, id, (data & !3) | if ok { 0 } else { 2 });
         }
     }
@@ -392,6 +412,16 @@ unsafe fn set_alpha_composition(handle: *mut c_void, enabled: bool) -> bool {
     result >= 0
 }
 
+// 只改 DWM 系统材质（客户端区非客户区与形状都不动）。
+unsafe fn set_system_backdrop(handle: *mut c_void, backdrop: u32) -> bool {
+    DwmSetWindowAttribute(
+        handle,
+        38,
+        (&backdrop as *const u32).cast(),
+        size_of::<u32>() as u32,
+    ) >= 0
+}
+
 /// mode: 0=off, 5=Win11 DWM clear, 6=legacy DWM clear+frame repair, 7=legacy blur+frame repair,
 /// 8=old opaque-window Acrylic; 10/11=enable/clear Accent on an Electron transparent
 /// window without modifying Electron's DWM alpha or frame margins;
@@ -399,6 +429,8 @@ unsafe fn set_alpha_composition(handle: *mut c_void, enabled: bool) -> bool {
 /// backdrop, enable per-pixel alpha, then stack Accent Acrylic (keep-on-blur always on).
 /// keep_on_blur 仅对 10/12 有意义：子类不再在失焦时切换材质，accent 4 常驻
 /// （真实 alpha 着色下实测失焦不失效）。
+/// mode 12 在拖动/缩放（WM_ENTERSIZEMOVE..WM_EXITSIZEMOVE）期间把系统 backdrop 交还
+/// DWM 并撤掉 accent，观感等同关闭失焦保持；结束后收回 backdrop 再叠回 accent 4。
 /// tint 为 keep 模式 AccentPolicy 的 GradientColor（ABGR），必须使用真实 alpha
 /// （建议 ≥0x50：24H2 会把近零 alpha 的 accent 4 退化成无模糊灰罩）；缺省沿用
 /// 遗留的 0x01000000（与旧 addon 行为一致，仅兼容旧调用方）。
@@ -452,13 +484,8 @@ pub fn set_window_composition(
                 // the system backdrop, then enable per-pixel alpha and stack Accent
                 // Acrylic on top. Margins(-1) matches mode 5 and is idempotent.
                 let applied = {
-                    let none: u32 = 1; // DWMSBT_NONE
-                    DwmSetWindowAttribute(
-                        handle,
-                        38,
-                        (&none as *const u32).cast(),
-                        size_of::<u32>() as u32,
-                    ) >= 0 && margins(-1)
+                    set_system_backdrop(handle, SYSTEM_BACKDROP_NONE)
+                        && margins(-1)
                         && set_alpha_composition(handle, true)
                         && set_accent(handle, 4, tint)
                 };
@@ -467,7 +494,8 @@ pub fn set_window_composition(
                         handle,
                         acrylic_drag_proc,
                         ACRYLIC_DRAG_SUBCLASS,
-                        ((tint as usize) << 32) | 4,
+                        // bit 4 = 失焦保持常驻，bit 8 = 拖动期间回退系统 backdrop。
+                        ((tint as usize) << 32) | 4 | 8,
                     ) != 0
                 {
                     return true;
@@ -502,18 +530,9 @@ pub fn set_window_composition(
             if !set_alpha_composition(handle, false) || !accent(0) {
                 return false;
             }
-            if mode == 5 {
+            if mode == 5 && !set_system_backdrop(handle, SYSTEM_BACKDROP_NONE) {
                 // Reset only the system backdrop; Electron must retain its alpha surface.
-                let none: u32 = 1; // DWMSBT_NONE
-                if DwmSetWindowAttribute(
-                    handle,
-                    38,
-                    (&none as *const u32).cast(),
-                    size_of::<u32>() as u32,
-                ) < 0
-                {
-                    return false;
-                }
+                return false;
             }
             if !margins(if matches!(mode, 0 | 8) { 0 } else { -1 }) {
                 return false;
