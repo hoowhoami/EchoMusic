@@ -123,7 +123,9 @@ onBeforeUnmount(() => {
               {{ props.content }}
             </slot>
           </div>
-          <TooltipArrow :width="14" :height="8" class="app-tooltip-arrow" />
+          <TooltipArrow :width="14" :height="8" as-child>
+            <span class="app-tooltip-arrow floating-surface-arrow" />
+          </TooltipArrow>
         </TooltipContent>
       </TooltipPortal>
     </TooltipRoot>
@@ -148,11 +150,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-:global(.app-tooltip-arrow) {
-  display: block;
-  fill: var(--floating-surface-bg);
-  stroke: none;
-}
 @media (prefers-reduced-motion: no-preference) {
   :global(.app-tooltip-content[data-state='delayed-open']),
   :global(.app-tooltip-content[data-state='instant-open']) {

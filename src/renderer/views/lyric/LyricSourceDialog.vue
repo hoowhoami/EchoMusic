@@ -5,6 +5,7 @@ import { computed, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
+import SelectionBadge from '@/components/ui/SelectionBadge.vue';
 import {
   useLyricStore,
   getLyricCandidateKey,
@@ -15,7 +16,7 @@ import {
 import { usePlayerStore } from '@/stores/player';
 import { useToastStore } from '@/stores/toast';
 import Skeleton from '@/components/ui/Skeleton.vue';
-import { iconCheckMark, iconRefreshCw, iconSparkles, iconTriangleAlert } from '@/icons';
+import { iconRefreshCw, iconSparkles, iconTriangleAlert } from '@/icons';
 
 const props = defineProps<{
   open: boolean;
@@ -287,7 +288,7 @@ watch(selectedKey, () => {
         <Button
           variant="ghost"
           size="none"
-          class="refresh-btn"
+          class="action-icon refresh-btn"
           tooltip="刷新歌词候选"
           :disabled="isLoading"
           @click="loadCandidates(true)"
@@ -379,12 +380,10 @@ watch(selectedKey, () => {
                 </span>
               </div>
             </div>
-            <span
+            <SelectionBadge
               v-if="currentCandidateKey === getLyricCandidateKey(candidate)"
               class="current-check"
-            >
-              <Icon :icon="iconCheckMark" width="13" height="13" />
-            </span>
+            />
           </button>
         </div>
 
@@ -452,7 +451,7 @@ watch(selectedKey, () => {
 
     <template #footer>
       <Button
-        variant="ghost"
+        variant="secondary"
         size="sm"
         :disabled="!canRestoreAuto || isApplying"
         @click="restoreAuto"
@@ -502,7 +501,7 @@ watch(selectedKey, () => {
   justify-self: end;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 
 .track-title,
@@ -545,7 +544,7 @@ watch(selectedKey, () => {
   min-height: 0;
   overflow: auto;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--color-bg-elevated);
 }
 
@@ -562,7 +561,7 @@ watch(selectedKey, () => {
   display: block;
   width: 100%;
   padding: 11px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   border: 1px solid var(--control-border);
   background: var(--control-bg);
   color: var(--color-text-main);
@@ -610,7 +609,7 @@ watch(selectedKey, () => {
   gap: 8px;
   padding: 11px 12px;
   border: 1px solid var(--control-border);
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   background: var(--control-bg);
 }
 
@@ -650,44 +649,10 @@ watch(selectedKey, () => {
   overflow: hidden;
 }
 
-.candidate-tags span,
-.status-pill,
-.preview-badges span {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  height: 21px;
-  padding: 0 7px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: var(--control-muted-bg);
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  line-height: 1;
-  white-space: nowrap;
-  flex: 0 0 auto;
-}
-
 .current-check {
   position: absolute;
   top: 10px;
   right: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 28%, transparent);
-}
-
-.status-pill.recommended-pill {
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 11%, transparent);
-  border-color: color-mix(in srgb, var(--color-primary) 18%, transparent);
-  font-weight: 800;
 }
 
 .star-rating {
@@ -805,7 +770,7 @@ watch(selectedKey, () => {
   align-items: center;
   gap: 3px;
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   line-height: 1.45;
   text-align: center;
   color: var(--color-text-secondary);

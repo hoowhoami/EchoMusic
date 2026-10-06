@@ -577,3 +577,26 @@ test('round14: page supplies its ownership check to pending startup', async (t) 
   await task;
   assert.deepEqual(f.plays, []);
 });
+
+test('shared FM tabs preserve login/busy guards and request the selected mode/pool', async (t) => {
+  const f = pageFixture(t),
+    pending = deferred();
+  t.after(() => pending.resolve(null));
+  f.reset(() => pending.promise);
+  f.view.selectFmModeTab(3);
+  assert.equal(f.calls[0][1].mode, 'radio');
+  assert.equal(f.view.personalFmLoading.value, true);
+  f.view.selectSongPoolTab(2);
+  assert.equal(f.calls.length, 1);
+  pending.resolve(null);
+  await flush();
+  f.view.selectSongPoolTab(2);
+  await flush();
+  assert.equal(f.calls[1][1].songPoolId, 2);
+  assert.equal(f.calls[1][1].action, 'change_song_pool');
+  f.user.isLoggedIn = false;
+  f.view.selectFmModeTab(1);
+  f.view.selectSongPoolTab(1);
+  f.view.selectFmModeTab(9);
+  assert.equal(f.calls.length, 2);
+});

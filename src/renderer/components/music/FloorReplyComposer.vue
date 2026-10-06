@@ -98,7 +98,7 @@ async function submit() {
       <Button
         variant="ghost"
         size="none"
-        class="floor-close"
+        class="action-icon floor-close"
         :disabled="busy"
         aria-label="取消回复"
         @click="emit('close')"
@@ -136,7 +136,7 @@ async function submit() {
   margin: 12px 0;
   padding: 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
 .floor-composer-heading,
@@ -156,7 +156,7 @@ strong {
 }
 .floor-close {
   padding: 4px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
 }
 blockquote {
   margin: 8px 0 12px;
@@ -180,7 +180,7 @@ textarea {
   line-height: 1.6;
   color: var(--text-main);
   border: 1px solid var(--control-border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--color-bg-elevated);
   user-select: text;
 }

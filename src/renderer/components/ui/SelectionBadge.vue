@@ -4,7 +4,7 @@ import { iconCheckMark } from '@/icons';
 </script>
 
 <template>
-  <span class="selection-badge" aria-hidden="true">
+  <span class="selection-badge selection-mark-surface" aria-hidden="true">
     <Icon :icon="iconCheckMark" :width="14" :height="14" />
   </span>
 </template>
@@ -16,8 +16,6 @@ import { iconCheckMark } from '@/icons';
   flex: none;
   width: 20px;
   height: 20px;
-  border-radius: 5px;
-  color: var(--color-on-primary);
-  background: var(--color-primary);
+  border-radius: var(--radius-detail);
 }
 </style>

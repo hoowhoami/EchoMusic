@@ -271,7 +271,8 @@ onBeforeUnmount(() => {
 @reference "@/style.css";
 
 .input-number {
-  @apply inline-flex items-stretch rounded-xl overflow-hidden;
+  @apply inline-flex items-stretch overflow-hidden;
+  border-radius: var(--radius-control);
   height: 40px;
   border: 1px solid var(--control-border);
   background: var(--control-muted-bg);
@@ -308,7 +309,7 @@ onBeforeUnmount(() => {
 
 .input-number.is-small {
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 
 .input-number.is-small .input-number-field {
@@ -330,21 +331,24 @@ onBeforeUnmount(() => {
 }
 
 .input-number-controls {
-  @apply flex flex-col shrink-0;
+  @apply shrink-0;
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   width: 28px;
   border-left: 1px solid var(--control-border);
 }
 
 .input-number-btn {
-  @apply flex items-center justify-center flex-1;
+  @apply flex items-center justify-center;
   color: var(--icon-main);
   background: transparent;
   border: none;
+  border-radius: 0;
   outline: none;
   cursor: pointer;
   transition:
-    background-color 0.12s ease,
-    color 0.12s ease;
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
   padding: 0;
   min-height: 0;
 }
@@ -355,7 +359,7 @@ onBeforeUnmount(() => {
 }
 
 .input-number-btn:active:not(.is-disabled) {
-  background: var(--row-active-bg);
+  background: var(--control-neutral-pressed-bg);
 }
 
 .input-number-btn.is-disabled {
@@ -364,6 +368,12 @@ onBeforeUnmount(() => {
 }
 
 .input-number-btn + .input-number-btn {
-  border-top: 1px solid var(--control-border);
+  box-shadow: inset 0 1px var(--control-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .input-number-btn {
+    transition: none;
+  }
 }
 </style>

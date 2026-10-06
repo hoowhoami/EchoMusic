@@ -421,7 +421,7 @@ const confirmRemoveFromPlaylist = async () => {
       </div>
       <Button
         type="button"
-        class="batch-close"
+        class="action-icon batch-close"
         variant="ghost"
         size="xs"
         aria-label="关闭"
@@ -498,7 +498,7 @@ const confirmRemoveFromPlaylist = async () => {
         <Button
           type="button"
           class="batch-action primary"
-          variant="primary"
+          variant="soft-primary"
           size="xs"
           :disabled="!canPlaySelected || isBatchBusy"
           @click="handlePlaySelected"
@@ -509,7 +509,7 @@ const confirmRemoveFromPlaylist = async () => {
         <Button
           type="button"
           class="batch-action"
-          variant="secondary"
+          variant="soft-secondary"
           size="xs"
           :disabled="!canAddSelected || isBatchBusy"
           :loading="batchOp === 'addPlaylist'"
@@ -524,7 +524,7 @@ const confirmRemoveFromPlaylist = async () => {
         <Button
           type="button"
           class="batch-action danger"
-          variant="ghost"
+          variant="danger"
           size="xs"
           :disabled="!canBatchRemove || isBatchBusy"
           :loading="batchOp === 'remove'"
@@ -578,7 +578,7 @@ const confirmRemoveFromPlaylist = async () => {
   top: var(--drawer-safe-top);
   right: 12px;
   bottom: var(--drawer-safe-bottom);
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   overflow: hidden;
 }
 
@@ -604,7 +604,7 @@ const confirmRemoveFromPlaylist = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   color: var(--color-primary-text);
 }
@@ -641,34 +641,17 @@ const confirmRemoveFromPlaylist = async () => {
   gap: 8px;
   min-height: 38px;
   padding: 8px 14px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-text-main);
-  background: var(--control-muted-bg);
   transition:
     transform 0.2s ease,
     background-color 0.2s ease,
     color 0.2s ease;
 }
 
-.batch-action:not(:disabled):hover {
-  color: var(--color-primary-text);
-  background: var(--control-hover-bg);
-}
-
-.batch-action.primary {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-.batch-action.primary:not(:disabled):hover {
-  background: var(--color-primary-hover);
-  color: var(--color-on-primary);
-}
 .batch-action.danger {
   margin-left: auto;
-  background: transparent;
-  color: var(--state-danger);
 }
 
 .batch-action:disabled {
@@ -739,7 +722,7 @@ const confirmRemoveFromPlaylist = async () => {
   align-items: center;
   gap: 8px;
   padding: 0 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-item);
   transition: background-color 0.15s ease;
   cursor: pointer;
   user-select: none;
@@ -791,7 +774,7 @@ const confirmRemoveFromPlaylist = async () => {
 .batch-card :deep(.song-cover-frame) {
   width: 42px;
   height: 42px;
-  border-radius: 9px;
+  border-radius: var(--radius-media);
 }
 
 @media (max-width: 420px) {

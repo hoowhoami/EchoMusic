@@ -73,7 +73,7 @@ new Function('require', 'module', 'exports', songCardCode)(
       '@/utils/format': {},
       '@/icons': {},
       '@/utils/playback': {},
-      '@/utils/song': {},
+      '@/utils/song': load('../src/renderer/utils/song.ts'),
     };
     assert.ok(name in dependencies, name);
     return dependencies[name];
@@ -576,6 +576,23 @@ for (const owned of [false, true]) {
     assert.deepEqual(f.notices, []);
   });
 }
+
+test('owned playlist SongCard displays parsed qualitymap immediately without background completion', async (t) => {
+  const f = fixture(t, 'Playlist');
+  f.api.getPlaylistDetail = async () => ({
+    status: 1,
+    data: [{ id: 'A', listid: 12, listCreateListid: 12, listCreateUserid: 7, count: 1 }],
+  });
+  // The playlist mapper retains these display bits separately from playback hashes.
+  const song = { ...row(1), hash: 'original-hash', qualityMap: 116, relateGoods: [] };
+  f.api.getPlaylistTracksNew = async () => ({ status: 1, data: { info: [song] } });
+  f.setMetadata(() => new Promise(() => {}));
+  await f.run();
+  const card = observeSongCard(t, f.view.songs);
+  assert.equal(card.qualityTag.value, 'Hi-Res');
+  assert.deepEqual(f.view.songs.value[0].relateGoods, []);
+  assert.equal(f.view.songs.value[0].hash, 'original-hash');
+});
 
 for (const change of ['route', 'account', 'refresh', 'unmount']) {
   test(`playlist: late metadata is discarded after ${change}`, async (t) => {

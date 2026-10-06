@@ -854,6 +854,7 @@ watch(
                     :collapsed="true"
                   />
                   <Button
+                    class="action-icon"
                     v-else
                     variant="unstyled"
                     size="none"
@@ -895,6 +896,7 @@ watch(
               <Tooltip content="自建歌单" side="right">
                 <template #trigger>
                   <Button
+                    class="action-icon"
                     variant="unstyled"
                     size="none"
                     aria-label="自建歌单"
@@ -908,6 +910,7 @@ watch(
               <Tooltip content="收藏歌单" side="right">
                 <template #trigger>
                   <Button
+                    class="action-icon"
                     variant="unstyled"
                     size="none"
                     aria-label="收藏歌单"
@@ -946,7 +949,6 @@ watch(
                         :size="96"
                         :width="32"
                         :height="32"
-                        :borderRadius="8"
                         class="sidebar-rail-cover"
                       />
                     </button>
@@ -1051,7 +1053,7 @@ watch(
                       size="none"
                       :disabled="isMenuItemDisabled(item)"
                       :class="[
-                        'sidebar-nav-item w-full flex items-center gap-3.5 px-3.5 py-2 rounded-[14px] transition-all duration-200 group active:scale-[0.98]',
+                        'sidebar-nav-item w-full flex items-center gap-3.5 px-3.5 py-2 rounded-item transition-all duration-200 group active:scale-[0.98]',
                         isMenuItemDisabled(item)
                           ? 'is-disabled cursor-not-allowed opacity-35 text-text-main'
                           : isMenuItemActive(item)
@@ -1130,7 +1132,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 type="button"
-                class="sidebar-section-action sidebar-icon-btn"
+                class="action-icon sidebar-section-action sidebar-icon-btn"
                 tooltip="调整歌单顺序"
                 :disabled="!isLoggedIn"
                 @click="openPlaylistOrder"
@@ -1141,7 +1143,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 type="button"
-                class="sidebar-section-action sidebar-icon-btn"
+                class="action-icon sidebar-section-action sidebar-icon-btn"
                 tooltip="刷新歌单"
                 :disabled="!isLoggedIn"
                 @click="refreshUserPlaylists"
@@ -1164,7 +1166,7 @@ watch(
                       variant="unstyled"
                       size="none"
                       type="button"
-                      class="sidebar-section-action sidebar-icon-btn"
+                      class="action-icon sidebar-section-action sidebar-icon-btn"
                       tooltip="添加歌单"
                     >
                       <Icon :icon="iconPlus" width="12" height="12" />
@@ -1234,7 +1236,6 @@ watch(
                   :size="100"
                   :width="28"
                   :height="28"
-                  :borderRadius="6"
                   class="shrink-0"
                 />
                 <div class="sidebar-playlist-label-wrap">
@@ -1272,7 +1273,6 @@ watch(
                   :size="100"
                   :width="28"
                   :height="28"
-                  :borderRadius="6"
                   class="shrink-0"
                 />
                 <div
@@ -1295,7 +1295,7 @@ watch(
                   variant="unstyled"
                   size="none"
                   type="button"
-                  class="sidebar-playlist-action"
+                  class="action-icon sidebar-playlist-action"
                   :tooltip="isOwnerPlaylist(playlist) ? '删除歌单' : '取消收藏'"
                   @click.stop="openRemovePlaylistDialog(playlist)"
                 >
@@ -1329,7 +1329,6 @@ watch(
                   :size="100"
                   :width="28"
                   :height="28"
-                  :borderRadius="6"
                   class="shrink-0"
                 />
                 <div class="sidebar-playlist-label-wrap has-action">
@@ -1347,7 +1346,7 @@ watch(
                   variant="unstyled"
                   size="none"
                   type="button"
-                  class="sidebar-playlist-action"
+                  class="action-icon sidebar-playlist-action"
                   tooltip="取消收藏"
                   @click.stop="openRemovePlaylistDialog(playlist)"
                 >
@@ -1388,10 +1387,10 @@ watch(
         v-model="newPlaylistName"
         placeholder="请输入歌单名称"
         :show-clear="!isCreatingPlaylist"
-        input-class="h-12 rounded-[14px] px-4 pr-10 text-[14px] font-medium"
+        input-class="h-12 rounded-control px-4 pr-10 text-[14px] font-medium"
       />
       <div
-        class="flex items-center justify-between rounded-[14px] bg-[var(--control-muted-bg)] px-4 py-3"
+        class="flex items-center justify-between rounded-card bg-[var(--control-muted-bg)] px-4 py-3"
       >
         <div class="flex flex-col gap-1">
           <span class="text-[14px] font-medium text-text-main">设为隐私歌单</span>
@@ -1402,7 +1401,7 @@ watch(
     </div>
     <template #footer>
       <Button
-        variant="ghost"
+        variant="secondary"
         size="sm"
         :disabled="isCreatingPlaylist"
         @click="closeCreatePlaylistDialog"
@@ -1431,7 +1430,7 @@ watch(
   >
     <template #footer>
       <Button
-        variant="ghost"
+        variant="secondary"
         size="sm"
         :disabled="isRemovingPlaylist"
         @click="closeRemovePlaylistDialog"
@@ -1461,7 +1460,7 @@ watch(
 .user-info-card {
   border: 1px solid var(--border-subtle);
   min-height: 56px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   padding: 4px 4px 4px 8px;
 }
@@ -1561,7 +1560,7 @@ watch(
 .sidebar-layout-toolbar {
   display: flex;
   width: 100%;
-  justify-content: flex-end;
+  justify-content: center;
   flex-shrink: 0;
   padding: 6px 16px 10px;
 }
@@ -1585,7 +1584,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   background: var(--control-bg);
   box-shadow: inset 0 0 0 1px var(--control-border);
 }
@@ -1626,7 +1625,7 @@ watch(
   gap: 2px;
   padding: 3px;
   margin-bottom: 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-item);
   background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-main) 4%, transparent);
 }
@@ -1637,7 +1636,7 @@ watch(
   bottom: 3px;
   left: 3px;
   width: calc((100% - 8px) / 2);
-  border-radius: 9px;
+  border-radius: var(--radius-item);
   background: var(--color-bg-sidebar);
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.08),
@@ -1657,7 +1656,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   color: var(--icon-main);
   background: transparent;
   transition:
@@ -1691,7 +1690,7 @@ watch(
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: transparent;
   cursor: pointer;
   transition: all 0.18s ease;
@@ -1716,7 +1715,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   color: var(--icon-main);
   background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
 }
@@ -1732,7 +1731,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: var(--radius-item);
   color: var(--icon-main);
   background: transparent;
   transition: all 0.18s ease;
@@ -1818,7 +1817,7 @@ watch(
   min-height: 44px;
   gap: 10px;
   padding: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   text-align: left;
 }
@@ -1859,36 +1858,6 @@ watch(
   line-height: 16px;
   color: var(--color-text-secondary);
   white-space: nowrap;
-}
-
-.sidebar-member-badge {
-  flex: none;
-  padding: 0 5px;
-  border-radius: 4px;
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 16px;
-  letter-spacing: 0.2px;
-  color: var(--color-text-secondary);
-  background: var(--control-hover-bg);
-}
-
-.sidebar-member-badge.is-svip {
-  color: #a94913;
-  background: rgb(244 127 44 / 12%);
-}
-
-.sidebar-member-badge.is-tvip {
-  color: #087c47;
-  background: rgb(7 193 96 / 12%);
-}
-
-.dark .sidebar-member-badge.is-svip {
-  color: #ffbe89;
-}
-
-.dark .sidebar-member-badge.is-tvip {
-  color: #78dda9;
 }
 
 .sidebar-settings-btn {
@@ -1954,7 +1923,7 @@ watch(
 
 :deep(.sidebar-create-menu) {
   padding: 8px;
-  border-radius: 16px;
+  border-radius: var(--radius-popover);
   min-width: 248px;
 }
 
@@ -1968,7 +1937,7 @@ watch(
 }
 
 .sidebar-create-menu-item {
-  @apply w-full flex items-center gap-3 px-2 py-2 rounded-[12px] transition-all;
+  @apply w-full flex items-center gap-3 px-2 py-2 rounded-card transition-all;
 }
 
 .sidebar-create-menu-item:hover {
@@ -1980,7 +1949,7 @@ watch(
 }
 
 .sidebar-create-menu-icon {
-  @apply inline-flex items-center justify-center w-8 h-8 rounded-[10px] shrink-0 transition-colors;
+  @apply inline-flex items-center justify-center w-8 h-8 rounded-card shrink-0 transition-colors;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   color: var(--color-primary-text);
 }
@@ -2025,12 +1994,12 @@ watch(
   height: 1px;
   margin: 6px 14px;
   background: var(--border-subtle);
-  border-radius: 1px;
+  border-radius: var(--radius-micro);
 }
 
 :deep(.sidebar-sort-menu) {
   padding: 6px;
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   min-width: 140px;
 }
 
@@ -2054,7 +2023,7 @@ watch(
   align-items: center;
   width: 100%;
   padding: 7px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);

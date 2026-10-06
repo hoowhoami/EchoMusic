@@ -29,7 +29,7 @@ import TabsContent from '@/components/ui/TabsContent.vue';
 import VirtualGrid from '@/components/ui/VirtualGrid.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Dialog from '@/components/ui/Dialog.vue';
-import Popover from '@/components/ui/Popover.vue';
+import Select from '@/components/ui/Select.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { usePlaylistStore } from '@/stores/playlist';
@@ -51,9 +51,6 @@ import {
   iconList,
   iconHeart,
   iconHeartFilled,
-  iconArrowsSort,
-  iconCheckMark,
-  iconChevronDown,
   iconShare,
   iconEyeOff,
 } from '@/icons';
@@ -110,7 +107,6 @@ const artist = ref<ReturnType<typeof mapArtistDetailMeta> | null>(null);
 // 使用 shallowRef 避免对成千上万个歌曲对象进行深层响应式代理，极大提升性能
 const songs = shallowRef<Song[]>([]);
 const songSort = ref<ArtistSongSort>(settingStore.artistSongSort);
-const songSortMenuOpen = ref(false);
 let songFetchToken = 0;
 let disposed = false;
 let loadedSongSort: ArtistSongSort | null = null;
@@ -120,7 +116,6 @@ const albumPage = ref(1);
 const albumHasMore = ref(false);
 const albumFetched = ref(false);
 const albumSort = ref<ArtistAlbumSort>(settingStore.artistAlbumSort);
-const albumSortMenuOpen = ref(false);
 let albumFetchToken = 0;
 const mvs = shallowRef<ArtistMvCardProps[]>([]);
 const mvTotal = ref(0);
@@ -173,9 +168,6 @@ const sortedSongs = computed(() =>
   }),
 );
 const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, searchQuery.value));
-const songSortLabel = computed(
-  () => songSortOptions.find((option) => option.value === songSort.value)?.label ?? '最新',
-);
 
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
@@ -262,8 +254,8 @@ const loadArtistSongs = async (artistId = getArtistId()) => {
   }
 };
 
-const switchSongSort = (sort: ArtistSongSort) => {
-  songSortMenuOpen.value = false;
+const switchSongSort = (sort: unknown) => {
+  if (sort !== 'new' && sort !== 'hot') return;
   settingStore.artistSongSort = sort;
   if (sort === songSort.value) return;
   songSort.value = sort;
@@ -743,10 +735,6 @@ const albumSortOptions = [
   { value: 'hot' as const, label: '热门' },
 ];
 
-const albumSortLabel = computed(
-  () => albumSortOptions.find((option) => option.value === albumSort.value)?.label ?? '最新',
-);
-
 const resetAlbumPaging = () => {
   albumFetchToken += 1;
   loadingAlbums.value = false;
@@ -756,8 +744,8 @@ const resetAlbumPaging = () => {
   albumFetched.value = false;
 };
 
-const switchAlbumSort = (sort: ArtistAlbumSort) => {
-  albumSortMenuOpen.value = false;
+const switchAlbumSort = (sort: unknown) => {
+  if (sort !== 'new' && sort !== 'hot') return;
   settingStore.artistAlbumSort = sort;
   if (sort === albumSort.value) return;
   albumSort.value = sort;
@@ -932,7 +920,7 @@ onUnmounted(() => {
                 variant="unstyled"
                 size="none"
                 @click="handlePlayAll"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
+                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>
@@ -940,7 +928,7 @@ onUnmounted(() => {
                 variant="unstyled"
                 size="none"
                 @click="openBatchDrawer"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -951,7 +939,7 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               @click="toggleArtistFollow"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-red-500"
             >
               <Icon :icon="isFollowed ? iconHeartFilled : iconHeart" width="18" height="18" />
             </Button>
@@ -963,7 +951,7 @@ onUnmounted(() => {
               :tooltip="artistBlacklistStatus === 'present' ? '取消屏蔽' : '屏蔽歌手'"
               :aria-label="artistBlacklistStatus === 'present' ? '取消屏蔽' : '屏蔽歌手'"
               @click="toggleArtistBlacklist"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconEyeOff" width="18" height="18" />
             </Button>
@@ -971,7 +959,7 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               @click="handleShareArtist"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconShare" width="18" height="18" />
             </Button>
@@ -1006,73 +994,38 @@ onUnmounted(() => {
                 <div class="flex items-center justify-between h-14">
                   <TabsList class="bg-transparent border-none gap-8">
                     <TabsTrigger value="songs">
-                      <span class="relative"
+                      <span class="badge-label"
                         >歌曲 <Badge v-if="loadedSongCount > 0" :count="loadedSongCount"
                       /></span>
                     </TabsTrigger>
                     <TabsTrigger value="albums">
-                      <span class="relative"
+                      <span class="badge-label"
                         >专辑
                         <Badge v-if="albumFetched && albums.length > 0" :count="albums.length"
                       /></span>
                     </TabsTrigger>
                     <TabsTrigger value="mvs">
-                      <span class="relative"
+                      <span class="badge-label"
                         >MV <Badge v-if="mvFetched && mvs.length > 0" :count="mvs.length"
                       /></span>
                     </TabsTrigger>
                   </TabsList>
 
                   <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
-                    <Popover
-                      v-model:open="songSortMenuOpen"
-                      trigger="click"
-                      side="bottom"
-                      align="end"
-                      :side-offset="6"
-                      :show-arrow="false"
-                      content-class="artist-sort-menu"
-                    >
-                      <template #trigger>
-                        <Button
-                          variant="unstyled"
-                          size="none"
-                          type="button"
-                          class="artist-sort-trigger"
-                          tooltip="歌曲排序"
-                        >
-                          <Icon :icon="iconArrowsSort" width="15" height="15" />
-                          <span>{{ songSortLabel }}</span>
-                          <Icon class="artist-sort-trigger-arrow" :icon="iconChevronDown" />
-                        </Button>
-                      </template>
-
-                      <div class="artist-sort-menu-list">
-                        <div class="artist-sort-menu-title">歌曲排序</div>
-                        <button
-                          v-for="opt in songSortOptions"
-                          :key="opt.value"
-                          type="button"
-                          class="artist-sort-menu-item"
-                          :class="{ 'is-active': songSort === opt.value }"
-                          @click="switchSongSort(opt.value)"
-                        >
-                          <span>{{ opt.label }}</span>
-                          <Icon
-                            v-if="songSort === opt.value"
-                            :icon="iconCheckMark"
-                            width="13"
-                            height="13"
-                          />
-                        </button>
-                      </div>
-                    </Popover>
+                    <Select
+                      :model-value="songSort"
+                      :options="songSortOptions"
+                      class="artist-sort-select"
+                      aria-label="歌曲排序"
+                      content-align="end"
+                      @update:model-value="switchSongSort($event)"
+                    />
                     <SongSearchInput v-model="searchQuery" />
                     <Button
                       variant="unstyled"
                       size="none"
                       @click="handleLocate"
-                      class="song-locate-btn p-2 rounded-lg"
+                      class="action-icon song-locate-btn p-2"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="18" height="18" />
@@ -1123,49 +1076,14 @@ onUnmounted(() => {
 
             <TabsContent value="albums" class="mt-4 px-6">
               <div class="flex items-center gap-3 mb-4 px-2">
-                <Popover
-                  v-model:open="albumSortMenuOpen"
-                  trigger="click"
-                  side="bottom"
-                  align="start"
-                  :side-offset="6"
-                  :show-arrow="false"
-                  content-class="artist-sort-menu"
-                >
-                  <template #trigger>
-                    <Button
-                      variant="unstyled"
-                      size="none"
-                      type="button"
-                      class="artist-sort-trigger"
-                      tooltip="专辑排序"
-                    >
-                      <Icon :icon="iconArrowsSort" width="15" height="15" />
-                      <span>{{ albumSortLabel }}</span>
-                      <Icon class="artist-sort-trigger-arrow" :icon="iconChevronDown" />
-                    </Button>
-                  </template>
-
-                  <div class="artist-sort-menu-list">
-                    <div class="artist-sort-menu-title">专辑排序</div>
-                    <button
-                      v-for="opt in albumSortOptions"
-                      :key="opt.value"
-                      type="button"
-                      class="artist-sort-menu-item"
-                      :class="{ 'is-active': albumSort === opt.value }"
-                      @click="switchAlbumSort(opt.value)"
-                    >
-                      <span>{{ opt.label }}</span>
-                      <Icon
-                        v-if="albumSort === opt.value"
-                        :icon="iconCheckMark"
-                        width="13"
-                        height="13"
-                      />
-                    </button>
-                  </div>
-                </Popover>
+                <Select
+                  :model-value="albumSort"
+                  :options="albumSortOptions"
+                  class="artist-sort-select"
+                  aria-label="专辑排序"
+                  content-align="start"
+                  @update:model-value="switchAlbumSort($event)"
+                />
                 <span v-if="albumFetched" class="text-[11px] text-text-secondary ml-auto">
                   共 {{ artist.albumCount || albums.length }} 张
                 </span>
@@ -1257,6 +1175,10 @@ onUnmounted(() => {
 <style scoped>
 @reference "@/style.css";
 
+.artist-sort-select {
+  min-width: 88px;
+}
+
 .search-expand-enter-active,
 .search-expand-leave-active {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1277,24 +1199,6 @@ onUnmounted(() => {
   background: transparent;
 }
 
-.artist-sort-trigger {
-  @apply inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold text-text-secondary transition-all;
-  background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
-}
-
-.artist-sort-trigger:hover {
-  @apply text-text-main;
-  background: var(--control-hover-bg);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--control-border));
-}
-
-.artist-sort-trigger-arrow {
-  width: 13px;
-  height: 13px;
-  color: var(--icon-main);
-}
-
 .mv-tag-btn:hover {
   @apply text-text-main;
   background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
@@ -1303,55 +1207,5 @@ onUnmounted(() => {
 .mv-tag-btn.is-active {
   @apply text-primary-text;
   background: var(--color-primary-light);
-}
-</style>
-
-<style>
-.artist-sort-menu {
-  padding: 6px;
-  border-radius: 12px;
-  min-width: 132px;
-}
-
-.artist-sort-menu-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.artist-sort-menu-title {
-  padding: 4px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.artist-sort-menu-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 7px 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.artist-sort-menu-item:hover {
-  color: var(--color-text-main);
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
-}
-
-.artist-sort-menu-item.is-active {
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  font-weight: 600;
 }
 </style>

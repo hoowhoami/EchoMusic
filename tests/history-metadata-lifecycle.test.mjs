@@ -26,6 +26,7 @@ function fixture(t) {
   const callbacks = [],
     hooks = {};
   let hydrations = 0;
+  let clears = 0;
   const route = vue.reactive({ name: 'history' });
   const user = vue.reactive({
     isLoggedIn: true,
@@ -35,6 +36,10 @@ function fixture(t) {
   const history = vue.reactive({
     entries: [],
     playRecordVersion: 0,
+    clear: () => {
+      clears++;
+      history.entries = [];
+    },
     hydrate: async () => {
       hydrations++;
     },
@@ -74,6 +79,7 @@ function fixture(t) {
       useRouteTabs: () => ({ state: { tab: vue.ref('songs') }, select: async () => {} }),
     },
     '@/icons': {},
+    '@/stores/toast': { useToastStore: () => ({ success() {} }) },
   };
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)(
@@ -96,8 +102,70 @@ function fixture(t) {
     scope.stop();
   };
   t.after(stop);
-  return { callbacks, route, user, history, view, invoke, stop, hydrations: () => hydrations };
+  return {
+    callbacks,
+    route,
+    user,
+    history,
+    view,
+    invoke,
+    stop,
+    clears: () => clears,
+    hydrations: () => hydrations,
+  };
 }
+
+const addHistory = (f) => {
+  f.history.entries = [
+    {
+      song: { id: '1', name: '歌曲', artist: '歌手' },
+      historyKey: '1:9',
+      lastPlayedAt: 9,
+      playCount: 1,
+    },
+  ];
+};
+
+test('clear history requires the open confirmation and clears immediately after confirming', (t) => {
+  const f = fixture(t);
+  addHistory(f);
+  f.view.confirmClear();
+  assert.equal(f.clears(), 0);
+  f.view.historySecondaryActions.value[0].onTap();
+  assert.equal(f.view.showClearDialog.value, true);
+  assert.equal(f.clears(), 0);
+  f.view.confirmClear();
+  assert.equal(f.clears(), 1);
+  assert.equal(f.history.entries.length, 0);
+  assert.equal(f.view.showClearDialog.value, false);
+  f.view.confirmClear();
+  assert.equal(f.clears(), 1);
+});
+
+test('cancelling or unmounting clear confirmation keeps history', async (t) => {
+  const f = fixture(t);
+  addHistory(f);
+  f.view.openClearDialog();
+  await vue.nextTick();
+  f.view.showClearDialog.value = false;
+  await vue.nextTick();
+  assert.equal(f.clears(), 0);
+  assert.equal(f.history.entries.length, 1);
+  f.view.openClearDialog();
+  await vue.nextTick();
+  f.stop();
+  assert.equal(f.clears(), 0);
+});
+
+test('empty history disables the header action and cannot open or confirm clearing', (t) => {
+  const f = fixture(t);
+  assert.equal(f.view.historySecondaryActions.value[0].disabled, true);
+  f.view.openClearDialog();
+  assert.equal(f.view.showClearDialog.value, false);
+  f.view.showClearDialog.value = true;
+  f.view.confirmClear();
+  assert.equal(f.clears(), 0);
+});
 
 test('history page requests completion when local rows load without recording another play', async (t) => {
   const f = fixture(t);

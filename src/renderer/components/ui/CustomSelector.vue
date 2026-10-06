@@ -20,7 +20,7 @@ const handleClick = () => {
 
 <template>
   <Button
-    variant="unstyled"
+    variant="soft-secondary"
     size="none"
     type="button"
     class="custom-selector"
@@ -36,14 +36,7 @@ const handleClick = () => {
 @reference "@/style.css";
 
 .custom-selector {
-  @apply inline-flex items-center gap-2 h-9 px-[14px] rounded-[10px] text-text-main text-[13px] font-semibold;
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
-}
-
-.custom-selector:hover {
-  border-color: color-mix(in srgb, var(--color-text-main) 12%, transparent);
-  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  @apply inline-flex items-center gap-2 h-9 px-[14px] rounded-control text-text-main text-[13px] font-semibold;
 }
 
 .custom-selector-label {

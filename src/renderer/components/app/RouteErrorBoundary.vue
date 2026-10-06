@@ -124,7 +124,7 @@ const goHome = () => {
 .route-error-card {
   width: min(560px, 100%);
   padding: 24px;
-  border-radius: 26px;
+  border-radius: var(--radius-card);
   border: 1px solid var(--border-subtle);
   background: var(--content-panel-bg);
   box-shadow: var(--shadow-card);
@@ -134,7 +134,7 @@ const goHome = () => {
 .route-error-icon {
   width: 54px;
   height: 54px;
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -162,7 +162,7 @@ const goHome = () => {
 .route-error-details {
   margin-top: 16px;
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   color: var(--color-text-secondary);
 }

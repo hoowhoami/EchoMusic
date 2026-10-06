@@ -48,8 +48,8 @@ const handleClick = () => {
 </script>
 
 <template>
-  <div class="mv-card group cursor-pointer" @click="handleClick">
-    <div class="card-container">
+  <div class="mv-card card-hover group cursor-pointer" @click="handleClick">
+    <div class="card-container card-hover-border">
       <div class="cover-wrapper">
         <Cover :url="coverUrl" :size="coverSize" class="w-full h-full" />
         <!-- 播放图标遮罩 -->
@@ -74,32 +74,20 @@ const handleClick = () => {
 <style scoped>
 @reference "@/style.css";
 
-.mv-card {
-  @apply transition-all duration-300 ease-out;
-}
-
-.mv-card:hover {
-  transform: scale(1.03);
-}
-
 .card-container {
-  @apply p-[8px] rounded-[16px] transition-all duration-300;
+  @apply p-[8px] rounded-card;
   background: var(--content-panel-bg);
   border: 1px solid var(--content-panel-border);
   box-shadow: var(--shadow-card);
 }
 
-.mv-card:hover .card-container {
-  box-shadow: var(--shadow-card-hover);
-  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--border-subtle));
-}
-
 .cover-wrapper {
-  @apply aspect-video rounded-[10px] overflow-hidden shadow-sm relative;
+  @apply aspect-video rounded-media overflow-hidden shadow-sm relative;
 }
 
 .play-overlay {
-  @apply absolute inset-0 flex items-center justify-center bg-black/0 transition-all duration-300;
+  @apply absolute inset-0 flex items-center justify-center bg-black/0;
+  transition: background-color var(--motion-duration-normal) var(--motion-ease-standard);
 }
 
 .mv-card:hover .play-overlay {
@@ -107,7 +95,11 @@ const handleClick = () => {
 }
 
 .play-icon-circle {
-  @apply w-9 h-9 rounded-full bg-white/90 flex items-center justify-center text-black opacity-0 scale-75 transition-all duration-300;
+  @apply w-9 h-9 rounded-full bg-white/90 flex items-center justify-center text-black opacity-0 scale-75;
+  transition:
+    opacity var(--motion-duration-normal) var(--motion-ease-standard),
+    transform var(--motion-duration-normal) var(--motion-ease-standard),
+    scale var(--motion-duration-normal) var(--motion-ease-standard);
 }
 
 .mv-card:hover .play-icon-circle {
@@ -115,7 +107,9 @@ const handleClick = () => {
 }
 
 .duration-badge {
-  @apply absolute bottom-2 right-2 px-1.5 py-0.5 rounded-md text-[10px] font-semibold text-white bg-black/60;
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
 }
 
 .info-wrapper {

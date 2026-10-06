@@ -350,7 +350,7 @@ const selectAction = (action: SleepTimerAction) => {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--sleep-timer-border);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 .sleep-timer-action:hover {
@@ -408,7 +408,7 @@ const selectAction = (action: SleepTimerAction) => {
   place-items: center;
   width: 42px;
   height: 42px;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
@@ -420,7 +420,7 @@ const selectAction = (action: SleepTimerAction) => {
   min-height: 108px;
   margin: 0 0 16px;
   padding: 14px 8px;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
 .sleep-timer-status.is-active {
@@ -451,7 +451,7 @@ const selectAction = (action: SleepTimerAction) => {
   gap: 2px;
   padding: 10px 0;
   border: 1px solid var(--sleep-timer-border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   transition:
     background 150ms,
     border-color 150ms;
@@ -464,7 +464,7 @@ const selectAction = (action: SleepTimerAction) => {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--sleep-timer-border);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   font-size: 12px;
   cursor: pointer;
 }
@@ -487,7 +487,7 @@ const selectAction = (action: SleepTimerAction) => {
   width: 104px;
   padding: 8px 12px;
   border: 1px solid var(--sleep-timer-border);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   font-size: 14px;
   font-variant-numeric: tabular-nums;

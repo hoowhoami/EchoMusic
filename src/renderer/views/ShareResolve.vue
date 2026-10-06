@@ -515,7 +515,7 @@ watch(
   width: min(680px, 100%);
   padding: 28px;
   border: 1px solid var(--content-panel-border);
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   background: var(--content-panel-bg);
   box-shadow: var(--shadow-card);
 }
@@ -526,7 +526,7 @@ watch(
   gap: 8px;
   height: 30px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   font-size: 12px;
@@ -565,7 +565,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   color: var(--state-warning);
   background: color-mix(in srgb, var(--state-warning) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--state-warning) 24%, transparent);
@@ -607,7 +607,7 @@ watch(
   flex-direction: column;
   gap: 4px;
   padding: 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-item);
   background: var(--control-muted-bg);
 }
 
@@ -652,7 +652,7 @@ watch(
 
   .share-resolve-shell {
     padding: 22px;
-    border-radius: 14px;
+    border-radius: var(--radius-card);
   }
 
   .share-resolve-loading,

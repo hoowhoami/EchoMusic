@@ -481,7 +481,7 @@ watch(
   width: 4px;
   margin-left: auto;
   background: var(--scrollbar-thumb-bg);
-  border-radius: 4px;
+  border-radius: var(--radius-detail);
   cursor: pointer;
   transition:
     background 0.2s ease,

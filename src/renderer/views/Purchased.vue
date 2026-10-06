@@ -402,7 +402,7 @@ onMounted(() => {
                 variant="unstyled"
                 size="none"
                 @click="handlePlayAll"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
+                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>
@@ -410,7 +410,7 @@ onMounted(() => {
                 variant="unstyled"
                 size="none"
                 @click="openBatchDrawer"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -435,10 +435,10 @@ onMounted(() => {
                 <div class="flex items-center justify-between h-14">
                   <TabsList class="bg-transparent border-none gap-8">
                     <TabsTrigger value="songs">
-                      <span class="relative">单曲 <Badge :count="totalSongs" /></span>
+                      <span class="badge-label">单曲 <Badge :count="totalSongs" /></span>
                     </TabsTrigger>
                     <TabsTrigger value="albums">
-                      <span class="relative">专辑 <Badge :count="totalAlbums" /></span>
+                      <span class="badge-label">专辑 <Badge :count="totalAlbums" /></span>
                     </TabsTrigger>
                   </TabsList>
 
@@ -454,7 +454,7 @@ onMounted(() => {
                       variant="unstyled"
                       size="none"
                       @click="handleLocate"
-                      class="song-locate-btn p-2 rounded-lg"
+                      class="action-icon song-locate-btn p-2"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="16" height="16" />
@@ -481,7 +481,7 @@ onMounted(() => {
                 class="purchased-empty flex flex-col items-center justify-center py-24 text-center"
               >
                 <div
-                  class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary-text flex items-center justify-center mb-4"
+                  class="w-16 h-16 rounded-card bg-primary/10 text-primary-text flex items-center justify-center mb-4"
                 >
                   <Icon :icon="iconShoppingBag" width="28" height="28" />
                 </div>
@@ -518,7 +518,7 @@ onMounted(() => {
                 class="flex justify-center pt-6 pb-4"
               >
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
                   :disabled="songsLoadingMore"
                   @click="loadMoreSongs"
@@ -535,7 +535,7 @@ onMounted(() => {
               class="purchased-empty flex flex-col items-center justify-center py-24 text-center"
             >
               <div
-                class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary-text flex items-center justify-center mb-4"
+                class="w-16 h-16 rounded-card bg-primary/10 text-primary-text flex items-center justify-center mb-4"
               >
                 <Icon :icon="iconShoppingBag" width="28" height="28" />
               </div>
@@ -565,7 +565,7 @@ onMounted(() => {
             </VirtualGrid>
             <div v-if="albumsHasMore && !albumsLoading" class="flex justify-center pt-6 pb-4">
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="sm"
                 :disabled="albumsLoadingMore"
                 @click="loadMoreAlbums"

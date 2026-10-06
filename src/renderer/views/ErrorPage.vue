@@ -102,7 +102,11 @@ const handleCopyError = async () => {
       </div>
 
       <div class="error-footer">
-        <button class="error-copy-btn" @click="handleCopyError">
+        <button
+          type="button"
+          class="error-copy-btn soft-secondary-action app-focus-ring-soft"
+          @click="handleCopyError"
+        >
           <span v-if="!copied">复制错误信息</span>
           <span v-else class="error-copy-success">✓ 已复制</span>
         </button>
@@ -128,7 +132,7 @@ const handleCopyError = async () => {
   position: relative;
   width: min(720px, 100%);
   padding: 28px;
-  border-radius: 30px;
+  border-radius: var(--radius-dialog);
   border: 1px solid var(--border-subtle);
   background: var(--content-panel-bg);
   box-shadow: var(--shadow-card);
@@ -136,22 +140,7 @@ const handleCopyError = async () => {
 }
 
 .error-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--state-danger) 10%, transparent);
-  color: var(--state-danger);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-:global(.dark) .error-badge {
-  color: #ff8a8a;
-  background: color-mix(in srgb, var(--state-danger) 18%, transparent);
+  gap: 6px;
 }
 
 .error-badge-dot {
@@ -179,7 +168,7 @@ const handleCopyError = async () => {
 .error-icon-ring {
   position: absolute;
   inset: 0;
-  border-radius: 28px;
+  border-radius: var(--radius-dialog);
   background: radial-gradient(
     circle at 30% 30%,
     color-mix(in srgb, var(--state-danger) 28%, transparent),
@@ -191,7 +180,7 @@ const handleCopyError = async () => {
 .error-icon-core {
   position: absolute;
   inset: 12px;
-  border-radius: 24px;
+  border-radius: var(--radius-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -236,7 +225,7 @@ const handleCopyError = async () => {
 
 .error-meta-card {
   padding: 16px 18px;
-  border-radius: 20px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
   min-width: 0;
@@ -276,7 +265,7 @@ const handleCopyError = async () => {
 
 .error-action-btn {
   min-width: 100px;
-  border-radius: 14px;
+  border-radius: var(--radius-control);
 }
 
 .error-footer {
@@ -287,19 +276,11 @@ const handleCopyError = async () => {
 
 .error-copy-btn {
   padding: 8px 16px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 12%, transparent);
-  background: transparent;
-  color: var(--color-text-secondary);
+  border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-}
-
-.error-copy-btn:hover {
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
-  border-color: color-mix(in srgb, var(--color-text-main) 18%, transparent);
 }
 
 .error-copy-btn:active {
@@ -350,7 +331,7 @@ const handleCopyError = async () => {
   .error-shell {
     width: 100%;
     padding: 22px;
-    border-radius: 24px;
+    border-radius: var(--radius-dialog);
     margin: auto 0;
   }
 

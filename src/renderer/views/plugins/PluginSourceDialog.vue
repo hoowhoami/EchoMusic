@@ -101,7 +101,7 @@ const canAdd = computed(() => Boolean(props.sourceUrl.trim()) && !props.adding);
             <Button
               variant="ghost"
               size="xs"
-              class="plugin-source-delete-btn"
+              class="action-icon plugin-source-delete-btn"
               :tooltip="source.official ? '官方插件源可停用，但不能删除' : '删除插件源'"
               :disabled="source.official || busySourceIds.has(source.id)"
               @click="emit('remove', source)"

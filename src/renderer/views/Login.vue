@@ -264,6 +264,7 @@ const startCountdown = () => {
 };
 
 const handleSendCode = async () => {
+  if (smsData.isSending || smsData.countdown > 0) return;
   resetSmsAccountCandidates();
   const mobile = smsData.mobile ? smsData.mobile.toString().trim() : '';
   logger.info('Login', 'Attempting to send code to:', `"${mobile}"`, 'Length:', mobile.length);
@@ -289,12 +290,26 @@ const handleSendCode = async () => {
 };
 
 const handleSmsLogin = async () => {
+  if (smsData.isSending) return;
   const mobile = smsData.mobile.trim();
-  if (!mobile || !smsData.code) return;
+  const code = smsData.code.trim();
+  if (!mobile) {
+    smsData.error = '请输入手机号';
+    return;
+  }
+  if (!/^1\d{10}$/.test(mobile)) {
+    smsData.error = '请输入正确的手机号';
+    return;
+  }
+  if (!code) {
+    smsData.error = '请输入验证码';
+    return;
+  }
   resetSmsAccountCandidates();
   smsData.isSending = true;
+  smsData.error = '';
   try {
-    const res: any = await loginBySms(mobile, smsData.code);
+    const res: any = await loginBySms(mobile, code);
     resolveSmsLoginResponse(res);
   } catch (e) {
     const handled = resolveSmsLoginResponse(getApiErrorBody(e));
@@ -308,12 +323,13 @@ const handleSmsLogin = async () => {
 
 const handleSmsAccountLogin = async (account: SmsAccountCandidate) => {
   const mobile = smsData.mobile.trim();
-  if (!mobile || !smsData.code || smsData.isSending) return;
+  const code = smsData.code.trim();
+  if (!mobile || !code || smsData.isSending) return;
   smsData.isSending = true;
   smsData.pendingUserid = account.userid;
   smsData.error = '';
   try {
-    const res: any = await loginBySms(mobile, smsData.code, account.userid);
+    const res: any = await loginBySms(mobile, code, account.userid);
     const completed = resolveSmsLoginResponse(res);
     if (!completed) {
       smsData.pendingUserid = null;
@@ -338,10 +354,15 @@ const accountData = reactive({
 });
 
 const handleAccountLogin = async () => {
+  if (accountData.isSubmitting) return;
   const username = accountData.username.trim();
   const password = accountData.password.trim();
-  if (!username || !password || accountData.isSubmitting) {
-    accountData.error = '请输入用户名和密码';
+  if (!username) {
+    accountData.error = '请输入用户名';
+    return;
+  }
+  if (!password) {
+    accountData.error = '请输入密码';
     return;
   }
 
@@ -643,7 +664,7 @@ onUnmounted(() => {
           @click="closeLoginPage"
           variant="unstyled"
           size="none"
-          class="no-drag h-10 w-10 min-w-0 rounded-full p-0 flex items-center justify-center text-text-main bg-[var(--control-hover-bg)] hover:bg-[var(--control-hover-bg)]"
+          class="action-icon no-drag h-10 w-10 min-w-0 p-0 flex items-center justify-center text-text-main bg-[var(--control-hover-bg)] hover:bg-[var(--control-hover-bg)]"
         >
           <Icon :icon="iconChevronLeft" width="24" height="24" />
         </Button>
@@ -687,7 +708,7 @@ onUnmounted(() => {
                   </p>
                 </div>
                 <div
-                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
+                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-dialog shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
                 >
                   <Image :src="qrUrl" class="w-full h-full rounded-xl" />
                   <div
@@ -710,9 +731,9 @@ onUnmounted(() => {
                     }}</span>
                     <Button
                       @click="loadQrCode"
-                      variant="ghost"
+                      variant="secondary"
                       size="xs"
-                      class="text-[13px] text-primary-text font-black hover:opacity-80"
+                      class="text-[13px] font-black"
                       >重新加载</Button
                     >
                   </div>
@@ -739,7 +760,7 @@ onUnmounted(() => {
                     }}
                   </span>
                   <button
-                    class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-[var(--icon-main)] hover:text-primary-text hover:bg-primary/10 transition-all active:scale-90"
+                    class="action-icon absolute right-0 w-7 h-7 flex items-center justify-center text-[var(--icon-main)] hover:text-primary-text hover:bg-primary/10 transition-all active:scale-90"
                     :disabled="isLoadingQr"
                     @click="loadQrCode"
                   >
@@ -756,38 +777,55 @@ onUnmounted(() => {
                     无需密码，快捷安全
                   </p>
                 </div>
-                <div v-if="smsData.accountCandidates.length === 0" class="flex flex-col">
-                  <Input v-model="smsData.mobile" type="tel" placeholder="手机号码" class="mb-4" />
+                <form
+                  v-if="smsData.accountCandidates.length === 0"
+                  class="flex flex-col"
+                  @submit.prevent="handleSmsLogin"
+                >
+                  <Input
+                    v-model="smsData.mobile"
+                    type="tel"
+                    placeholder="手机号码"
+                    class="mb-4"
+                    :aria-describedby="smsData.error ? 'sms-login-error' : undefined"
+                  />
                   <div class="flex gap-3 mb-1">
                     <Input
                       v-model="smsData.code"
                       placeholder="验证码"
                       class="flex-1"
                       inputClass="pr-10"
+                      :aria-describedby="smsData.error ? 'sms-login-error' : undefined"
                     />
                     <Button
                       variant="secondary"
+                      type="button"
                       class="shrink-0 whitespace-nowrap"
-                      :disabled="smsData.countdown > 0"
+                      :disabled="smsData.countdown > 0 || smsData.isSending"
                       @click="handleSendCode"
                     >
                       {{ smsData.countdown > 0 ? `${smsData.countdown}s` : '获取验证码' }}
                     </Button>
                   </div>
                   <div class="h-5 flex items-center px-2 mb-1">
-                    <p v-if="smsData.error" class="text-[11px] text-red-500 font-bold">
+                    <p
+                      v-if="smsData.error"
+                      id="sms-login-error"
+                      role="alert"
+                      class="text-[11px] text-red-500 font-bold"
+                    >
                       {{ smsData.error }}
                     </p>
                   </div>
-                  <Button class="w-full" :loading="smsData.isSending" @click="handleSmsLogin">
+                  <Button type="submit" class="w-full" :loading="smsData.isSending">
                     立即登录
                   </Button>
-                </div>
+                </form>
                 <div v-else class="flex flex-col">
                   <div class="mb-3 flex items-center justify-between px-1">
                     <span class="text-[13px] font-black">选择账号</span>
                     <button
-                      class="text-[12px] font-bold text-text-secondary hover:text-primary-text transition-colors"
+                      class="soft-secondary-action rounded-control min-h-8 px-3 text-[12px] font-bold transition-colors"
                       :disabled="smsData.isSending"
                       @click="resetSmsAccountCandidates"
                     >
@@ -837,35 +875,35 @@ onUnmounted(() => {
                     可能需要安全验证
                   </p>
                 </div>
-                <div class="flex flex-col">
+                <form class="flex flex-col" @submit.prevent="handleAccountLogin">
                   <Input
                     v-model="accountData.username"
                     type="text"
                     placeholder="用户名"
                     class="mb-4"
-                    @keyup.enter="handleAccountLogin"
+                    :aria-describedby="accountData.error ? 'account-login-error' : undefined"
                   />
                   <Input
                     v-model="accountData.password"
                     type="password"
                     placeholder="密码"
                     class="mb-1"
-                    @keyup.enter="handleAccountLogin"
+                    :aria-describedby="accountData.error ? 'account-login-error' : undefined"
                   />
                   <div class="h-5 flex items-center px-2 mb-1">
-                    <p v-if="accountData.error" class="text-[11px] text-red-500 font-bold">
+                    <p
+                      v-if="accountData.error"
+                      id="account-login-error"
+                      role="alert"
+                      class="text-[11px] text-red-500 font-bold"
+                    >
                       {{ accountData.error }}
                     </p>
                   </div>
-                  <Button
-                    class="w-full"
-                    :loading="accountData.isSubmitting"
-                    :disabled="!accountData.username.trim() || !accountData.password.trim()"
-                    @click="handleAccountLogin"
-                  >
+                  <Button class="w-full" type="submit" :loading="accountData.isSubmitting">
                     立即登录
                   </Button>
-                </div>
+                </form>
               </TabsContent>
 
               <!-- 4. QQ 扫码 -->
@@ -877,7 +915,7 @@ onUnmounted(() => {
                   </p>
                 </div>
                 <div
-                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
+                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-dialog shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
                 >
                   <Image :src="qqQr.url" class="w-full h-full rounded-xl" />
                   <div
@@ -900,9 +938,9 @@ onUnmounted(() => {
                     </span>
                     <Button
                       @click="loadQqQr"
-                      variant="ghost"
+                      variant="secondary"
                       size="xs"
-                      class="text-[13px] text-[#12B7F5] font-black hover:opacity-80"
+                      class="text-[13px] font-black"
                       >重新加载</Button
                     >
                   </div>
@@ -925,7 +963,7 @@ onUnmounted(() => {
                   <Tooltip content="刷新 QQ 二维码">
                     <template #trigger>
                       <button
-                        class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-[var(--icon-main)] hover:text-[#12B7F5] hover:bg-[#12B7F5]/10 transition-all active:scale-90 disabled:opacity-40"
+                        class="action-icon absolute right-0 w-7 h-7 flex items-center justify-center text-[var(--icon-main)] hover:text-[#12B7F5] hover:bg-[#12B7F5]/10 transition-all active:scale-90 disabled:opacity-40"
                         :disabled="qqQr.isLoading"
                         aria-label="刷新 QQ 二维码"
                         @click="loadQqQr"
@@ -946,7 +984,7 @@ onUnmounted(() => {
                   </p>
                 </div>
                 <div
-                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
+                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-dialog shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
                 >
                   <Image :src="wxQr.url" class="w-full h-full rounded-xl" />
                   <div
@@ -969,9 +1007,9 @@ onUnmounted(() => {
                     }}</span>
                     <Button
                       @click="loadWxQr"
-                      variant="ghost"
+                      variant="secondary"
                       size="xs"
-                      class="text-[13px] text-[#07C160] font-black hover:opacity-80"
+                      class="text-[13px] font-black"
                       >重新加载</Button
                     >
                   </div>
@@ -998,7 +1036,7 @@ onUnmounted(() => {
                     }}
                   </span>
                   <button
-                    class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-[var(--icon-main)] hover:text-[#07C160] hover:bg-[#07C160]/10 transition-all active:scale-90"
+                    class="action-icon absolute right-0 w-7 h-7 flex items-center justify-center text-[var(--icon-main)] hover:text-[#07C160] hover:bg-[#07C160]/10 transition-all active:scale-90"
                     :disabled="wxQr.isLoading"
                     @click="loadWxQr"
                   >
@@ -1061,7 +1099,7 @@ onUnmounted(() => {
   flex-direction: column;
   height: 31.875rem;
   overflow: hidden;
-  border-radius: 36px;
+  border-radius: var(--radius-popover);
   background: var(--color-bg-dialog);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-dialog);

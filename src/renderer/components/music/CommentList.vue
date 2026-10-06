@@ -590,7 +590,7 @@ const handleDeleteComment = async (comment: Comment) => {
                   variant="unstyled"
                   size="none"
                   type="button"
-                  class="comment-delete"
+                  class="action-icon comment-delete"
                   :disabled="isDeletingComment(comment)"
                   tooltip="删除评论"
                 >
@@ -704,7 +704,7 @@ const handleDeleteComment = async (comment: Comment) => {
                         variant="unstyled"
                         size="none"
                         type="button"
-                        class="floor-target-delete"
+                        class="action-icon floor-target-delete"
                         :disabled="isDeletingComment(reply)"
                         tooltip="删除回复"
                       >
@@ -808,7 +808,7 @@ const handleDeleteComment = async (comment: Comment) => {
   gap: 12px;
   margin: 0 12px 12px;
   padding: 20px;
-  border-radius: 20px;
+  border-radius: var(--radius-item);
   background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
 }
@@ -855,7 +855,7 @@ const handleDeleteComment = async (comment: Comment) => {
 .comment-item {
   margin: 0 12px 12px;
   padding: 20px;
-  border-radius: 20px;
+  border-radius: var(--radius-item);
   background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
   display: flex;
@@ -878,7 +878,7 @@ const handleDeleteComment = async (comment: Comment) => {
 .comment-avatar-frame {
   width: 100%;
   height: 100%;
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   overflow: hidden;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   display: flex;
@@ -1035,88 +1035,10 @@ const handleDeleteComment = async (comment: Comment) => {
   pointer-events: none;
 }
 
-.comment-badge {
-  padding: 2px 6px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
-}
-
-.comment-badge-star {
-  color: var(--color-primary-text);
-  border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-}
-
-.comment-badge-svip,
-.comment-badge-svip-year {
-  color: #fff;
-  border: 0;
-  background: linear-gradient(90deg, #f97316, color-mix(in srgb, #f97316 80%, transparent));
-}
-
-.comment-badge-concept,
-.comment-badge-concept-year {
-  color: #fff;
-  border: 0;
-  background: linear-gradient(90deg, #f97316, color-mix(in srgb, #f97316 80%, transparent));
-}
-
-.comment-badge-vip,
-.comment-badge-vip-year {
-  color: #fff;
-  border: 0;
-  background: linear-gradient(90deg, #e8a317, color-mix(in srgb, #e8a317 80%, transparent));
-}
-
-.comment-badge-music,
-.comment-badge-music-year {
-  color: #fff;
-  border: 0;
-  background: linear-gradient(90deg, #3b82f6, color-mix(in srgb, #3b82f6 80%, transparent));
-}
-
-.comment-badge-changting,
-.comment-badge-wvip,
-.comment-badge-qvip {
-  color: #fff;
-  border: 0;
-  background: linear-gradient(90deg, #07c160, color-mix(in srgb, #07c160 80%, transparent));
-}
-
-.comment-badge-talent {
-  color: #fff;
-  border: 0;
-  background: linear-gradient(90deg, #8b5cf6, color-mix(in srgb, #8b5cf6 80%, transparent));
-}
-
-.comment-badge-student {
-  color: #fff;
-  border: 0;
-  background: linear-gradient(90deg, #0ea5e9, color-mix(in srgb, #0ea5e9 80%, transparent));
-}
-
-.comment-badge-actor,
-.comment-badge-biz,
-.comment-badge-tme-star,
-.comment-badge-auth {
-  color: #fff;
-  border: 0;
-  background: linear-gradient(90deg, #07c160, color-mix(in srgb, #07c160 80%, transparent));
-}
-
-.comment-badge-floor {
-  padding: 1px 5px;
-  font-size: 9px;
-}
-
 .comment-floor-inline {
   margin-top: 12px;
   padding: 16px 18px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   border: none;
 }
@@ -1231,7 +1153,7 @@ const handleDeleteComment = async (comment: Comment) => {
   font-weight: 600;
   color: var(--color-primary-text);
   padding: 4px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   transition: background 0.2s ease;
 }
 

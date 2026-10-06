@@ -434,7 +434,7 @@ onMounted(() => {
   width: min(680px, 100%);
   padding: 28px;
   border: 1px solid var(--content-panel-border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--content-panel-bg);
   box-shadow: var(--shadow-card);
 }
@@ -445,7 +445,7 @@ onMounted(() => {
   gap: 8px;
   height: 30px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   font-size: 12px;
@@ -467,7 +467,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-primary) 22%, transparent);
@@ -514,7 +514,7 @@ onMounted(() => {
 
 .plugin-share-plugin {
   padding: 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--content-panel-border);
   background: var(--control-muted-bg);
 }
@@ -526,7 +526,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--plugin-accent);
   background: color-mix(in srgb, var(--plugin-accent) 12%, transparent);
   overflow: hidden;
@@ -556,7 +556,7 @@ onMounted(() => {
   gap: 8px;
   margin-top: 14px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid rgba(245, 158, 11, 0.18);
   background: rgba(245, 158, 11, 0.08);
   color: rgb(180, 83, 9);
@@ -575,7 +575,7 @@ onMounted(() => {
   gap: 8px 14px;
   margin-top: 18px;
   padding: 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
 }
 

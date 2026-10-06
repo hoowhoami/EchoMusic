@@ -25,7 +25,6 @@ const { settings } = useLyricSkin(HOST_SKIN_KEYS.cover, LYRIC_SKIN_COVER_DEFAULT
           :album-id="currentTrack?.albumId"
           :active="playerStore.isPlaying"
           :size="800"
-          :border-radius="24"
           :alt="currentTrack?.albumName || currentTrack?.name || '专辑封面'"
           class="cover-img"
         />
@@ -74,7 +73,7 @@ const { settings } = useLyricSkin(HOST_SKIN_KEYS.cover, LYRIC_SKIN_COVER_DEFAULT
 .cover-wrapper {
   width: clamp(220px, 80%, 380px);
   aspect-ratio: 1;
-  border-radius: 24px;
+  border-radius: var(--radius-media);
   overflow: hidden;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
 }

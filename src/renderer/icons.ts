@@ -1,3 +1,4 @@
+import diamond from '@iconify/icons-tabler/diamond';
 import type { IconifyIcon } from '@iconify/types';
 import chevronDown from '@iconify/icons-tabler/chevron-down';
 import chevronUp from '@iconify/icons-tabler/chevron-up';
@@ -214,6 +215,7 @@ export const iconMicrophone = microphone as IconifyIcon;
 export const iconBrandQq = brandQq as IconifyIcon;
 export const iconBrandWechat = brandWechat as IconifyIcon;
 export const iconHeadphones = headphones as IconifyIcon;
+export const iconDiamond = diamond as IconifyIcon;
 export const iconUsers = users as IconifyIcon;
 export const iconSend = send as IconifyIcon;
 export const iconDoorExit = doorExit as IconifyIcon;

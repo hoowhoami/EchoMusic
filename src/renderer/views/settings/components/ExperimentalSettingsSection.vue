@@ -389,7 +389,7 @@ const confirmResetDeviceIdentity = async () => {
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-item);
   background: var(--control-muted-bg);
 }
 

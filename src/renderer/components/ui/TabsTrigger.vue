@@ -28,9 +28,10 @@ const forwardedProps = useForwardProps(props);
 }
 
 .active-line {
-  @apply absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-primary rounded-full;
+  @apply absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-full;
   opacity: 0;
-  transform: scaleX(0.4);
+  transform: scaleX(0.75);
+  transform-origin: center;
   transition:
     transform var(--motion-duration-normal) var(--motion-ease-standard),
     opacity var(--motion-duration-fast) var(--motion-ease-standard);

@@ -71,7 +71,7 @@ defineProps<{
           更新日志
         </Button>
         <Button
-          variant="unstyled"
+          variant="primary"
           size="none"
           class="settings-action settings-action-primary"
           :disabled="isCheckingUpdate"
@@ -90,7 +90,7 @@ defineProps<{
       <Button
         variant="ghost"
         size="xs"
-        class="text-text-secondary h-10 w-10 min-w-0 p-0"
+        class="action-icon text-text-secondary h-10 w-10 min-w-0 p-0"
         aria-label="查看源码"
         @click="settingStore.openRepo()"
       >
@@ -106,7 +106,7 @@ defineProps<{
       <Button
         variant="ghost"
         size="xs"
-        class="text-text-secondary h-10 w-10 min-w-0 p-0"
+        class="action-icon text-text-secondary h-10 w-10 min-w-0 p-0"
         aria-label="查看声明"
         @click="onShowDisclaimer"
       >

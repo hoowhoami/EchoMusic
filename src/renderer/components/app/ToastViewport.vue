@@ -207,7 +207,7 @@ onUnmounted(() => {
 
         <Button
           v-if="visibleToast.action"
-          variant="unstyled"
+          variant="primary"
           size="none"
           class="toast-action"
           @click="runToastAction(visibleToast.id)"
@@ -219,7 +219,7 @@ onUnmounted(() => {
           v-if="visibleToast.variant === 'standard'"
           variant="unstyled"
           size="none"
-          class="toast-close"
+          class="action-icon toast-close"
           aria-label="关闭提示"
           @click="toastStore.remove(visibleToast.id)"
         >
@@ -344,12 +344,6 @@ onUnmounted(() => {
 
 .toast-action {
   @apply h-7 shrink-0 rounded-lg px-2 text-[12px] font-semibold transition;
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-}
-
-.toast-action:hover {
-  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .toast-count {

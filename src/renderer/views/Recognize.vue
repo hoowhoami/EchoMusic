@@ -503,7 +503,6 @@ onBeforeUnmount(() => {
                 v-if="match.song.coverUrl"
                 :url="match.song.coverUrl"
                 :size="96"
-                :borderRadius="10"
                 class="rec-match-cover"
               />
               <div v-else class="rec-match-cover rec-match-cover-empty">
@@ -535,13 +534,14 @@ onBeforeUnmount(() => {
                 <Button
                   variant="unstyled"
                   size="none"
-                  class="rec-circle-btn rec-circle-primary"
+                  class="action-icon rec-circle-btn rec-circle-primary"
                   tooltip="播放"
                   @click="handlePlay(match.song)"
                 >
                   <Icon :icon="iconPlay" width="17" height="17" />
                 </Button>
                 <Button
+                  class="action-icon"
                   variant="unstyled"
                   size="none"
                   :class="[
@@ -560,7 +560,7 @@ onBeforeUnmount(() => {
                 <Button
                   variant="unstyled"
                   size="none"
-                  class="rec-circle-btn rec-circle-ghost"
+                  class="action-icon rec-circle-btn rec-circle-ghost"
                   tooltip="添加到歌单"
                   @click="handleAddToPlaylist(match.song)"
                 >
@@ -569,7 +569,7 @@ onBeforeUnmount(() => {
                 <Button
                   variant="unstyled"
                   size="none"
-                  class="rec-circle-btn rec-circle-ghost"
+                  class="action-icon rec-circle-btn rec-circle-ghost"
                   tooltip="歌曲详情"
                   @click="goToDetail(match.song)"
                 >
@@ -580,7 +580,12 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="rec-retry-center">
-            <Button variant="unstyled" size="none" class="rec-retry-btn" @click="resetAndRestart">
+            <Button
+              variant="soft-secondary"
+              size="none"
+              class="rec-retry-btn"
+              @click="resetAndRestart"
+            >
               <Icon :icon="iconMicrophone" width="15" height="15" />
               重新识别
             </Button>
@@ -684,7 +689,7 @@ onBeforeUnmount(() => {
 
           <Button
             v-if="status === 'failed'"
-            variant="ghost"
+            variant="secondary"
             size="sm"
             class="mt-4"
             @click="startRecording"
@@ -964,7 +969,7 @@ onBeforeUnmount(() => {
   gap: 6px;
   width: 100%;
   padding: 7px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-popover);
   font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
@@ -1010,7 +1015,7 @@ onBeforeUnmount(() => {
 
 .rec-source-menu-mic-list::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--color-text-main) 15%, transparent);
-  border-radius: 2px;
+  border-radius: var(--radius-micro);
 }
 
 .rec-source-menu-mic-list::-webkit-scrollbar-thumb:hover {
@@ -1057,7 +1062,7 @@ onBeforeUnmount(() => {
 
 .rec-match-list::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--color-text-main) 15%, transparent);
-  border-radius: 3px;
+  border-radius: var(--radius-micro);
 }
 
 .rec-match-list::-webkit-scrollbar-thumb:hover {
@@ -1069,7 +1074,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 14px;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-item);
   background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
   border: 1px solid transparent;
   transition: all 0.2s ease;
@@ -1118,7 +1123,7 @@ onBeforeUnmount(() => {
 .rec-match-cover {
   width: 48px;
   height: 48px;
-  border-radius: 10px;
+  border-radius: var(--radius-media);
   flex-shrink: 0;
 }
 
@@ -1155,7 +1160,7 @@ onBeforeUnmount(() => {
 .rec-circle-btn {
   width: 34px;
   height: 34px;
-  border-radius: 9999px;
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1202,7 +1207,7 @@ onBeforeUnmount(() => {
 .rec-playlist-item {
   width: 100%;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   border: 1px solid var(--control-border);
   background: var(--control-muted-bg);
   text-align: left;
@@ -1238,19 +1243,10 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-secondary);
-  border: 1.5px solid color-mix(in srgb, var(--color-text-main) 15%, transparent);
-  background: transparent;
   cursor: pointer;
   transition: all 0.2s ease;
-}
-
-.rec-retry-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
 }
 </style>

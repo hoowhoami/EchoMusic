@@ -173,7 +173,7 @@ const restoreDefaults = () => patch({ ...LYRIC_SKIN_AMLL_DEFAULTS });
     </div>
 
     <button
-      class="reset-btn"
+      class="reset-btn soft-secondary-action app-focus-ring-soft"
       type="button"
       :class="{ invisible: !hasCustomSettings }"
       @click="restoreDefaults"

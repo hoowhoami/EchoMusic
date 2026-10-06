@@ -6,6 +6,7 @@ import { Icon } from '@iconify/vue';
 import Checkbox from '@/components/ui/Checkbox.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
+import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Input from '@/components/ui/Input.vue';
 import Select from '@/components/ui/Select.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
@@ -798,22 +799,13 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
             file.name
           }}</span>
         </div>
-        <div class="import-target-tabs">
-          <button
-            type="button"
-            :class="{ 'is-active': screenshotTarget === 'existing' }"
-            @click="screenshotTarget = 'existing'"
-          >
-            选择歌单
-          </button>
-          <button
-            type="button"
-            :class="{ 'is-active': screenshotTarget === 'new' }"
-            @click="screenshotTarget = 'new'"
-          >
-            新建歌单
-          </button>
-        </div>
+        <CustomTabBar
+          :tabs="['选择歌单', '新建歌单']"
+          :model-value="screenshotTarget === 'existing' ? 0 : 1"
+          role="radiogroup"
+          aria-label="截图导入目标"
+          @update:model-value="screenshotTarget = $event === 0 ? 'existing' : 'new'"
+        />
         <Select
           v-if="screenshotTarget === 'existing'"
           :model-value="existingListId ?? ''"
@@ -909,7 +901,9 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 
     <template #footer>
       <template v-if="step === 'input'">
-        <Button variant="ghost" size="sm" :disabled="isStarting" @click="open = false">取消</Button>
+        <Button variant="secondary" size="sm" :disabled="isStarting" @click="open = false"
+          >取消</Button
+        >
         <Button
           variant="primary"
           size="sm"
@@ -917,7 +911,6 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
           :disabled="!canStart"
           @click="startImport"
         >
-          <Icon :icon="iconPlaylistAdd" width="14" height="14" />
           开始导入
         </Button>
       </template>
@@ -974,7 +967,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
       </p>
     </div>
     <template #footer>
-      <Button variant="ghost" size="sm" @click="finishDuplicateNameConfirm(false)">取消</Button>
+      <Button variant="secondary" size="sm" @click="finishDuplicateNameConfirm(false)">取消</Button>
       <Button
         variant="primary"
         size="sm"
@@ -1007,7 +1000,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
       </label>
     </div>
     <template #footer>
-      <Button variant="ghost" size="sm" @click="showBackgroundConfirm = false">留在本页</Button>
+      <Button variant="secondary" size="sm" @click="showBackgroundConfirm = false">留在本页</Button>
       <Button variant="primary" size="sm" @click="confirmBackgroundImport">我知道了</Button>
     </template>
   </Dialog>
@@ -1027,7 +1020,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-mode-card {
-  @apply flex items-center gap-3 rounded-[14px] px-4 py-3 text-left transition-all;
+  @apply flex items-center gap-3 rounded-card px-4 py-3 text-left transition-all;
   color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
@@ -1053,7 +1046,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-textarea {
-  @apply w-full rounded-[14px] px-4 py-3 text-[13px] leading-relaxed font-medium resize-y;
+  @apply w-full rounded-card px-4 py-3 text-[13px] leading-relaxed font-medium resize-y;
   min-height: 112px;
   color: var(--color-text-main);
   background: var(--control-bg);
@@ -1066,7 +1059,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-dropzone {
-  @apply flex flex-col items-center justify-center gap-1.5 rounded-[14px] px-4 py-7 cursor-pointer transition-colors;
+  @apply flex flex-col items-center justify-center gap-1.5 rounded-card px-4 py-7 cursor-pointer transition-colors;
   color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   border: 1px dashed color-mix(in srgb, var(--color-primary) 38%, var(--control-border));
@@ -1094,21 +1087,6 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
   background: var(--control-muted-bg);
 }
 
-.import-target-tabs {
-  @apply flex gap-1 rounded-xl p-1;
-  background: var(--control-muted-bg);
-}
-
-.import-target-tabs button {
-  @apply flex-1 rounded-lg py-2 text-[12px] text-text-secondary transition-colors;
-}
-
-.import-target-tabs button.is-active {
-  color: var(--color-primary-text);
-  background: var(--control-bg);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-text-main) 10%, transparent);
-}
-
 .import-hint {
   @apply text-[12px] text-text-secondary leading-relaxed;
 }
@@ -1121,31 +1099,14 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
   @apply text-[11px] text-text-secondary mr-0.5;
 }
 
-.import-platform-chip {
-  @apply inline-flex items-center rounded-full px-2.5 py-1 text-[11px] text-text-secondary;
-  background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
-}
-
 .import-alert {
-  @apply flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12px];
+  @apply flex items-center gap-2 rounded-card px-3 py-2 text-[12px];
   color: var(--color-danger, #ef4444);
   background: color-mix(in srgb, var(--color-danger, #ef4444) 12%, transparent);
 }
 
 .import-stepper {
   @apply flex items-center gap-1.5 shrink-0;
-}
-
-.import-step-pill {
-  @apply inline-flex items-center px-2.5 h-6 rounded-full text-[11px] font-medium;
-  color: var(--color-text-secondary);
-  background: var(--control-muted-bg);
-}
-
-.import-step-pill.is-active {
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
 }
 
 .import-step-sep {
@@ -1168,7 +1129,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-current-card {
-  @apply flex items-center gap-3 rounded-[14px] px-4 py-3;
+  @apply flex items-center gap-3 rounded-card px-4 py-3;
   background: color-mix(in srgb, var(--color-primary) 8%, var(--control-muted-bg));
   border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--control-border));
   animation: import-current-in 220ms ease-out;
@@ -1213,7 +1174,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 .import-track-list {
   max-height: 320px;
   min-height: 92px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
 
@@ -1248,7 +1209,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-summary {
-  @apply flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12px] text-text-main;
+  @apply flex items-center gap-2 rounded-card px-3 py-2 text-[12px] text-text-main;
   background: color-mix(in srgb, #10b981 10%, transparent);
 }
 

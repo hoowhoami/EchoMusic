@@ -212,7 +212,7 @@ defineExpose({
   min-width: 0;
   padding: 10px;
   border: 1px solid var(--content-panel-border);
-  border-radius: 20px;
+  border-radius: var(--radius-card);
   background: var(--content-panel-bg);
   box-shadow: var(--shadow-card);
 }
@@ -220,7 +220,7 @@ defineExpose({
 .virtual-grid-skeleton-cover {
   width: 100%;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: var(--radius-media);
 }
 
 .virtual-grid-skeleton-info {
@@ -240,7 +240,7 @@ defineExpose({
   align-items: center;
   gap: 12px;
   padding: 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
 }
 

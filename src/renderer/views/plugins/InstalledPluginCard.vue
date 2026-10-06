@@ -45,7 +45,7 @@ const emit = defineEmits<{
 
 <template>
   <article
-    class="plugin-card"
+    class="plugin-card card-hover card-hover-border"
     :class="{
       'is-disabled':
         !record.descriptor.enabled ||
@@ -141,7 +141,7 @@ const emit = defineEmits<{
       <div class="plugin-card-action-group">
         <div class="plugin-card-primary-actions">
           <Button
-            variant="ghost"
+            variant="secondary"
             size="xs"
             class="plugin-settings-btn"
             :class="{ 'is-unavailable': !settingsAvailable }"
@@ -154,7 +154,7 @@ const emit = defineEmits<{
           </Button>
 
           <Button
-            variant="ghost"
+            variant="danger"
             size="xs"
             class="plugin-remove-btn"
             :disabled="busy"
@@ -167,7 +167,7 @@ const emit = defineEmits<{
         <Tooltip v-if="hasFailure" :content="failureTitle">
           <template #trigger>
             <button
-              class="plugin-card-failure-btn"
+              class="action-icon plugin-card-failure-btn"
               :class="{
                 'is-historical': hasHistoricalFailure,
                 'is-warning': cardFailure?.reason === 'incompatible',

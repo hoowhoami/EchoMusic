@@ -13,7 +13,12 @@ const router = useRouter();
   <div class="sidebar-app-tools" :class="{ 'is-rail': props.collapsed }">
     <Tooltip :content="collapsed ? '展开侧栏' : '折叠侧栏'"
       ><template #trigger
-        ><button type="button" :aria-label="collapsed ? '展开侧栏' : '折叠侧栏'" @click="toggle">
+        ><button
+          class="action-icon sidebar-app-tool"
+          type="button"
+          :aria-label="collapsed ? '展开侧栏' : '折叠侧栏'"
+          @click="toggle"
+        >
           <Icon
             :icon="collapsed ? circleChevronRight : circleChevronLeft"
             :width="21"
@@ -23,12 +28,22 @@ const router = useRouter();
       <slot />
       <Tooltip content="设置"
         ><template #trigger
-          ><button type="button" aria-label="设置" @click="router.push('/main/settings')">
+          ><button
+            class="action-icon sidebar-app-tool"
+            type="button"
+            aria-label="设置"
+            @click="router.push('/main/settings')"
+          >
             <Icon :icon="iconSettings" :width="21" /></button></template
       ></Tooltip>
       <Tooltip content="主题中心"
         ><template #trigger
-          ><button type="button" aria-label="主题中心" @click="router.push('/main/themes')">
+          ><button
+            class="action-icon sidebar-app-tool"
+            type="button"
+            aria-label="主题中心"
+            @click="router.push('/main/themes')"
+          >
             <Icon :icon="iconShirt" :width="21" /></button></template
       ></Tooltip>
     </template>
@@ -43,15 +58,15 @@ const router = useRouter();
   padding: 10px 16px;
   color: var(--icon-main);
 }
-.sidebar-app-tools button {
+.sidebar-app-tools :deep(.sidebar-app-tool) {
   display: grid;
   place-items: center;
   width: 32px;
   height: 32px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
-.sidebar-app-tools button:hover {
+.sidebar-app-tools :deep(.sidebar-app-tool:hover) {
   background: var(--control-hover-bg);
   color: var(--text-main);
 }

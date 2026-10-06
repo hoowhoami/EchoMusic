@@ -613,7 +613,7 @@ onBeforeUnmount(() => {
               variant="unstyled"
               size="none"
               @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
@@ -621,7 +621,7 @@ onBeforeUnmount(() => {
               variant="unstyled"
               size="none"
               @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
@@ -669,7 +669,7 @@ onBeforeUnmount(() => {
                 <div class="flex items-center justify-between h-14">
                   <TabsList class="bg-transparent border-none gap-8">
                     <TabsTrigger value="songs">
-                      <span class="relative">歌曲 <Badge :count="displaySongCount" /></span>
+                      <span class="badge-label">歌曲 <Badge :count="displaySongCount" /></span>
                     </TabsTrigger>
                   </TabsList>
 
@@ -679,7 +679,7 @@ onBeforeUnmount(() => {
                       variant="unstyled"
                       size="none"
                       @click="handleLocate"
-                      class="song-locate-btn p-2 rounded-lg"
+                      class="action-icon song-locate-btn p-2"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="16" height="16" />
@@ -712,14 +712,14 @@ onBeforeUnmount(() => {
               class="cloud-empty flex flex-col items-center justify-center py-24 text-center"
             >
               <div
-                class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary-text flex items-center justify-center mb-4"
+                class="w-16 h-16 rounded-card bg-primary/10 text-primary-text flex items-center justify-center mb-4"
               >
                 <Icon :icon="iconCloud" width="28" height="28" />
               </div>
               <div class="text-[18px] font-semibold text-text-main">云盘暂无歌曲</div>
               <div class="mt-2 text-[13px] font-medium text-text-secondary">上传后会展示在这里</div>
               <Button
-                variant="primary"
+                variant="soft-secondary"
                 size="md"
                 class="mt-5 gap-2"
                 @click="cloudUploadStore.requestOpen('start')"
@@ -804,7 +804,7 @@ onBeforeUnmount(() => {
 
 .cloud-info-card {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   border: 1px solid var(--border-subtle);
   display: flex;

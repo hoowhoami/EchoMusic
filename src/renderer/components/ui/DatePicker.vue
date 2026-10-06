@@ -136,7 +136,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
         <button
           v-if="clearable && selectedDate"
           type="button"
-          class="echo-date-picker-action"
+          class="action-icon echo-date-picker-action"
           aria-label="清除日期"
           :disabled="disabled"
           @click.stop="selectedDate = undefined"
@@ -259,7 +259,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   color: var(--color-text-main);
   background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   outline: none;
   transition:
     border-color 0.18s ease,
@@ -314,7 +314,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
 .echo-date-picker-segment {
   min-width: 1.4em;
   padding: 3px 2px;
-  border-radius: 5px;
+  border-radius: var(--radius-detail);
   outline: none;
   text-align: center;
   caret-color: transparent;
@@ -341,7 +341,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   color: var(--icon-main);
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   outline: none;
   transition:
     color 0.16s ease,
@@ -370,7 +370,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-elevated);
   outline: none;
   transform-origin: var(--reka-popover-content-transform-origin);
@@ -402,7 +402,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   color: var(--icon-main);
   background: transparent;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   outline: none;
 }
 
@@ -465,7 +465,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   font-variant-numeric: tabular-nums;
   background: transparent;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   outline: none;
   cursor: pointer;
 }

@@ -292,7 +292,7 @@ watch(
       <div class="theme-heading-actions">
         <button
           ref="adjustmentsTrigger"
-          class="theme-action"
+          class="theme-action soft-secondary-action app-focus-ring-soft"
           :aria-expanded="showAdjustments"
           @click="showAdjustments = true"
         >
@@ -357,7 +357,7 @@ watch(
               <button
                 v-for="entry in group.entries"
                 :key="entry.key"
-                class="theme-select-card"
+                class="theme-select-card card-hover card-hover-border"
                 :aria-pressed="theme.desiredThemeKey === entry.key"
                 @click="chooseTheme(entry.key)"
               >
@@ -529,7 +529,7 @@ watch(
       </div>
       <button
         ref="adjustmentsClose"
-        class="theme-drawer-close"
+        class="action-icon theme-drawer-close"
         aria-label="关闭外观调整"
         @click="showAdjustments = false"
       >
@@ -546,14 +546,14 @@ watch(
             :key="theme.currentTheme.revision + theme.effectiveThemeKey"
             layer="settings"
           />
-          <Button variant="ghost" size="sm" @click="theme.resetThemeSettings()"
+          <Button variant="secondary" size="sm" @click="theme.resetThemeSettings()"
             >重置专属参数</Button
           >
         </div>
       </details>
     </div>
     <footer class="theme-drawer-footer">
-      <Button variant="ghost" size="sm" :disabled="resettingAppearance" @click="resetAppearance"
+      <Button variant="secondary" size="sm" :disabled="resettingAppearance" @click="resetAppearance"
         >恢复外观默认</Button
       >
     </footer>
@@ -625,10 +625,13 @@ watch(
   border-radius: 50%;
 }
 .theme-workbench {
+  /* Extend the scroll clip into page padding without shifting the card grid. */
+  --theme-gallery-bleed: 14px;
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  margin-inline: calc(-1 * var(--theme-gallery-bleed));
   overflow: hidden;
 }
 .theme-gallery {
@@ -637,7 +640,8 @@ watch(
   min-width: 0;
   overflow: auto;
   scrollbar-gutter: stable;
-  padding: 2px 2px 12px;
+  /* Leave room for preview shadows and keyboard focus outside the cards. */
+  padding: 2px calc(2px + var(--theme-gallery-bleed)) 12px;
   container-type: inline-size;
 }
 .theme-browse-tabs {
@@ -682,10 +686,11 @@ watch(
   text-align: left;
   min-width: 0;
   cursor: pointer;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--content-panel-bg);
+  padding: 10px;
+  border-radius: var(--radius-card);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 .theme-select-card:focus-visible {
   outline: 2px solid var(--color-primary);
@@ -697,11 +702,7 @@ watch(
   position: relative;
   overflow: hidden;
   margin: 0;
-  border-radius: 10px;
-  transition: box-shadow 0.16s;
-}
-.theme-select-card:hover .theme-card-preview {
-  box-shadow: 0 4px 14px color-mix(in srgb, #000 12%, transparent);
+  border-radius: var(--radius-control);
 }
 .theme-selected {
   position: absolute;
@@ -717,7 +718,7 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: 12px 0 4px;
+  margin: 10px 0 4px;
 }
 .theme-card-title strong {
   font-size: 14px;
@@ -752,14 +753,9 @@ watch(
   align-items: center;
   gap: 7px;
   padding: 9px 12px;
-  border: 1px solid var(--border-subtle);
-  background: var(--control-muted-bg);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   font-size: 13px;
   cursor: pointer;
-}
-.theme-action:hover {
-  background: color-mix(in srgb, var(--text-main) 9%, transparent);
 }
 .theme-drawer-heading {
   display: flex;
@@ -776,7 +772,7 @@ watch(
 }
 .theme-drawer-close {
   padding: 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 .theme-drawer-close:hover {
@@ -813,7 +809,7 @@ watch(
 .theme-text-color i {
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border-light);
 }
 .theme-text-color:hover i {
@@ -843,7 +839,7 @@ watch(
 }
 .theme-color-swatch {
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -893,7 +889,7 @@ watch(
   isolation: isolate;
   overflow: hidden;
   border: 1px dashed var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--radius-media);
   min-height: 300px;
   display: grid;
   place-items: center;
@@ -1002,7 +998,7 @@ watch(
 .drawer-right.theme-adjustments-drawer {
   right: 12px;
   width: min(360px, calc(100vw - 24px));
-  border-radius: 10px;
+  border-radius: var(--radius-popover);
   box-shadow: var(--shadow-dialog);
   -webkit-user-select: none;
   user-select: none;

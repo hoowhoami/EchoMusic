@@ -58,7 +58,7 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
 <template>
   <article
     :data-marketplace-plugin-key="pluginKey"
-    class="plugin-card marketplace-card"
+    class="plugin-card card-hover card-hover-border marketplace-card"
     :class="{
       'is-disabled': !plugin.compatibility.compatible,
       'is-warning': !plugin.compatibility.compatible,
@@ -181,9 +181,9 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
     <div class="plugin-card-actions">
       <div class="plugin-card-primary-actions">
         <Button
-          variant="ghost"
+          variant="soft-secondary"
           size="xs"
-          class="plugin-settings-btn"
+          class="plugin-share-btn"
           tooltip="复制插件分享链接"
           @click="emit('share', plugin)"
         >
@@ -191,7 +191,7 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
           分享
         </Button>
         <Button
-          variant="ghost"
+          variant="secondary"
           size="xs"
           class="plugin-settings-btn"
           :disabled="!plugin.repo"

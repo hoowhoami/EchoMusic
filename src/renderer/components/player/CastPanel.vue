@@ -115,7 +115,7 @@ onUnmounted(() => {
           <template #trigger>
             <button
               type="button"
-              class="cast-panel-icon-button app-focus-ring-soft"
+              class="action-icon cast-panel-icon-button app-focus-ring-soft"
               :disabled="output.busy || output.searching || !settingStore.networkPlaybackEnabled"
               aria-label="刷新设备"
               @click="output.refresh()"
@@ -133,7 +133,7 @@ onUnmounted(() => {
           <template #trigger>
             <button
               type="button"
-              class="cast-panel-icon-button app-focus-ring-soft"
+              class="action-icon cast-panel-icon-button app-focus-ring-soft"
               aria-label="投放设置"
               @click="openCastSettings"
             >
@@ -153,7 +153,7 @@ onUnmounted(() => {
       <span>{{ output.snapshot?.protocol === 'dlna' ? 'DLNA 投放' : 'AirPlay 投放' }}</span>
       <button
         type="button"
-        class="cast-stop-button"
+        class="cast-stop-button soft-neutral-action app-focus-ring-soft"
         :disabled="output.busy"
         @click="output.useLocal()"
       >
@@ -340,7 +340,7 @@ onUnmounted(() => {
 .cast-panel-icon {
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--radius-popover);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   color: var(--color-primary-text);
 }
@@ -352,7 +352,7 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 8px;
   padding: 0 2px 0 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-popover);
   background: var(--control-muted-bg);
 }
 
@@ -371,7 +371,7 @@ onUnmounted(() => {
 .cast-panel-icon-button {
   width: 24px;
   height: 24px;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
 }
 
@@ -387,7 +387,7 @@ onUnmounted(() => {
   gap: 10px;
   padding: 6px 7px 6px 8px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 24%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   font-size: 12px;
   font-weight: 700;
@@ -403,9 +403,7 @@ onUnmounted(() => {
   gap: 5px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
-  background: var(--control-muted-bg);
-  color: var(--color-text-main);
+  border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
@@ -414,10 +412,6 @@ onUnmounted(() => {
     color 0.16s ease,
     transform 0.16s ease,
     opacity 0.16s ease;
-}
-
-.cast-stop-button:hover:not(:disabled) {
-  background: var(--control-hover-bg);
 }
 
 .cast-stop-button:active:not(:disabled) {
@@ -472,7 +466,7 @@ onUnmounted(() => {
   gap: 8px;
   padding: 0 7px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   color: var(--color-text-main);
   background: transparent;
   text-align: left;
@@ -561,7 +555,7 @@ onUnmounted(() => {
   height: 28px;
   padding-left: 8px;
   border-color: var(--control-border);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--floating-surface-bg) 84%, transparent);
   color: var(--color-text-main);
   font-size: 12px;
@@ -587,7 +581,7 @@ onUnmounted(() => {
 .cast-pin-submit {
   height: 28px;
   padding: 0 12px;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;

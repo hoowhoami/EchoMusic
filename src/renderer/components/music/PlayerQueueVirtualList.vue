@@ -141,7 +141,7 @@ defineExpose({
               <Button
                 v-if="isPreviewQueue"
                 type="button"
-                class="queue-play"
+                class="action-icon queue-play"
                 variant="ghost"
                 size="xs"
                 @click="emit('play', entry.data)"
@@ -187,7 +187,7 @@ defineExpose({
             <Button
               v-if="isPreviewQueue && !readonly"
               type="button"
-              class="queue-remove"
+              class="action-icon queue-remove"
               variant="unstyled"
               size="none"
               tooltip="从队列移除"
@@ -224,7 +224,7 @@ defineExpose({
   align-items: center;
   gap: 10px;
   padding: 0 12px 0 10px;
-  border-radius: 14px;
+  border-radius: var(--radius-item);
   transition: background-color 0.16s ease;
 }
 
@@ -320,7 +320,7 @@ defineExpose({
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
   opacity: 0;
   transition:
@@ -359,7 +359,7 @@ defineExpose({
 .queue-empty-icon {
   width: 72px;
   height: 72px;
-  border-radius: 24px;
+  border-radius: var(--radius-dialog);
   display: flex;
   align-items: center;
   justify-content: center;

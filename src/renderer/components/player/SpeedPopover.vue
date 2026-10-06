@@ -66,12 +66,9 @@ const popoverOpen = computed({
       <div class="flex items-center justify-between">
         <span class="text-[11px] font-bold text-text-secondary">倍速播放</span>
         <Button
-          variant="unstyled"
+          variant="soft-secondary"
           size="none"
-          class="text-[13px] font-extrabold px-1.5 py-0.5 rounded-md transition-colors"
-          :class="
-            player.playbackRate === 1 ? 'text-text-secondary' : 'hover:bg-[var(--control-hover-bg)]'
-          "
+          class="text-[13px] font-extrabold px-1.5 py-0.5 rounded-control"
           @click="resetPlaybackRate"
           >{{ playbackRateDisplay }}</Button
         >
@@ -96,18 +93,14 @@ const popoverOpen = computed({
         </SliderRoot>
         <span class="text-[10px] font-semibold text-text-secondary shrink-0">5x</span>
       </div>
-      <div class="flex items-center justify-between">
+      <div class="speed-presets">
         <Button
           v-for="r in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]"
           :key="r"
-          variant="unstyled"
+          :variant="Math.abs(player.playbackRate - r) < 0.01 ? 'soft-primary' : 'soft-secondary'"
           size="none"
-          class="text-[11px] font-semibold px-2 py-1 rounded-md transition-colors"
-          :class="
-            Math.abs(player.playbackRate - r) < 0.01
-              ? 'bg-[var(--row-selected-bg)]'
-              : 'text-text-secondary hover:bg-[var(--row-hover-bg)] hover:text-text-main'
-          "
+          class="inline-flex items-center justify-center h-7 min-w-0 text-[11px] font-semibold px-1 py-1 whitespace-nowrap rounded-control"
+          :aria-pressed="Math.abs(player.playbackRate - r) < 0.01"
           @click="setPlaybackRate(r)"
           >{{ r === Math.floor(r) ? r.toFixed(1) : r }}x</Button
         >
@@ -118,9 +111,22 @@ const popoverOpen = computed({
 
 <style>
 .speed-popover.echo-popover-content {
-  width: 320px;
+  width: 360px;
+  max-width: calc(100vw - 32px);
   padding: 14px 16px 12px;
   border-color: var(--border-subtle);
+}
+
+.speed-presets {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+@media (max-width: 380px) {
+  .speed-presets {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .speed-track {

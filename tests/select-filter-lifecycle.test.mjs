@@ -82,7 +82,7 @@ test('shrinking options cannot leave the virtual range outside the data', async 
   s.props.options = s.props.options.slice(0, 60);
   await vue.nextTick();
   assert.ok(s.api.visibleItems.value.length);
-  assert.ok(s.api.scrollTop.value <= 60 * 36 - s.list.clientHeight);
+  assert.ok(s.api.scrollTop.value <= 60 * 38 - 2 - s.list.clientHeight);
   assert.equal(s.scrolls.at(-1)?.behavior, 'instant');
 });
 
@@ -139,4 +139,15 @@ test('closing search restores the selected label instead of displaying an abando
   assert.equal(s.api.searchTerm.value, '');
   assert.equal(s.api.selectedLabel.value, '匹配 5');
   assert.deepEqual(s.events, []);
+});
+
+test('virtual rows include the option gap without adding a trailing gap', (t) => {
+  const s = fixture(t);
+  assert.equal(s.api.totalHeight.value, 200 * 38 - 2);
+  s.api.scrollTop.value = 10 * 38;
+  assert.equal(s.api.startIndex.value, 8);
+  assert.equal(s.api.offsetY.value, 8 * 38);
+  assert.equal(s.api.visibleItems.value[0]?.value, 8);
+  s.props.options = [];
+  assert.equal(s.api.totalHeight.value, 0);
 });

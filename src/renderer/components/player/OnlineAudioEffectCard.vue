@@ -59,7 +59,7 @@ const userCount = (count: number) =>
           <template #trigger>
             <button
               type="button"
-              class="effect-action"
+              class="effect-action soft-neutral-action"
               :class="{ 'is-active': plaza.isActive(effect) }"
               :disabled="unavailable || plaza.isActive(effect) || plaza.downloadingId !== null"
               :aria-label="`${plaza.downloadedEffect(effect) ? '使用' : '下载'}${effect.name}`"
@@ -106,7 +106,7 @@ const userCount = (count: number) =>
   min-width: 0;
   padding: 10px;
   border: 1px solid var(--control-border);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
 .online-effect:hover,
@@ -123,7 +123,7 @@ const userCount = (count: number) =>
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--color-bg-elevated);
   color: var(--color-primary-text);
 }
@@ -175,19 +175,16 @@ const userCount = (count: number) =>
   min-width: 58px;
   height: 28px;
   padding: 0 8px;
-  border: 1px solid var(--control-border);
-  border-radius: 7px;
-  background: var(--color-bg-elevated);
-  color: var(--color-primary-text);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
   font-size: 10px;
   font-weight: 650;
   cursor: pointer;
 }
-.effect-action:hover:not(:disabled),
 .effect-action.is-active {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
+  background: var(--control-active-bg);
+  color: var(--color-primary-text);
+  box-shadow: var(--control-active-shadow);
 }
 .effect-action:disabled:not(.is-active) {
   color: var(--color-text-secondary);

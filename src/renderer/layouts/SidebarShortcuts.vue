@@ -376,7 +376,7 @@ onBeforeUnmount(() => {
               <template #trigger>
                 <button
                   type="button"
-                  class="shortcut-remove"
+                  class="action-icon shortcut-remove"
                   :aria-label="`移除${entry.title}卡片`"
                   @pointerdown.stop
                   @click.stop="remove(entry)"
@@ -410,7 +410,11 @@ onBeforeUnmount(() => {
       >
         <div class="shortcut-functions-heading">
           <h3>常用功能</h3>
-          <button type="button" class="shortcut-reset" @click="save([...DEFAULT_SHORTCUT_KEYS])">
+          <button
+            type="button"
+            class="shortcut-reset soft-secondary-action app-focus-ring-soft"
+            @click="save([...DEFAULT_SHORTCUT_KEYS])"
+          >
             恢复默认
           </button>
         </div>
@@ -532,7 +536,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   min-width: 0;
   padding: 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   color: var(--icon-main);
   cursor: pointer;
@@ -577,7 +581,7 @@ onBeforeUnmount(() => {
   height: 20px;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-secondary);
   opacity: 0;
@@ -638,7 +642,7 @@ onBeforeUnmount(() => {
 .is-collapsed .shortcut-add {
   aspect-ratio: auto;
   height: 40px;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
 }
 .is-collapsed .shortcut-label {
   display: none;
@@ -675,11 +679,10 @@ onBeforeUnmount(() => {
   padding: 24px 0 24px 24px;
 }
 .shortcut-reset {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
   font-size: 12px;
-  color: var(--text-secondary);
-}
-.shortcut-reset:hover {
-  color: var(--text-main);
 }
 .shortcut-picker-section {
   margin-top: 30px;
@@ -711,7 +714,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 30px 8px 14px;
   min-width: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
 }
 .shortcut-artists .shortcut-resource-label {
@@ -737,7 +740,7 @@ onBeforeUnmount(() => {
   gap: 12px;
   min-width: 0;
   padding: 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   text-align: left;
 }
 .shortcut-playlists span {
@@ -781,7 +784,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   padding: 15px;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   text-align: left;
 }

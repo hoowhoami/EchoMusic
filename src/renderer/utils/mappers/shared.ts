@@ -54,6 +54,22 @@ export const readPositiveId = (...values: unknown[]): string => {
   return '';
 };
 
+/** qualitymap 按 31 位分组，attr0 是 bits 十六进制位图的低 31 位。 */
+export const readQualityMap = (value: unknown): number | undefined => {
+  if (!isRecord(value)) return undefined;
+  const attr = value.attr0;
+  if (typeof attr === 'number' || (typeof attr === 'string' && /^\d+$/.test(attr))) {
+    const number = Number(attr);
+    if (Number.isInteger(number) && number >= 0 && number <= 0x7fffffff) {
+      return number;
+    }
+  }
+  if (typeof value.bits === 'string' && /^[\da-f]+$/i.test(value.bits)) {
+    return Number.parseInt(value.bits.slice(-8), 16) & 0x7fffffff;
+  }
+  return undefined;
+};
+
 export const pickValue = (...values: unknown[]): unknown => {
   for (const value of values) {
     if (value === undefined || value === null) continue;

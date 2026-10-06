@@ -147,9 +147,9 @@ const albumPayload = ref<Record<string, unknown>>({});
 const albumFallbackList = ref<unknown[]>([]);
 const loadingAlbums = ref(false);
 const tabLoaded = reactive({ rank: false, album: false, newSong: false, artist: false });
-const exploreHeaderHeight = 106;
-const rankToolbarOffset = exploreHeaderHeight + 46;
-const newSongToolbarOffset = exploreHeaderHeight + 46;
+const exploreHeaderHeight = 96;
+const exploreToolbarHeight = 60;
+const songToolbarOffset = exploreHeaderHeight + exploreToolbarHeight;
 
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 const sortedRankSongs = computed(() => {
@@ -616,14 +616,22 @@ const filteredArtistCards = computed(() => {
 <template>
   <PageScrollContainer
     class="explore-view-container"
-    :style="{ '--explore-header-height': `${exploreHeaderHeight}px` }"
+    :style="{
+      '--explore-header-height': `${exploreHeaderHeight}px`,
+      '--explore-toolbar-height': `${exploreToolbarHeight}px`,
+    }"
   >
     <div
       class="explore-view px-10 pt-4 pb-10"
-      :style="{ '--explore-header-height': `${exploreHeaderHeight}px` }"
+      :style="{
+        '--explore-header-height': `${exploreHeaderHeight}px`,
+        '--explore-toolbar-height': `${exploreToolbarHeight}px`,
+      }"
     >
       <PageStickyHeader class="explore-header">
-        <div class="text-[24px] font-semibold text-text-main tracking-tight">探索发现</div>
+        <div class="text-[24px] leading-9 font-semibold text-text-main tracking-tight">
+          探索发现
+        </div>
         <div class="mt-4">
           <CustomTabBar
             v-model="activeTabIndex"
@@ -637,7 +645,6 @@ const filteredArtistCards = computed(() => {
           <CustomSelector :label="playlistCategoryLabel" @click="showPlaylistPicker = true" />
         </div>
         <VirtualGrid
-          class="mt-1"
           :items="recommendedPlaylistCards"
           :loading="loadingPlaylists"
           :active="activeTabIndex === 0"
@@ -651,7 +658,7 @@ const filteredArtistCards = computed(() => {
           keyField="id"
         >
           <template #default="{ item }">
-            <PlaylistCard v-bind="item" :coverRadius="14" :showShadow="true" layout="grid" />
+            <PlaylistCard v-bind="item" :showShadow="true" layout="grid" />
           </template>
         </VirtualGrid>
       </div>
@@ -675,12 +682,12 @@ const filteredArtistCards = computed(() => {
 
         <PageStickyHeader
           class="song-list-sticky sticky z-110 bg-bg-main"
-          :style="{ top: `${rankToolbarOffset}px` }"
+          :sticky-top="songToolbarOffset"
         >
           <div class="border-b border-[var(--border-subtle)]">
-            <div class="flex items-center justify-between h-14">
+            <div class="explore-song-toolbar">
               <div class="rank-song-tab">
-                <span class="rank-song-label relative"
+                <span class="rank-song-label badge-label"
                   >歌曲 <Badge :count="rankSongCountLabel"
                 /></span>
               </div>
@@ -690,7 +697,7 @@ const filteredArtistCards = computed(() => {
                   variant="unstyled"
                   size="none"
                   @click="handleRankLocate"
-                  class="song-locate-btn p-2 rounded-lg"
+                  class="action-icon song-locate-btn p-2"
                   tooltip="定位当前播放"
                 >
                   <Icon :icon="iconCurrentLocation" width="16" height="16" />
@@ -788,12 +795,12 @@ const filteredArtistCards = computed(() => {
 
         <PageStickyHeader
           class="song-list-sticky sticky z-110 bg-bg-main"
-          :style="{ top: `${newSongToolbarOffset}px` }"
+          :sticky-top="songToolbarOffset"
         >
           <div class="border-b border-[var(--border-subtle)]">
-            <div class="flex items-center justify-between h-14">
+            <div class="explore-song-toolbar">
               <div class="rank-song-tab">
-                <span class="rank-song-label relative"
+                <span class="rank-song-label badge-label"
                   >歌曲 <Badge :count="newSongCountLabel"
                 /></span>
               </div>
@@ -803,7 +810,7 @@ const filteredArtistCards = computed(() => {
                   variant="unstyled"
                   size="none"
                   @click="handleNewSongLocate"
-                  class="song-locate-btn p-2 rounded-lg"
+                  class="action-icon song-locate-btn p-2"
                   tooltip="定位当前播放"
                 >
                   <Icon :icon="iconCurrentLocation" width="16" height="16" />
@@ -863,17 +870,23 @@ const filteredArtistCards = computed(() => {
 
         <template v-if="!loadingArtists && filteredArtistCards.length > 0">
           <div class="artist-letter-bar">
-            <span
-              :class="['artist-letter-item', activeArtistLetter === '全部' ? 'is-active' : '']"
+            <Button
+              class="artist-letter-item"
+              :variant="activeArtistLetter === '全部' ? 'soft-primary' : 'soft-secondary'"
+              size="none"
+              :aria-pressed="activeArtistLetter === '全部'"
               @click="scrollToArtistGroup('全部')"
-              >全部</span
+              >全部</Button
             >
-            <span
+            <Button
               v-for="letter in artistLetters"
               :key="letter"
-              :class="['artist-letter-item', activeArtistLetter === letter ? 'is-active' : '']"
+              class="artist-letter-item"
+              :variant="activeArtistLetter === letter ? 'soft-primary' : 'soft-secondary'"
+              size="none"
+              :aria-pressed="activeArtistLetter === letter"
               @click="scrollToArtistGroup(letter)"
-              >{{ letter }}</span
+              >{{ letter }}</Button
             >
           </div>
         </template>
@@ -955,39 +968,34 @@ const filteredArtistCards = computed(() => {
   top: 0;
   z-index: 130;
   background: var(--color-bg-main);
-  padding: 0 0 10px 0;
+  padding: 0;
   min-height: var(--explore-header-height);
 }
 
-.explore-toolbar {
+.explore-toolbar,
+.rank-toolbar-inner,
+.new-song-toolbar-inner {
   display: flex;
   align-items: center;
-  min-height: 46px;
-  padding: 0 0 6px 0;
+  gap: 12px;
+  height: var(--explore-toolbar-height);
+  padding: 12px 0;
 }
 
 .rank-toolbar {
   top: var(--explore-header-height);
 }
 
-.rank-toolbar-inner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 46px;
-  padding: 0 0 6px;
-}
-
 .new-song-toolbar {
   top: var(--explore-header-height);
 }
 
-.new-song-toolbar-inner {
+.explore-song-toolbar {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
   height: 46px;
-  padding: 0 0 6px;
+  padding-bottom: 10px;
 }
 
 .new-song-title-wrap {
@@ -1005,7 +1013,7 @@ const filteredArtistCards = computed(() => {
   align-items: center;
   justify-content: center;
   color: var(--color-on-primary);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--color-primary) 92%, white),
@@ -1065,7 +1073,7 @@ const filteredArtistCards = computed(() => {
   display: flex;
   flex-wrap: nowrap;
   gap: 2px;
-  padding: 4px 0 10px;
+  padding: 0 0 10px;
   overflow-x: auto;
 }
 
@@ -1076,24 +1084,13 @@ const filteredArtistCards = computed(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: var(--radius-item);
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-text-secondary);
   transition: all 0.15s ease;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
   user-select: none;
-}
-
-.artist-letter-item:hover {
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-}
-
-.artist-letter-item.is-active {
-  color: var(--color-on-primary);
-  background: var(--color-primary);
 }
 </style>

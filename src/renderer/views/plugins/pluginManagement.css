@@ -28,7 +28,7 @@
   justify-content: center;
   gap: 0.75rem;
   padding: 1.5rem;
-  border-radius: 8px;
+  border-radius: var(--radius-popover);
   border: 1px dashed color-mix(in srgb, var(--color-primary) 54%, var(--border-subtle));
   background: color-mix(in srgb, var(--color-bg-elevated) 96%, transparent);
   box-shadow: 0 18px 48px color-mix(in srgb, var(--color-text-main) 14%, transparent);
@@ -42,7 +42,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   color: var(--color-primary-text);
 }
@@ -69,7 +69,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--color-primary);
   color: var(--color-on-primary);
 }
@@ -79,56 +79,27 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.375rem 0.75rem;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
   color: var(--color-text-main);
 }
 
 .plugin-view-tabs {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  border-radius: 10px;
-  background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --custom-tab-width: 280px;
+  max-width: 100%;
 }
 
-.plugin-view-tab {
-  height: 2.125rem;
-  min-width: 8.25rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  padding: 0 0.625rem;
-  border-radius: 8px;
-  color: var(--color-text-secondary);
-  font-size: 0.75rem;
-  font-weight: 800;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease,
-    box-shadow 0.18s ease;
-}
-
-.plugin-view-tab:hover {
-  color: var(--color-text-main);
-  background: var(--row-hover-bg);
-}
-
-.plugin-view-tab span {
+.plugin-view-tab-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.plugin-view-tab small {
+.plugin-view-tab-count {
   min-width: 1.375rem;
+  flex-shrink: 0;
   height: 1.25rem;
   display: inline-flex;
   align-items: center;
@@ -139,14 +110,6 @@
   font-size: 0.6875rem;
   font-weight: 900;
   line-height: 1;
-}
-
-.plugin-view-tab.is-active {
-  color: var(--color-primary-text);
-  background: var(--control-active-bg);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.06),
-    inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .plugin-content {
@@ -192,7 +155,7 @@
   min-height: 2.25rem;
   padding: 0.5rem 0.75rem;
   margin-bottom: 0.875rem;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid rgba(245, 158, 11, 0.22);
   background: rgba(245, 158, 11, 0.08);
   color: rgb(180, 83, 9);
@@ -239,21 +202,11 @@
   min-height: 212px;
   background: var(--content-panel-bg);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   padding: 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    transform 0.18s ease;
-}
-
-.plugin-card:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--control-border));
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-text-main) 6%, transparent);
-  transform: translateY(-1px);
 }
 
 .plugin-card.is-disabled {
@@ -261,11 +214,13 @@
 }
 
 .plugin-card.is-error {
+  --card-hover-border: color-mix(in srgb, var(--state-danger) 45%, var(--control-border));
   border-color: color-mix(in srgb, var(--state-danger) 30%, var(--border-subtle));
   background: var(--state-danger-bg-soft);
 }
 
 .plugin-card.is-warning {
+  --card-hover-border: color-mix(in srgb, var(--state-warning) 45%, var(--control-border));
   border-color: color-mix(in srgb, var(--state-warning) 34%, var(--border-subtle));
   background: var(--state-warning-bg-soft);
 }
@@ -283,7 +238,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background:
     linear-gradient(
       135deg,
@@ -349,7 +304,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   color: var(--color-red-500);
   background: var(--state-danger-bg-soft);
   flex-shrink: 0;
@@ -384,27 +339,6 @@
 .plugin-card-failure-btn.is-warning:hover {
   color: white;
   background: var(--state-warning);
-}
-
-.plugin-status-badge {
-  @apply rounded-full px-2 py-0.5 text-[10px] font-semibold text-text-secondary bg-text-secondary/10 shrink-0;
-  line-height: 1.35;
-}
-
-.plugin-status-badge.is-active {
-  @apply text-primary-text bg-primary/10;
-}
-
-.plugin-status-badge.is-error {
-  @apply text-red-500 bg-red-500/10;
-}
-
-.plugin-status-badge.is-safe {
-  @apply text-amber-500 bg-amber-500/10;
-}
-
-.plugin-status-badge.is-warning {
-  @apply text-amber-500 bg-amber-500/10;
 }
 
 .plugin-card-description {
@@ -445,7 +379,7 @@
   align-items: center;
   max-width: 100%;
   padding: 1px 7px;
-  border-radius: 5px;
+  border-radius: var(--radius-card);
   border: 1px solid var(--border-subtle);
   background: var(--control-muted-bg);
   font-size: 0.6875rem;
@@ -511,16 +445,7 @@
 .marketplace-version-pill {
   min-width: 0;
   max-width: 100%;
-  height: 1.625rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0 0.5rem;
-  border-radius: 6px;
-  background: var(--control-muted-bg);
-  color: var(--color-text-secondary);
-  font-size: 0.6875rem;
-  font-weight: 700;
+  gap: 6px;
 }
 
 .marketplace-version-pill strong {
@@ -531,35 +456,15 @@
   white-space: nowrap;
 }
 
-.marketplace-version-pill.is-update {
-  background: rgba(245, 158, 11, 0.1);
-  color: rgb(180, 83, 9);
-}
-
 .marketplace-version-pill.is-update strong {
-  color: rgb(180, 83, 9);
+  color: inherit;
 }
 
 .marketplace-tags span,
 .plugin-feature-tags span {
   max-width: 9rem;
-  height: 1.5rem;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 0.5rem;
-  border-radius: 6px;
-  background: var(--control-muted-bg);
-  color: var(--color-text-secondary);
-  font-size: 0.6875rem;
-  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plugin-feature-tags span {
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--control-muted-bg));
-  color: color-mix(in srgb, var(--color-primary-text) 78%, var(--color-text-main));
 }
 
 .marketplace-stats {
@@ -581,7 +486,7 @@
   justify-content: center;
   gap: 0.3125rem;
   padding: 0 0.375rem;
-  border-radius: 6px;
+  border-radius: var(--radius-item);
   background: color-mix(in srgb, var(--control-muted-bg) 82%, transparent);
   overflow: hidden;
   white-space: nowrap;
@@ -605,7 +510,7 @@
   color: var(--color-red-500);
   padding: 0.5rem;
   background: var(--state-danger-bg-soft);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
 }
 
 .plugin-card-error.is-warning {
@@ -654,20 +559,15 @@
 }
 
 .plugin-settings-btn {
-  @apply text-text-main hover:text-primary-text;
+  gap: 0.25rem;
+}
+
+.plugin-share-btn {
   gap: 0.25rem;
 }
 
 .plugin-settings-btn.is-unavailable {
   color: color-mix(in srgb, var(--color-text-secondary) 78%, transparent);
-}
-
-.plugin-remove-btn {
-  @apply text-primary-text hover:text-primary-hover;
-}
-
-.plugin-card.is-error .plugin-remove-btn {
-  @apply text-red-500 hover:text-red-400;
 }
 
 .dialog-content.plugin-source-dialog {
@@ -703,7 +603,7 @@
   gap: 1rem;
   padding: 0.875rem;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   background: var(--content-panel-bg);
 }
 
@@ -734,7 +634,7 @@
   display: inline-flex;
   align-items: center;
   padding: 0 0.375rem;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   color: var(--color-primary-text);
   font-size: 0.6875rem;
@@ -785,7 +685,7 @@
   font-size: 0.8125rem;
   font-weight: 700;
   border: 1px dashed var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 
 .plugin-failure-detail-dialog {
@@ -808,7 +708,7 @@
   gap: 0.5rem 0.875rem;
   padding: 0.875rem;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
 }
 
@@ -829,7 +729,7 @@
 .plugin-failure-detail-block {
   padding: 0.875rem;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
 }
 
@@ -923,11 +823,7 @@
 
 @media (max-width: 720px) {
   .plugin-view-tabs {
-    width: 100%;
-  }
-
-  .plugin-view-tab {
-    min-width: 0;
+    --custom-tab-width: 100%;
   }
 
   .marketplace-search,

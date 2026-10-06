@@ -5,7 +5,7 @@
  * 沉浸在页面底部，不浮动
  */
 import { computed, ref } from 'vue';
-import { useResizeObserver } from '@vueuse/core';
+import { useElementSize, useResizeObserver } from '@vueuse/core';
 import type { IconifyIcon } from '@iconify/types';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import { usePlayerControls } from '@/composables/usePlayerControls';
@@ -17,6 +17,7 @@ import { useToastStore } from '@/stores/toast';
 import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import Badge from '@/components/ui/Badge.vue';
+import { getPlayerBarBadgeTone } from '@/layouts/playerBarActions';
 import Popover from '@/components/ui/Popover.vue';
 import MvIcon from '@/components/ui/MvIcon.vue';
 import PluginIcon from '@/plugins/PluginIcon.vue';
@@ -94,6 +95,12 @@ const {
 } = usePlayerControls();
 
 const isHoveringProgress = ref(false);
+const progressTooltipRef = ref<HTMLElement | null>(null);
+const { width: progressTooltipWidth } = useElementSize(
+  progressTooltipRef,
+  { width: 0, height: 0 },
+  { box: 'border-box' },
+);
 const lyricBarRef = ref<HTMLElement | null>(null);
 const leftActionsRef = ref<HTMLElement | null>(null);
 const centerAreaRef = ref<HTMLElement | null>(null);
@@ -128,6 +135,15 @@ const progressTooltipPercent = computed(() => {
       : playerStore.currentTime;
 
   return (displayTime / Math.max(playerStore.duration, 1)) * 100;
+});
+
+const progressTooltipStyle = computed(() => {
+  // Reserve half the actual tooltip width plus a small gap on each side.
+  // Long durations, font changes and zoom must not push the time outside the bar.
+  const edgeGap = progressTooltipWidth.value / 2 + 8;
+  return {
+    left: `clamp(${edgeGap}px, ${progressTooltipPercent.value}%, calc(100% - ${edgeGap}px))`,
+  };
 });
 
 const formatTime = (seconds: number) => {
@@ -497,10 +513,9 @@ useResizeObserver(
       <!-- 时间 tooltip -->
       <div
         v-if="isHoveringProgress || isDraggingSeek"
+        ref="progressTooltipRef"
         class="bar-progress-tooltip app-tooltip-surface"
-        :style="{
-          left: `clamp(var(--bar-progress-tooltip-edge-gap), ${progressTooltipPercent}%, calc(100% - var(--bar-progress-tooltip-edge-gap)))`,
-        }"
+        :style="progressTooltipStyle"
       >
         {{
           formatTime(
@@ -567,6 +582,8 @@ useResizeObserver(
                 <Badge
                   v-if="item.visibleBadge"
                   :count="item.visibleBadge"
+                  :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+                  placement="floating"
                   class="playerbar-action-badge"
                 />
               </div>
@@ -649,6 +666,8 @@ useResizeObserver(
               <Badge
                 v-if="item.visibleBadge"
                 :count="item.visibleBadge"
+                :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+                placement="floating"
                 class="playerbar-action-badge"
               />
             </div>
@@ -685,6 +704,8 @@ useResizeObserver(
             <Badge
               v-if="item.visibleBadge"
               :count="item.visibleBadge"
+              :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+              placement="floating"
               class="playerbar-action-badge"
             />
           </div>
@@ -713,7 +734,6 @@ useResizeObserver(
 
 /* 顶部进度条 */
 .bar-progress-top {
-  --bar-progress-tooltip-edge-gap: 46px;
   width: 100%;
   position: relative;
   overflow: visible;
@@ -726,7 +746,9 @@ useResizeObserver(
   transform: translateX(-50%);
   margin-bottom: 4px;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  width: max-content;
+  max-width: calc(100% - 16px);
+  overflow-wrap: anywhere;
   pointer-events: none;
   z-index: 20;
 }
@@ -1032,12 +1054,6 @@ useResizeObserver(
 </style>
 
 <style>
-/* The immersive player uses a local foreground, independent of the app mode. */
-.lyric-bar .badge {
-  background-color: var(--text-main);
-  color: var(--lyric-badge-foreground, #171718);
-}
-
 .is-portrait .lyric-bar {
   border-top-color: transparent;
 }

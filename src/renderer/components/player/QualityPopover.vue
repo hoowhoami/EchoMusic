@@ -5,6 +5,7 @@ import Tag from '@/components/ui/Tag.vue';
 import Badge from '@/components/ui/Badge.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import Button from '@/components/ui/Button.vue';
+import { iconCheckMark } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 
 const {
@@ -96,13 +97,14 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
     :side-offset="8"
     :show-arrow="props.showArrow"
     content-class="quality-popover"
+    @open-auto-focus="$event.preventDefault()"
   >
     <template #trigger>
       <Button
         variant="unstyled"
         size="none"
         type="button"
-        class="relative p-2 transition-all"
+        class="action-icon relative p-2 transition-all"
         :class="buttonClass"
         :aria-label="
           isAudioSourceSwitching
@@ -121,12 +123,14 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
         <Badge
           v-if="currentTrack && settingStore.showAudioQualityBadge && audioQualityButtonBadge"
           :count="audioQualityButtonBadge"
+          tone="accent"
+          placement="floating"
           class="playerbar-action-badge"
         />
       </Button>
     </template>
 
-    <div class="space-y-1">
+    <div class="quality-options">
       <div class="pm-header">
         <div class="pm-title">音质选择</div>
         <div class="pm-status" role="status" aria-live="polite">
@@ -156,6 +160,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
         }"
         :disabled="isAudioSourceSwitching"
         :aria-busy="isSwitchingToCloud"
+        :aria-pressed="isResolvedCloudSource"
         @click="setCloudAudioSource"
       >
         <span class="pm-label">云盘文件</span>
@@ -165,7 +170,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
           :class="{ 'is-visible': isResolvedCloudSource || isSwitchingToCloud }"
         >
           <span v-if="isSwitchingToCloud" class="pm-spinner" aria-hidden="true"></span>
-          <template v-else>✓</template>
+          <Icon v-else :icon="iconCheckMark" width="14" height="14" aria-hidden="true" />
         </span>
       </button>
       <div v-if="hasCloudAudioSourceOption" class="pm-divider"></div>
@@ -182,6 +187,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
         }"
         :disabled="isAudioQualityDisabled(q.value)"
         :aria-busy="isPendingQuality(q.value)"
+        :aria-pressed="!isResolvedCloudSource && effectiveAudioQuality === q.value"
         @click="setAudioQuality(q.value)"
       >
         <span class="pm-label">{{ q.label }}</span>
@@ -195,7 +201,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
           }"
         >
           <span v-if="isPendingQuality(q.value)" class="pm-spinner" aria-hidden="true"></span>
-          <template v-else>✓</template>
+          <Icon v-else :icon="iconCheckMark" width="14" height="14" aria-hidden="true" />
         </span>
       </button>
     </div>
@@ -205,12 +211,21 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
 <style scoped>
 :global(.quality-popover.echo-popover-content) {
   width: 208px;
-  padding: 8px 0;
-  border-color: var(--border-subtle);
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-popover);
+}
+
+.quality-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .pm-header {
-  padding: 4px 14px 8px;
+  padding: 6px 10px 10px;
 }
 
 .pm-title {
@@ -235,54 +250,76 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
 
 .pm-divider {
   height: 1px;
-  margin: 4px 10px;
+  margin: 4px 6px;
   background: var(--border-subtle);
 }
 
 .pm-item {
   display: flex;
   align-items: center;
-  width: calc(100% - 12px);
-  margin: 0 6px;
-  padding: 9px 8px;
-  border-radius: 8px;
-  font-size: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  font-size: 13px;
   font-weight: 600;
+  line-height: 20px;
   color: var(--color-text-main);
   background: transparent;
-  border: none;
+  border: 0;
+  box-shadow: inset 0 0 0 1px transparent;
   cursor: pointer;
   transition:
-    background-color 0.15s ease,
-    opacity 0.15s ease;
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
+    opacity var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .pm-item:hover:not(:disabled) {
-  background: var(--row-hover-bg);
-  opacity: 1;
+  background: var(--control-hover-bg);
+  box-shadow: inset 0 0 0 1px var(--control-border);
 }
 
-.pm-item.is-active {
-  background: var(--row-selected-bg);
-  opacity: 1;
+.pm-item:active:not(:disabled) {
+  background: var(--control-neutral-pressed-bg);
+}
+
+.pm-item.is-active,
+.pm-item.is-pending,
+.pm-item.is-active:focus-visible,
+.pm-item.is-pending:focus-visible {
+  color: var(--color-primary-text);
+  background: var(--control-active-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 24%, var(--control-border));
+}
+
+.pm-item.is-active:hover:not(:disabled) {
+  background: var(--control-accent-hover-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 24%, var(--control-border));
+}
+
+.pm-item.is-active:active:not(:disabled) {
+  background: var(--control-accent-pressed-bg);
+}
+
+.pm-item:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--control-border);
 }
 
 .pm-item.is-disabled {
-  opacity: 0.3;
+  opacity: 0.5;
   cursor: not-allowed;
-}
-
-.pm-item.is-disabled:hover {
-  background: transparent;
 }
 
 .pm-item.is-locked {
   cursor: wait;
-  opacity: 0.4;
+  opacity: 0.5;
 }
 
 .pm-item.is-pending {
-  background: var(--row-selected-bg);
   opacity: 1;
 }
 
@@ -306,17 +343,19 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
   .pm-spinner {
     animation: none;
   }
+  .pm-item {
+    transition: none;
+  }
 }
 
 .pm-label {
   flex: 1;
+  min-width: 0;
   text-align: left;
 }
 
 .pm-tag {
-  font-size: 9px;
-  padding: 0 4px;
-  margin-right: 6px;
+  flex-shrink: 0;
 }
 
 .pm-check {
@@ -324,6 +363,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
   justify-content: center;
   align-items: center;
   width: 14px;
+  flex-shrink: 0;
   text-align: right;
   font-size: 12px;
   opacity: 0;

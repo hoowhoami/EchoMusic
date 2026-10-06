@@ -52,7 +52,7 @@
   min-height: 28px;
   cursor: pointer;
   list-style: none;
-  border-radius: 4px;
+  border-radius: var(--radius-detail);
 }
 .editor-details summary::-webkit-details-marker {
   display: none;

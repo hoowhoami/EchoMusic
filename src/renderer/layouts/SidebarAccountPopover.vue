@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import { iconChevronDown, iconChevronRight } from '@/icons';
 import Avatar from '@/components/ui/Avatar.vue';
+import RollingNumber from '@/components/ui/RollingNumber.vue';
 import Button from '@/components/ui/Button.vue';
 import LogoutConfirmDialog from '@/components/profile/LogoutConfirmDialog.vue';
 import Popover from '@/components/ui/Popover.vue';
@@ -91,13 +92,14 @@ const logout = () => {
     trigger="click"
     side="bottom"
     align="end"
+    :show-arrow="false"
     :side-offset="14"
-    :content-style="{ width: '340px', maxWidth: 'calc(100vw - 24px)', padding: '0' }"
+    :content-style="{ width: '320px', maxWidth: 'calc(100vw - 24px)', padding: '0' }"
   >
     <template #trigger>
       <button
         type="button"
-        class="account-trigger"
+        class="action-icon account-trigger"
         aria-label="个人信息"
         aria-haspopup="dialog"
         :aria-expanded="open"
@@ -110,61 +112,47 @@ const logout = () => {
         <header class="account-identity">
           <Avatar :src="user.info.pic" :size="44" class="rounded-full" />
           <div class="account-name">
-            <strong>{{ user.info.nickname }}</strong>
+            <div class="account-name-line">
+              <strong>{{ user.info.nickname }}</strong
+              ><span v-if="grade.grade !== null" class="account-level">Lv.{{ grade.grade }}</span>
+            </div>
             <span>ID · {{ user.info.userid }}</span>
           </div>
         </header>
         <p v-if="signature" class="account-signature">{{ signature }}</p>
         <dl v-if="stats.length" class="account-stats">
           <div v-for="stat in stats" :key="stat.label">
-            <dd>{{ stat.value }}</dd>
+            <dd><RollingNumber :value="stat.value" /></dd>
             <dt>{{ stat.label }}</dt>
           </div>
         </dl>
-        <section
-          v-if="grade.grade !== null || detail.d_sec != null || detail.duration != null"
-          class="account-grade"
+        <div
+          v-if="detail.d_sec != null || detail.duration != null"
+          class="account-row account-listening"
         >
-          <div class="account-row">
-            <span>听歌等级</span><strong v-if="grade.grade !== null">Lv.{{ grade.grade }}</strong>
-          </div>
-          <template v-if="grade.available">
-            <div
-              class="account-progress"
-              role="progressbar"
-              aria-label="等级经验进度"
-              :aria-valuenow="grade.percent"
-              :aria-valuemin="0"
-              :aria-valuemax="100"
-            >
-              <span :style="{ width: `${grade.percent}%` }" />
-            </div>
-            <p class="account-caption">
-              距 Lv.{{ grade.nextGrade }} 还差 {{ grade.remaining?.toLocaleString() }} 经验
-            </p>
-          </template>
-          <div
-            v-if="detail.d_sec != null || detail.duration != null"
-            class="account-row account-listening"
-          >
-            <span>累计听歌</span><span>{{ duration }}</span>
-          </div>
-        </section>
+          <span>累计听歌</span><span>{{ duration }}</span>
+        </div>
         <div v-if="memberships.length" class="account-memberships">
-          <div
-            v-for="membership in memberships"
-            :key="membership.type"
-            class="account-row account-membership"
-          >
-            <strong>{{ membership.label }}</strong
-            ><span>{{ membership.expires }}</span>
+          <div v-for="membership in memberships" :key="membership.type" class="account-membership">
+            <span class="account-membership-marker" aria-hidden="true"></span>
+            <div>
+              <strong>{{ membership.label }}</strong
+              ><span>{{ membership.expires }}</span>
+            </div>
           </div>
         </div>
         <footer class="account-actions">
-          <button type="button" @click="navigate('/main/profile')">
+          <Button
+            variant="secondary"
+            size="none"
+            class="account-action"
+            @click="navigate('/main/profile')"
+          >
             个人主页<Icon :icon="iconChevronRight" :width="14" />
-          </button>
-          <button type="button" @click="requestLogout">退出登录</button>
+          </Button>
+          <Button variant="secondary" size="none" class="account-action" @click="requestLogout"
+            >退出登录</Button
+          >
         </footer>
       </template>
       <div v-else class="account-login">
@@ -192,13 +180,13 @@ const logout = () => {
   color: var(--color-text-main);
 }
 .account-trigger svg {
-  transition: transform 0.18s ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .account-trigger .is-open {
   transform: rotate(180deg);
 }
 .account-panel {
-  padding: 22px;
+  padding: 18px;
   max-height: min(620px, calc(100vh - 150px));
   overflow-y: auto;
   color: var(--color-text-main);
@@ -213,51 +201,65 @@ const logout = () => {
   gap: 4px;
   min-width: 0;
 }
+.account-name-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+}
+.account-level {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
 .account-name strong {
   font-size: 16px;
+  font-weight: 600;
   overflow-wrap: anywhere;
+  line-height: 1.4;
 }
-.account-name span,
-.account-caption,
+.account-name > span,
 .account-signature {
   font-size: 12px;
   color: var(--color-text-secondary);
 }
 .account-signature {
-  margin: 14px 0 0;
+  margin: 12px 0 0;
   line-height: 1.6;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .account-stats {
   display: flex;
-  gap: 8px;
-  margin: 20px 0 0;
+  margin: 18px 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .account-stats > div {
   flex: 1;
   min-width: 0;
-  padding: 12px 4px;
-  border-radius: 8px;
-  background: var(--control-muted-bg);
+  padding: 0 6px;
   text-align: center;
 }
+.account-stats > div + div {
+  border-left: 1px solid var(--border-subtle);
+}
 .account-stats dd {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 600;
+  line-height: 1.3;
   font-variant-numeric: tabular-nums;
   margin: 0;
   overflow-wrap: anywhere;
 }
 .account-stats dt {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--color-text-secondary);
   margin-top: 4px;
-}
-.account-grade {
-  margin-top: 20px;
-  padding: 16px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--control-muted-bg));
 }
 .account-row {
   display: flex;
@@ -266,62 +268,70 @@ const logout = () => {
   gap: 12px;
   font-size: 13px;
 }
-.account-grade strong {
-  font-size: 20px;
-  color: var(--color-primary-text);
-}
-.account-progress {
-  margin-top: 14px;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: var(--control-hover-bg);
-}
-.account-progress span {
-  display: block;
-  height: 100%;
-  background: var(--color-primary);
-  border-radius: inherit;
-}
-.account-caption {
-  margin: 8px 0 0;
-}
 .account-listening {
-  margin-top: 14px;
+  margin-top: 16px;
   font-size: 12px;
+  align-items: baseline;
 }
 .account-listening > :first-child {
+  flex: none;
   color: var(--color-text-secondary);
+}
+.account-listening > :last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 .account-memberships {
   display: grid;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 12px;
+  margin-top: 18px;
 }
 .account-membership {
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-.account-membership span {
+.account-membership-marker {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+.account-membership > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 12px;
+  flex: 1;
+  min-width: 0;
+}
+.account-membership strong {
   font-size: 12px;
+  font-weight: 500;
+}
+.account-membership div > span {
+  font-size: 11px;
   color: var(--color-text-secondary);
 }
 .account-actions {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 18px;
+  gap: 10px;
+  margin-top: 20px;
 }
-.account-actions button {
+.account-action {
+  flex: 1;
   display: inline-flex;
+  justify-content: center;
   align-items: center;
-  gap: 4px;
-  padding: 6px 0;
-  cursor: pointer;
-  font-size: 13px;
-}
-.account-actions button:hover {
-  color: var(--color-primary-text);
+  gap: 5px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  font-weight: 500;
 }
 .account-login {
   display: flex;
@@ -333,5 +343,10 @@ const logout = () => {
 .account-login span {
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-trigger svg {
+    transition: none;
+  }
 }
 </style>

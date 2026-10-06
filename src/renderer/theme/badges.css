@@ -1,0 +1,196 @@
+/* One non-interactive badge recipe; local surfaces provide the readable foreground. */
+.ui-badge,
+.comment-badge,
+.sidebar-member-badge,
+.profile-member-badge,
+.plugin-status-badge,
+.type-badge,
+.detail-page-skeleton-badge,
+.engine-active-badge,
+.fm-now-info-chip,
+.mv-source-badge,
+.comment-chip-count,
+.candidate-tags span,
+.status-pill,
+.preview-badges span,
+.search-hot-badge,
+.listen-room-type-badge,
+.listen-now-badge,
+.duration-badge,
+.discover-reel-quality,
+.import-platform-chip,
+.import-step-pill,
+.marketplace-version-pill,
+.marketplace-tags span,
+.plugin-feature-tags span,
+.error-badge {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: var(--radius-detail, 4px);
+  background: var(--badge-background, var(--control-muted-bg));
+  color: var(--badge-foreground, var(--color-text-main));
+  box-shadow: inset 0 0 0 1px var(--badge-border, var(--border-strong));
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.badge-accent,
+.comment-badge,
+.type-badge,
+.detail-page-skeleton-badge,
+.engine-active-badge,
+.status-pill.recommended-pill,
+.search-hot-badge,
+.plugin-status-badge.is-active,
+.import-step-pill.is-active,
+.listen-room-card-top .listen-room-type-badge {
+  --badge-foreground: var(--color-primary-text);
+  --badge-background: var(--control-active-bg);
+  --badge-border: color-mix(in srgb, var(--color-primary) 24%, var(--control-border));
+}
+
+.badge-muted {
+  --badge-foreground: var(--color-text-secondary);
+}
+
+.badge-custom,
+.comment-badge-svip,
+.comment-badge-svip-year,
+.comment-badge-concept,
+.comment-badge-concept-year,
+.comment-badge-vip,
+.comment-badge-vip-year,
+.comment-badge-music,
+.comment-badge-music-year,
+.comment-badge-changting,
+.comment-badge-wvip,
+.comment-badge-qvip,
+.comment-badge-talent,
+.comment-badge-student,
+.comment-badge-actor,
+.comment-badge-biz,
+.comment-badge-tme-star,
+.comment-badge-auth,
+.sidebar-member-badge.is-svip,
+.sidebar-member-badge.is-tvip,
+.profile-member-badge.is-music,
+.profile-member-badge.is-concept,
+.plugin-status-badge.is-error,
+.plugin-status-badge.is-safe,
+.plugin-status-badge.is-warning,
+.marketplace-version-pill.is-update,
+.error-badge {
+  --badge-foreground: color-mix(in srgb, var(--badge-tone) 68%, var(--color-text-main));
+  --badge-background: color-mix(in srgb, var(--badge-tone) 10%, transparent);
+  --badge-border: color-mix(in srgb, var(--badge-tone) 24%, var(--control-border));
+}
+
+.comment-badge-svip,
+.comment-badge-svip-year,
+.comment-badge-concept,
+.comment-badge-concept-year,
+.sidebar-member-badge.is-svip {
+  --badge-tone: #f97316;
+}
+.comment-badge-vip,
+.comment-badge-vip-year {
+  --badge-tone: #e8a317;
+}
+.comment-badge-music,
+.comment-badge-music-year {
+  --badge-tone: #3b82f6;
+}
+.comment-badge-changting,
+.comment-badge-wvip,
+.comment-badge-qvip,
+.comment-badge-actor,
+.comment-badge-biz,
+.comment-badge-tme-star,
+.comment-badge-auth,
+.sidebar-member-badge.is-tvip {
+  --badge-tone: #07c160;
+}
+.comment-badge-talent {
+  --badge-tone: #8b5cf6;
+}
+.comment-badge-student {
+  --badge-tone: #0ea5e9;
+}
+.profile-member-badge.is-music {
+  --badge-tone: var(--state-success);
+}
+.profile-member-badge.is-concept,
+.plugin-status-badge.is-safe,
+.plugin-status-badge.is-warning,
+.marketplace-version-pill.is-update {
+  --badge-tone: var(--state-warning);
+}
+.plugin-status-badge.is-error,
+.error-badge {
+  --badge-tone: var(--state-danger);
+}
+
+/* Artwork overlays need their own stable foreground, regardless of app mode. */
+.duration-badge,
+.listen-now-badge,
+.listen-room-type-badge {
+  --badge-foreground: #fff;
+  --badge-background: rgb(15 18 23 / 76%);
+  --badge-border: rgb(255 255 255 / 24%);
+}
+
+.ui-tag {
+  user-select: none;
+}
+.badge-outline {
+  --badge-background: transparent;
+}
+.badge-solid {
+  --badge-foreground: #fff;
+  --badge-background: var(--badge-tone, var(--color-primary));
+  --badge-border: transparent;
+}
+
+.badge-size-sm,
+.fm-now-info-chip,
+.mv-source-badge,
+.import-platform-chip,
+.import-step-pill,
+.marketplace-version-pill,
+.marketplace-tags span,
+.plugin-feature-tags span,
+.error-badge {
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+/* Keep inline spacing in one layer so lazy component CSS cannot add a second gap. */
+.badge-inline {
+  margin-inline-start: 4px;
+  vertical-align: middle;
+}
+
+/* Align the label and count by their boxes, independent of either font baseline. */
+.badge-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.badge-label > .badge-inline {
+  margin-inline-start: 0;
+}

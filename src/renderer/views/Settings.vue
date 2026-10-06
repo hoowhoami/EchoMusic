@@ -653,7 +653,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
                 <template #trigger>
                   <button
                     type="button"
-                    class="settings-search-icon-button"
+                    class="action-icon settings-search-icon-button"
                     aria-label="搜索设置"
                     @click="expandSettingsSearch"
                   >
@@ -685,7 +685,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
                 <button
                   v-if="settingsSearchKeyword"
                   type="button"
-                  class="settings-search-clear"
+                  class="action-icon settings-search-clear"
                   aria-label="清空搜索"
                   @mousedown.prevent
                   @click="clearSettingsSearch"
@@ -697,7 +697,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
             <button
               v-if="props.embedded"
               type="button"
-              class="settings-modal-close"
+              class="action-icon settings-modal-close"
               aria-label="关闭设置"
               @click="closeSettings"
             >
@@ -744,7 +744,11 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
             >
               <Icon :icon="iconSearch" width="22" height="22" />
               <span>没有找到匹配的设置</span>
-              <button type="button" class="settings-empty-clear" @click="clearSettingsSearch">
+              <button
+                type="button"
+                class="settings-action settings-empty-clear"
+                @click="clearSettingsSearch"
+              >
                 清空搜索
               </button>
             </div>
@@ -801,7 +805,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
           <div class="changelog-content" v-html="changelogHtml"></div>
         </Scrollbar>
         <template #footer>
-          <Button variant="ghost" size="sm" @click="showChangelog = false">关闭</Button>
+          <Button variant="secondary" size="sm" @click="showChangelog = false">关闭</Button>
         </template>
       </Dialog>
 
@@ -864,7 +868,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   flex: 0 0 auto;
   width: 30px;
   height: 30px;
-  border-radius: 50%;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
   transition:
     background 0.2s,
@@ -913,7 +917,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   gap: 10px;
   min-height: 38px;
   padding: 0 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-item);
   color: var(--color-text-secondary);
   font-size: 13px;
   font-weight: 600;
@@ -984,7 +988,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   justify-content: center;
   width: 30px;
   height: 30px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   color: var(--color-text-main);
   cursor: pointer;
   transition: color 0.2s;
@@ -1146,7 +1150,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 }
 
 .settings-empty-clear {
-  @apply text-[12px] font-semibold text-primary-text hover:opacity-80 transition-opacity cursor-pointer;
+  @apply min-h-8 rounded-control px-3 text-[12px] font-semibold;
 }
 
 .settings-section {
@@ -1290,7 +1294,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 }
 
 .settings-back-to-top {
-  @apply absolute bottom-4 right-6 w-11 h-11 rounded-full backdrop-blur-sm border flex items-center justify-center text-text-secondary hover:text-primary-text hover:border-primary/60 transition-all duration-300 cursor-pointer shadow-lg shadow-black/5 z-50;
+  @apply absolute bottom-4 right-6 w-11 h-11 rounded-control backdrop-blur-sm border flex items-center justify-center text-text-secondary hover:text-primary-text hover:border-primary/60 transition-all duration-300 cursor-pointer shadow-lg shadow-black/5 z-50;
   background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
   opacity: 0;
@@ -1329,7 +1333,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   max-height: min(288px, 40vh);
   font-size: 13px;
   line-height: 1.5;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
 

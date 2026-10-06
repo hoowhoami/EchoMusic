@@ -76,7 +76,7 @@ defineExpose({ scrollToActive });
       </div>
       <div class="search-song-toolbar-inner">
         <div v-if="enableSearchQuery" class="rank-song-tab">
-          <span class="rank-song-label relative"
+          <span class="rank-song-label badge-label"
             >歌曲 <Badge :count="subtitleLabel ?? songs.length"
           /></span>
         </div>
@@ -96,7 +96,7 @@ defineExpose({ scrollToActive });
             v-if="enableLocate"
             variant="unstyled"
             size="none"
-            class="song-locate-btn p-2 rounded-lg"
+            class="action-icon song-locate-btn p-2"
             tooltip="定位当前播放"
             @click="emit('locate')"
           >
@@ -110,7 +110,7 @@ defineExpose({ scrollToActive });
         :sortOrder="sortOrder"
         :showCover="true"
         :lyricColumn="showLyricColumn"
-        albumLabel="歌词"
+        :albumLabel="showLyricColumn ? '歌词' : '专辑'"
         paddingClass="px-0"
         @sort="emit('sort', $event)"
       />

@@ -177,8 +177,20 @@ const confirm = () => {
 
       <!-- 操作按钮 -->
       <div class="color-picker-actions">
-        <button type="button" class="color-picker-btn cancel" @click="open = false">取消</button>
-        <button type="button" class="color-picker-btn confirm" @click="confirm">确定</button>
+        <button
+          type="button"
+          class="color-picker-btn cancel soft-secondary-action app-focus-ring-soft"
+          @click="open = false"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="color-picker-btn confirm soft-accent-action app-focus-ring-soft"
+          @click="confirm"
+        >
+          确定
+        </button>
       </div>
     </div>
   </Dialog>
@@ -205,7 +217,7 @@ const confirm = () => {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   overflow: hidden;
   border: 1px solid var(--control-border);
 }
@@ -248,7 +260,7 @@ const confirm = () => {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--control-border);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--control-bg);
   color: var(--color-text-main);
   cursor: pointer;
@@ -274,7 +286,7 @@ const confirm = () => {
   justify-content: center;
   width: 34px;
   height: 34px;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   color: white;
   flex-shrink: 0;
   box-shadow:
@@ -303,7 +315,7 @@ const confirm = () => {
   width: 100%;
   aspect-ratio: 1;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -331,27 +343,9 @@ const confirm = () => {
   padding: 0 18px;
   font-size: 13px;
   font-weight: 600;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: none;
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.color-picker-btn.cancel {
-  background: var(--control-muted-bg);
-  color: var(--color-text-main);
-}
-
-.color-picker-btn.cancel:hover {
-  background: var(--control-hover-bg);
-}
-
-.color-picker-btn.confirm {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-.color-picker-btn.confirm:hover {
-  opacity: 0.9;
 }
 </style>

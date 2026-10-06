@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tag from '@/components/ui/Tag.vue';
 import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'song-detail-page' });
@@ -1358,7 +1359,7 @@ watch(total, (value) => {
         <template v-if="isMusicType" #collapsed-actions>
           <Button
             type="button"
-            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
+            class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
             variant="unstyled"
             size="none"
             tooltip="播放"
@@ -1370,7 +1371,7 @@ watch(total, (value) => {
           </Button>
           <Button
             type="button"
-            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+            class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
             variant="unstyled"
             size="none"
             tooltip="添加到"
@@ -1382,7 +1383,7 @@ watch(total, (value) => {
           </Button>
           <Button
             type="button"
-            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+            class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
             variant="unstyled"
             size="none"
             tooltip="分享"
@@ -1430,13 +1431,17 @@ watch(total, (value) => {
                 <div v-if="qualityTags.length" class="detail-block">
                   <div class="detail-title">可选音质</div>
                   <div class="detail-tags">
-                    <span v-for="tag in qualityTags" :key="tag" class="detail-tag">{{ tag }}</span>
+                    <Tag v-for="tag in qualityTags" :key="tag" tone="accent" size="sm">{{
+                      tag
+                    }}</Tag>
                   </div>
                 </div>
                 <div v-if="effectTags.length" class="detail-block">
                   <div class="detail-title">可用音效</div>
                   <div class="detail-tags">
-                    <span v-for="tag in effectTags" :key="tag" class="detail-tag">{{ tag }}</span>
+                    <Tag v-for="tag in effectTags" :key="tag" tone="accent" size="sm">{{
+                      tag
+                    }}</Tag>
                   </div>
                 </div>
                 <div v-if="rankingSummary || rankingInfo.length" class="detail-block">
@@ -1849,7 +1854,7 @@ watch(total, (value) => {
 .comment-sub-list {
   background: color-mix(in srgb, var(--color-text-main) 7%, transparent);
   padding: 4px;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
 }
 
@@ -1871,7 +1876,7 @@ watch(total, (value) => {
   align-items: center;
   min-height: 30px;
   padding: 0 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-item);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 12%, transparent);
   background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
   font-size: 11px;
@@ -1890,8 +1895,6 @@ watch(total, (value) => {
 
 .comment-chip-count {
   margin-left: 5px;
-  font-size: 10px;
-  font-family: monospace;
 }
 
 .comment-section-title {
@@ -1916,7 +1919,7 @@ watch(total, (value) => {
 
 .comment-load-more button {
   padding: 8px 24px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--control-border);
   font-size: 12px;
   font-weight: 600;
@@ -1958,7 +1961,7 @@ watch(total, (value) => {
 .detail-section {
   margin-top: 12px;
   padding: 20px;
-  border-radius: 20px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
 }
@@ -1987,16 +1990,6 @@ watch(total, (value) => {
   flex-wrap: wrap;
 }
 
-.detail-tag {
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, transparent);
-}
-
 .detail-summary {
   font-size: 12px;
   color: var(--color-text-secondary);
@@ -2010,7 +2003,7 @@ watch(total, (value) => {
 }
 
 .ranking-card {
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
   display: flex;
@@ -2038,7 +2031,7 @@ watch(total, (value) => {
 .ranking-card-logo {
   width: 42px;
   height: 42px;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   object-fit: cover;
   flex-shrink: 0;
   background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
@@ -2109,7 +2102,7 @@ watch(total, (value) => {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-item);
   background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
 }
@@ -2151,7 +2144,7 @@ watch(total, (value) => {
 
 .ranking-filter-empty {
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   font-size: 12px;
   color: var(--color-text-secondary);
   background: color-mix(in srgb, var(--color-text-main) 4%, transparent);

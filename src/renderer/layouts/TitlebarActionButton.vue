@@ -9,7 +9,7 @@ defineProps<{ action: ResolvedTitlebarAction; badge?: boolean }>();
   <Button
     variant="unstyled"
     size="none"
-    class="titlebar-action no-drag"
+    class="action-icon titlebar-icon-action titlebar-action no-drag"
     :tooltip="action.tooltip"
     tooltip-side="bottom"
     :aria-label="action.title"
@@ -31,15 +31,7 @@ defineProps<{ action: ResolvedTitlebarAction; badge?: boolean }>();
   justify-content: center;
   width: 34px;
   height: 34px;
-  border-radius: 50%;
-  color: var(--icon-main);
-  transition:
-    background-color 0.12s,
-    color 0.12s;
-}
-.titlebar-action:hover {
-  background: var(--control-hover-bg);
-  color: var(--color-text-main);
+  border-radius: var(--radius-control);
 }
 .action-badge {
   position: absolute;

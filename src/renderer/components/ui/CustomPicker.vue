@@ -101,8 +101,8 @@ watch(
           :key="opt.id"
           type="button"
           class="custom-picker-option"
-          :class="{ active: opt.id === props.selectedId }"
-          variant="ghost"
+          :aria-pressed="opt.id === props.selectedId"
+          :variant="opt.id === props.selectedId ? 'soft-primary' : 'soft-secondary'"
           size="xs"
           @click="handleSelect(opt)"
         >
@@ -138,20 +138,6 @@ watch(
 }
 
 .custom-picker-option {
-  @apply px-4 py-2 rounded-[10px] text-[12px] font-semibold;
-  color: var(--color-text-main);
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
-}
-
-.custom-picker-option.active {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-.custom-picker-option:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 60%, transparent);
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  @apply px-4 py-2 rounded-control text-[12px] font-semibold;
 }
 </style>

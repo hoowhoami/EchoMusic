@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { onScopeDispose, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Drawer from '@/components/ui/Drawer.vue';
@@ -65,46 +65,31 @@ const handleScroll = () => {
 
 const resourceKey = () => `${props.resourceType}:${props.resourceId}:${props.mixSongId ?? ''}`;
 
-// 资源变化时：打开状态下立即刷新，关闭状态下标记为需要刷新
+// A lazy-mounted drawer may already be open. Handle visibility and resource
+// together so the initial load runs and simultaneous prop changes fetch once.
 watch(
-  () => resourceKey(),
-  async (newKey) => {
-    if (newKey === currentResourceKey) return;
+  [() => open.value, resourceKey],
+  async ([isOpen, key]) => {
     updateResource({
       resourceId: props.resourceId,
       resourceType: props.resourceType,
       mixSongId: props.mixSongId,
     });
-    if (open.value) {
-      currentResourceKey = newKey;
+    if (!isOpen) {
+      stop();
+      if (key !== currentResourceKey) currentResourceKey = '';
+      return;
+    }
+    resume();
+    if (key !== currentResourceKey || comments.value.length === 0) {
+      currentResourceKey = key;
       await fetchComments(true);
-    } else {
-      // 标记为需要刷新，下次打开时会重新加载
-      currentResourceKey = '';
     }
   },
+  { immediate: true },
 );
 
-watch(
-  () => open.value,
-  async (isOpen) => {
-    if (isOpen) {
-      resume();
-      const key = resourceKey();
-      if (key !== currentResourceKey || comments.value.length === 0) {
-        currentResourceKey = key;
-        updateResource({
-          resourceId: props.resourceId,
-          resourceType: props.resourceType,
-          mixSongId: props.mixSongId,
-        });
-        await fetchComments(true);
-      }
-    } else {
-      stop();
-    }
-  },
-);
+onScopeDispose(stop);
 </script>
 
 <template>
@@ -121,7 +106,7 @@ watch(
       </div>
       <Button
         type="button"
-        class="comment-drawer-close"
+        class="action-icon comment-drawer-close"
         variant="ghost"
         size="xs"
         tooltip="关闭"
@@ -205,7 +190,7 @@ watch(
   right: 12px;
   bottom: var(--drawer-safe-bottom);
   width: min(460px, calc(100vw - 24px));
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   box-shadow: var(--shadow-dialog);
   overflow: hidden;
   font-size: 13px;
@@ -282,13 +267,13 @@ watch(
 .comment-drawer-body :deep(.comment-item) {
   padding: 14px;
   margin-bottom: 8px;
-  border-radius: 16px;
+  border-radius: var(--radius-popover);
 }
 
 .comment-drawer-body :deep(.comment-avatar) {
   width: 30px;
   height: 30px;
-  border-radius: 15px;
+  border-radius: var(--radius-popover);
 }
 
 .comment-drawer-body :deep(.comment-reply) {

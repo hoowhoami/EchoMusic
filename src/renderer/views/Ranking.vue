@@ -13,6 +13,7 @@ import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
+import CustomSelector from '@/components/ui/CustomSelector.vue';
 import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
@@ -272,15 +273,11 @@ watch(
 
           <template #actions>
             <div class="rank-header-actions">
-              <Button
-                variant="unstyled"
-                size="none"
+              <CustomSelector
+                :label="selectedRank?.name || '排行榜选择'"
                 class="rank-selector"
                 @click="showSelectorDialog = true"
-              >
-                <span class="truncate">{{ selectedRank?.name || '排行榜选择' }}</span>
-                <Icon :icon="iconChevronDown" width="14" height="14" />
-              </Button>
+              />
               <ActionRow @play="handlePlayAll" @batch="openBatchDrawer" />
             </div>
           </template>
@@ -290,7 +287,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="showSelectorDialog = true"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-text-main"
             >
               <Icon :icon="iconChevronDown" width="18" height="18" />
             </Button>
@@ -298,7 +295,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
@@ -306,7 +303,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
@@ -325,7 +322,7 @@ watch(
                 <div class="flex items-center justify-between h-14">
                   <TabsList class="bg-transparent border-none gap-8">
                     <TabsTrigger value="songs">
-                      <span class="relative">歌曲 <Badge :count="songs.length" /></span>
+                      <span class="badge-label">歌曲 <Badge :count="songs.length" /></span>
                     </TabsTrigger>
                   </TabsList>
 
@@ -335,7 +332,7 @@ watch(
                       variant="unstyled"
                       size="none"
                       @click="handleLocate"
-                      class="song-locate-btn p-2 rounded-lg"
+                      class="action-icon song-locate-btn p-2"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="16" height="16" />
@@ -397,8 +394,8 @@ watch(
               v-for="rank in activeGroupRanks"
               :key="rank.id"
               class="rank-selector-item"
-              :class="{ active: rank.id === selectedRankId }"
-              variant="ghost"
+              :aria-pressed="rank.id === selectedRankId"
+              :variant="rank.id === selectedRankId ? 'soft-primary' : 'soft-secondary'"
               size="xs"
               @click="handleRankSelect(rank.id)"
             >
@@ -419,14 +416,7 @@ watch(
 }
 
 .rank-selector {
-  @apply inline-flex items-center gap-2 h-9 px-4 rounded-xl bg-[var(--control-muted-bg)] text-text-main text-[13px] font-semibold transition-all;
-  border: 1px solid var(--control-border);
   max-width: 220px;
-}
-
-.rank-selector:hover {
-  @apply bg-[var(--control-hover-bg)];
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--control-border));
 }
 
 .rank-selector-dialog {
@@ -438,17 +428,7 @@ watch(
 }
 
 .rank-selector-item {
-  @apply px-4 py-2 rounded-lg text-[12px] font-semibold text-text-main transition-all;
-  background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
-}
-
-.rank-selector-item.active {
-  @apply border-primary bg-primary/10 text-primary-text;
-}
-
-.rank-selector-item:hover {
-  @apply border-primary/40 bg-primary/10 text-primary-text;
+  @apply px-4 py-2 rounded-control text-[12px] font-semibold;
 }
 
 .rank-selector-tabs {

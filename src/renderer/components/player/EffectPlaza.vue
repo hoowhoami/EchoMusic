@@ -5,6 +5,7 @@ import { computed, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import { iconArrowLeft, iconHeadphones, iconLoader2, iconRefreshCw } from '@/icons';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
+import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import OnlineAudioEffectCard from './OnlineAudioEffectCard.vue';
 import type { AudioEffectPlazaState, EffectPlazaCategory } from '@/composables/useAudioEffectPlaza';
 import type { CommunityAudioEffectSort } from '@/api/audioEffect';
@@ -20,6 +21,14 @@ const sorts: { value: CommunityAudioEffectSort; label: string }[] = [
   { value: 3, label: '最热' },
   { value: 4, label: '最新' },
 ];
+const selectCategoryTab = (index: number) => {
+  const category = categories[index];
+  if (category) props.plaza.selectCategory(category.id);
+};
+const selectSortTab = (index: number) => {
+  const sort = sorts[index];
+  if (sort) props.plaza.selectSort(sort.value);
+};
 const description = computed(
   () => categories.find((item) => item.id === props.plaza.category)?.description,
 );
@@ -53,7 +62,7 @@ const refresh = () => {
         <template #trigger>
           <button
             type="button"
-            class="plaza-refresh"
+            class="action-icon plaza-refresh"
             :disabled="loading"
             aria-label="刷新音效广场"
             @click="refresh"
@@ -63,35 +72,30 @@ const refresh = () => {
         </template>
       </Tooltip>
     </header>
-    <nav class="plaza-tabs" aria-label="音效分类">
-      <button
-        v-for="item in categories"
-        :key="item.id"
-        type="button"
-        :aria-pressed="plaza.category === item.id"
-        :class="{ 'is-active': plaza.category === item.id }"
-        @click="plaza.selectCategory(item.id)"
-      >
-        {{ item.label }}
-      </button>
-    </nav>
+    <CustomTabBar
+      class="plaza-tabs"
+      :tabs="categories.map((item) => item.label)"
+      :model-value="categories.findIndex((item) => item.id === plaza.category)"
+      aria-label="音效分类"
+      @update:model-value="selectCategoryTab"
+    />
     <div v-if="plaza.category === 'market'" class="plaza-tools">
-      <div class="plaza-sorts" aria-label="音效市场排序">
-        <button
-          v-for="sort in sorts"
-          :key="sort.value"
-          type="button"
-          :aria-pressed="plaza.marketSort === sort.value"
-          :class="{ 'is-active': plaza.marketSort === sort.value }"
-          @click="plaza.selectSort(sort.value)"
-        >
-          {{ sort.label }}
-        </button>
-      </div>
+      <CustomTabBar
+        class="plaza-sorts"
+        :tabs="sorts.map((sort) => sort.label)"
+        :model-value="sorts.findIndex((sort) => sort.value === plaza.marketSort)"
+        role="radiogroup"
+        aria-label="音效市场排序"
+        @update:model-value="selectSortTab"
+      />
       <span v-if="plaza.currentPage.loaded">{{ plaza.currentPage.total }} 个音效</span>
     </div>
     <div v-else-if="plaza.category === 'headphone' && plaza.selectedBrand" class="plaza-tools">
-      <button type="button" class="plaza-back" @click="plaza.selectBrand(null)">
+      <button
+        type="button"
+        class="plaza-back soft-secondary-action app-focus-ring-soft"
+        @click="plaza.selectBrand(null)"
+      >
         <Icon :icon="iconArrowLeft" width="13" />全部品牌
       </button>
       <strong
@@ -117,7 +121,10 @@ const refresh = () => {
             <Icon :icon="iconLoader2" width="14" class="plaza-spin" />正在加载通用音效…
           </div>
           <div v-if="plaza.common.error" class="plaza-inline-state" role="status">
-            {{ plaza.common.error }}<button type="button" @click="plaza.loadCommon">重试</button>
+            {{ plaza.common.error
+            }}<button type="button" class="soft-neutral-action" @click="plaza.loadCommon">
+              重试
+            </button>
           </div>
           <div v-else-if="plaza.common.loaded && !plaza.common.effect" class="plaza-inline-state">
             暂无通用耳机音效
@@ -143,7 +150,13 @@ const refresh = () => {
           </div>
           <div v-if="plaza.brands.error" class="plaza-inline-state" role="status">
             {{ plaza.brands.error
-            }}<button type="button" @click="plaza.loadBrands(plaza.brands.retryReset)">重试</button>
+            }}<button
+              type="button"
+              class="soft-neutral-action"
+              @click="plaza.loadBrands(plaza.brands.retryReset)"
+            >
+              重试
+            </button>
           </div>
           <div v-else-if="plaza.brands.loading && !plaza.brands.items.length" class="plaza-state">
             <Icon :icon="iconLoader2" width="18" class="plaza-spin" />正在加载耳机品牌…
@@ -154,7 +167,7 @@ const refresh = () => {
           <button
             v-if="plaza.brands.hasMore && !plaza.brands.error"
             type="button"
-            class="plaza-more"
+            class="plaza-more soft-secondary-action"
             :disabled="plaza.brands.loading"
             @click="plaza.loadBrands()"
           >
@@ -171,7 +184,11 @@ const refresh = () => {
           />
           <div v-if="plaza.currentPage.error" class="plaza-state" role="status">
             <span>{{ plaza.currentPage.error }}</span
-            ><button type="button" @click="plaza.loadEffects(plaza.currentPage.retryReset)">
+            ><button
+              type="button"
+              class="soft-neutral-action"
+              @click="plaza.loadEffects(plaza.currentPage.retryReset)"
+            >
               重试
             </button>
           </div>
@@ -193,12 +210,12 @@ const refresh = () => {
                     ? '该品牌的耳机音效'
                     : '市场音效'
               }}</span
-            ><button type="button" @click="refresh">重新加载</button>
+            ><button type="button" class="soft-neutral-action" @click="refresh">重新加载</button>
           </div>
           <button
             v-if="plaza.currentPage.hasMore && !plaza.currentPage.error"
             type="button"
-            class="plaza-more"
+            class="plaza-more soft-secondary-action"
             :disabled="plaza.currentPage.loading"
             @click="plaza.loadEffects()"
           >
@@ -258,7 +275,7 @@ const refresh = () => {
   width: 26px;
   height: 26px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -272,29 +289,9 @@ const refresh = () => {
   cursor: wait;
 }
 .plaza-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  --custom-tab-width: calc(100% - 24px);
   flex-shrink: 0;
-  gap: 3px;
   margin: 0 12px 9px;
-  padding: 3px;
-  border-radius: 8px;
-  background: var(--control-muted-bg);
-}
-.plaza-tabs button {
-  height: 28px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  font-size: 11px;
-  font-weight: 650;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-}
-.plaza-tabs button.is-active {
-  color: var(--color-primary-text);
-  background: var(--color-bg-elevated);
-  box-shadow: inset 0 0 0 1px var(--control-border);
 }
 .plaza-tools {
   display: flex;
@@ -316,30 +313,17 @@ const refresh = () => {
   color: var(--color-text-secondary);
 }
 .plaza-sorts {
-  display: flex;
-  gap: 3px;
-}
-.plaza-sorts button {
-  padding: 3px 9px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  cursor: pointer;
-}
-.plaza-sorts button.is-active {
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  color: var(--color-primary-text);
+  --custom-tab-width: 220px;
+  max-width: 100%;
 }
 .plaza-back {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 0;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
   border: 0;
-  background: transparent;
-  color: var(--color-primary-text);
   font-size: 10px;
   cursor: pointer;
 }
@@ -388,7 +372,7 @@ const refresh = () => {
   min-width: 0;
   padding: 10px 8px;
   border: 1px solid var(--control-border);
-  border-radius: 9px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -441,17 +425,15 @@ const refresh = () => {
 .plaza-state button,
 .plaza-inline-state button {
   border: 0;
-  padding: 4px;
-  background: transparent;
-  color: var(--color-primary-text);
+  padding: 4px 8px;
+  min-height: 28px;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 .plaza-more {
   min-height: 30px;
   border: 0;
-  border-radius: 7px;
-  background: var(--control-muted-bg);
-  color: var(--color-primary-text);
+  border-radius: var(--radius-control);
   font-size: 11px;
   cursor: pointer;
 }

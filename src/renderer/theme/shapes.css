@@ -1,0 +1,26 @@
+/* Semantic shape roles. Size changes do not change a control's corner shape. */
+@theme static {
+  --radius-control: 6px;
+  --radius-item: 6px;
+  --radius-card: 10px;
+  --radius-media: 6px;
+  --radius-popover: 10px;
+  --radius-dialog: 12px;
+  --radius-shell: 10px;
+  --radius-detail: 4px;
+  --radius-micro: 2px;
+
+  --radius-sm: var(--radius-detail);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-control);
+  --radius-xl: var(--radius-card);
+  --radius-2xl: var(--radius-card);
+  --radius-3xl: var(--radius-dialog);
+}
+
+/* Shape-only roles; hover and focus behavior belongs to each control. */
+.action-icon:not(.playback-action),
+.echo-button-control:not(.playback-action),
+.titlebar-icon-action {
+  border-radius: var(--radius-control);
+}

@@ -59,7 +59,7 @@ const skeletonStyle = computed<CSSProperties>(() => {
   display: block;
   flex-shrink: 0;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   color: transparent;
   pointer-events: none;

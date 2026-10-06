@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tag from '@/components/ui/Tag.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { computed, nextTick, ref, shallowRef, useId, watch } from 'vue';
@@ -17,6 +18,7 @@ import { Icon } from '@iconify/vue';
 import Popover from '@/components/ui/Popover.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Button from '@/components/ui/Button.vue';
+import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
@@ -813,6 +815,8 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
         <Badge
           v-if="currentTrack && settingStore.showAudioEffectBadge && audioEffectButtonBadge"
           :count="audioEffectButtonBadge"
+          tone="accent"
+          placement="floating"
           class="playerbar-action-badge"
         />
       </Button>
@@ -880,15 +884,15 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
           <div v-if="isResolvedCloudSource" class="panel-hint">当前使用云盘文件播放</div>
           <Scrollbar class="panel-scroll">
             <div class="effect-preset-grid" :aria-busy="player.audioEffectApplying">
-              <button
+              <Button
                 v-for="option in audioEffectOptions"
                 :key="option.value"
                 type="button"
-                class="pm-item effect-option w-full! m-0!"
-                :class="{
-                  'is-active': isAudioEffectOptionActive(option.value),
-                  'is-disabled': isAudioEffectPresetSelectionDisabled,
-                }"
+                size="none"
+                :variant="
+                  isAudioEffectOptionActive(option.value) ? 'soft-primary' : 'soft-secondary'
+                "
+                class="effect-preset-button"
                 :aria-pressed="isAudioEffectOptionActive(option.value)"
                 :disabled="
                   isAudioEffectPresetSelectionDisabled ||
@@ -897,8 +901,8 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                 "
                 @click="setAudioEffect(option.value)"
               >
-                <span class="pm-label text-center">{{ option.label }}</span>
-              </button>
+                <span class="effect-preset-label">{{ option.label }}</span>
+              </Button>
             </div>
             <div
               v-if="!player.audioEffectApplying && player.audioEffectError"
@@ -915,7 +919,9 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
         <div v-if="activeTab === 'eq'" class="panel-content">
           <div class="panel-header">
             <span class="panel-title">自定义调节</span>
-            <button class="reset-btn" :disabled="providerEqLocked" @click="resetGains">重置</button>
+            <Button variant="secondary" size="xs" :disabled="providerEqLocked" @click="resetGains">
+              重置
+            </Button>
           </div>
 
           <div v-if="providerEqLocked" class="panel-hint eq-bypass-hint">
@@ -947,21 +953,19 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
             <div class="h-px shrink-0 bg-current opacity-5 my-3"></div>
 
             <div class="effect-preset-grid eq-preset-grid">
-              <button
+              <Button
                 v-for="preset in eqPresets"
                 :key="preset.name"
                 type="button"
-                class="pm-item effect-option w-full! m-0!"
-                :class="{
-                  'is-active': isPresetActive(preset.gains),
-                  'is-disabled': providerEqLocked,
-                }"
+                size="none"
+                :variant="isPresetActive(preset.gains) ? 'soft-primary' : 'soft-secondary'"
+                class="effect-preset-button"
                 :aria-pressed="isPresetActive(preset.gains)"
                 :disabled="providerEqLocked"
                 @click="applyEqPreset(preset.gains)"
               >
-                <span class="pm-label text-center">{{ preset.name }}</span>
-              </button>
+                <span class="effect-preset-label">{{ preset.name }}</span>
+              </Button>
             </div>
           </div>
         </div>
@@ -1006,8 +1010,13 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                 <template #trigger>
                   <button
                     type="button"
-                    class="original-effect-button"
-                    :class="{ 'is-active': !currentPlaybackEffectSelection.active }"
+                    class="original-effect-button app-focus-ring-soft"
+                    :class="[
+                      !currentPlaybackEffectSelection.active
+                        ? 'soft-accent-action'
+                        : 'soft-neutral-action',
+                      { 'is-active': !currentPlaybackEffectSelection.active },
+                    ]"
                     :aria-pressed="!currentPlaybackEffectSelection.active"
                     :disabled="!currentPlaybackEffectSelection.active"
                     :aria-label="
@@ -1053,40 +1062,25 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
           </section>
 
           <div class="irs-library-nav">
-            <div class="irs-library-tabs">
-              <button
-                type="button"
-                :class="{
-                  'is-active': activeImpulseResponseLibraryTab === 'engine',
-                  'contains-active': engineLibraryContainsActive,
-                }"
-                @click="selectImpulseResponseLibraryTab('engine')"
-              >
-                <span>引擎预设</span>
+            <CustomTabBar
+              class="irs-library-tabs"
+              :tabs="['引擎预设', '我的音效']"
+              :model-value="activeImpulseResponseLibraryTab === 'engine' ? 0 : 1"
+              aria-label="音效库"
+              @update:model-value="
+                selectImpulseResponseLibraryTab($event === 0 ? 'engine' : 'mine')
+              "
+            >
+              <template #tab="{ label, index }">
+                <span>{{ label }}</span>
                 <span
-                  v-if="engineLibraryContainsActive"
+                  v-if="index === 0 ? engineLibraryContainsActive : myEffectLibraryContainsActive"
                   class="library-current-dot"
                   role="img"
-                  aria-label="当前音效位于引擎预设"
+                  :aria-label="`当前音效位于${label}`"
                 ></span>
-              </button>
-              <button
-                type="button"
-                :class="{
-                  'is-active': activeImpulseResponseLibraryTab === 'mine',
-                  'contains-active': myEffectLibraryContainsActive,
-                }"
-                @click="selectImpulseResponseLibraryTab('mine')"
-              >
-                <span>我的音效</span>
-                <span
-                  v-if="myEffectLibraryContainsActive"
-                  class="library-current-dot"
-                  role="img"
-                  aria-label="当前音效位于我的音效"
-                ></span>
-              </button>
-            </div>
+              </template>
+            </CustomTabBar>
           </div>
 
           <TabsRoot
@@ -1134,15 +1128,20 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                     "
                   >
                     <template #trigger>
-                      <button
+                      <Button
                         type="button"
-                        class="pm-item irs-preset-item w-full! m-0!"
-                        :class="{
-                          'is-disabled': impulseResponseSupport(file).status !== 'supported',
-                          'is-active':
-                            file.id === settingStore.selectedImpulseResponseId &&
-                            impulseResponseSelected,
-                        }"
+                        size="none"
+                        :variant="
+                          file.id === settingStore.selectedImpulseResponseId &&
+                          impulseResponseSelected
+                            ? 'soft-primary'
+                            : 'soft-secondary'
+                        "
+                        class="effect-preset-button irs-preset-item"
+                        :aria-pressed="
+                          file.id === settingStore.selectedImpulseResponseId &&
+                          impulseResponseSelected
+                        "
                         :aria-label="
                           impulseResponseSupport(file).reason ||
                           getImpulseResponseDisplayName(file.name)
@@ -1150,10 +1149,10 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                         :disabled="impulseResponseSupport(file).status !== 'supported'"
                         @click="selectImpulseResponse(file.id)"
                       >
-                        <span class="pm-label text-center irs-preset-label">
+                        <span class="effect-preset-label irs-preset-label">
                           {{ getImpulseResponseDisplayName(file.name) }}
                         </span>
-                      </button>
+                      </Button>
                     </template>
                   </Tooltip>
                 </div>
@@ -1164,7 +1163,13 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                   <small v-if="group.id === 'local'">在「设置 → 音效管理」中导入音效文件</small>
                   <template v-else>
                     <small>前往音效广场，找到喜欢的音效</small>
-                    <button type="button" @click="openMyEffectPlaza(group.id)">去音效广场</button>
+                    <button
+                      type="button"
+                      class="soft-neutral-action"
+                      @click="openMyEffectPlaza(group.id)"
+                    >
+                      去音效广场
+                    </button>
                   </template>
                 </div>
               </Scrollbar>
@@ -1198,22 +1203,14 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 
                 <div class="provider-mode-row">
                   <span>输出设备</span>
-                  <div class="spatial-provider-mode-tabs">
-                    <button
-                      type="button"
-                      :class="{ 'is-active': activeProviderMode === 'speaker' }"
-                      @click="setProviderMode('speaker')"
-                    >
-                      扬声器
-                    </button>
-                    <button
-                      type="button"
-                      :class="{ 'is-active': activeProviderMode === 'headphone' }"
-                      @click="setProviderMode('headphone')"
-                    >
-                      耳机
-                    </button>
-                  </div>
+                  <CustomTabBar
+                    class="spatial-provider-mode-tabs"
+                    :tabs="['扬声器', '耳机']"
+                    :model-value="activeProviderMode === 'speaker' ? 0 : 1"
+                    role="radiogroup"
+                    aria-label="输出设备"
+                    @update:model-value="setProviderMode($event === 0 ? 'speaker' : 'headphone')"
+                  />
                 </div>
 
                 <div class="provider-capabilities">
@@ -1253,16 +1250,17 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                   <div
                     v-for="preset in providerPresets"
                     :key="preset.id"
-                    class="provider-preset-option"
+                    class="provider-preset-option soft-neutral-action"
                     :class="{
-                      'is-active': !impulseResponseSelected && activeProviderPresetId === preset.id,
+                      'soft-accent-action':
+                        !impulseResponseSelected && activeProviderPresetId === preset.id,
                     }"
                   >
                     <Tooltip :content="providerPresetDescription(preset)">
                       <template #trigger>
                         <button
                           type="button"
-                          class="provider-preset-button"
+                          class="provider-preset-button soft-selection-trigger"
                           :aria-pressed="
                             !impulseResponseSelected && activeProviderPresetId === preset.id
                           "
@@ -1270,10 +1268,8 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                           @click="setProviderPreset(preset.id)"
                         >
                           <span class="provider-preset-label">{{ preset.label }}</span>
-                          <small
-                            v-if="preset.recommendedDevice === 'headphone'"
-                            class="provider-preset-device-tag"
-                            >耳机</small
+                          <Tag v-if="preset.recommendedDevice === 'headphone'" tone="accent"
+                            >耳机</Tag
                           >
                         </button>
                       </template>
@@ -1285,7 +1281,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                       <template #trigger>
                         <button
                           type="button"
-                          class="provider-preset-settings"
+                          class="action-icon provider-preset-settings"
                           :aria-label="`${preset.label}设置`"
                           :aria-controls="providerSettingsPanelId"
                           :aria-expanded="
@@ -1387,7 +1383,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
             <template #trigger>
               <button
                 type="button"
-                class="provider-settings-back"
+                class="action-icon provider-settings-back"
                 aria-label="返回引擎预设"
                 @click="closeProviderSettings"
               >
@@ -1402,7 +1398,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
               {{ activeProviderMode === 'headphone' ? '耳机' : '扬声器' }}</small
             >
           </div>
-          <Button variant="ghost" size="xs" @click="resetProviderControls">恢复默认</Button>
+          <Button variant="secondary" size="xs" @click="resetProviderControls">恢复默认</Button>
         </div>
         <Scrollbar class="panel-scroll provider-settings-scroll">
           <section class="provider-settings-panel">
@@ -1533,7 +1529,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-text-main);
   cursor: pointer;
@@ -1578,7 +1574,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 .spatial-provider-card {
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 24%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--color-primary) 11%, var(--color-bg-elevated)),
@@ -1689,31 +1685,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 }
 
 .spatial-provider-mode-tabs {
-  display: grid;
-  width: 142px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 3px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
-}
-
-.spatial-provider-mode-tabs button {
-  height: 24px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.spatial-provider-mode-tabs button:hover,
-.spatial-provider-mode-tabs button.is-active {
-  color: var(--color-primary-text);
-  background: var(--color-bg-elevated);
+  --custom-tab-width: 160px;
 }
 
 .provider-capabilities {
@@ -1777,7 +1749,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: var(--radius-item);
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text-secondary);
@@ -1862,7 +1834,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   margin: 4px 8px 12px;
   padding: 10px 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--control-bg);
   color: var(--color-text-secondary);
   font-size: 12px;
@@ -1911,24 +1883,6 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   }
 }
 
-.reset-btn {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-primary-text);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-}
-
-.reset-btn:hover {
-  opacity: 1;
-}
-
-.reset-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.35;
-}
-
 .panel-scroll {
   flex: 1;
   width: 100%;
@@ -1954,61 +1908,29 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   align-self: stretch;
 }
 
-.effect-popover .pm-item {
+/* Preset grids retain their geometry; Button owns all action colors and states. */
+.effect-preset-button {
+  display: inline-flex;
   width: 100%;
   margin: 0;
   min-width: 0;
   min-height: 38px;
   padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--control-border);
-  background: var(--control-muted-bg);
-  color: var(--color-text-main);
+  border: 0;
+  border-radius: var(--radius-control);
   align-items: center;
   justify-content: center;
-  transition:
-    background-color 0.16s ease,
-    border-color 0.16s ease,
-    color 0.16s ease,
-    opacity 0.16s ease;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
 }
 
-.effect-popover .pm-item:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
-  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
-  color: var(--color-primary-text);
-  opacity: 1;
-}
-
-.effect-popover .pm-item.is-disabled {
-  cursor: not-allowed;
-  opacity: 0.38;
-}
-
-.effect-popover .pm-item.is-disabled:hover {
-  border-color: var(--control-border);
-  background: var(--control-muted-bg);
-  color: var(--color-text-main);
-}
-
-.effect-popover .pm-item.is-active {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  opacity: 1;
-}
-
-.effect-popover .pm-label {
+.effect-preset-label {
   min-width: 0;
   flex: 1;
   text-align: center;
-}
-
-.effect-popover .effect-option {
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 20px;
+  overflow-wrap: anywhere;
 }
 
 .effect-preset-grid {
@@ -2021,7 +1943,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   box-sizing: border-box;
 }
 
-.effect-preset-grid > .pm-item {
+.effect-preset-grid > .effect-preset-button {
   justify-self: stretch;
   align-self: stretch;
 }
@@ -2073,26 +1995,14 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   justify-content: center;
   min-width: 46px;
   padding: 0 10px;
-  border: 1px solid var(--control-border);
-  border-radius: 6px;
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
+  border-radius: var(--radius-control);
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.original-effect-button:not(:disabled):hover {
-  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
-  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
-  color: var(--color-primary-text);
-}
-
 .original-effect-button.is-active {
-  border-color: color-mix(in srgb, var(--color-primary) 48%, transparent);
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-elevated));
-  color: var(--color-primary-text);
   cursor: default;
 }
 
@@ -2126,7 +2036,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   margin: -2px 10px 8px;
   padding: 9px 10px;
   border: 1px solid var(--control-border);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
 
@@ -2179,7 +2089,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   align-items: center;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-primary-text);
   font-size: 12px;
@@ -2214,7 +2124,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   margin: 0 10px 8px;
   padding: 9px 10px 8px;
   border: 1px solid var(--control-border);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
 
@@ -2352,7 +2262,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 .my-effect-empty button:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: -2px;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
 }
 
 .my-effect-empty {
@@ -2375,10 +2285,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 .my-effect-empty button {
   margin-top: 3px;
   padding: 5px 10px;
-  border: 1px solid var(--control-border);
-  border-radius: 6px;
-  background: var(--control-muted-bg);
-  color: var(--color-primary-text);
+  border-radius: var(--radius-control);
   font-size: 11px;
   cursor: pointer;
 }
@@ -2425,45 +2332,8 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 }
 
 .irs-library-tabs {
-  display: grid;
   min-width: 0;
   flex: 1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding: 3px;
-  border-radius: 8px;
-  background: var(--control-muted-bg);
-}
-
-.irs-library-tabs button {
-  display: flex;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  box-sizing: border-box;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.irs-library-tabs button:hover {
-  color: var(--color-text-main);
-}
-
-.irs-library-tabs button.is-active {
-  background: var(--color-bg-elevated);
-  color: var(--color-primary-text);
-  box-shadow: inset 0 0 0 1px var(--control-border);
-}
-
-.irs-library-tabs button.contains-active:not(.is-active) {
-  color: var(--color-primary-text);
 }
 
 .provider-panel-scroll,
@@ -2507,10 +2377,8 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   display: flex;
   min-width: 0;
   align-items: center;
-  border: 1px solid var(--control-border);
-  border-radius: 9px;
-  background: var(--control-muted-bg);
-  color: var(--color-text-main);
+  border: 0;
+  border-radius: var(--radius-item);
 }
 
 .provider-preset-button {
@@ -2522,7 +2390,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   gap: 6px;
   padding: 7px 9px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: inherit;
   text-align: left;
@@ -2532,23 +2400,6 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 .provider-preset-button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-.provider-preset-option:has(.provider-preset-button:hover:not(:disabled)) {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
-  color: var(--color-primary-text);
-}
-
-.provider-preset-option.is-active {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-.provider-preset-option.is-active:has(.provider-preset-button:hover) {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
 }
 
 .provider-preset-label {
@@ -2562,26 +2413,6 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   font-weight: 700;
 }
 
-.provider-preset-device-tag {
-  display: inline-flex;
-  flex: 0 0 auto;
-  height: 17px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
-  color: var(--color-primary-text);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.provider-preset-option.is-active .provider-preset-device-tag {
-  background: color-mix(in srgb, white 22%, transparent);
-  color: var(--color-on-primary);
-}
-
 .provider-preset-settings {
   display: inline-flex;
   flex: 0 0 28px;
@@ -2591,7 +2422,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -2634,7 +2465,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   gap: 8px;
   padding: 9px 10px;
   border: 1px solid var(--control-border);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
 }
 
@@ -2718,7 +2549,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   min-height: 28px;
   padding: 0 8px;
   border: 1px solid var(--control-border);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: var(--color-bg-elevated);
   color: var(--color-text-main);
   font-size: 10px;
@@ -2757,7 +2588,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 .provider-empty-note {
   padding: 12px;
   border: 1px dashed var(--control-border);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   text-align: center;
 }
 

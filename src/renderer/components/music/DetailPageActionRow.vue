@@ -41,7 +41,7 @@ const emit = defineEmits<{
     <!-- 主要操作 (播放) -->
     <Button
       v-if="showPlaybackActions"
-      variant="unstyled"
+      variant="soft-primary"
       size="none"
       :disabled="playDisabled"
       @click="emit('play')"
@@ -54,11 +54,11 @@ const emit = defineEmits<{
     <!-- 次主操作 (批量/添加到等) -->
     <Button
       v-if="showPlaybackActions"
-      variant="unstyled"
+      variant="soft-secondary"
       size="none"
       :disabled="batchDisabled"
       @click="emit('batch')"
-      class="action-btn secondary"
+      class="action-btn"
     >
       <Icon :icon="iconList" width="16" height="16" />
       <span>{{ batchLabel }}</span>
@@ -66,14 +66,18 @@ const emit = defineEmits<{
 
     <!-- 次要操作 (收藏、分享等) -->
     <Button
-      variant="unstyled"
+      :variant="action.tone === 'favorite' || action.emphasized ? 'unstyled' : 'soft-secondary'"
       size="none"
       v-for="action in secondaryActions"
       :key="action.label"
       :disabled="action.disabled"
       @click="action.onTap"
-      class="action-btn secondary"
-      :class="[{ emphasized: action.emphasized }, action.tone === 'favorite' ? 'favorite' : '']"
+      class="action-btn"
+      :class="{
+        secondary: action.tone === 'favorite' || action.emphasized,
+        favorite: action.tone === 'favorite',
+        emphasized: action.emphasized,
+      }"
     >
       <div class="icon-wrap">
         <Icon :icon="action.icon" width="16" height="16" />
@@ -88,17 +92,18 @@ const emit = defineEmits<{
 
 .action-btn {
   @apply flex items-center gap-2 px-3 h-9 rounded-lg text-[12px] font-semibold transition-all active:scale-95 select-none;
-  background-color: var(--bg-info-card);
-  color: var(--color-text-main);
 }
 
-.action-btn.primary {
-  @apply bg-primary text-on-primary hover:bg-primary-hover;
+.action-btn.secondary {
+  background-color: var(--bg-info-card);
+  color: var(--color-text-main);
+  box-shadow: var(--control-neutral-action-shadow);
 }
 
 .action-btn.secondary.favorite {
   color: #f87171;
   background: color-mix(in srgb, #ef4444 6%, transparent);
+  box-shadow: var(--control-danger-shadow);
 }
 
 .action-btn.secondary.favorite:hover {
@@ -109,6 +114,7 @@ const emit = defineEmits<{
 .action-btn.secondary.emphasized {
   color: #ef4444;
   background: color-mix(in srgb, #ef4444 12%, transparent);
+  box-shadow: var(--control-danger-shadow);
 }
 
 .action-btn.secondary.emphasized:hover {
@@ -116,7 +122,7 @@ const emit = defineEmits<{
   background: color-mix(in srgb, #ef4444 16%, transparent);
 }
 
-.action-btn:hover {
+.action-btn.secondary:hover {
   @apply brightness-95;
 }
 

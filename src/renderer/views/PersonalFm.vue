@@ -16,6 +16,7 @@ import { useThemeStore } from '@/stores/theme';
 import { createThemedIconCoverUrl } from '@/utils/cover';
 import { iconHeartFilled, iconHeartOff, iconPause, iconPlay, iconPulse } from '@/icons';
 import Button from '@/components/ui/Button.vue';
+import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
@@ -72,6 +73,15 @@ const personalFmSongPoolOptions: Array<{ value: PersonalFmSongPoolId; label: str
   { value: 1, label: '风格' },
   { value: 2, label: '探索' },
 ];
+
+const selectSongPoolTab = (index: number) => {
+  const option = personalFmSongPoolOptions[index];
+  if (option) void handleChangePersonalFmSongPool(option.value);
+};
+const selectFmModeTab = (index: number) => {
+  const option = personalFmModeOptions[index];
+  if (option) void handleChangePersonalFmMode(option.value);
+};
 
 const personalFmQueue = computed(
   () => playlistStore.playbackQueues.find((queue) => queue.id === PERSONAL_FM_QUEUE_ID) ?? null,
@@ -484,35 +494,36 @@ onActivated(() => {
           </template>
 
           <template #actions>
-            <div class="radio-strategy-switch outside">
-              <button
-                v-for="option in personalFmSongPoolOptions"
-                :key="option.value"
-                type="button"
-                class="radio-strategy-btn"
-                :class="{ 'is-active': option.value === selectedPersonalFmSongPoolId }"
-                :disabled="personalFmLoading"
-                @click="handleChangePersonalFmSongPool(option.value)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
+            <CustomTabBar
+              class="radio-strategy-switch"
+              :tabs="personalFmSongPoolOptions.map((option) => option.label)"
+              :model-value="
+                personalFmSongPoolOptions.findIndex(
+                  (option) => option.value === selectedPersonalFmSongPoolId,
+                )
+              "
+              :disabled="personalFmLoading"
+              role="radiogroup"
+              aria-label="私人 FM 歌曲范围"
+              @update:model-value="selectSongPoolTab"
+            />
           </template>
 
           <template #collapsed-actions>
-            <div class="radio-strategy-switch compact">
-              <button
-                v-for="option in personalFmSongPoolOptions"
-                :key="option.value"
-                type="button"
-                class="radio-strategy-btn"
-                :class="{ 'is-active': option.value === selectedPersonalFmSongPoolId }"
-                :disabled="personalFmLoading"
-                @click="handleChangePersonalFmSongPool(option.value)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
+            <CustomTabBar
+              class="radio-strategy-switch"
+              size="sm"
+              :tabs="personalFmSongPoolOptions.map((option) => option.label)"
+              :model-value="
+                personalFmSongPoolOptions.findIndex(
+                  (option) => option.value === selectedPersonalFmSongPoolId,
+                )
+              "
+              :disabled="personalFmLoading"
+              role="radiogroup"
+              aria-label="私人 FM 歌曲范围"
+              @update:model-value="selectSongPoolTab"
+            />
           </template>
         </SliverHeader>
 
@@ -521,19 +532,19 @@ onActivated(() => {
           <div class="fm-play-section">
             <div class="radio-hero">
               <div class="radio-card">
-                <div class="radio-mode-switch">
-                  <button
-                    v-for="option in personalFmModeOptions"
-                    :key="option.value"
-                    type="button"
-                    class="radio-mode-btn"
-                    :class="{ 'is-active': option.value === selectedPersonalFmMode }"
-                    :disabled="personalFmLoading"
-                    @click="handleChangePersonalFmMode(option.value)"
-                  >
-                    {{ option.label }}
-                  </button>
-                </div>
+                <CustomTabBar
+                  class="radio-mode-switch"
+                  :tabs="personalFmModeOptions.map((option) => option.label)"
+                  :model-value="
+                    personalFmModeOptions.findIndex(
+                      (option) => option.value === selectedPersonalFmMode,
+                    )
+                  "
+                  :disabled="personalFmLoading"
+                  role="radiogroup"
+                  aria-label="私人 FM 模式"
+                  @update:model-value="selectFmModeTab"
+                />
                 <div class="radio-title">{{ personalFmPresentation.title }}</div>
                 <div class="radio-subtitle">
                   {{
@@ -550,11 +561,12 @@ onActivated(() => {
                     <Button
                       variant="unstyled"
                       size="none"
-                      class="radio-dislike"
+                      class="action-icon radio-dislike"
+                      tooltip="不喜欢"
                       :disabled="personalFmLoading || !personalFmCurrentDisc"
                       @click="handleDislikePersonalFm"
                     >
-                      <Icon :icon="iconHeartOff" width="16" height="16" />
+                      <Icon :icon="iconHeartOff" width="24" height="24" />
                     </Button>
                     <Button
                       variant="unstyled"
@@ -652,12 +664,7 @@ onActivated(() => {
               <div class="fm-panel-title">当前播放</div>
             </div>
             <div v-if="personalFmCurrentDisc" class="fm-now-card">
-              <Cover
-                :url="personalFmCurrentDisc.coverUrl"
-                :size="240"
-                :borderRadius="20"
-                class="fm-now-cover"
-              />
+              <Cover :url="personalFmCurrentDisc.coverUrl" :size="240" class="fm-now-cover" />
               <div class="fm-now-body">
                 <div class="fm-now-heading">
                   <div class="fm-now-name">{{ personalFmCurrentDisc.title }}</div>
@@ -681,7 +688,12 @@ onActivated(() => {
               </div>
             </div>
             <div v-else-if="isPersonalFmInitialLoading" class="fm-now-card fm-now-card-skeleton">
-              <Skeleton width="100%" height="auto" :radius="20" class="fm-now-cover-skeleton" />
+              <Skeleton
+                width="100%"
+                height="auto"
+                radius="var(--radius-media)"
+                class="fm-now-cover-skeleton"
+              />
               <div class="fm-now-body">
                 <div class="fm-now-heading">
                   <Skeleton variant="text" width="min(360px, 72%)" height="28px" />
@@ -753,7 +765,7 @@ onActivated(() => {
   width: 100%;
   aspect-ratio: 1 / 1;
   padding: 16px;
-  border-radius: 22px;
+  border-radius: var(--radius-card);
   overflow: hidden;
   background:
     radial-gradient(circle at 16% 18%, rgba(var(--color-primary-rgb), 0.28), transparent 30%),
@@ -769,32 +781,16 @@ onActivated(() => {
     0 26px 50px rgba(8, 24, 38, 0.14);
 }
 
+/* FM 海报是独立的深色媒体表面；仍由 CustomTabBar 绘制控件。 */
 .radio-mode-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  padding: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
-}
-
-.radio-mode-btn {
-  min-width: 0;
-  flex: 1;
-  padding: 7px 6px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.74);
-  transition: all 0.2s ease;
-}
-
-.radio-mode-btn.is-active {
-  background: rgba(255, 255, 255, 0.22);
-  color: #fff;
-  box-shadow: 0 8px 18px rgba(8, 24, 38, 0.18);
+  --color-text-main: #fff;
+  --color-text-secondary: rgba(255, 255, 255, 0.74);
+  --color-primary-text: #fff;
+  --control-muted-bg: rgba(255, 255, 255, 0.14);
+  --control-border: rgba(255, 255, 255, 0.14);
+  --control-active-bg: rgba(255, 255, 255, 0.22);
+  --control-active-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+  --row-hover-bg: rgba(255, 255, 255, 0.1);
 }
 
 .radio-title {
@@ -808,51 +804,8 @@ onActivated(() => {
 }
 
 .radio-strategy-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  width: fit-content;
-  padding: 4px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-text-main) 3%, var(--color-bg-sidebar));
-  isolation: isolate;
-}
-
-.radio-strategy-switch.outside {
-  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
-  box-shadow: none;
-}
-
-.radio-strategy-switch.compact {
-  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
-}
-
-.radio-strategy-btn {
-  min-width: 88px;
-  padding: 8px 14px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  background-clip: padding-box;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-text-secondary);
-  transition: all 0.2s ease;
-}
-
-.radio-strategy-switch.compact .radio-strategy-btn {
-  min-width: 64px;
-  padding: 6px 10px;
-  font-size: 11px;
-}
-
-.radio-strategy-btn.is-active {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: var(--color-on-primary);
-  box-shadow: none;
+  --custom-tab-width: 280px;
+  max-width: 100%;
 }
 
 .radio-subtitle {
@@ -883,13 +836,18 @@ onActivated(() => {
   width: 42px;
   height: 42px;
   flex-shrink: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.12);
+  background: transparent;
   color: rgba(255, 255, 255, 0.86);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  border: 0;
+  box-shadow: none;
+}
+
+.radio-dislike:hover:not(:disabled) {
+  color: #fff;
 }
 
 .radio-bars {
@@ -1086,7 +1044,7 @@ onActivated(() => {
 }
 
 .fm-panel {
-  border-radius: 24px;
+  border-radius: var(--radius-popover);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
   background: var(--content-panel-bg);
   padding: 22px;
@@ -1182,19 +1140,6 @@ onActivated(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-}
-
-.fm-now-info-chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 6%, transparent);
-  background: color-mix(in srgb, var(--color-text-main) 2.2%, transparent);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-text-secondary);
 }
 
 .fm-panel-empty {

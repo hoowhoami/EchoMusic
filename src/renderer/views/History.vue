@@ -123,30 +123,8 @@ watch(
 const searchQuery = ref('');
 const showBatchDrawer = ref(false);
 const showClearDialog = ref(false);
-const clearCountdown = ref(0);
-let clearCountdownTimer: ReturnType<typeof setInterval> | null = null;
-
-watch(showClearDialog, (open) => {
-  if (open) {
-    clearCountdown.value = 5;
-    clearCountdownTimer = setInterval(() => {
-      clearCountdown.value--;
-      if (clearCountdown.value <= 0) {
-        if (clearCountdownTimer) clearInterval(clearCountdownTimer);
-        clearCountdownTimer = null;
-      }
-    }, 1000);
-  } else {
-    if (clearCountdownTimer) {
-      clearInterval(clearCountdownTimer);
-      clearCountdownTimer = null;
-    }
-    clearCountdown.value = 0;
-  }
-});
-
 const confirmClear = () => {
-  if (clearCountdown.value > 0) return;
+  if (!showClearDialog.value || songCount.value === 0) return;
   historyStore.clear();
   showClearDialog.value = false;
   toastStore.success('播放历史已清空');
@@ -389,6 +367,18 @@ const historyStats = computed(() => {
 
 const songCount = computed(() => songs.value.length);
 const displayedCountLabel = computed(() => `${songCount.value}`);
+const openClearDialog = () => {
+  if (songCount.value === 0) return;
+  showClearDialog.value = true;
+};
+const historySecondaryActions = computed(() => [
+  {
+    icon: iconTrash,
+    label: '清空历史',
+    onTap: openClearDialog,
+    disabled: songCount.value === 0,
+  },
+]);
 
 const historyCoverUrl = computed(() => createThemedIconCoverUrl(themeStore.sourceColor, iconClock));
 
@@ -639,7 +629,6 @@ onUnmounted(() => {
   metadataDisposed = true;
   metadataGeneration++;
   unregisterContextMenu?.();
-  if (clearCountdownTimer) clearInterval(clearCountdownTimer);
   if (animTimer) clearTimeout(animTimer);
 });
 </script>
@@ -677,6 +666,7 @@ onUnmounted(() => {
             v-if="activeTab === 'songs'"
             :playDisabled="songCount === 0"
             :batchDisabled="songCount === 0"
+            :secondaryActions="historySecondaryActions"
             @play="handlePlayAll"
             @batch="openBatchDrawer"
           />
@@ -694,7 +684,7 @@ onUnmounted(() => {
               size="none"
               :disabled="songCount === 0"
               @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
@@ -703,9 +693,20 @@ onUnmounted(() => {
               size="none"
               :disabled="songCount === 0"
               @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconList" width="18" height="18" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              :disabled="songCount === 0"
+              @click="openClearDialog"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+              tooltip="清空播放历史"
+              aria-label="清空播放历史"
+            >
+              <Icon :icon="iconTrash" width="18" height="18" />
             </Button>
           </template>
 
@@ -715,7 +716,7 @@ onUnmounted(() => {
             size="none"
             :disabled="sharingStats"
             @click="handleShareStats"
-            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+            class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
             tooltip="分享听歌统计"
             aria-label="分享听歌统计"
           >
@@ -748,7 +749,7 @@ onUnmounted(() => {
               <div class="flex items-center justify-between h-14">
                 <TabsList class="bg-transparent border-none gap-8">
                   <TabsTrigger value="songs">
-                    <span class="relative">歌曲 <Badge :count="displayedCountLabel" /></span>
+                    <span class="badge-label">歌曲 <Badge :count="displayedCountLabel" /></span>
                   </TabsTrigger>
                   <TabsTrigger value="stats">
                     <span class="relative">统计</span>
@@ -761,20 +762,10 @@ onUnmounted(() => {
                     variant="unstyled"
                     size="none"
                     @click="handleLocate"
-                    class="song-locate-btn p-2 rounded-lg"
+                    class="action-icon song-locate-btn p-2"
                     tooltip="定位当前播放"
                   >
                     <Icon :icon="iconCurrentLocation" width="16" height="16" />
-                  </Button>
-                  <Button
-                    variant="unstyled"
-                    size="none"
-                    :disabled="songCount === 0"
-                    @click="showClearDialog = true"
-                    class="song-locate-btn p-2 rounded-lg text-[var(--icon-main)] hover:text-danger transition-colors"
-                    tooltip="清空播放历史"
-                  >
-                    <Icon :icon="iconTrash" width="16" height="16" />
                   </Button>
                 </div>
                 <div
@@ -805,7 +796,7 @@ onUnmounted(() => {
               class="history-empty flex flex-col items-center justify-center py-24 text-center"
             >
               <div
-                class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary-text flex items-center justify-center mb-4"
+                class="w-16 h-16 rounded-card bg-primary/10 text-primary-text flex items-center justify-center mb-4"
               >
                 <Icon :icon="iconClock" width="28" height="28" />
               </div>
@@ -819,7 +810,7 @@ onUnmounted(() => {
               class="history-empty flex flex-col items-center justify-center py-24 text-center"
             >
               <div
-                class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary-text flex items-center justify-center mb-4"
+                class="w-16 h-16 rounded-card bg-primary/10 text-primary-text flex items-center justify-center mb-4"
               >
                 <Icon :icon="iconSearch" width="28" height="28" />
               </div>
@@ -1032,8 +1023,8 @@ onUnmounted(() => {
     <template #footer>
       <div class="flex justify-end gap-3">
         <Button variant="outline" size="sm" @click="showClearDialog = false"> 取消 </Button>
-        <Button variant="primary" size="sm" :disabled="clearCountdown > 0" @click="confirmClear">
-          确认清空<span v-if="clearCountdown > 0"> ({{ clearCountdown }}s)</span>
+        <Button variant="danger" size="sm" :disabled="songCount === 0" @click="confirmClear">
+          确认清空
         </Button>
       </div>
     </template>
@@ -1078,7 +1069,7 @@ onUnmounted(() => {
 .history-panel,
 .history-album-highlight {
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-popover);
   background: var(--control-muted-bg);
 }
 
@@ -1098,7 +1089,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 38px;
   height: 38px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
 }
 
 .history-stat-card-icon[data-tone='primary'] {
@@ -1220,7 +1211,7 @@ onUnmounted(() => {
   align-items: flex-end;
   justify-content: center;
   min-width: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
   overflow: hidden;
 }
@@ -1228,7 +1219,7 @@ onUnmounted(() => {
 .history-week-bar {
   width: 100%;
   min-height: 4px;
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
   background: linear-gradient(180deg, var(--color-primary), rgb(8 145 178));
 }
 
@@ -1302,7 +1293,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 24px;
   height: 24px;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   color: var(--color-text-main);
   background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
   font-size: 12px;
@@ -1363,7 +1354,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 7px;
+  border-radius: var(--radius-media);
   color: var(--color-text-secondary);
   background: color-mix(in srgb, var(--color-text-main) 7%, transparent);
   overflow: hidden;
@@ -1390,7 +1381,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: rgb(8 145 178);
   background: rgb(8 145 178 / 12%);
 }

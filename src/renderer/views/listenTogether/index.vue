@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tag from '@/components/ui/Tag.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import { captureUserSession } from '@/utils/userSession';
 import { handleComposerKeydown } from '@/utils/composerKeyboard';
@@ -11,6 +12,7 @@ import Checkbox from '@/components/ui/Checkbox.vue';
 import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Button from '@/components/ui/Button.vue';
+import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Input from '@/components/ui/Input.vue';
@@ -809,6 +811,11 @@ const selectOrderSongSource = async (source: OrderSongSource) => {
   }
 };
 
+const selectOrderSongSourceTab = (index: number) => {
+  const source = visibleOrderSongSources.value[index];
+  if (source) void selectOrderSongSource(source.id);
+};
+
 const selectOrderPlaylist = (playlistId: string) => {
   pickerUiRevision++;
   searchUiRevision++;
@@ -1212,22 +1219,13 @@ onBeforeUnmount(() => {
 
           <section class="listen-browser-panel">
             <div class="listen-browser-topbar">
-              <div class="listen-scope-tabs" aria-label="房间范围">
-                <button
-                  type="button"
-                  :class="{ 'is-active': roomScope === 'discover' }"
-                  @click="selectRoomScope('discover')"
-                >
-                  发现房间
-                </button>
-                <button
-                  type="button"
-                  :class="{ 'is-active': roomScope === 'mine' }"
-                  @click="selectRoomScope('mine')"
-                >
-                  我的房间
-                </button>
-              </div>
+              <CustomTabBar
+                class="listen-scope-tabs"
+                :tabs="['发现房间', '我的房间']"
+                :model-value="roomScope === 'discover' ? 0 : 1"
+                aria-label="房间范围"
+                @update:model-value="selectRoomScope($event === 0 ? 'discover' : 'mine')"
+              />
             </div>
 
             <div class="listen-toolbar">
@@ -1239,7 +1237,7 @@ onBeforeUnmount(() => {
                 />
               </div>
               <Button
-                class="listen-refresh-button"
+                class="action-icon listen-refresh-button"
                 variant="ghost"
                 size="sm"
                 :disabled="loadingRoomList"
@@ -1354,12 +1352,12 @@ onBeforeUnmount(() => {
                   </span>
                 </p>
                 <div class="listen-room-tags">
-                  <span
+                  <Tag
                     v-for="tag in [...room.tags, ...room.musicStyles].slice(0, 3)"
                     :key="tag.id + tag.name"
                   >
                     {{ tag.name }}
-                  </span>
+                  </Tag>
                 </div>
               </div>
             </button>
@@ -1406,7 +1404,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="listen-session-actions">
-            <Button variant="ghost" size="sm" @click="shareRoom(activeRoom)">
+            <Button variant="soft-secondary" size="sm" @click="shareRoom(activeRoom)">
               <Icon :icon="iconShare" width="16" height="16" />
               分享房间
             </Button>
@@ -1430,7 +1428,6 @@ onBeforeUnmount(() => {
                   class="listen-now-cover"
                   width="100%"
                   height="100%"
-                  :border-radius="22"
                 />
                 <span class="listen-now-badge">
                   <Icon :icon="iconBroadcast" width="14" height="14" />
@@ -1464,15 +1461,15 @@ onBeforeUnmount(() => {
                   <h2>{{ roomSongs.length }} 首歌曲</h2>
                 </div>
                 <div class="listen-queue-header-actions">
-                  <Button v-if="isOwner" variant="ghost" size="xs" @click="openSongOrders">
+                  <Button v-if="isOwner" variant="secondary" size="xs" @click="openSongOrders">
                     点播列表<span v-if="songOrders.length"> {{ songOrders.length }}</span>
                   </Button>
-                  <Button variant="secondary" size="xs" @click="openOrderSongPicker">
+                  <Button variant="soft-secondary" size="xs" @click="openOrderSongPicker">
                     <Icon :icon="iconPlus" width="14" height="14" />
                     {{ isOwner ? '添加歌曲' : '点歌' }}
                   </Button>
                   <Button
-                    class="listen-panel-refresh-button"
+                    class="action-icon listen-panel-refresh-button"
                     variant="ghost"
                     size="xs"
                     tooltip="刷新房间歌单"
@@ -1514,7 +1511,6 @@ onBeforeUnmount(() => {
                       class="listen-queue-cover"
                       :width="42"
                       :height="42"
-                      :border-radius="10"
                     />
                     <span class="listen-queue-meta">
                       <strong>{{ song.title || '歌曲信息同步中' }}</strong>
@@ -1589,7 +1585,7 @@ onBeforeUnmount(() => {
                 </div>
                 <Button
                   v-if="isOwner"
-                  variant="ghost"
+                  variant="secondary"
                   size="xs"
                   :disabled="updatingChat"
                   @click="toggleChat"
@@ -1651,6 +1647,7 @@ onBeforeUnmount(() => {
                 <Tooltip :content="chatCooldown ? '发送过于频繁，请稍候' : '发送消息'">
                   <template #trigger>
                     <button
+                      class="action-icon soft-neutral-action"
                       type="button"
                       :disabled="
                         !messageText.trim() ||
@@ -1706,10 +1703,10 @@ onBeforeUnmount(() => {
         </div>
         <p v-if="previewRoom.notice" class="listen-preview-notice">{{ previewRoom.notice }}</p>
         <div class="listen-room-tags">
-          <span
+          <Tag
             v-for="tag in [...previewRoom.tags, ...previewRoom.musicStyles]"
             :key="tag.id + tag.name"
-            >{{ tag.name }}</span
+            >{{ tag.name }}</Tag
           >
         </div>
         <div v-if="visiblePreviewMembers.length" class="listen-preview-members">
@@ -1725,7 +1722,12 @@ onBeforeUnmount(() => {
       </div>
       <template #footer>
         <Button variant="secondary" size="sm" @click="previewOpen = false">取消</Button>
-        <Button v-if="previewRoom" variant="secondary" size="sm" @click="shareRoom(previewRoom)">
+        <Button
+          v-if="previewRoom"
+          variant="soft-secondary"
+          size="sm"
+          @click="shareRoom(previewRoom)"
+        >
           <Icon :icon="iconShare" width="16" height="16" />
           分享
         </Button>
@@ -1865,17 +1867,14 @@ onBeforeUnmount(() => {
         }}
       </p>
       <div class="listen-order-song-picker">
-        <div class="listen-song-picker-tabs">
-          <button
-            v-for="source in visibleOrderSongSources"
-            :key="source.id"
-            type="button"
-            :class="{ 'is-active': orderSongSource === source.id }"
-            @click="selectOrderSongSource(source.id)"
-          >
-            {{ source.name }}
-          </button>
-        </div>
+        <CustomTabBar
+          :tabs="visibleOrderSongSources.map((source) => source.name)"
+          :model-value="
+            visibleOrderSongSources.findIndex((source) => source.id === orderSongSource)
+          "
+          aria-label="点歌来源"
+          @update:model-value="selectOrderSongSourceTab"
+        />
         <Select
           v-if="isOwner && (orderSongSource === 'created' || orderSongSource === 'favorites')"
           class="listen-song-picker-playlist-select"
@@ -1945,13 +1944,7 @@ onBeforeUnmount(() => {
                 @keydown.stop
                 @update:model-value="setOrderSongChecked(song, $event)"
               />
-              <Cover
-                :url="song.coverUrl"
-                :alt="song.title"
-                :width="44"
-                :height="44"
-                :border-radius="10"
-              />
+              <Cover :url="song.coverUrl" :alt="song.title" :width="44" :height="44" />
               <span>
                 <strong>{{ song.title }}</strong>
                 <small>{{ song.artist || '未知歌手' }}</small>
@@ -1978,6 +1971,7 @@ onBeforeUnmount(() => {
       <template v-if="isOwner" #footer>
         <Button variant="secondary" size="sm" @click="orderSongPickerOpen = false">取消</Button>
         <Button
+          variant="primary"
           size="sm"
           :disabled="selectedOrderSongs.length === 0 || addingOrderSongs"
           :loading="addingOrderSongs"
@@ -2005,20 +1999,14 @@ onBeforeUnmount(() => {
           </div>
           <div v-else-if="songOrders.length" class="listen-song-order-list">
             <div v-for="order in songOrders" :key="order.id" class="listen-song-order-item">
-              <Cover
-                :url="order.song.coverUrl"
-                :alt="order.song.title"
-                :width="46"
-                :height="46"
-                :border-radius="10"
-              />
+              <Cover :url="order.song.coverUrl" :alt="order.song.title" :width="46" :height="46" />
               <span class="listen-song-order-copy">
                 <strong>{{ order.song.title }}</strong>
                 <small>{{ order.requesterName }} 的点歌 · {{ order.song.artist }}</small>
               </span>
               <div class="listen-song-order-actions">
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="xs"
                   :disabled="Boolean(handlingSongOrderId)"
                   @click="removeSongOrder(order)"

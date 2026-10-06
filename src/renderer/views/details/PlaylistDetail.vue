@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tag from '@/components/ui/Tag.vue';
 import { useRouteTabs } from '@/composables/useRouteTabs';
 import { parsePlaylistTags } from '@/utils/playlistTags';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
@@ -904,7 +905,7 @@ watch(
                       <Button
                         variant="unstyled"
                         size="none"
-                        class="song-filter-info-btn rounded-lg"
+                        class="action-icon song-filter-info-btn"
                       >
                         <Icon :icon="iconInfo" width="14" height="14" />
                       </Button>
@@ -918,13 +919,9 @@ watch(
                     >
                   </Tooltip>
                 </span>
-                <span
-                  v-for="tag in playlistTags"
-                  :key="tag"
-                  class="px-2 py-0.5 rounded-md text-[10px] font-semibold text-primary-text bg-primary/10 border border-primary/20"
-                >
+                <Tag v-for="tag in playlistTags" :key="tag" tone="accent">
                   {{ tag }}
-                </span>
+                </Tag>
               </div>
             </div>
           </template>
@@ -944,7 +941,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 @click="handlePlayAll"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
+                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>
@@ -952,7 +949,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 @click="openBatchDrawer"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -972,7 +969,7 @@ watch(
                   }
                 }
               "
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
+              class="action-icon p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
             >
               <Icon
                 :icon="isFavoritePlaylist ? iconHeartFilled : iconHeart"
@@ -987,7 +984,7 @@ watch(
               tooltip="编辑歌单"
               aria-label="编辑歌单"
               @click="showPlaylistEdit = true"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconPencil" width="18" height="18" />
             </Button>
@@ -995,7 +992,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="handleSharePlaylist"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconShare" width="18" height="18" />
             </Button>
@@ -1040,21 +1037,22 @@ watch(
                 <div class="flex items-center justify-between h-14">
                   <TabsList class="bg-transparent border-none gap-8">
                     <TabsTrigger value="songs">
-                      <span class="relative">歌曲 <Badge :count="loadedSongCount" /></span>
+                      <span class="badge-label">歌曲 <Badge :count="loadedSongCount" /></span>
                     </TabsTrigger>
                     <TabsTrigger value="comments">
-                      <span class="relative">
+                      <span class="badge-label">
                         评论
-                        <Badge v-if="commentTotal > 0" :count="commentTotal" class="-right-6" />
+                        <Badge v-if="commentTotal > 0" :count="commentTotal" />
                       </span>
                     </TabsTrigger>
                   </TabsList>
 
                   <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
                     <Button
+                      class="action-icon song-sort-btn"
                       v-if="playlistOrderTarget"
-                      variant="ghost"
-                      size="sm"
+                      variant="soft-secondary"
+                      size="none"
                       tooltip="调整歌曲顺序"
                       @click="showPlaylistOrder = true"
                     >
@@ -1065,7 +1063,7 @@ watch(
                       variant="unstyled"
                       size="none"
                       @click="handleLocate"
-                      class="song-locate-btn p-2 rounded-lg"
+                      class="action-icon song-locate-btn p-2"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="18" height="18" />

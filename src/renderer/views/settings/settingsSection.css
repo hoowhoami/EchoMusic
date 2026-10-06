@@ -62,9 +62,7 @@
   min-height: 32px;
   padding: 4px 8px;
   border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text-secondary);
+  border-radius: var(--radius-control);
   font-size: 13px;
   font-weight: 500;
   line-height: 20px;
@@ -74,21 +72,6 @@
   transition:
     color 150ms,
     background-color 150ms;
-}
-
-.settings-action:hover:not(:disabled) {
-  color: var(--color-text-main);
-  background: var(--control-hover-bg);
-}
-
-.settings-action-primary,
-.settings-action-primary:hover:not(:disabled) {
-  color: var(--color-primary-text);
-}
-
-.settings-action-danger,
-.settings-action-danger:hover:not(:disabled) {
-  @apply text-red-500;
 }
 
 .settings-action:focus-visible {
@@ -219,7 +202,7 @@
   width: 18px;
   height: 18px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;

@@ -298,7 +298,9 @@ defineExpose({
         <div ref="contentWrapRef">
           <slot />
         </div>
-        <PopoverArrow v-if="props.showArrow" :width="14" :height="8" class="echo-popover-arrow" />
+        <PopoverArrow v-if="props.showArrow" :width="14" :height="8" as-child>
+          <span class="echo-popover-arrow floating-surface-arrow" />
+        </PopoverArrow>
       </PopoverContent>
     </PopoverPortal>
   </PopoverRoot>
@@ -308,7 +310,7 @@ defineExpose({
 .echo-popover-content {
   --popover-background: var(--floating-surface-bg);
   z-index: 9999;
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   background: var(--popover-background);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
@@ -318,12 +320,6 @@ defineExpose({
   user-select: none;
   -webkit-user-select: none;
   outline: none;
-}
-
-.echo-popover-arrow {
-  display: block;
-  fill: var(--popover-background);
-  stroke: none;
 }
 
 .echo-popover-content[data-state='open'] {

@@ -355,6 +355,152 @@ test('old follow finally does not release a new operation for the same user', as
   assert.equal(f.view.socialFollowPending.size, 0);
 });
 
+test('follow success immediately updates every list and count before slow refreshes finish', async (t) => {
+  const f = fixture(t),
+    gate = deferred();
+  await Promise.all(['follow', 'friends', 'fans'].map((tab) => f.view.loadSocialList(tab)));
+  const item = f.view.socialUsers.fans[0];
+  for (const name of ['getUserFollow', 'getUserFriends', 'getUserFans']) {
+    f.api[name] = () => gate.promise;
+  }
+  const pending = f.view.toggleSocialFollow(item);
+  await flush();
+  assert.equal(item.friendAction, 'unfollow');
+  assert.equal(f.view.followCount.value, 1);
+  assert.equal(f.view.friendCount.value, 1);
+  assert.equal(f.view.socialUsers.friends[0].meta, '互相关注');
+  assert.equal(f.view.socialFollowPending.has('123'), false);
+  gate.resolve(list()); // 上游列表暂时还未同步写操作。
+  await pending;
+  assert.equal(f.view.followCount.value, 1);
+  assert.equal(f.view.friendCount.value, 1);
+});
+
+test('unfollow immediately removes follow and friend rows and updates the fan button despite stale responses', async (t) => {
+  const f = fixture(t),
+    gate = deferred();
+  for (const name of ['getUserFollow', 'getUserFriends', 'getUserFans']) {
+    f.api[name] = async () => ({ status: 1, data: { lists: [{ userid: 123, is_friend: 1 }] } });
+  }
+  await Promise.all(['follow', 'friends', 'fans'].map((tab) => f.view.loadSocialList(tab)));
+  const item = f.view.socialUsers.friends[0];
+  for (const name of ['getUserFollow', 'getUserFriends', 'getUserFans']) {
+    f.api[name] = () => gate.promise;
+  }
+  const pending = f.view.toggleSocialFollow(item);
+  await flush();
+  assert.equal(f.view.followCount.value, 0);
+  assert.equal(f.view.friendCount.value, 0);
+  assert.equal(f.view.socialUsers.fans[0].friendAction, 'follow');
+  gate.resolve({ status: 1, data: { lists: [{ userid: 123, is_friend: 1 }] } });
+  await pending;
+  assert.equal(f.view.followCount.value, 0);
+  assert.equal(f.view.friendCount.value, 0);
+  assert.equal(f.view.socialUsers.fans[0].friendAction, 'follow');
+});
+
+test('confirmed relationship survives a list started before the write, then yields to synchronized server state', async (t) => {
+  const f = fixture(t),
+    old = deferred();
+  await f.view.loadSocialList('fans');
+  f.api.getUserFollow = () => old.promise;
+  const oldList = f.view.loadSocialList('follow');
+  const pending = f.view.toggleSocialFollow(f.view.socialUsers.fans[0]);
+  await flush();
+  f.api.getUserFollow = async () => list(123);
+  f.api.getUserFriends = async () => list(123);
+  f.api.getUserFans = async () => ({ status: 1, data: { lists: [{ userid: 123, is_friend: 1 }] } });
+  old.resolve(list());
+  await oldList;
+  assert.equal(f.view.followCount.value, 1);
+  await pending;
+  await Promise.all(['friends', 'fans'].map((tab) => f.view.loadSocialList(tab, true)));
+  assert.equal(f.view.confirmedFollows.size, 0);
+  f.api.getUserFollow = async () => list();
+  await f.view.loadSocialList('follow', true);
+  assert.equal(f.view.followCount.value, 0);
+});
+
+test('write failure leaves relationships and counters unchanged and allows retry', async (t) => {
+  const f = fixture(t);
+  await f.view.loadSocialList('fans');
+  f.api.addUserFollow = async () => ({ status: 0, error_code: 123 });
+  await f.view.toggleSocialFollow(f.view.socialUsers.fans[0]);
+  assert.equal(f.view.socialUsers.fans[0].friendAction, 'follow');
+  assert.equal(f.view.followCount.value, 0);
+  assert.equal(f.view.friendCount.value, 0);
+  assert.equal(f.view.confirmedFollows.size, 0);
+  assert.equal(f.view.socialFollowPending.size, 0);
+  assert.deepEqual(f.calls, ['fans']);
+  assert.equal(f.notices[0][0], 'warning');
+});
+
+test('already-followed response repairs the local button and list without claiming a new follow', async (t) => {
+  const f = fixture(t);
+  await f.view.loadSocialList('fans');
+  f.api.addUserFollow = async () => ({ status: 0, error_code: 31702 });
+  await f.view.toggleSocialFollow(f.view.socialUsers.fans[0]);
+  assert.equal(f.view.socialUsers.fans[0].friendAction, 'unfollow');
+  assert.equal(f.view.socialUsers.follow[0].userId, '123');
+  assert.deepEqual(f.notices, [['info', '已关注该用户']]);
+});
+
+test('an earlier refresh cannot unlock a subsequent opposite write for the same user', async (t) => {
+  const f = fixture(t),
+    refresh = deferred(),
+    write = deferred();
+  await f.view.loadSocialList('fans');
+  for (const name of ['getUserFollow', 'getUserFriends', 'getUserFans']) {
+    f.api[name] = () => refresh.promise.then(() => (name === 'getUserFans' ? list(123) : list()));
+  }
+  const first = f.view.toggleSocialFollow(f.view.socialUsers.fans[0]);
+  await flush();
+  f.api.deleteUserFollow = () => write.promise;
+  const second = f.view.toggleSocialFollow(f.view.socialUsers.fans[0]);
+  assert.equal(f.view.socialFollowPending.has('123'), true);
+  refresh.resolve(list());
+  await first;
+  assert.equal(f.view.socialFollowPending.has('123'), true);
+  write.resolve({ status: 1 });
+  await second;
+  assert.equal(f.view.socialFollowPending.has('123'), false);
+  assert.equal(f.view.socialUsers.fans[0].friendAction, 'follow');
+  assert.equal(f.view.followCount.value, 0);
+  assert.equal(f.view.friendCount.value, 0);
+});
+
+test('unloaded counts update immediately and failed refreshes preserve the successful relationship', async (t) => {
+  const f = fixture(t),
+    gate = deferred();
+  f.user.info.extendsInfo.detail = { follows: 5, friends: 2 };
+  await f.view.loadSocialList('fans');
+  for (const name of ['getUserFollow', 'getUserFriends', 'getUserFans']) {
+    f.api[name] = () => gate.promise;
+  }
+  const pending = f.view.toggleSocialFollow(f.view.socialUsers.fans[0]);
+  await flush();
+  assert.equal(f.view.followCount.value, 6);
+  assert.equal(f.view.friendCount.value, 3);
+  gate.reject(new Error('refresh failed'));
+  await pending;
+  assert.equal(f.view.socialUsers.fans[0].friendAction, 'unfollow');
+  assert.equal(f.view.followCount.value, 6);
+  assert.equal(f.view.friendCount.value, 3);
+  assert.deepEqual(
+    f.notices.map(([type]) => type),
+    ['success', 'warning'],
+  );
+});
+
+test('the write response determines mutual friendship when following', async (t) => {
+  const f = fixture(t);
+  await f.view.loadSocialList('fans');
+  f.api.addUserFollow = async () => ({ status: 1, data: { is_friend: 0 } });
+  await f.view.toggleSocialFollow(f.view.socialUsers.fans[0]);
+  assert.equal(f.view.followCount.value, 1);
+  assert.equal(f.view.friendCount.value, 0);
+});
+
 test('rapid chat switching starts the new history and ignores old response and finally', async (t) => {
   const f = fixture(t),
     a = deferred(),

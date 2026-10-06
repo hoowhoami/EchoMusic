@@ -332,15 +332,23 @@ onBeforeUnmount(() => {
   <section class="discover-reel-page" @wheel.prevent="handleWheel">
     <Transition name="discover-backdrop">
       <div v-if="artworkUrl" :key="artworkUrl" class="discover-reel-backdrop" aria-hidden="true">
-        <Cover :url="artworkUrl" :size="800" width="100%" height="100%" :border-radius="0" alt="" />
+        <Cover
+          :url="artworkUrl"
+          :size="800"
+          width="100%"
+          height="100%"
+          :border-radius="0"
+          :show-border="false"
+          alt=""
+        />
       </div>
     </Transition>
 
     <header class="discover-reel-header">
       <h1>刷歌</h1>
       <Button
-        class="discover-reel-refresh"
-        variant="ghost"
+        class="action-icon discover-reel-refresh"
+        variant="unstyled"
         size="none"
         tooltip="换一批推荐"
         tooltip-side="bottom"
@@ -397,8 +405,8 @@ onBeforeUnmount(() => {
 
       <nav class="discover-reel-actions" aria-label="刷歌操作">
         <Button
-          class="discover-reel-action"
-          variant="secondary"
+          class="action-icon discover-reel-action"
+          variant="unstyled"
           size="none"
           :disabled="!canGoPrev"
           tooltip="上一首"
@@ -408,9 +416,9 @@ onBeforeUnmount(() => {
           <Icon :icon="iconChevronUp" width="22" height="22" />
         </Button>
         <Button
-          class="discover-reel-action"
+          class="action-icon discover-reel-action"
           :class="{ active: favorite }"
-          variant="secondary"
+          variant="unstyled"
           size="none"
           :disabled="actionBusy"
           :tooltip="favorite ? '取消收藏' : '收藏'"
@@ -420,8 +428,8 @@ onBeforeUnmount(() => {
           <Icon :icon="favorite ? iconHeartFilled : iconHeart" width="22" height="22" />
         </Button>
         <Button
-          class="discover-reel-play"
-          variant="primary"
+          class="action-icon discover-reel-play"
+          variant="unstyled"
           size="none"
           :disabled="playbackBusy"
           :tooltip="isCurrentPlaying ? '暂停' : '播放'"
@@ -436,8 +444,8 @@ onBeforeUnmount(() => {
           />
         </Button>
         <Button
-          class="discover-reel-action"
-          variant="secondary"
+          class="action-icon discover-reel-action"
+          variant="unstyled"
           size="none"
           :disabled="!canGoNext"
           tooltip="下一首"
@@ -500,19 +508,6 @@ onBeforeUnmount(() => {
   object-position: center 35%;
 }
 
-.discover-reel-backdrop::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    transparent 28%,
-    color-mix(in srgb, var(--color-bg-main) 18%, transparent) 58%,
-    color-mix(in srgb, var(--color-bg-main) 88%, transparent)
-  );
-}
-
 .discover-reel-header,
 .discover-reel-stage,
 .discover-reel-state,
@@ -547,8 +542,11 @@ onBeforeUnmount(() => {
   justify-content: center;
   width: 34px;
   height: 34px;
-  border-radius: 50%;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   transition:
     background-color 0.12s ease,
     color 0.12s ease;
@@ -573,6 +571,7 @@ onBeforeUnmount(() => {
 }
 
 .discover-reel-stage {
+  --reel-text-secondary: color-mix(in srgb, var(--color-text-main) 80%, transparent);
   height: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 52px;
@@ -580,6 +579,22 @@ onBeforeUnmount(() => {
   gap: 32px;
   padding: 88px 32px 40px;
   pointer-events: none;
+}
+
+.discover-reel-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  /* A readable media scrim, independent of the window/panel opacity. It sits
+   * behind the content, so neither the artwork nor the foreground is blurred. */
+  background: linear-gradient(
+    to top,
+    var(--surface-main-base),
+    color-mix(in srgb, var(--surface-main-base) 96%, transparent) 240px,
+    transparent 460px
+  );
 }
 
 .discover-reel-info {
@@ -604,18 +619,9 @@ onBeforeUnmount(() => {
 
 .discover-reel-progress {
   margin-right: 4px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
+  color: var(--reel-text-secondary);
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
-}
-
-.discover-reel-quality {
-  border: 1px solid var(--control-border);
-  border-radius: 4px;
-  padding: 1px 5px;
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  font-weight: 600;
 }
 
 .discover-reel-info h2 {
@@ -634,7 +640,7 @@ onBeforeUnmount(() => {
 
 .discover-reel-info p {
   margin: 0;
-  color: var(--color-text-secondary);
+  color: var(--reel-text-secondary);
   font-size: 16px;
   line-height: 1.5;
   overflow: hidden;
@@ -643,7 +649,7 @@ onBeforeUnmount(() => {
 }
 
 .discover-reel-album {
-  color: var(--color-text-secondary);
+  color: var(--reel-text-secondary);
   font-size: 13px;
   line-height: 1.5;
   overflow: hidden;
@@ -666,28 +672,32 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: var(--radius-control);
   flex-shrink: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--reel-text-secondary);
+}
+
+.discover-reel-action:hover:not(:disabled),
+.discover-reel-play:hover:not(:disabled) {
+  color: var(--color-text-main);
 }
 
 .discover-reel-action {
   width: 40px;
   height: 40px;
-  background: var(--control-muted-bg);
-  backdrop-filter: blur(12px);
-}
-
-.discover-reel-action:hover:not(:disabled) {
-  background: var(--control-hover-bg);
 }
 
 .discover-reel-play {
   width: 52px;
   height: 52px;
+  color: var(--color-text-main);
 }
 
 .discover-reel-action.active {
-  color: var(--color-primary-text);
+  color: var(--state-danger);
 }
 
 .discover-reel-loading {
@@ -698,7 +708,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   width: 20px;
   height: 20px;
-  color: var(--color-text-secondary);
+  color: var(--reel-text-secondary);
 }
 
 .discover-backdrop-enter-active,

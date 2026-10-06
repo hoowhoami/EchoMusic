@@ -5,7 +5,7 @@
 .echo-popover-content,
 .drawer-panel,
 .dialog-content,
-.app-tooltip-content,
+.app-tooltip-surface,
 .song-context-menu,
 .echo-date-picker-content,
 .titlebar-more-menu,
@@ -31,14 +31,37 @@
   --control-muted-bg: color-mix(in srgb, var(--content-tone) 5%, transparent);
   --control-hover-bg: color-mix(in srgb, var(--content-tone) 10%, transparent);
   --control-active-bg: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  --control-accent-hover-bg: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  --control-accent-pressed-bg: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  --control-active-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
+  --control-neutral-action-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06), inset 0 0 0 1px var(--border-strong);
+  --control-neutral-pressed-bg: color-mix(in srgb, var(--content-tone) 14%, transparent);
+  --control-secondary-bg: var(--control-muted-bg);
+  --control-secondary-hover-bg: var(--control-hover-bg);
+  --control-secondary-shadow: var(--control-neutral-action-shadow);
+  --control-danger-bg: color-mix(in srgb, var(--state-danger) 8%, transparent);
+  --control-danger-hover-bg: color-mix(in srgb, var(--state-danger) 12%, transparent);
+  --control-danger-pressed-bg: color-mix(in srgb, var(--state-danger) 16%, transparent);
+  --control-danger-text: color-mix(in srgb, var(--state-danger) 76%, var(--color-text-main));
+  --control-danger-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    inset 0 0 0 1px color-mix(in srgb, var(--state-danger) 18%, transparent);
   --control-border: color-mix(in srgb, var(--border-light) 76%, transparent);
   --control-border-hover: color-mix(in srgb, var(--content-tone) 24%, transparent);
   --control-track-bg: color-mix(in srgb, var(--content-tone) 12%, transparent);
   --control-track-bg-hover: color-mix(in srgb, var(--content-tone) 18%, transparent);
-  --control-checkbox-bg: var(--control-bg);
-  --control-checkbox-border: var(--control-border);
-  --control-checkbox-border-hover: var(--color-primary);
-  --control-checkbox-indicator: var(--color-on-primary);
+  --control-checkbox-bg: var(--control-muted-bg);
+  --control-checkbox-border: var(--border-strong);
+  --control-checkbox-border-hover: var(--control-border-hover);
+  --control-checkbox-active-border: color-mix(
+    in srgb,
+    var(--color-primary) 35%,
+    var(--control-checkbox-border)
+  );
+  --control-checkbox-indicator: var(--color-primary-text);
   --row-hover-bg: color-mix(in srgb, var(--content-tone) 5%, transparent);
   --row-active-bg: color-mix(in srgb, var(--content-tone) 10%, transparent);
   --row-selected-bg: var(--row-active-bg);
@@ -47,6 +70,74 @@
   --scrollbar-thumb-bg-active: color-mix(in srgb, var(--content-tone) 45%, transparent);
 }
 
+.selection-mark-surface {
+  box-sizing: border-box;
+  border: 1px solid var(--control-checkbox-active-border);
+  color: var(--control-checkbox-indicator);
+  background:
+    linear-gradient(var(--control-active-bg), var(--control-active-bg)),
+    var(--floating-surface-base, var(--surface-elevated-base));
+}
+
+/* Shared action structure; ordinary and destructive actions keep their own colors. */
+.soft-neutral-action,
+.soft-secondary-action,
+.song-locate-btn,
+.settings-action:where(
+  :not(.settings-action-danger, .settings-action-primary, .soft-accent-action)
+) {
+  color: var(--color-text-main);
+  background: var(--control-muted-bg);
+  box-shadow: var(--control-neutral-action-shadow);
+}
+.soft-neutral-action:enabled:hover,
+.soft-secondary-action:enabled:hover,
+.song-locate-btn:enabled:hover,
+.soft-neutral-action:has(> .soft-selection-trigger:enabled:hover),
+.settings-action:where(
+    :not(.settings-action-danger, .settings-action-primary, .soft-accent-action)
+  ):enabled:hover {
+  background: var(--control-hover-bg);
+}
+.soft-neutral-action:enabled:active,
+.soft-secondary-action:enabled:active,
+.song-locate-btn:enabled:active,
+.soft-neutral-action:has(> .soft-selection-trigger:enabled:active),
+.settings-action:where(
+    :not(.settings-action-danger, .settings-action-primary, .soft-accent-action)
+  ):enabled:active {
+  background: var(--control-neutral-pressed-bg);
+}
+.soft-accent-action,
+.settings-action-primary {
+  color: var(--color-primary-text);
+  background: var(--control-active-bg);
+  box-shadow: var(--control-active-shadow);
+}
+.soft-accent-action:enabled:hover,
+.settings-action-primary:enabled:hover,
+.soft-accent-action:has(> .soft-selection-trigger:enabled:hover) {
+  background: var(--control-accent-hover-bg);
+}
+.soft-accent-action:enabled:active,
+.settings-action-primary:enabled:active,
+.soft-accent-action:has(> .soft-selection-trigger:enabled:active) {
+  background: var(--control-accent-pressed-bg);
+}
+.soft-danger-action,
+.settings-action-danger {
+  color: var(--control-danger-text);
+  background: var(--control-danger-bg);
+  box-shadow: var(--control-danger-shadow);
+}
+.soft-danger-action:enabled:hover,
+.settings-action-danger:enabled:hover {
+  background: var(--control-danger-hover-bg);
+}
+.soft-danger-action:enabled:active,
+.settings-action-danger:enabled:active {
+  background: var(--control-danger-pressed-bg);
+}
 /* Ordinary icon actions share a foreground across headers, lists and dialogs.
  * Opacity is reserved for disabled/reveal/animation states, not normal brightness. */
 .icon-action {
@@ -78,7 +169,7 @@
 .echo-popover-content,
 .drawer-panel,
 .dialog-content,
-.app-tooltip-content,
+.app-tooltip-surface,
 .song-context-menu,
 .echo-date-picker-content,
 .titlebar-more-menu,
@@ -92,4 +183,21 @@
   --color-primary-text: var(--floating-accent-text);
   --color-focus-ring: var(--floating-accent-text);
   color: var(--text-main);
+}
+
+/* Main and immersive titlebars share the same control hover surface. */
+.titlebar-icon-action {
+  color: var(--window-action-color, var(--icon-main));
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.titlebar-icon-action:hover:not(:disabled) {
+  color: var(--window-action-hover-color, var(--color-text-main));
+  background-color: var(--control-hover-bg);
+}
+
+.titlebar-icon-action.window-caption-close:hover:not(:disabled) {
+  color: #fff;
+  background-color: #c42b1c;
 }

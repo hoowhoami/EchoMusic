@@ -1,19 +1,21 @@
 <script setup lang="ts">
 interface Props {
   count?: number | string;
+  tone?: 'neutral' | 'accent' | 'muted';
+  placement?: 'inline' | 'floating';
   class?: string;
 }
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  tone: 'neutral',
+  placement: 'inline',
+});
 </script>
 
 <template>
   <span
     v-if="count !== undefined"
-    :class="[
-      'badge absolute -top-1.5 -right-5 inline-flex min-w-[16px] h-4 items-center justify-center px-1 rounded-full text-[9px] font-bold bg-black text-white dark:bg-white dark:text-black shadow-sm select-none pointer-events-none tabular-nums',
-      props.class,
-    ]"
+    :class="['badge ui-badge', `badge-${tone}`, `badge-${placement}`, props.class]"
   >
     {{ count }}
   </span>
@@ -21,14 +23,14 @@ const props = defineProps<Props>();
 
 <style scoped>
 .badge {
-  /* 固定深浅背景保证任何主题色下都清晰 */
-  box-sizing: border-box;
-  line-height: 1;
+  user-select: none;
+  pointer-events: none;
 }
 
-:global(.playerbar-action-badge) {
-  top: 0 !important;
-  right: 0 !important;
+.badge-floating {
+  position: absolute;
+  top: 0;
+  right: 0;
   transform: translate(35%, -28%);
 }
 </style>

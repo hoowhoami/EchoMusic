@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
-import { LyricPlayer as CoreLyricPlayer } from '@applemusic-like-lyrics/core';
+import { OpeningLyricPlayer } from './amll/OpeningLyricPlayer';
 import '@applemusic-like-lyrics/core/style.css';
 import { useLyricStore } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
@@ -15,6 +15,7 @@ import {
   resolveLyricSkinColor,
 } from './skins/config';
 import { buildAmllLyricLines } from './amll/convertLyrics';
+import { afterPaint } from '@/utils/afterPaint';
 
 const lyricStore = useLyricStore();
 const playerStore = usePlayerStore();
@@ -34,7 +35,7 @@ const lyricLines = computed(() =>
 // 直接使用 AMLL core 实例：手动管理生命周期，命令式驱动时间轴，
 // 避免 vue 绑定按帧触发响应式链路带来的额外开销。
 // 引擎持有 DOM、动画和大量可变内部状态，不应进入 Vue 深度响应式系统。
-const playerRef = shallowRef<CoreLyricPlayer | null>(null);
+const playerRef = shallowRef<OpeningLyricPlayer | null>(null);
 const playerAreaRef = ref<HTMLElement | null>(null);
 
 const timeline = createLyricTimeline();
@@ -54,6 +55,10 @@ let lastFrameTime = 0;
 let lastSetTimeAt = 0;
 let settleUntil = 0;
 let lastAppliedTimeMs = Number.NaN;
+let openingOverlay: HTMLElement | null = null;
+let openingLayoutPending = true;
+let openingFrames = 0;
+let cancelInitialization: (() => void) | undefined;
 
 const rafLoop = (timestamp: number) => {
   rafId = null;
@@ -73,6 +78,18 @@ const rafLoop = (timestamp: number) => {
   lastFrameTime = timestamp;
   const player = playerRef.value;
   if (player) {
+    // Keep subsequent initial size/font/settings layouts instantaneous as well.
+    // No extra layout pass is needed on each frame: the engine's existing calls
+    // are forced while the host is entering. Restore springs after the opening.
+    if (
+      openingLayoutPending &&
+      ++openingFrames >= 2 &&
+      !openingOverlay?.hasAttribute('data-entering')
+    ) {
+      player.finishOpeningLayout();
+      openingLayoutPending = false;
+      openingOverlay = null;
+    }
     const timelineMs = timeline.getTimelineMs(
       { clock: playerStore.playbackClock },
       lyricStore.currentTimeOffset,
@@ -120,38 +137,61 @@ const handleVisibilityChange = () => {
   }
 };
 
-onMounted(() => {
+const initializePlayer = () => {
   const host = playerAreaRef.value;
-  if (!host) return;
-  const player = new CoreLyricPlayer();
+  if (!host?.isConnected) return;
+  const player = new OpeningLyricPlayer();
   host.appendChild(player.getElement());
+  player.initializeViewport();
   // 缩减视口外预渲染行数，减少每帧需要更新样式的 DOM 元素数量。
   player.setOverscanPx(OVERSCAN_PX);
-  player.setLyricLines(lyricLines.value);
+  // Apply initial settings while there are no words to rebuild or relayout.
+  const skin = settings.value;
+  player.setAlignAnchor('center');
+  player.setAlignPosition(skin.alignPosition);
+  player.setEnableSpring(skin.enableSpring);
+  player.setEnableBlur(skin.enableBlur);
+  player.setEnableScale(skin.enableScale);
+  player.setHidePassedLines(skin.hidePassedLines);
+  player.setWordFadeWidth(skin.wordFadeWidth);
+  // Start at the live position so opening does not animate from the song's beginning.
+  const initialTimeMs = timeline.getTimelineMs(
+    { clock: playerStore.playbackClock },
+    lyricStore.currentTimeOffset,
+    0,
+  );
+  player.setLyricLines(lyricLines.value, initialTimeMs);
+  lastAppliedTimeMs = initialTimeMs;
   if (playerStore.isPlaying) player.resume();
   else player.pause();
   playerRef.value = player;
   document.addEventListener('visibilitychange', handleVisibilityChange);
   lastFrameTime = performance.now();
   requestFrame();
+};
+
+onMounted(() => {
+  openingOverlay = playerAreaRef.value?.closest<HTMLElement>('.lyric-overlay-host') ?? null;
+  // Cover geometry is ready now. Do not make entry wait for all lyric word DOM:
+  // first let the page/cover animation start and paint, then build the engine.
+  if (openingOverlay?.hasAttribute('data-entering')) {
+    cancelInitialization = afterPaint(initializePlayer);
+  } else {
+    initializePlayer();
+  }
 });
 
 onUnmounted(() => {
+  cancelInitialization?.();
   document.removeEventListener('visibilitychange', handleVisibilityChange);
   if (rafId !== null) cancelAnimationFrame(rafId);
   rafId = null;
   const player = playerRef.value;
   if (player) {
     player.dispose();
-    // AMLL 的 LyricPlayerBase.dispose() 只移除了 element 和 pageshow/pagehide 监听，
-    // 但没有断开内部的 resizeObserver。该 observer 的回调以箭头函数捕获了 player
-    // 实例（this），持续持有 element / interludeDots / bottomLine 的引用，
-    // 连带 attachPlayerScrollHandlers 挂载的滚动事件监听器和全部歌词 DOM 节点
-    // 都无法被 GC，导致关闭歌词页后内存不下降。这里手动断开 observer。
-    const ro = (player as unknown as { resizeObserver?: ResizeObserver }).resizeObserver;
-    ro?.disconnect();
   }
   playerRef.value = null;
+  openingOverlay = null;
   const host = playerAreaRef.value;
   if (host) host.replaceChildren();
 });
@@ -182,7 +222,7 @@ watch(
   () => requestFrame(),
 );
 
-// 皮肤设置：playerRef 置位后立即生效，之后每次改动实时应用
+// Initial settings are applied before lyric construction; subsequent changes stay live.
 watch(
   () =>
     [
@@ -197,13 +237,13 @@ watch(
   ([player, position, spring, blur, scale, hide, fade], previous) => {
     if (!player) return;
     const initial = player !== previous?.[0];
-    if (initial) player.setAlignAnchor('center');
-    if (initial || position !== previous?.[1]) player.setAlignPosition(position);
-    if (initial || spring !== previous?.[2]) player.setEnableSpring(spring);
-    if (initial || blur !== previous?.[3]) player.setEnableBlur(blur);
-    if (initial || scale !== previous?.[4]) player.setEnableScale(scale);
-    if (initial || hide !== previous?.[5]) player.setHidePassedLines(hide);
-    if (initial || fade !== previous?.[6]) player.setWordFadeWidth(fade);
+    if (initial) return;
+    if (position !== previous?.[1]) player.setAlignPosition(position);
+    if (spring !== previous?.[2]) player.setEnableSpring(spring);
+    if (blur !== previous?.[3]) player.setEnableBlur(blur);
+    if (scale !== previous?.[4]) player.setEnableScale(scale);
+    if (hide !== previous?.[5]) player.setHidePassedLines(hide);
+    if (fade !== previous?.[6]) player.setWordFadeWidth(fade);
     requestFrame();
   },
 );
@@ -229,7 +269,6 @@ const playerAreaStyle = computed(() =>
           :album-id="currentTrack?.albumId"
           :active="playerStore.isPlaying"
           :size="800"
-          :border-radius="24"
           :alt="currentTrack?.albumName || currentTrack?.name || '专辑封面'"
           class="amll-cover-img"
         />
@@ -269,7 +308,7 @@ const playerAreaStyle = computed(() =>
 .amll-cover-wrapper {
   width: clamp(220px, 80%, 380px);
   aspect-ratio: 1;
-  border-radius: 24px;
+  border-radius: var(--radius-media);
   overflow: hidden;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
 }

@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
+import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Input from '@/components/ui/Input.vue';
 import Select from '@/components/ui/Select.vue';
@@ -319,7 +320,7 @@ const getPluginAccentStyle = (pluginId: string) => {
           </div>
 
           <!-- 打开目录 -->
-          <Button variant="ghost" size="sm" @click="openDirectory" class="h-8">
+          <Button variant="ghost" size="sm" @click="openDirectory" class="action-icon h-8">
             <Icon :icon="iconFolderOpen" width="16" height="16" />
           </Button>
 
@@ -329,7 +330,7 @@ const getPluginAccentStyle = (pluginId: string) => {
             size="sm"
             :disabled="isRefreshing || isMarketplaceRefreshing"
             @click="activeView === 'marketplace' ? loadMarketplace(true) : refresh()"
-            class="h-8"
+            class="action-icon h-8"
           >
             <Icon
               :icon="iconRefreshCw"
@@ -341,28 +342,21 @@ const getPluginAccentStyle = (pluginId: string) => {
         </div>
       </div>
 
-      <nav class="plugin-view-tabs mt-4" aria-label="插件视图">
-        <button
-          type="button"
-          class="plugin-view-tab"
-          :class="{ 'is-active': activeView === 'installed' }"
-          @click="switchView('installed')"
-        >
-          <Icon :icon="iconPlugin" width="14" height="14" />
-          <span>已安装</span>
-          <small>{{ records.length }}</small>
-        </button>
-        <button
-          type="button"
-          class="plugin-view-tab"
-          :class="{ 'is-active': activeView === 'marketplace' }"
-          @click="switchView('marketplace')"
-        >
-          <Icon :icon="iconCloud" width="14" height="14" />
-          <span>在线插件</span>
-          <small>{{ marketplaceLoaded ? marketplacePlugins.length : '-' }}</small>
-        </button>
-      </nav>
+      <CustomTabBar
+        class="plugin-view-tabs mt-4"
+        aria-label="插件视图"
+        :tabs="['已安装', '在线插件']"
+        :model-value="activeView === 'marketplace' ? 1 : 0"
+        @update:model-value="switchView($event === 1 ? 'marketplace' : 'installed')"
+      >
+        <template #tab="{ label, index }">
+          <Icon :icon="index === 0 ? iconPlugin : iconCloud" width="14" height="14" />
+          <span class="plugin-view-tab-label">{{ label }}</span>
+          <small class="plugin-view-tab-count">
+            {{ index === 0 ? records.length : marketplaceLoaded ? marketplacePlugins.length : '-' }}
+          </small>
+        </template>
+      </CustomTabBar>
 
       <!-- 错误提示 -->
       <div v-if="globalFailure" class="plugin-failure-card mt-3">
@@ -382,7 +376,7 @@ const getPluginAccentStyle = (pluginId: string) => {
           </div>
         </div>
         <Button
-          variant="ghost"
+          variant="danger"
           size="xs"
           class="shrink-0"
           :loading="isClearingFailure"
@@ -458,7 +452,7 @@ const getPluginAccentStyle = (pluginId: string) => {
               <Button
                 variant="ghost"
                 size="sm"
-                class="h-9! w-9! p-0! shrink-0"
+                class="action-icon h-9! w-9! p-0! shrink-0"
                 tooltip="管理插件源"
                 @click="openSourceDialog"
               >
@@ -608,7 +602,7 @@ const getPluginAccentStyle = (pluginId: string) => {
     >
       <template #footer>
         <Button
-          variant="ghost"
+          variant="secondary"
           size="xs"
           :disabled="isUninstalling"
           @click="showUninstallDialog = false"
@@ -659,7 +653,7 @@ const getPluginAccentStyle = (pluginId: string) => {
         <div class="plugin-failure-detail-footer">
           <Button
             v-if="canClearActiveFailureDetail"
-            variant="ghost"
+            variant="danger"
             size="xs"
             :loading="isClearingFailure"
             @click="clearActiveFailureRecord"
@@ -667,7 +661,7 @@ const getPluginAccentStyle = (pluginId: string) => {
             清除记录
           </Button>
           <Button
-            variant="ghost"
+            variant="secondary"
             size="xs"
             :disabled="isClearingFailure"
             @click="showFailureDetailDialog = false"

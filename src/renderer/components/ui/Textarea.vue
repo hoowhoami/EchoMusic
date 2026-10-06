@@ -44,7 +44,7 @@ const value = useVModel(props, 'modelValue', emits);
   min-height: 120px;
   padding: 12px 14px;
   border: 1px solid var(--control-border);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   color: var(--color-text-main);
   font-size: 13px;

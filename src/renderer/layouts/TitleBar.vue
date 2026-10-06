@@ -592,7 +592,7 @@ onUnmounted(() => {
         variant="unstyled"
         size="none"
         @click="goBack"
-        class="nav-btn group icon-action"
+        class="action-icon titlebar-icon-action nav-btn group icon-action"
         :disabled="!canGoBack"
         tooltip="后退"
       >
@@ -602,7 +602,7 @@ onUnmounted(() => {
         variant="unstyled"
         size="none"
         @click="goForward"
-        class="nav-btn group icon-action"
+        class="action-icon titlebar-icon-action nav-btn group icon-action"
         :disabled="!canGoForward"
         tooltip="前进"
       >
@@ -612,7 +612,7 @@ onUnmounted(() => {
         variant="unstyled"
         size="none"
         @click="refresh"
-        class="nav-btn group icon-action"
+        class="action-icon titlebar-icon-action nav-btn group icon-action"
         tooltip="刷新"
       >
         <RefreshIcon width="20" height="20" class="transition-colors" />
@@ -648,7 +648,7 @@ onUnmounted(() => {
                 v-if="searchQuery"
                 variant="unstyled"
                 size="none"
-                class="tb-search-clear"
+                class="action-icon titlebar-icon-action tb-search-clear"
                 aria-label="清除搜索"
                 @mousedown.prevent
                 @click="
@@ -844,6 +844,9 @@ onUnmounted(() => {
               class="task-text-action"
               :class="{
                 'is-primary': action.variant === 'primary',
+                'soft-accent-action': action.variant === 'primary',
+                'soft-secondary-action': !['primary', 'danger'].includes(action.variant || ''),
+                'soft-danger-action': action.variant === 'danger',
                 'is-danger': action.variant === 'danger',
               }"
               :disabled="action.disabled"
@@ -854,7 +857,7 @@ onUnmounted(() => {
             <button
               v-if="isManuallyDismissibleTask(task)"
               type="button"
-              class="task-text-action"
+              class="task-text-action soft-secondary-action"
               @click="dismissTaskEntry(task.id, task.generation)"
             >
               关闭
@@ -886,6 +889,9 @@ onUnmounted(() => {
               class="task-text-action"
               :class="{
                 'is-primary': action.variant === 'primary',
+                'soft-accent-action': action.variant === 'primary',
+                'soft-secondary-action': !['primary', 'danger'].includes(action.variant || ''),
+                'soft-danger-action': action.variant === 'danger',
                 'is-danger': action.variant === 'danger',
               }"
               :disabled="action.disabled"
@@ -936,23 +942,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  transition: all 0.2s;
+  border-radius: var(--radius-control);
   background: transparent;
   border: none;
-}
-
-.nav-btn:hover {
-  background-color: var(--control-hover-bg);
 }
 
 .nav-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
-}
-
-.nav-btn:disabled:hover {
-  background-color: transparent;
 }
 
 /* 加粗图标（穿透到 SVG 内部） */
@@ -1014,7 +1011,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   height: 30px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   padding: 0 4px 0 10px;
   transition: all 0.2s ease;
@@ -1053,17 +1050,10 @@ onUnmounted(() => {
 .tb-search-clear {
   width: 22px;
   height: 22px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-secondary);
-  transition: all 0.15s ease;
-}
-
-.tb-search-clear:hover {
-  color: var(--color-text-main);
-  background: var(--control-hover-bg);
 }
 
 /* 搜索建议下拉 */
@@ -1074,7 +1064,7 @@ onUnmounted(() => {
   max-height: min(520px, var(--reka-popover-content-available-height));
   overflow-y: auto;
   overscroll-behavior: contain;
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   background: var(--floating-surface-bg);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
@@ -1103,7 +1093,7 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding: 6px 10px;
-  border-radius: 16px;
+  border-radius: var(--radius-item);
   font-size: 12px;
   background: var(--control-muted-bg);
 }
@@ -1140,7 +1130,7 @@ onUnmounted(() => {
   white-space: nowrap;
   color: var(--color-primary-text);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-detail);
 }
 .tb-query-submit:focus-visible {
   outline: 2px solid var(--color-primary-text);
@@ -1184,7 +1174,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-item);
   font-size: 13px;
   line-height: 22px;
   font-weight: 400;
@@ -1228,7 +1218,7 @@ onUnmounted(() => {
 .tb-query-skeleton {
   height: 12px;
   width: 70%;
-  border-radius: 6px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   margin: 0 0 22px;
 }
@@ -1362,25 +1352,14 @@ onUnmounted(() => {
 }
 .task-text-action {
   appearance: none;
-  background: transparent;
   border: 0;
-  padding: 4px 0;
+  padding: 4px 8px;
   min-height: 28px;
   font: inherit;
   font-size: 12px;
-  color: var(--color-text-secondary);
   cursor: pointer;
   white-space: nowrap;
-  border-radius: 3px;
-}
-.task-text-action.is-primary {
-  color: var(--color-primary-text);
-}
-.task-text-action.is-danger {
-  color: var(--color-danger, #ef4444);
-}
-.task-text-action:hover:not(:disabled) {
-  opacity: 0.8;
+  border-radius: var(--radius-control);
 }
 .task-text-action:focus-visible {
   outline: 2px solid var(--color-primary-text);

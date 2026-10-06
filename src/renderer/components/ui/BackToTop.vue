@@ -75,10 +75,10 @@ onUnmounted(() => {
         variant="unstyled"
         size="none"
         @click="scrollToTop"
-        class="size-9 inline-flex items-center justify-center rounded-full border border-[var(--control-border)] back-to-top-btn shadow-lg hover:shadow-xl group"
+        class="action-icon inline-flex items-center justify-center border border-[var(--control-border)] back-to-top-btn shadow-lg hover:shadow-xl group"
         aria-label="回到顶部"
       >
-        <Icon class="back-to-top-icon" :icon="iconArrowUp" width="18" height="18" />
+        <Icon class="back-to-top-icon" :icon="iconArrowUp" width="16" height="16" />
       </Button>
     </div>
   </Transition>
@@ -88,6 +88,8 @@ onUnmounted(() => {
 @reference "@/style.css";
 
 .back-to-top-btn {
+  width: var(--scroll-action-size);
+  height: var(--scroll-action-size);
   background: var(--color-bg-elevated);
   color: var(--color-text-main);
   border-color: var(--control-border);

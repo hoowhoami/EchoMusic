@@ -36,8 +36,8 @@ withDefaults(defineProps<Props>(), {
           <Skeleton variant="text" width="92px" height="15px" />
         </div>
         <div class="search-results-skeleton-actions">
-          <Skeleton variant="text" width="88px" height="34px" />
-          <Skeleton variant="text" width="76px" height="34px" />
+          <Skeleton variant="text" width="88px" height="36px" />
+          <Skeleton variant="text" width="76px" height="36px" />
         </div>
       </div>
 
@@ -79,17 +79,17 @@ withDefaults(defineProps<Props>(), {
 <style scoped>
 .search-results-skeleton {
   width: 100%;
-  padding: 0 40px 48px;
+  padding: 16px 40px 48px;
   contain: layout style;
 }
 
 .search-results-skeleton-toolbar {
   display: flex;
-  min-height: 52px;
+  min-height: 44px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 0 6px;
+  padding: 0 0 8px;
 }
 
 .search-results-skeleton-title,
@@ -101,7 +101,8 @@ withDefaults(defineProps<Props>(), {
 
 .search-results-skeleton-subbar {
   display: flex;
-  min-height: 56px;
+  min-height: 52px;
+  padding: 8px 0;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -119,13 +120,13 @@ withDefaults(defineProps<Props>(), {
   min-width: 0;
   padding: 10px;
   border: 1px solid var(--content-panel-border);
-  border-radius: 20px;
+  border-radius: var(--radius-card);
   background: var(--content-panel-bg);
   box-shadow: var(--shadow-card);
 }
 
 .search-results-skeleton-card.is-video {
-  border-radius: 16px;
+  border-radius: var(--radius-card);
 }
 
 .search-results-skeleton-cover {

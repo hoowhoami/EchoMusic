@@ -323,7 +323,7 @@ onMounted(async () => {
         </p>
       </div>
       <Button
-        variant="unstyled"
+        variant="primary"
         size="none"
         class="settings-action settings-action-primary"
         type="button"

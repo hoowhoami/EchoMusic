@@ -18,29 +18,16 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   layout: 'grid',
   coverSize: 360,
-  coverRadius: 14,
   showShadow: true,
 });
 
 const router = useRouter();
 
 const resolvedCoverRadius = computed(() => {
-  if (props.layout === 'list') return props.coverRadius ?? 10;
-  return props.coverRadius ?? 14;
-});
-
-const containerRadius = computed(() => {
-  if (props.layout === 'grid') {
-    return (props.coverRadius ?? 14) + 6;
-  }
-  return 14;
+  return props.coverRadius === undefined ? 'var(--radius-media, 6px)' : `${props.coverRadius}px`;
 });
 
 const cardShadow = computed(() => (props.showShadow ? 'var(--playlist-card-shadow)' : 'none'));
-
-const cardHoverShadow = computed(() =>
-  props.showShadow ? 'var(--playlist-card-hover-shadow)' : 'none',
-);
 
 const coverShadowClass = computed(() => (props.showShadow ? 'shadow-sm' : ''));
 
@@ -59,21 +46,19 @@ const handleClick = () => {
 <template>
   <div
     v-if="layout === 'grid'"
-    class="playlist-card-grid group cursor-pointer"
+    class="playlist-card-grid card-hover group cursor-pointer"
     @click="handleClick"
   >
     <div
-      class="card-container"
+      class="card-container card-hover-border"
       :style="{
         boxShadow: cardShadow,
-        '--playlist-card-hover-shadow': cardHoverShadow,
-        borderRadius: `${containerRadius}px`,
       }"
     >
       <div
         class="cover-wrapper"
         :class="coverShadowClass"
-        :style="{ borderRadius: `${resolvedCoverRadius}px` }"
+        :style="{ borderRadius: resolvedCoverRadius }"
       >
         <Cover
           :url="coverUrl"
@@ -109,24 +94,11 @@ const handleClick = () => {
 @reference "@/style.css";
 
 /* Grid Layout */
-.playlist-card-grid {
-  @apply transition-all duration-300 ease-out;
-}
-
-.playlist-card-grid:hover {
-  transform: scale(1.03);
-}
-
 .card-container {
-  @apply p-[10px] rounded-[20px] transition-all duration-300;
+  @apply p-[10px] rounded-card;
   --playlist-card-shadow: var(--shadow-card);
-  --playlist-card-hover-shadow: var(--shadow-card-hover);
   background: var(--content-panel-bg);
   border: 1px solid var(--content-panel-border);
-}
-
-.playlist-card-grid:hover .card-container {
-  box-shadow: var(--playlist-card-hover-shadow, 0 10px 24px rgba(0, 0, 0, 0.12));
 }
 
 .cover-wrapper {
@@ -150,7 +122,7 @@ const handleClick = () => {
 
 /* List Layout */
 .playlist-card-list {
-  @apply flex items-center rounded-[14px] border border-transparent transition-all duration-200;
+  @apply flex items-center rounded-card border border-transparent transition-all duration-200;
   padding: 4px 12px;
 }
 

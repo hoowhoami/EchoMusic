@@ -106,12 +106,16 @@ export const getSongUnavailableMessage = (song: Song): string | null => {
 };
 
 export const getSongQualityTag = (
-  song: Pick<Song, 'relateGoods'>,
+  song: Pick<Song, 'relateGoods' | 'qualityMap'>,
   viperTapeEnabled = true,
 ): string => {
   const goods = song.relateGoods ?? [];
+  // 新版云歌单用位图返回音质能力，没有各音质的 hash；保留给标签展示使用。
+  // 320/flac/high 分别为 bit 4/5/6，viper_tape 为 bit 24。
+  const qualityMap = goods.length ? 0 : (song.qualityMap ?? 0);
   const hasQuality = (quality: string, level: number) =>
-    goods.some((item: SongRelateGood) => item.quality === quality || item.level === level);
+    goods.some((item: SongRelateGood) => item.quality === quality || item.level === level) ||
+    Boolean(qualityMap & (1 << (quality === 'viper_tape' ? 24 : level)));
 
   if (viperTapeEnabled && hasQuality('viper_tape', 101)) return '母带';
   if (hasQuality('high', 6)) return 'Hi-Res';

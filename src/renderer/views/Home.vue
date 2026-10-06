@@ -15,6 +15,7 @@ import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { iconPlay, iconSlidersHorizontal, iconSparkles } from '@/icons';
 import Button from '@/components/ui/Button.vue';
+import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import UserAgreementDialog from '@/components/app/UserAgreementDialog.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { usePlaylistStore, type SetPlaybackQueueOptions } from '@/stores/playlist';
@@ -91,6 +92,15 @@ const styleGroups = ref<StyleRecommendGroup[]>([]);
 const selectedStyleTagIds = ref<Set<string>>(new Set());
 const activeStyleGroupName = ref('');
 const activeRecommendCategoryId = ref<(typeof RECOMMEND_PLAYLIST_CATEGORIES)[number]['id']>('0');
+
+const selectStyleGroupTab = (index: number) => {
+  const group = styleGroups.value[index];
+  if (group) activeStyleGroupName.value = group.name;
+};
+const selectRecommendCategoryTab = (index: number) => {
+  const category = RECOMMEND_PLAYLIST_CATEGORIES[index];
+  if (category) switchRecommendCategory(category.id);
+};
 
 const recommendState = ref<RecommendSectionState>({ loading: true, error: '' });
 const topIpState = ref<RecommendSectionState>({ loading: true, error: '' });
@@ -402,7 +412,7 @@ const handleRejectAgreement = () => {
           </div>
           <div class="style-section-actions">
             <Button
-              variant="unstyled"
+              variant="soft-primary"
               size="none"
               class="style-play-btn"
               :disabled="styleSongs.length === 0"
@@ -420,19 +430,13 @@ const handleRejectAgreement = () => {
               <Icon :icon="iconSlidersHorizontal" width="14" height="14" />
               <span>{{ styleSummary }}</span>
             </div>
-            <div class="style-category-tabs">
-              <Button
-                v-for="group in styleGroups"
-                :key="group.name"
-                variant="unstyled"
-                size="none"
-                class="style-category-btn"
-                :class="{ active: activeStyleGroupName === group.name }"
-                @click="activeStyleGroupName = group.name"
-              >
-                {{ group.name }}
-              </Button>
-            </div>
+            <CustomTabBar
+              class="style-category-tabs"
+              :tabs="styleGroups.map((group) => group.name)"
+              :model-value="styleGroups.findIndex((group) => group.name === activeStyleGroupName)"
+              aria-label="推荐风格分类"
+              @update:model-value="selectStyleGroupTab"
+            />
           </div>
 
           <div class="style-tag-row">
@@ -497,19 +501,17 @@ const handleRejectAgreement = () => {
       <section class="home-section motion-section-enter" style="--motion-order: 3">
         <div class="section-header">
           <div class="section-title">推荐歌单</div>
-          <div class="playlist-source-tabs">
-            <Button
-              v-for="category in RECOMMEND_PLAYLIST_CATEGORIES"
-              :key="category.id"
-              variant="unstyled"
-              size="none"
-              class="playlist-source-btn"
-              :class="{ active: activeRecommendCategoryId === category.id }"
-              @click="switchRecommendCategory(category.id)"
-            >
-              {{ category.label }}
-            </Button>
-          </div>
+          <CustomTabBar
+            class="playlist-source-tabs"
+            :tabs="RECOMMEND_PLAYLIST_CATEGORIES.map((category) => category.label)"
+            :model-value="
+              RECOMMEND_PLAYLIST_CATEGORIES.findIndex(
+                (category) => category.id === activeRecommendCategoryId,
+              )
+            "
+            aria-label="推荐歌单分类"
+            @update:model-value="selectRecommendCategoryTab"
+          />
         </div>
         <div v-if="!recommendState.loading && recommendState.error" class="section-placeholder">
           {{ recommendState.error }}
@@ -588,7 +590,7 @@ const handleRejectAgreement = () => {
   gap: 14px;
   height: 72px;
   padding: 0 18px;
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: var(--content-panel-bg);
   border: 1px solid var(--content-panel-border);
   transition:
@@ -604,7 +606,7 @@ const handleRejectAgreement = () => {
 .feature-icon {
   width: 44px;
   height: 44px;
-  border-radius: 12px;
+  border-radius: var(--radius-media);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -648,7 +650,7 @@ const handleRejectAgreement = () => {
 .feature-action {
   width: 30px;
   height: 30px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -674,32 +676,8 @@ const handleRejectAgreement = () => {
 }
 
 .playlist-source-tabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--control-muted-bg);
-}
-
-.playlist-source-btn {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 8px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.playlist-source-btn:hover {
-  color: var(--color-text-main);
-  background: var(--control-hover-bg);
-}
-
-.playlist-source-btn.active {
-  color: var(--color-text-main);
-  background: var(--content-selected-bg);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --custom-tab-width: 200px;
+  flex-shrink: 0;
 }
 
 .section-placeholder {
@@ -724,23 +702,17 @@ const handleRejectAgreement = () => {
 .style-play-btn {
   height: 34px;
   padding: 0 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   font-size: 12px;
   font-weight: 700;
 }
 
-.style-play-btn:hover {
-  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-}
-
 .style-recommend-panel {
   border: 1px solid var(--content-panel-border);
-  border-radius: 14px;
+  border-radius: var(--radius-popover);
   background: var(--content-panel-bg);
   padding: 14px;
 }
@@ -769,33 +741,9 @@ const handleRejectAgreement = () => {
 }
 
 .style-category-tabs {
+  --custom-tab-width: 320px;
+  max-width: 100%;
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--control-muted-bg);
-}
-
-.style-category-btn {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 8px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.style-category-btn:hover {
-  color: var(--color-text-main);
-  background: var(--control-hover-bg);
-}
-
-.style-category-btn.active {
-  color: var(--color-text-main);
-  background: var(--content-selected-bg);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
 .style-tag-row {
@@ -815,7 +763,7 @@ const handleRejectAgreement = () => {
 .style-tag-btn {
   height: 32px;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   padding: 0 12px;
   border: 1px solid transparent;
   font-size: 12px;
@@ -869,8 +817,7 @@ const handleRejectAgreement = () => {
   }
 
   .style-category-tabs {
-    width: 100%;
-    overflow-x: auto;
+    --custom-tab-width: 100%;
   }
 }
 @media (prefers-reduced-motion: reduce) {

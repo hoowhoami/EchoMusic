@@ -95,7 +95,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
         <Button
           variant="unstyled"
           size="none"
-          class="more-trigger"
+          class="action-icon titlebar-icon-action more-trigger"
           tooltip="更多"
           tooltip-side="bottom"
           aria-label="更多"
@@ -119,7 +119,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
             <span>更多应用</span>
             <button
               type="button"
-              class="titlebar-reset app-focus-ring-soft"
+              class="titlebar-reset soft-secondary-action app-focus-ring-soft"
               @click="settings.titlebarLayout = emptyTitlebarLayout()"
             >
               恢复默认
@@ -149,7 +149,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
               <Button
                 variant="unstyled"
                 size="none"
-                class="titlebar-pin"
+                class="action-icon titlebar-pin"
                 :class="{ pinned: item.placement === 'toolbar' }"
                 :aria-pressed="item.placement === 'toolbar'"
                 :aria-label="`${item.placement === 'toolbar' ? '取消固定' : '固定'}${item.title}`"
@@ -180,18 +180,13 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   /* 浮层以按钮为定位锚点，按压时保持几何尺寸不变。 */
   scale: none;
   transform: none;
-  transition:
-    background-color 0.12s ease,
-    color 0.12s ease;
   width: 34px;
   height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  color: var(--icon-main);
+  border-radius: var(--radius-control);
 }
-.more-trigger:hover,
 .more-trigger[data-state='open'] {
   background: var(--control-hover-bg);
 }
@@ -215,7 +210,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   outline: none;
   -webkit-app-region: no-drag;
   padding: 6px;
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   background: var(--floating-surface-bg);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
@@ -244,7 +239,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   gap: 10px;
   min-height: 40px;
   padding: 9px 10px;
-  border-radius: 7px;
+  border-radius: var(--radius-popover);
   font-size: 13px;
   color: var(--color-text-main);
   outline: none;
@@ -275,7 +270,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   display: flex;
   align-items: center;
   gap: 2px;
-  border-radius: 7px;
+  border-radius: var(--radius-item);
 }
 .titlebar-more-heading {
   display: flex;
@@ -293,7 +288,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   flex: 0 0 32px;
   width: 32px;
   height: 32px;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
 }
 .titlebar-pin:hover {
@@ -320,19 +315,14 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
 }
 .titlebar-reset {
   flex-shrink: 0;
-  padding: 4px 6px;
-  margin-right: -6px;
+  min-height: 28px;
+  padding: 4px 8px;
   font-weight: 400;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   font-size: 12px;
   text-align: left;
-  color: var(--color-text-secondary);
-  background: transparent;
   border: 0;
   cursor: pointer;
-}
-.titlebar-reset:hover {
-  color: var(--color-primary-text);
 }
 .titlebar-more-empty {
   padding: 12px;

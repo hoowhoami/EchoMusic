@@ -137,7 +137,7 @@ const restoreDefaults = () =>
       </div>
     </div>
     <button
-      class="reset-btn"
+      class="reset-btn soft-secondary-action app-focus-ring-soft"
       type="button"
       :class="{ invisible: !hasCustomTextStyle }"
       @click="restoreDefaults"

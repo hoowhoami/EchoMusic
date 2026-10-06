@@ -344,6 +344,7 @@ defineExpose({
           :border-radius="0"
           alt="歌曲封面"
           class="portrait-cover-fallback"
+          :show-border="false"
         />
         <img
           v-for="(_, layerIndex) in portraitLayers"

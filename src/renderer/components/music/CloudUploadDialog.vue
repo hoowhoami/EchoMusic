@@ -992,11 +992,11 @@ const statusLabel = (item: CloudUploadItem) => {
 
     <template #footer>
       <template v-if="step === 'pick'">
-        <Button variant="ghost" size="sm" :disabled="picking" @click="closeDialog">取消</Button>
+        <Button variant="secondary" size="sm" :disabled="picking" @click="closeDialog">取消</Button>
       </template>
       <template v-else-if="step === 'manual-search'">
         <Button
-          variant="ghost"
+          variant="secondary"
           size="sm"
           @click="
             step = 'pick';
@@ -1004,7 +1004,7 @@ const statusLabel = (item: CloudUploadItem) => {
           "
           >返回</Button
         >
-        <Button variant="ghost" size="sm" @click="closeDialog">取消</Button>
+        <Button variant="secondary" size="sm" @click="closeDialog">取消</Button>
       </template>
       <template v-else>
         <div class="cloud-upload-footer-content">
@@ -1019,7 +1019,7 @@ const statusLabel = (item: CloudUploadItem) => {
               {{ doneCount + failedCount }} / {{ items.length }}
             </span>
           </div>
-          <Button v-if="isUploading" variant="ghost" size="sm" @click="handleCancel">
+          <Button v-if="isUploading" variant="secondary" size="sm" @click="handleCancel">
             取消上传
           </Button>
           <Button
@@ -1063,7 +1063,7 @@ const statusLabel = (item: CloudUploadItem) => {
       </label>
     </div>
     <template #footer>
-      <Button variant="ghost" size="sm" type="button" @click="cancelBackgroundUpload">
+      <Button variant="secondary" size="sm" type="button" @click="cancelBackgroundUpload">
         留在本页
       </Button>
       <Button variant="primary" size="sm" @click="confirmBackgroundUpload">我知道了</Button>
@@ -1075,7 +1075,7 @@ const statusLabel = (item: CloudUploadItem) => {
 @reference "@/style.css";
 
 .cloud-upload-option {
-  @apply flex items-center gap-3 p-3.5 rounded-[10px] border transition-all active:scale-[0.98] select-none;
+  @apply flex items-center gap-3 p-3.5 rounded-card border transition-all active:scale-[0.98] select-none;
   border-color: var(--border-subtle);
   background: var(--control-muted-bg);
 }
@@ -1096,7 +1096,7 @@ const statusLabel = (item: CloudUploadItem) => {
 }
 
 .cloud-upload-option-icon {
-  @apply flex items-center justify-center w-10 h-10 rounded-[8px] shrink-0;
+  @apply flex items-center justify-center w-10 h-10 rounded-control shrink-0;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   color: var(--color-primary-text);
 }
@@ -1143,7 +1143,7 @@ const statusLabel = (item: CloudUploadItem) => {
 }
 
 .cloud-upload-row {
-  @apply flex items-center gap-2.5 px-2 py-2 rounded-[8px];
+  @apply flex items-center gap-2.5 px-2 py-2 rounded-control;
 }
 
 .cloud-upload-row:hover {
@@ -1179,7 +1179,7 @@ const statusLabel = (item: CloudUploadItem) => {
 }
 
 .cloud-manual-file-info {
-  @apply px-2 py-1.5 rounded-[6px];
+  @apply px-2 py-1.5 rounded-control;
   background: var(--control-muted-bg);
 }
 
@@ -1188,7 +1188,7 @@ const statusLabel = (item: CloudUploadItem) => {
 }
 
 .cloud-manual-input {
-  @apply w-full px-3 py-2 text-[13px] rounded-[8px] outline-none transition-colors;
+  @apply w-full px-3 py-2 text-[13px] rounded-control outline-none transition-colors;
   background: var(--control-muted-bg);
   border: 1px solid var(--border-subtle);
   color: var(--color-text-main);
@@ -1218,7 +1218,7 @@ const statusLabel = (item: CloudUploadItem) => {
 }
 
 .cloud-manual-result-row {
-  @apply flex items-center gap-2.5 px-2 py-2 rounded-[8px] cursor-pointer transition-colors;
+  @apply flex items-center gap-2.5 px-2 py-2 rounded-control cursor-pointer transition-colors;
 }
 
 .cloud-manual-result-row:hover {

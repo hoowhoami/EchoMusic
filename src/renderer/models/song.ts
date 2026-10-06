@@ -69,6 +69,8 @@ export interface Song {
   payType?: number;
   oldCpy?: number;
   relateGoods?: SongRelateGood[];
+  /** 歌单 trans_param.qualitymap.attr0：仅用于展示音质标签，不作为播放 hash。 */
+  qualityMap?: number;
   isOriginal?: boolean;
   recDesc?: string;
   similarDesc?: string;

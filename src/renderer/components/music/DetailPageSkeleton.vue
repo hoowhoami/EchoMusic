@@ -132,18 +132,6 @@ withDefaults(defineProps<Props>(), {
   gap: 12px;
 }
 
-.detail-page-skeleton-badge {
-  flex-shrink: 0;
-  padding: 3px 8px;
-  border: 0.5px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-primary-text);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 1.2px;
-}
-
 .detail-page-skeleton-meta {
   display: flex;
   flex: 1;

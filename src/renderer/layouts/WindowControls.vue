@@ -82,7 +82,7 @@ onUnmounted(() => {
       v-if="showMiniPlayer"
       variant="unstyled"
       size="none"
-      class="window-action"
+      class="titlebar-icon-action window-action"
       tooltip="mini 模式"
       aria-label="打开 mini 播放器"
       @click="openMiniPlayer"
@@ -93,7 +93,7 @@ onUnmounted(() => {
       v-if="!isMac && settings.showFullscreenButton"
       variant="unstyled"
       size="none"
-      class="window-action"
+      class="titlebar-icon-action window-action"
       :tooltip="isFullscreen ? '退出全屏 (F11)' : '全屏 (F11)'"
       aria-label="切换全屏"
       @click="toggleFullscreen"
@@ -110,7 +110,7 @@ onUnmounted(() => {
       <Button
         variant="unstyled"
         size="none"
-        class="window-caption-button"
+        class="titlebar-icon-action window-caption-button"
         tooltip="最小化"
         tooltip-side="bottom"
         aria-label="最小化窗口"
@@ -121,7 +121,7 @@ onUnmounted(() => {
       <Button
         variant="unstyled"
         size="none"
-        class="window-caption-button"
+        class="titlebar-icon-action window-caption-button"
         :tooltip="maximized ? '还原' : '最大化'"
         tooltip-side="bottom"
         :aria-label="maximized ? '还原窗口' : '最大化窗口'"
@@ -132,7 +132,7 @@ onUnmounted(() => {
       <Button
         variant="unstyled"
         size="none"
-        class="window-caption-button window-caption-close"
+        class="titlebar-icon-action window-caption-button window-caption-close"
         tooltip="关闭"
         tooltip-side="bottom"
         aria-label="关闭窗口"
@@ -162,16 +162,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 默认态与顶栏其他按钮（.titlebar-action / .more-trigger）一致：次级色，hover 提亮。
-     歌词页通过 --window-action-color / --window-action-hover-color 覆盖为白色系。 */
-  color: var(--window-action-color, var(--color-text-secondary));
+  /* 与标题栏其他按钮共用前景角色；播放页使用自身的窗口按钮颜色。 */
   background: transparent;
-  transition:
-    color 0.2s,
-    background-color 0.2s;
-}
-.window-action:hover {
-  color: var(--window-action-hover-color, var(--color-text-main));
 }
 .window-caption-controls {
   flex-shrink: 0;
@@ -186,18 +178,9 @@ onUnmounted(() => {
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: 6px;
-  color: var(--window-action-color, var(--color-text-secondary));
+  border-radius: var(--radius-control);
   background: transparent;
   -webkit-app-region: no-drag;
-}
-.window-caption-button:hover {
-  color: var(--window-action-hover-color, var(--color-text-main));
-  background: var(--control-hover-bg);
-}
-.window-caption-close:hover {
-  color: #fff;
-  background: #c42b1c;
 }
 @container main-titlebar (max-width: 400px) {
   /* At extreme zoom, caption controls take priority over optional tools. */

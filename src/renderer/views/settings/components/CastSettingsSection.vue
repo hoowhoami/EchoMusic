@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Switch from '@/components/ui/Switch.vue';
-import { iconCast, iconLoader2, iconRefreshCw, iconTrash } from '@/icons';
+import { iconCast, iconLoader2 } from '@/icons';
 import { useOutputStore, type OutputTargetView } from '@/stores/output';
 import { useSettingStore } from '@/stores/setting';
 import SettingsSectionShell from './SettingsSectionShell.vue';
@@ -136,27 +136,14 @@ function submitPin(): void {
           :disabled="output.busy"
           @click="output.useLocal()"
         >
-          <Icon
-            v-if="output.switchingLocal"
-            :icon="iconLoader2"
-            width="14"
-            height="14"
-            class="animate-spin"
-          />
           {{ output.switchingLocal ? '停止中' : '停止投放' }}
         </button>
         <button
           type="button"
-          class="settings-action settings-action-primary"
+          class="settings-action"
           :disabled="output.busy || output.searching || !settingStore.networkPlaybackEnabled"
           @click="output.refresh()"
         >
-          <Icon
-            :icon="iconRefreshCw"
-            width="14"
-            height="14"
-            :class="{ 'animate-spin': output.searching }"
-          />
           {{ output.searching ? '搜索中' : '刷新' }}
         </button>
       </div>
@@ -259,7 +246,6 @@ function submitPin(): void {
         class="settings-action settings-action-danger"
         @click="output.clearRecords()"
       >
-        <Icon :icon="iconTrash" width="14" height="14" />
         清除
       </button>
     </div>
@@ -347,7 +333,7 @@ function submitPin(): void {
   min-height: 0;
   padding: 10px;
   border: 1px solid var(--control-border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--control-muted-bg) 64%, transparent);
 }
 
@@ -383,7 +369,7 @@ function submitPin(): void {
   min-height: 38px;
   padding: 0 9px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   background: var(--floating-surface-bg);
   color: inherit;
   cursor: pointer;
@@ -457,7 +443,7 @@ function submitPin(): void {
 .cast-pin input {
   width: 6rem;
   border: 1px solid var(--control-border);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   color: inherit;
   padding: 6px 8px;

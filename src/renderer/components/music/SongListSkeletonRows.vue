@@ -89,7 +89,7 @@ const rowGridTemplate = computed(() =>
   align-items: center;
   width: 100%;
   min-height: 60px;
-  border-radius: 10px;
+  border-radius: var(--radius-item);
   box-sizing: border-box;
 }
 

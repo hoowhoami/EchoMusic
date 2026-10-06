@@ -29,7 +29,7 @@
   margin-left: auto;
   width: 28px;
   height: 28px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -54,7 +54,7 @@
   align-items: center;
   gap: 6px;
   min-height: 32px;
-  border-radius: 16px;
+  border-radius: var(--radius-item);
   background: color-mix(in srgb, var(--color-text-main) 10%, transparent);
   color: var(--color-text-main);
   font-size: 12px;
@@ -111,7 +111,7 @@
 .search-hot-card {
   min-width: 0;
   padding: 20px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
 }
 .search-hot-card-title {
@@ -141,7 +141,7 @@
   min-height: 40px;
   gap: 8px;
   padding: 8px 4px;
-  border-radius: 6px;
+  border-radius: var(--radius-item);
   text-align: left;
   color: var(--color-text-secondary);
   transition:
@@ -174,15 +174,6 @@
   white-space: nowrap;
   font-size: 13px;
   line-height: 22px;
-}
-.search-hot-badge {
-  flex-shrink: 0;
-  padding: 0 3px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  color: var(--color-primary-text);
-  font-size: 10px;
-  line-height: 17px;
 }
 .search-hot-empty {
   padding: 18px 0;
@@ -239,7 +230,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 0;
+  /* The results container already supplies the 16px gap below the tabs. */
+  padding: 0 0 8px;
 }
 .search-song-title-wrap {
   display: flex;
@@ -255,7 +247,7 @@
   align-items: center;
   justify-content: center;
   color: var(--color-on-primary);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--color-primary) 92%, white),

@@ -1280,3 +1280,42 @@ test('round18: old leave UI completion cannot close a new confirmation after roo
   await old;
   assert.equal(f.view.leaveOpen.value, true);
 });
+
+test('shared source tabs use the visible room-role options and preserve picker invalidation', async (t) => {
+  const f = pageFixture(t);
+  await f.enter('guest-room', '9');
+  // The shared fixture detail API returns the current user as owner by default.
+  f.store.activeRoom = { ...f.store.activeRoom, ownerId: '9' };
+  f.view.openOrderSongPicker();
+  assert.deepEqual(
+    f.view.visibleOrderSongSources.value.map((source) => source.id),
+    ['recent', 'mine', 'search'],
+  );
+  f.view.selectedOrderSongKeys.value = new Set(['old']);
+  f.view.orderPlaylistSongs.value = [song('old')];
+  f.view.selectOrderSongSourceTab(2);
+  await flush();
+  assert.equal(f.view.orderSongSource.value, 'search');
+  assert.equal(f.view.selectedOrderSongKeys.value.size, 0);
+  assert.deepEqual(f.view.orderPlaylistSongs.value, []);
+  f.view.selectOrderSongSourceTab(4);
+  assert.equal(f.view.orderSongSource.value, 'search');
+  await f.enter('owned-room', '7');
+  f.view.openOrderSongPicker();
+  let loads = 0;
+  f.playlist.fetchUserPlaylists = async () => {
+    loads++;
+  };
+  f.view.selectOrderSongSourceTab(2);
+  await flush();
+  assert.equal(f.view.orderSongSource.value, 'created');
+  assert.equal(loads, 1);
+});
+
+test('shared room-scope tabs still gate private rooms on login', async (t) => {
+  const f = pageFixture(t);
+  f.user.isLoggedIn = false;
+  f.view.selectRoomScope('mine');
+  assert.equal(f.view.roomScope.value, 'discover');
+  assert.equal(f.calls.notices.at(-1)[0], 'showAction');
+});

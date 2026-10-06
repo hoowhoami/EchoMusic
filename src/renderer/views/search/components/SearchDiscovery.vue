@@ -36,7 +36,7 @@ const emit = defineEmits<{
             variant="unstyled"
             size="none"
             type="button"
-            class="search-history-clear"
+            class="action-icon search-history-clear"
             @click="emit('clearHistory')"
           >
             <Icon :icon="iconTrash" width="16" height="16" />

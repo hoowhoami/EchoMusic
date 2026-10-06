@@ -911,7 +911,7 @@ watch(
   min-width: 0;
   max-width: 100%;
   padding: 6px 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   cursor: default;
   transition: opacity 0.22s ease;
   position: relative;
@@ -948,7 +948,7 @@ watch(
   align-items: center;
   gap: 3px;
   padding: 5px 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-item);
   background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
   font-size: 12px;

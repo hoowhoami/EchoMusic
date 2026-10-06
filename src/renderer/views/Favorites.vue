@@ -583,7 +583,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 @click="handlePlayAll"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
+                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>
@@ -591,7 +591,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 @click="openBatchDrawer"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -615,27 +615,27 @@ watch(
                 <div class="flex items-center justify-between h-14">
                   <TabsList class="favorites-tab-list bg-transparent border-none gap-8">
                     <TabsTrigger value="songs">
-                      <span class="relative">歌曲 <Badge :count="songs.length" /></span>
+                      <span class="badge-label">歌曲 <Badge :count="songs.length" /></span>
                     </TabsTrigger>
                     <TabsTrigger value="singers">
-                      <span class="relative"
+                      <span class="badge-label"
                         >歌手
                         <Badge v-if="followedSingers.length > 0" :count="followedSingers.length"
                       /></span>
                     </TabsTrigger>
                     <TabsTrigger value="users">
-                      <span class="relative"
+                      <span class="badge-label"
                         >用户 <Badge v-if="followedUsers.length > 0" :count="followedUsers.length"
                       /></span>
                     </TabsTrigger>
                     <TabsTrigger value="albums">
-                      <span class="relative"
+                      <span class="badge-label"
                         >专辑
                         <Badge v-if="favoritedAlbums.length > 0" :count="favoritedAlbums.length"
                       /></span>
                     </TabsTrigger>
                     <TabsTrigger value="videos">
-                      <span class="relative"
+                      <span class="badge-label"
                         >视频 <Badge v-if="videos.length > 0" :count="videos.length"
                       /></span>
                     </TabsTrigger>
@@ -644,9 +644,10 @@ watch(
                   <!-- 歌曲 tab 右侧操作 -->
                   <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
                     <Button
+                      class="action-icon song-sort-btn"
                       v-if="playlistOrderTarget"
-                      variant="ghost"
-                      size="sm"
+                      variant="soft-secondary"
+                      size="none"
                       tooltip="调整歌曲顺序"
                       @click="showPlaylistOrder = true"
                     >
@@ -657,7 +658,7 @@ watch(
                       variant="unstyled"
                       size="none"
                       @click="handleLocate"
-                      class="song-locate-btn p-2 rounded-lg"
+                      class="action-icon song-locate-btn p-2"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="18" height="18" />

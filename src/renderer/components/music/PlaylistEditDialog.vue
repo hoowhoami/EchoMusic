@@ -243,7 +243,7 @@ onBeforeUnmount(() => {
           alt="所选封面预览"
           class="h-24 w-24 shrink-0 rounded-xl object-cover"
         />
-        <Cover v-else :url="initialCoverUrl" :width="96" :height="96" :border-radius="12" />
+        <Cover v-else :url="initialCoverUrl" :width="96" :height="96" />
         <div class="edit-cover-options">
           <span>支持 JPG、PNG、WebP，最大 8 MB</span>
           <span class="text-[var(--state-warning)]">保存后仅可更换，无法恢复自动封面</span>
@@ -287,7 +287,7 @@ onBeforeUnmount(() => {
     </fieldset>
     <p v-if="error" class="edit-error" role="alert">{{ error }}</p>
     <template #footer>
-      <Button v-if="error" variant="ghost" size="xs" :disabled="saving || loading" @click="load"
+      <Button v-if="error" variant="secondary" size="xs" :disabled="saving || loading" @click="load"
         >重新加载</Button
       >
       <div class="flex-1" />
@@ -320,11 +320,11 @@ onBeforeUnmount(() => {
   height: 36px;
   padding: 0 12px;
   font-size: 13px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 .edit-field :deep(textarea) {
   min-height: 88px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 .edit-cover-preview {
   display: flex;

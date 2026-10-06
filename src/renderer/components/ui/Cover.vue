@@ -12,6 +12,7 @@ interface Props {
   height?: string | number;
   borderRadius?: string | number;
   showShadow?: boolean;
+  showBorder?: boolean;
   alt?: string;
   class?: string;
 }
@@ -19,8 +20,9 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   url: '',
   size: 400,
-  borderRadius: 12,
+  borderRadius: 'var(--radius-media, 6px)',
   showShadow: false,
+  showBorder: true,
   alt: 'cover',
   class: '',
 });
@@ -94,6 +96,7 @@ const containerStyle = computed(() => {
   <div
     :class="[
       'cover-container relative overflow-hidden bg-[var(--control-muted-bg)] flex items-center justify-center',
+      showBorder ? 'cover-bordered' : '',
       showShadow ? 'shadow-xl shadow-black/20' : '',
       props.class,
     ]"
@@ -142,5 +145,17 @@ const containerStyle = computed(() => {
 .cover-container {
   -webkit-mask-image: -webkit-radial-gradient(white, black);
   backface-visibility: hidden;
+}
+
+/* Draw above the artwork so the edge survives opaque images and placeholders.
+ * An inset outline keeps the media's dimensions and inherited radius intact. */
+.cover-bordered::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-main) 18%, transparent);
+  pointer-events: none;
 }
 </style>

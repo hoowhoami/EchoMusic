@@ -20,7 +20,7 @@ defineProps<{ name: string }>();
   align-items: center;
   max-width: 100%;
   padding: 1px 7px;
-  border-radius: 5px;
+  border-radius: var(--radius-detail);
   border: 1px solid var(--border-subtle);
   background: var(--control-muted-bg);
   min-width: 0;

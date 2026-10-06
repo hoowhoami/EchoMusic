@@ -51,7 +51,7 @@ const clear = () => {
       v-if="model"
       variant="unstyled"
       size="none"
-      class="song-search-clear"
+      class="action-icon song-search-clear"
       aria-label="清除搜索"
       @mousedown.prevent
       @click="clear"

@@ -131,7 +131,13 @@ const handleInteractOutside = (event: Event) => {
 
           <!-- 关闭按钮 -->
           <DialogClose v-if="props.showClose" as-child>
-            <Button class="dialog-close" variant="ghost" size="xs" type="button" aria-label="关闭">
+            <Button
+              class="action-icon dialog-close"
+              variant="ghost"
+              size="xs"
+              type="button"
+              aria-label="关闭"
+            >
               <Icon :icon="iconX" width="14" height="14" />
             </Button>
           </DialogClose>
@@ -222,7 +228,7 @@ const handleInteractOutside = (event: Event) => {
 }
 
 :global(.dialog-content) {
-  @apply fixed w-[420px] max-w-[92vw] rounded-xl border flex flex-col select-none;
+  @apply fixed w-[420px] max-w-[92vw] rounded-dialog border flex flex-col select-none;
   @apply max-h-[calc(100vh-240px)];
   /*
    * 用自动外边距将弹窗放在可视区 46% 高度，避免百分比 translate 产生半物理像素。

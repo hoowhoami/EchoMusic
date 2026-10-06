@@ -71,7 +71,7 @@ const handleResetBoth = (command: ShortcutCommand) => {
             />
             <button
               v-if="hasShortcutValue(item.command, 'local')"
-              class="shortcut-input-clear"
+              class="action-icon shortcut-input-clear"
               type="button"
               aria-label="清除快捷键"
               @click.stop="clearShortcut(item.command, 'local')"
@@ -97,7 +97,7 @@ const handleResetBoth = (command: ShortcutCommand) => {
             />
             <button
               v-if="settingStore.globalShortcutsEnabled && hasShortcutValue(item.command, 'global')"
-              class="shortcut-input-clear"
+              class="action-icon shortcut-input-clear"
               type="button"
               aria-label="清除全局快捷键"
               @click.stop="clearShortcut(item.command, 'global')"

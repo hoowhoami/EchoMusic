@@ -2,6 +2,7 @@
 import { setOpenThemesHandler } from '@/theme/registry';
 import { settingsDialogOpen } from '@/composables/useSettingsDialog';
 import { useLyricPageTransition } from '@/composables/useLyricPageTransition';
+import { loadLyricPage } from '@/views/lyric/loaders';
 import { setupStartupPluginUpdateCheck } from '@/stores/pluginUpdates';
 let disposePluginUpdateCheck: (() => void) | undefined;
 import TooltipScope from '@/components/ui/TooltipScope.vue';
@@ -54,7 +55,7 @@ const KugouVerificationFlow = defineAsyncComponent(
   () => import('@/components/app/KugouVerificationFlow.vue'),
 );
 const UpdateDialog = defineAsyncComponent(() => import('@/components/app/UpdateDialog.vue'));
-const LyricView = defineAsyncComponent(() => import('@/views/lyric/LyricPage.vue'));
+const LyricView = defineAsyncComponent(loadLyricPage);
 const route = useRoute();
 const router = useRouter();
 const player = shallowRef<PlayerStore | null>(null);

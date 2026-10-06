@@ -49,7 +49,7 @@ defineEmits<{ retry: [] }>();
   margin-bottom: 20px;
   place-items: center;
   border: 1px solid var(--border-subtle);
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   color: var(--color-text-secondary);
 }
@@ -76,7 +76,7 @@ defineEmits<{ retry: [] }>();
   width: 40px;
   height: 40px;
   margin-bottom: 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
 }
 
 .detail-page-error.is-compact h2 {

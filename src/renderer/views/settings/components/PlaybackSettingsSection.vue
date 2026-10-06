@@ -2,6 +2,7 @@
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { computed, ref } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useSettingStore } from '@/stores/setting';
 import { usePlayerStore } from '@/stores/player';
 import { useToastStore } from '@/stores/toast';
@@ -11,9 +12,10 @@ import Slider from '@/components/ui/Slider.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
 import Select from '@/components/ui/Select.vue';
 import Button from '@/components/ui/Button.vue';
+import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import { Icon } from '@iconify/vue';
-import { iconCheckMark, iconPencil, iconPlayerPlay, iconPlus, iconTrash, iconX } from '@/icons';
+import { iconCheckMark, iconPencil, iconPlayerPlay, iconTrash, iconX } from '@/icons';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { audioQualityOptions, sectionTitles } from '../constants';
 import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../../../shared/audio';
@@ -25,6 +27,8 @@ import {
 } from '../../../../shared/trackTransition';
 
 const settingStore = useSettingStore();
+const { impulseResponseEnabled, impulseResponseFiles, selectedImpulseResponseId } =
+  storeToRefs(settingStore);
 const playerStore = usePlayerStore();
 const toastStore = useToastStore();
 const isImportingImpulseResponse = ref(false);
@@ -390,12 +394,11 @@ const handleRemoveImpulseResponse = (id: string) => {
             type="button"
             @click="openImpulseResponseDialog"
           >
-            <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
             添加
           </Button>
           <Switch
-            :model-value="settingStore.impulseResponseEnabled"
-            :disabled="settingStore.impulseResponseFiles.length === 0"
+            :model-value="impulseResponseEnabled"
+            :disabled="impulseResponseFiles.length === 0"
             @update:model-value="handleImpulseResponseEnabledChange"
           />
         </div>
@@ -407,35 +410,29 @@ const handleRemoveImpulseResponse = (id: string) => {
         showClose
         :content-style="{ width: '420px' }"
       >
-        <div class="irs-source-tabs" role="tablist" aria-label="音效文件来源">
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="activeImpulseResponseSourceTab === 'local'"
-            :class="{ 'is-active': activeImpulseResponseSourceTab === 'local' }"
-            @click="activeImpulseResponseSourceTab = 'local'"
-          >
-            <span>用户导入</span>
-            <span class="irs-source-count">{{ localImpulseResponseFiles.length }}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="activeImpulseResponseSourceTab === 'community'"
-            :class="{ 'is-active': activeImpulseResponseSourceTab === 'community' }"
-            @click="activeImpulseResponseSourceTab = 'community'"
-          >
-            <span>在线下载</span>
-            <span class="irs-source-count">{{ communityAudioEffects.length }}</span>
-          </button>
-        </div>
+        <CustomTabBar
+          class="irs-source-tabs"
+          :tabs="['用户导入', '在线下载']"
+          :model-value="activeImpulseResponseSourceTab === 'local' ? 0 : 1"
+          aria-label="音效文件来源"
+          @update:model-value="
+            activeImpulseResponseSourceTab = $event === 0 ? 'local' : 'community'
+          "
+        >
+          <template #tab="{ label, index }">
+            <span>{{ label }}</span>
+            <span class="irs-source-count">{{
+              index === 0 ? localImpulseResponseFiles.length : communityAudioEffects.length
+            }}</span>
+          </template>
+        </CustomTabBar>
 
         <div v-if="activeImpulseResponseFiles.length > 0" class="irs-list">
           <div
             v-for="file in activeImpulseResponseFiles"
             :key="file.id"
             class="irs-file-row"
-            :class="{ 'is-active': file.id === settingStore.selectedImpulseResponseId }"
+            :class="{ 'is-active': file.id === selectedImpulseResponseId }"
           >
             <span class="irs-file-main">
               <input
@@ -455,7 +452,7 @@ const handleRemoveImpulseResponse = (id: string) => {
               <template #trigger>
                 <button
                   type="button"
-                  class="irs-row-btn"
+                  class="action-icon irs-row-btn"
                   aria-label="保存名称"
                   @click.stop="commitRenameImpulseResponse(file.id)"
                 >
@@ -467,7 +464,7 @@ const handleRemoveImpulseResponse = (id: string) => {
               <template #trigger>
                 <button
                   type="button"
-                  class="irs-row-btn"
+                  class="action-icon irs-row-btn"
                   aria-label="取消重命名"
                   @click.stop="cancelRenameImpulseResponse"
                 >
@@ -479,7 +476,7 @@ const handleRemoveImpulseResponse = (id: string) => {
               <template #trigger>
                 <button
                   type="button"
-                  class="irs-row-btn"
+                  class="action-icon irs-row-btn"
                   aria-label="重命名"
                   @click.stop="beginRenameImpulseResponse(file)"
                 >
@@ -491,7 +488,7 @@ const handleRemoveImpulseResponse = (id: string) => {
               <template #trigger>
                 <button
                   type="button"
-                  class="irs-row-btn is-danger"
+                  class="action-icon irs-row-btn is-danger"
                   aria-label="移除音效文件"
                   @click.stop="handleRemoveImpulseResponse(file.id)"
                 >
@@ -508,13 +505,12 @@ const handleRemoveImpulseResponse = (id: string) => {
         <template #footer>
           <Button
             v-if="activeImpulseResponseSourceTab === 'local'"
-            variant="outline"
+            variant="primary"
             size="sm"
             type="button"
             :loading="isImportingImpulseResponse"
             @click="handleImportImpulseResponse"
           >
-            <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
             导入音效文件
           </Button>
           <span v-else class="irs-community-hint"
@@ -600,38 +596,7 @@ const handleRemoveImpulseResponse = (id: string) => {
 }
 
 .irs-source-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px;
   margin-bottom: 14px;
-  padding: 3px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
-}
-
-.irs-source-tabs button {
-  display: flex;
-  height: 32px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.irs-source-tabs button:hover {
-  color: var(--color-text-main);
-}
-
-.irs-source-tabs button.is-active {
-  background: var(--content-selected-bg);
-  color: var(--color-primary-text);
-  box-shadow: var(--shadow-control);
 }
 
 .irs-source-count {
@@ -641,7 +606,7 @@ const handleRemoveImpulseResponse = (id: string) => {
   align-items: center;
   justify-content: center;
   padding: 0 5px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   background: color-mix(in srgb, currentColor 10%, transparent);
   font-size: 10px;
 }
@@ -658,7 +623,7 @@ const handleRemoveImpulseResponse = (id: string) => {
   min-height: 52px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
   background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   padding: 0 10px 0 14px;
   display: flex;
   align-items: center;
@@ -693,7 +658,7 @@ const handleRemoveImpulseResponse = (id: string) => {
   width: 100%;
   min-width: 0;
   height: 30px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
   background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
   padding: 0 8px;
@@ -706,7 +671,7 @@ const handleRemoveImpulseResponse = (id: string) => {
 .irs-row-btn {
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -727,7 +692,7 @@ const handleRemoveImpulseResponse = (id: string) => {
 
 .irs-empty {
   height: 96px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px dashed color-mix(in srgb, var(--color-text-main) 16%, transparent);
   display: flex;
   align-items: center;

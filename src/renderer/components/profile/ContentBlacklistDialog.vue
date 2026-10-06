@@ -247,7 +247,7 @@ watch(activeTab, () => {
               <Button
                 variant="unstyled"
                 size="none"
-                class="blacklist-refresh-button"
+                class="action-icon blacklist-refresh-button"
                 :disabled="bucket.loading || Boolean(removingKey)"
                 :tooltip="`刷新${activeMeta.title}`"
                 :aria-label="`刷新${activeMeta.title}`"
@@ -269,9 +269,9 @@ watch(activeTab, () => {
             >
               <span class="min-w-0 truncate">{{ bucket.error }}</span>
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="xs"
-                class="h-7 shrink-0 px-2 text-red-500"
+                class="h-7 shrink-0 px-2"
                 :disabled="bucket.loading"
                 @click="refreshCurrentTab"
               >
@@ -360,7 +360,7 @@ watch(activeTab, () => {
                     <Button
                       variant="ghost"
                       size="none"
-                      class="blacklist-entry-action"
+                      class="action-icon blacklist-entry-action"
                       :disabled="bucket.loading || Boolean(removingKey)"
                       :tooltip="
                         entry.label === 'song'
@@ -485,7 +485,7 @@ watch(activeTab, () => {
   flex: none;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
 }
 
@@ -501,7 +501,7 @@ watch(activeTab, () => {
   gap: 12px;
   margin-bottom: 8px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: rgb(239 68 68);
   background: rgb(239 68 68 / 8%);
   font-size: 12px;
@@ -541,7 +541,7 @@ watch(activeTab, () => {
   margin-bottom: 2px;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
 
@@ -557,7 +557,7 @@ watch(activeTab, () => {
   align-items: center;
   gap: 10px;
   padding: 7px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   transition: background-color 160ms ease;
 }
 
@@ -572,7 +572,7 @@ watch(activeTab, () => {
   flex: none;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
   background: var(--control-muted-bg);
 }
@@ -584,7 +584,7 @@ watch(activeTab, () => {
   flex: none;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
 }
 

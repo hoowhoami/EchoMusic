@@ -721,7 +721,7 @@ onBeforeUnmount(() => {
         </div>
         <Button
           type="button"
-          class="queue-icon-btn queue-close"
+          class="action-icon queue-icon-btn queue-close"
           variant="ghost"
           size="xs"
           tooltip="关闭"
@@ -742,7 +742,7 @@ onBeforeUnmount(() => {
             <template #trigger>
               <button
                 type="button"
-                class="queue-arrow-btn"
+                class="action-icon queue-arrow-btn"
                 :disabled="previewIndex === 0"
                 aria-label="上一队列"
                 @click="handleSwitchQueueByDirection(-1)"
@@ -766,7 +766,7 @@ onBeforeUnmount(() => {
             <template #trigger>
               <button
                 type="button"
-                class="queue-arrow-btn"
+                class="action-icon queue-arrow-btn"
                 :disabled="previewIndex === queueOptions.length - 1"
                 aria-label="下一队列"
                 @click="handleSwitchQueueByDirection(1)"
@@ -791,7 +791,7 @@ onBeforeUnmount(() => {
       <div class="queue-actions">
         <Button
           type="button"
-          class="queue-icon-btn"
+          class="action-icon queue-icon-btn"
           variant="ghost"
           size="xs"
           tooltip="回到顶部"
@@ -801,7 +801,7 @@ onBeforeUnmount(() => {
         </Button>
         <Button
           type="button"
-          class="queue-icon-btn"
+          class="action-icon queue-icon-btn"
           variant="ghost"
           size="xs"
           tooltip="定位当前歌曲"
@@ -811,7 +811,7 @@ onBeforeUnmount(() => {
         </Button>
         <Button
           type="button"
-          class="queue-icon-btn"
+          class="action-icon queue-icon-btn"
           variant="ghost"
           size="xs"
           :tooltip="isAddingToPlaylist ? '添加中...' : '添加到'"
@@ -823,7 +823,7 @@ onBeforeUnmount(() => {
 
         <Button
           type="button"
-          class="queue-icon-btn"
+          class="action-icon queue-icon-btn"
           variant="ghost"
           size="xs"
           :tooltip="
@@ -887,7 +887,7 @@ onBeforeUnmount(() => {
             <Button
               type="button"
               class="queue-inline-resume"
-              variant="secondary"
+              variant="soft-primary"
               size="xs"
               :tooltip="`继续播放 ${resolveResumeTrack(queue)?.title || '这首歌'}`"
               @click="handleResumePreviewQueue(resolveResumeTrack(queue))"
@@ -940,7 +940,7 @@ onBeforeUnmount(() => {
   top: var(--drawer-safe-top);
   right: 12px;
   bottom: var(--drawer-safe-bottom);
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   box-shadow: var(--shadow-dialog);
   overflow: hidden;
 }
@@ -998,7 +998,7 @@ onBeforeUnmount(() => {
   top: 0;
   left: 0;
   height: 2px;
-  border-radius: 2px;
+  border-radius: var(--radius-micro);
   background: var(--color-primary);
   transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   transform-origin: left;
@@ -1099,7 +1099,7 @@ onBeforeUnmount(() => {
   color: var(--icon-main);
   background: transparent;
   transition: color 0.18s ease;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
 }
 
 .queue-arrow-btn:hover:not(:disabled) {
@@ -1126,7 +1126,7 @@ onBeforeUnmount(() => {
   height: 32px;
   min-width: 32px;
   padding: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
 }
 
@@ -1208,7 +1208,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 0 10px;
   font-size: 12px;
 }
@@ -1246,7 +1246,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   padding: 0 8px 0 0;
-  border-radius: 10px;
+  border-radius: var(--radius-item);
   transition: background-color 0.2s ease;
   user-select: none;
   -webkit-user-select: none;
@@ -1279,7 +1279,7 @@ onBeforeUnmount(() => {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 6px;
   color: var(--color-text-main);
   opacity: 0;
@@ -1306,7 +1306,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   user-select: none;
   -webkit-user-select: none;
   cursor: grab;
@@ -1346,7 +1346,7 @@ onBeforeUnmount(() => {
   height: 28px;
   min-width: 28px;
   display: inline-flex;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   margin-left: auto;
   align-items: center;
   justify-content: center;

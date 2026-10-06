@@ -47,7 +47,7 @@ const valueText = computed(() => `${strengthLabel(props.modelValue)}，${props.m
   gap: 10px;
   min-width: 0;
   height: 48px;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
   isolation: isolate;
@@ -56,7 +56,7 @@ const valueText = computed(() => `${strengthLabel(props.modelValue)}，${props.m
   position: absolute;
   inset: 0 auto 0 0;
   z-index: -1;
-  border-radius: 13px;
+  border-radius: var(--radius-card);
   background: rgba(var(--color-primary-rgb), 0.2);
   pointer-events: none;
 }

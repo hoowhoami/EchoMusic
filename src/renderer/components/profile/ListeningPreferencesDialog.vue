@@ -137,7 +137,7 @@ watch(account, () => {
       <Button
         variant="ghost"
         size="xs"
-        class="preferences-refresh"
+        class="action-icon preferences-refresh"
         :disabled="!loaded || busy || dirty"
         aria-label="刷新听歌偏好"
         tooltip="刷新听歌偏好"
@@ -157,7 +157,7 @@ watch(account, () => {
         <div class="preferences-card-heading">
           <h4>推荐偏好</h4>
           <Button
-            variant="unstyled"
+            variant="soft-secondary"
             size="none"
             type="button"
             class="preferences-blacklist-button"
@@ -332,7 +332,7 @@ watch(account, () => {
   >
     <template #footer>
       <Button variant="outline" size="sm" @click="confirmDiscard = false">继续编辑</Button>
-      <Button size="sm" @click="discardAndClose">放弃修改</Button>
+      <Button variant="danger" size="sm" @click="discardAndClose">放弃修改</Button>
     </template>
   </Dialog>
 </template>
@@ -352,17 +352,10 @@ watch(account, () => {
   gap: 6px;
   min-height: 30px;
   padding: 5px 10px;
-  border: 1px solid var(--control-border);
-  border-radius: 9px;
-  background: transparent;
-  color: var(--color-text-secondary);
+  border-radius: var(--radius-control);
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
-}
-.preferences-blacklist-button:hover:not(:disabled) {
-  background: var(--control-hover-bg);
-  color: var(--color-text-main);
 }
 .preferences-body {
   display: grid;
@@ -373,7 +366,7 @@ watch(account, () => {
   min-width: 0;
   padding: 18px;
   border: 1px solid var(--content-panel-border);
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   background: var(--content-panel-bg);
 }
 .preferences-card h4 {
@@ -482,7 +475,7 @@ watch(account, () => {
   padding: 10px;
   border: 1px solid var(--control-border);
   background: var(--control-muted-bg);
-  border-radius: 11px;
+  border-radius: var(--radius-item);
   font-size: 12px;
   color: var(--color-text-main);
   font-weight: 500;
@@ -524,7 +517,7 @@ watch(account, () => {
   min-width: 0;
   padding: 8px 12px;
   border: 1px solid var(--content-panel-border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
 }
 .preferences-label {
   display: block;
@@ -562,7 +555,7 @@ watch(account, () => {
   justify-content: space-between;
   gap: 12px;
   padding: 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   font-size: 12px;
   line-height: 1.7;

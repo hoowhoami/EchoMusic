@@ -23,8 +23,8 @@ const handleClick = () => {
 </script>
 
 <template>
-  <div class="album-card group cursor-pointer" @click="handleClick">
-    <div class="card-container">
+  <div class="album-card card-hover group cursor-pointer" @click="handleClick">
+    <div class="card-container card-hover-border">
       <div class="cover-wrapper">
         <Cover :url="coverUrl" :size="coverSize" class="w-full h-full" />
       </div>
@@ -44,28 +44,15 @@ const handleClick = () => {
 <style scoped>
 @reference "@/style.css";
 
-.album-card {
-  @apply transition-all duration-300 ease-out;
-}
-
-.album-card:hover {
-  transform: scale(1.03);
-}
-
 .card-container {
-  @apply p-[10px] rounded-[20px] transition-all duration-300;
+  @apply p-[10px] rounded-card;
   background: var(--content-panel-bg);
   border: 1px solid var(--content-panel-border);
   box-shadow: var(--shadow-card);
 }
 
-.album-card:hover .card-container {
-  box-shadow: var(--shadow-card-hover);
-  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--border-subtle));
-}
-
 .cover-wrapper {
-  @apply aspect-square rounded-[14px] overflow-hidden shadow-sm;
+  @apply aspect-square rounded-media overflow-hidden shadow-sm;
 }
 
 .info-wrapper {

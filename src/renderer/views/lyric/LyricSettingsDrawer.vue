@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * 歌词页换肤 Drawer（右侧抽屉）
- * 强制深色毛玻璃风格，与歌词页沉浸式环境协调。
- * 皮肤设置统一由「全局设置 → 歌词设置 → 播放页」承接，这里只负责挑选皮肤。
+ * 跟随主题的弹层配色，与歌词页沉浸式环境协调。
+ * 挑选皮肤与对应设置由同一抽屉承接。
  */
 import { computed } from 'vue';
 import { useSettingStore } from '@/stores/setting';
@@ -132,7 +132,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
             v-if="view === 'settings'"
             variant="unstyled"
             size="none"
-            class="settings-header-action"
+            class="action-icon settings-header-action"
             tooltip="返回换肤"
             aria-label="返回换肤"
             @click="backToSkins"
@@ -142,14 +142,19 @@ const cardStyle = (skin: LyricSkin, index: number) => {
           <Button
             variant="unstyled"
             size="none"
-            class="settings-header-action"
+            class="action-icon settings-header-action"
             tooltip="全局设置"
             aria-label="全局设置"
             @click="emit('open-global-settings')"
           >
             <Icon :icon="iconSettings" width="17" height="17" />
           </Button>
-          <Button variant="unstyled" size="none" class="settings-close-btn" @click="close">
+          <Button
+            variant="unstyled"
+            size="none"
+            class="action-icon settings-close-btn"
+            @click="close"
+          >
             <Icon :icon="iconX" width="18" height="18" />
           </Button>
         </div>
@@ -167,7 +172,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
                   v-for="(skin, index) in group.skins"
                   :key="skin.key"
                   type="button"
-                  class="skin-card"
+                  class="skin-card card-hover card-hover-border"
                   :class="{
                     active: skin.key === activeSkinKey,
                     unavailable: !isSkinAvailable(skin),
@@ -213,7 +218,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
                     <SelectionBadge v-if="skin.key === activeSkinKey" class="skin-card-check" />
                     <span
                       v-if="skin.key === activeSkinKey"
-                      class="skin-card-settings"
+                      class="skin-card-settings selection-mark-surface"
                       aria-hidden="true"
                     >
                       <Icon :icon="iconSettings" width="13" height="13" />
@@ -252,9 +257,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   right: 12px !important;
   bottom: var(--drawer-safe-bottom) !important;
   width: min(360px, calc(100vw - 24px)) !important;
-  border-radius: 12px !important;
-  background: var(--lyric-settings-panel-bg, var(--color-bg-dialog)) !important;
-  border-color: var(--lyric-settings-panel-border, var(--border-subtle)) !important;
+  border-radius: var(--radius-popover) !important;
   box-shadow: var(--shadow-dialog) !important;
   overflow: hidden !important;
 }
@@ -268,15 +271,6 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   }
 }
 
-.dark .lyric-settings-panel {
-  --lyric-settings-panel-bg: color-mix(
-    in srgb,
-    var(--surface-elevated-base) 96%,
-    var(--surface-dialog-base) 4%
-  );
-  --lyric-settings-panel-border: rgba(255, 255, 255, 0.14);
-}
-
 .lyric-settings-overlay {
   background: var(--surface-scrim-bg) !important;
 }
@@ -285,9 +279,6 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 <style scoped>
 .settings-drawer {
   --lyric-settings-divider-border: var(--border-subtle);
-  --lyric-settings-card-bg: color-mix(in srgb, var(--surface-card-base) 96%, var(--text-main) 4%);
-  --lyric-settings-card-border: var(--border-subtle);
-  --lyric-settings-card-shadow: none;
 
   display: flex;
   flex-direction: column;
@@ -296,18 +287,6 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   color: var(--color-text-main);
   user-select: none;
   -webkit-user-select: none;
-}
-
-:global(.dark) .settings-drawer {
-  --lyric-settings-divider-border: rgba(255, 255, 255, 0.12);
-  --lyric-settings-card-bg: color-mix(
-    in srgb,
-    var(--surface-elevated-base) 88%,
-    var(--color-text-main) 12%
-  );
-  --lyric-settings-card-border: rgba(255, 255, 255, 0.16);
-  --lyric-settings-card-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 20px rgba(0, 0, 0, 0.12);
 }
 
 .settings-header {
@@ -345,7 +324,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   justify-content: center;
   width: 30px;
   height: 30px;
-  border-radius: 50%;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
   transition: all 0.2s;
 }
@@ -362,7 +341,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   justify-content: center;
   width: 30px;
   height: 30px;
-  border-radius: 50%;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
   transition: all 0.2s;
 }
@@ -425,27 +404,20 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   position: relative;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 7px;
   padding: 10px;
-  border-radius: 16px;
-  background: var(--lyric-settings-card-bg);
-  border: 1px solid var(--lyric-settings-card-border);
-  box-shadow: var(--lyric-settings-card-shadow);
+  border-radius: var(--radius-card);
+  background: var(--content-panel-bg);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   cursor: pointer;
-  transition: all 0.2s ease;
   text-align: left;
 }
 
-.skin-card:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 55%, transparent);
-  transform: translateY(-1px);
-}
-
-.skin-card.active {
-  border-color: var(--color-primary);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-primary) 70%, transparent),
-    0 6px 18px color-mix(in srgb, var(--color-primary) 18%, transparent);
+.skin-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .skin-card.unavailable {
@@ -453,16 +425,11 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   cursor: default;
 }
 
-.skin-card.unavailable:hover {
-  border-color: var(--lyric-settings-card-border);
-  transform: none;
-}
-
 .skin-card-preview {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: 11px;
+  border-radius: var(--radius-control);
   overflow: hidden;
   background: #1a1d22;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, white 8%, transparent);
@@ -517,7 +484,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   flex-shrink: 0;
   width: 34px;
   height: 34px;
-  border-radius: 7px;
+  border-radius: var(--radius-media);
   background: linear-gradient(135deg, #5b8def, #8b5cf6 55%, #ec4899);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
@@ -529,7 +496,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 }
 .thumb-cover-lines span {
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-micro);
   background: rgba(255, 255, 255, 0.22);
 }
 .thumb-cover-lines span:nth-child(1) {
@@ -556,7 +523,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 .thumb-portrait-img {
   width: 30px;
   height: 38px;
-  border-radius: 5px;
+  border-radius: var(--radius-detail);
   background: linear-gradient(160deg, #f472b6, #a78bfa 50%, #60a5fa);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
 }
@@ -569,7 +536,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 }
 .thumb-portrait-lines span {
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius-micro);
   background: rgba(255, 255, 255, 0.28);
 }
 .thumb-portrait-lines span:nth-child(1) {
@@ -598,7 +565,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 }
 .thumb-lyric-lines span {
   height: 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-micro);
   background: rgba(255, 255, 255, 0.18);
 }
 .thumb-lyric-lines span:nth-child(1) {
@@ -636,7 +603,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 }
 .thumb-amll-lines span {
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-micro);
   background: rgba(255, 255, 255, 0.5);
 }
 .thumb-amll-lines span:nth-child(1) {
@@ -670,12 +637,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
-  color: white;
-  background: var(--color-primary);
-  box-shadow:
-    0 1px 6px color-mix(in srgb, var(--color-primary) 55%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, white 22%, transparent);
+  border-radius: var(--radius-detail);
   z-index: 1;
   opacity: 0;
   transition: opacity 0.15s ease;

@@ -585,13 +585,14 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
           :hasDetails="true"
           :expandedHeight="196"
         >
-          <template #cover="{ expanded }">
+          <template #cover="{ expanded, borderRadius }">
             <DynamicAlbumCover
               :enabled="settingStore.dynamicAlbumCover"
               :url="album.pic"
               :album-audio-id="coverAudioId"
               :album-id="album.id"
               :active="expanded && !playerStore.isLyricViewOpen"
+              :border-radius="borderRadius"
               :size="400"
               :alt="album.name"
             />
@@ -648,7 +649,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                 variant="unstyled"
                 size="none"
                 @click="handlePlayAll"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
+                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>
@@ -656,7 +657,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                 variant="unstyled"
                 size="none"
                 @click="openBatchDrawer"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -667,7 +668,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
               variant="unstyled"
               size="none"
               @click="toggleFavoriteAlbum"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-red-500"
             >
               <Icon :icon="isFavoriteAlbum ? iconHeartFilled : iconHeart" width="18" height="18" />
             </Button>
@@ -675,7 +676,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
               variant="unstyled"
               size="none"
               @click="handleShareAlbum"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconShare" width="18" height="18" />
             </Button>
@@ -716,12 +717,12 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                 <div class="flex items-center justify-between h-14">
                   <TabsList class="bg-transparent border-none gap-8">
                     <TabsTrigger value="songs">
-                      <span class="relative">歌曲 <Badge :count="loadedSongCount" /></span>
+                      <span class="badge-label">歌曲 <Badge :count="loadedSongCount" /></span>
                     </TabsTrigger>
                     <TabsTrigger value="comments">
-                      <span class="relative">
+                      <span class="badge-label">
                         评论
-                        <Badge v-if="commentTotal > 0" :count="commentTotal" class="-right-6" />
+                        <Badge v-if="commentTotal > 0" :count="commentTotal" />
                       </span>
                     </TabsTrigger>
                   </TabsList>
@@ -732,7 +733,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                       variant="unstyled"
                       size="none"
                       @click="handleLocate"
-                      class="song-locate-btn p-2 rounded-lg"
+                      class="action-icon song-locate-btn p-2"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="18" height="18" />

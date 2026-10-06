@@ -11,7 +11,16 @@ const callerScopeId = getCurrentInstance()?.vnode.scopeId;
 const callerScopeAttrs = callerScopeId ? { [callerScopeId]: '' } : {};
 
 interface Props extends PrimitiveProps {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger' | 'unstyled';
+  variant?:
+    | 'primary'
+    | 'soft-primary'
+    | 'soft-secondary'
+    | 'solid-primary'
+    | 'secondary'
+    | 'ghost'
+    | 'outline'
+    | 'danger'
+    | 'unstyled';
   size?: 'none' | 'xs' | 'sm' | 'md' | 'lg';
   loading?: boolean;
   disabled?: boolean;
@@ -27,22 +36,24 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const variants = {
-  primary:
+  primary: 'soft-accent-action',
+  'solid-primary':
     'bg-primary text-on-primary hover:bg-primary-hover hover:text-[var(--color-on-primary-hover)] active:bg-[var(--color-primary-pressed)] active:text-[var(--color-on-primary-pressed)]',
-  secondary: 'bg-[var(--control-muted-bg)] text-text-main hover:bg-[var(--control-hover-bg)]',
+  'soft-primary': 'soft-accent-action',
+  'soft-secondary': 'soft-neutral-action',
+  secondary: 'soft-secondary-action',
   ghost: 'bg-transparent text-text-main hover:bg-[var(--control-hover-bg)]',
-  outline:
-    'border border-[var(--control-border)] bg-transparent hover:bg-[var(--control-muted-bg)]',
-  danger: 'bg-red-500 text-white hover:bg-red-500/90',
+  outline: 'soft-secondary-action',
+  danger: 'soft-danger-action',
   unstyled: '',
 };
 
 const sizes = {
   none: '',
-  xs: 'h-8 px-3 text-[12px] rounded-lg font-black',
-  sm: 'h-10 px-4 text-xs rounded-xl font-black',
-  md: 'h-14 px-6 text-[15px] rounded-2xl font-black',
-  lg: 'h-16 px-8 text-lg rounded-[24px] font-black',
+  xs: 'h-8 px-3 text-[12px] rounded-control font-black',
+  sm: 'h-10 px-4 text-xs rounded-control font-black',
+  md: 'h-14 px-6 text-[15px] rounded-control font-black',
+  lg: 'h-16 px-8 text-lg rounded-control font-black',
 };
 </script>
 
@@ -62,6 +73,7 @@ const sizes = {
             : 'app-focus-ring-soft inline-flex items-center justify-center echo-button-motion active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed',
           variants[variant],
           sizes[size],
+          variant !== 'unstyled' ? `echo-button-control echo-button-${variant}` : '',
           props.class,
         ]"
       >

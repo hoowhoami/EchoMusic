@@ -106,6 +106,8 @@ const songResultsPanelRef = ref<{ scrollToActive?: () => void } | null>(null);
 
 const lyricSortField = ref<SortField | null>(null);
 const lyricSortOrder = ref<SortOrder>(null);
+const lyricSearchQuery = ref('');
+const lyricResultsPanelRef = ref<{ scrollToActive?: () => void } | null>(null);
 
 const pinnedTabHeight = 50;
 const songToolbarOffset = computed(() => (showPinnedTabs.value ? pinnedTabHeight : 0));
@@ -138,6 +140,14 @@ const sortedLyricResults = computed(() => {
     indexSource: lyricResults.value,
     albumAccessor: (song) => song.lyricSnippet ?? '',
   });
+});
+const filteredLyricResults = computed(() =>
+  filterSongsByQuery(sortedLyricResults.value, lyricSearchQuery.value),
+);
+const lyricCountLabel = computed(() => {
+  const total = lyricResults.value.length;
+  if (!lyricSearchQuery.value.trim()) return `${total}`;
+  return `${filteredLyricResults.value.length} / ${total}`;
 });
 
 const songFilteredCount = computed(() => {
@@ -279,7 +289,7 @@ const playSearchSongs = async () => {
 };
 
 const playLyricSearchSongs = async () => {
-  const queueSongs = sortedLyricResults.value.slice() as Song[];
+  const queueSongs = filteredLyricResults.value.slice() as Song[];
   if (queueSongs.length === 0) return;
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
     queueId: `queue:search-lyric:${currentSearchKeyword.value.trim() || 'default'}`,
@@ -295,6 +305,7 @@ const setLoadMoreSentinelRef = (el: Element | ComponentPublicInstance | null) =>
 };
 
 const handleSongLocate = () => songResultsPanelRef.value?.scrollToActive?.();
+const handleLyricLocate = () => lyricResultsPanelRef.value?.scrollToActive?.();
 
 const resetPaginationState = () => {
   TAB_SEARCH_TYPES.forEach((type) => {
@@ -440,6 +451,7 @@ const runSearch = async (keyword: string) => {
   lyricSortField.value = null;
   lyricSortOrder.value = null;
   songSearchQuery.value = '';
+  lyricSearchQuery.value = '';
   clearSearchResults();
   resetPaginationState();
   settingStore.addToSearchHistory(keywords);
@@ -689,15 +701,22 @@ onBeforeUnmount(() => {
 
         <div v-else-if="activeTabIndex === 4" class="motion-content-enter">
           <SearchSongResultsPanel
+            ref="lyricResultsPanelRef"
             :active-song-id="activeSongId"
+            :enable-locate="true"
+            :enable-search-query="true"
             :queue-id-prefix="'queue:search-lyric'"
+            :search-query="lyricSearchQuery"
             :show-lyric-column="true"
-            :songs="sortedLyricResults"
+            :songs="filteredLyricResults"
             :sort-field="lyricSortField"
             :sort-order="lyricSortOrder"
             :sorted-songs="sortedLyricResults"
             :sticky-top="songToolbarOffset"
+            :subtitle-label="lyricCountLabel"
+            @locate="handleLyricLocate"
             @play="playLyricSearchSongs"
+            @song-search-change="lyricSearchQuery = $event"
             @sort="handleLyricSort"
           />
           <SearchLoadMoreStatus

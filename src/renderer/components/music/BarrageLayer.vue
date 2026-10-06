@@ -231,7 +231,7 @@ defineExpose({ onSent });
   line-height: 24px;
   padding: 2px 7px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-detail);
   text-shadow:
     0 1px 3px #000,
     1px 0 2px #000;

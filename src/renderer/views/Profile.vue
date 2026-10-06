@@ -22,7 +22,6 @@ import ListeningPreferencesDialog from '@/components/profile/ListeningPreference
 import LogoutConfirmDialog from '@/components/profile/LogoutConfirmDialog.vue';
 
 import Avatar from '@/components/ui/Avatar.vue';
-import Tag from '@/components/ui/Tag.vue';
 
 import logger from '@/utils/logger';
 import { useToastStore } from '@/stores/toast';
@@ -39,11 +38,9 @@ import {
 } from '@/api/user';
 import { normalizeCoverUrl } from '@/utils/cover';
 import {
-  iconCheck,
   iconChevronLeft,
-  iconGift,
+  iconChevronRight,
   iconHeadphones,
-  iconHome,
   iconInfo,
   iconLogOut,
   iconMessageCircle,
@@ -51,7 +48,7 @@ import {
   iconPencil,
   iconPlus,
   iconRefreshCw,
-  iconScan,
+  iconDiamond,
   iconSmartphone,
   iconUser,
   iconX,
@@ -215,12 +212,26 @@ const socialLoaded = reactive<Record<SocialTabKey, boolean>>({
   fans: false,
   visitors: false,
 });
+const followCountAdjustment = ref(0);
+const friendCountAdjustment = ref(0);
 const followCount = computed(() =>
-  socialLoaded.follow ? socialUsers.follow.length : rawFollowCount.value,
+  socialLoaded.follow
+    ? socialUsers.follow.length
+    : Math.max(0, rawFollowCount.value + followCountAdjustment.value),
 );
 const friendCount = computed(() =>
-  socialLoaded.friends ? socialUsers.friends.length : rawFriendCount.value,
+  socialLoaded.friends
+    ? socialUsers.friends.length
+    : Math.max(0, rawFriendCount.value + friendCountAdjustment.value),
 );
+interface ConfirmedFollow {
+  user: SocialUser;
+  following: boolean;
+  mutual: boolean;
+  tabs: Set<SocialTabKey>;
+}
+// 保留写接口确认的关系，直到各列表接口返回一致的状态。
+const confirmedFollows = new Map<string, ConfirmedFollow>();
 const socialFollowPending = reactive(new Set<string>());
 const socialListRequests: Partial<Record<SocialTabKey, Promise<boolean>>> = {};
 const socialError = reactive<Record<SocialTabKey, string>>({
@@ -293,6 +304,9 @@ const resetProfileState = () => {
   resetChat();
   socialDrawerOpen.value = false;
   socialFollowPending.clear();
+  confirmedFollows.clear();
+  followCountAdjustment.value = 0;
+  friendCountAdjustment.value = 0;
   for (const { key } of socialTabs) {
     socialUsers[key] = [];
     socialLoading[key] = false;
@@ -868,6 +882,49 @@ const getSocialErrorMessage = (error: unknown, fallback: string) => {
   return message && !message.startsWith('API Error:') ? message : fallback;
 };
 
+const applyConfirmedFollow = (users: SocialUser[], tab: SocialTabKey, change: ConfirmedFollow) => {
+  const { user, following, mutual } = change;
+  if (tab === 'fans') {
+    for (const row of users) {
+      if (row.userId === user.userId) row.friendAction = following ? 'unfollow' : 'follow';
+    }
+    return users;
+  }
+  const included = tab === 'follow' ? following : mutual;
+  if (!included) return users.filter((row) => row.userId !== user.userId);
+  if (users.some((row) => row.userId === user.userId)) return users;
+  const row: SocialUser = {
+    ...user,
+    friendAction: 'unfollow',
+    meta: tab === 'friends' ? '互相关注' : user.meta,
+  };
+  socialUserScopes.set(row, captureProfileScope());
+  return [row, ...users];
+};
+
+const reconcileSocialUsers = (
+  users: SocialUser[],
+  tab: SocialTabKey,
+  requestedChanges: Map<string, ConfirmedFollow>,
+) => {
+  for (const [userId, change] of confirmedFollows) {
+    if (!change.tabs.has(tab)) continue;
+    const row = users.find((user) => user.userId === userId);
+    const matches =
+      tab === 'fans'
+        ? row?.friendAction === (change.following ? 'unfollow' : 'follow')
+        : Boolean(row) === (tab === 'follow' ? change.following : change.mutual);
+    // 操作前发出的请求不能确认新关系，即使返回值碰巧一致。
+    if (requestedChanges.get(userId) === change && matches) {
+      change.tabs.delete(tab);
+      if (change.tabs.size === 0) confirmedFollows.delete(userId);
+    } else {
+      users = applyConfirmedFollow(users, tab, change);
+    }
+  }
+  return users;
+};
+
 const loadSocialList = async (tab = activeSocialTab.value, force = false) => {
   if (!userStore.isLoggedIn || disposed) return false;
   const isCurrent = captureProfileScope();
@@ -881,14 +938,16 @@ const loadSocialList = async (tab = activeSocialTab.value, force = false) => {
 
   socialLoading[tab] = true;
   socialError[tab] = '';
+  const requestedChanges = new Map(confirmedFollows);
   const pending = (async () => {
     try {
       const payload = await socialTabFetcher[tab]();
       if (!isCurrent()) return false;
       const records = findFirstArray(unwrapPayload(payload), socialListKeys[tab]);
-      socialUsers[tab] = records
+      const users = records
         .map((item, index) => mapSocialUser(item, index, tab))
         .filter((item): item is SocialUser => Boolean(item));
+      socialUsers[tab] = reconcileSocialUsers(users, tab, requestedChanges);
       socialLoaded[tab] = true;
       return true;
     } catch (error) {
@@ -920,9 +979,18 @@ const toggleSocialFollow = async (item: SocialUser) => {
 
   const isCurrent = captureProfileScope();
   const following = item.friendAction === 'follow';
+  let pendingReleased = false;
   socialFollowPending.add(item.userId);
   try {
     let alreadyFollowed = false;
+    let mutual = following;
+    const wasFriend =
+      confirmedFollows.get(item.userId)?.mutual ??
+      (socialUsers.friends.some((row) => row.userId === item.userId) ||
+        socialUsers.fans.some(
+          (row) => row.userId === item.userId && row.friendAction === 'unfollow',
+        ) ||
+        item.meta === '互相关注');
     try {
       const payload = await (following ? addUserFollow : deleteUserFollow)({ tuid: item.userId });
       if (!isCurrent()) return;
@@ -933,6 +1001,9 @@ const toggleSocialFollow = async (item: SocialUser) => {
       ) {
         throw Object.assign(new Error('关注操作失败'), { response: { body: payload } });
       }
+      if (following && isPlainRecord(payload.data) && payload.data.is_friend !== undefined) {
+        mutual = Number(payload.data.is_friend) === 1;
+      }
     } catch (error) {
       if (!isCurrent()) return;
       const body = (error as { response?: { body?: RawRecord } })?.response?.body;
@@ -940,6 +1011,26 @@ const toggleSocialFollow = async (item: SocialUser) => {
       alreadyFollowed = true;
     }
 
+    const change: ConfirmedFollow = {
+      user: item,
+      following,
+      mutual,
+      tabs: new Set(['follow', 'friends', 'fans']),
+    };
+    confirmedFollows.set(item.userId, change);
+    if (!socialLoaded.follow && !alreadyFollowed) {
+      followCountAdjustment.value += following ? 1 : -1;
+    }
+    if (!socialLoaded.friends) {
+      if (following && mutual && !alreadyFollowed) friendCountAdjustment.value++;
+      else if (!following && wasFriend) friendCountAdjustment.value--;
+    }
+    for (const tab of change.tabs) {
+      socialUsers[tab] = applyConfirmedFollow(socialUsers[tab], tab, change);
+    }
+    item.friendAction = following ? 'unfollow' : 'follow';
+    socialFollowPending.delete(item.userId);
+    pendingReleased = true;
     if (alreadyFollowed) toastStore.info('已关注该用户');
     else toastStore.success(following ? '关注成功' : '已取消关注');
     const refreshed = await Promise.all(
@@ -957,7 +1048,7 @@ const toggleSocialFollow = async (item: SocialUser) => {
       getSocialErrorMessage(error, following ? '关注失败，请稍后重试' : '取消关注失败，请稍后重试'),
     );
   } finally {
-    if (isCurrent()) socialFollowPending.delete(item.userId);
+    if (isCurrent() && !pendingReleased) socialFollowPending.delete(item.userId);
   }
 };
 
@@ -1317,17 +1408,17 @@ onUnmounted(() => {
   <PageScrollContainer class="profile-page-container">
     <div class="profile-page select-none bg-bg-main">
       <template v-if="userStore.isLoggedIn && userInfo">
-        <div class="px-8 py-4">
+        <div class="profile-content">
           <div class="w-full">
             <!-- 1. Header -->
-            <header class="flex items-center justify-between mb-6">
-              <h1 class="text-[22px] font-black tracking-tight">个人中心</h1>
+            <header class="profile-page-header">
+              <h1 class="text-[20px] font-semibold tracking-tight">个人中心</h1>
               <div class="flex items-center gap-2">
                 <Button
                   variant="unstyled"
                   size="none"
                   @click="openProfileEditor"
-                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  class="action-icon w-9 h-9 flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
                   tooltip="编辑个人资料"
                   aria-label="编辑个人资料"
                 >
@@ -1337,7 +1428,7 @@ onUnmounted(() => {
                   variant="unstyled"
                   size="none"
                   @click="showListeningPreferences = true"
-                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  class="action-icon w-9 h-9 flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
                   tooltip="听歌偏好"
                   aria-label="听歌偏好"
                 >
@@ -1347,7 +1438,7 @@ onUnmounted(() => {
                   variant="unstyled"
                   size="none"
                   @click="openDeviceManager"
-                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  class="action-icon w-9 h-9 flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
                   tooltip="登录设备"
                   aria-label="登录设备"
                 >
@@ -1357,7 +1448,7 @@ onUnmounted(() => {
                   variant="unstyled"
                   size="none"
                   @click="handleLogout"
-                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] hover:bg-red-500/10 hover:text-red-500 transition-all active:scale-90"
+                  class="action-icon w-9 h-9 flex items-center justify-center border border-[var(--control-border)] hover:bg-red-500/10 hover:text-red-500 transition-all active:scale-90"
                   tooltip="退出登录"
                   aria-label="退出登录"
                 >
@@ -1366,321 +1457,183 @@ onUnmounted(() => {
               </div>
             </header>
 
-            <!-- 2. User Profile Card -->
-            <div
-              class="user-card relative overflow-hidden p-6 rounded-3xl bg-linear-to-br from-primary/12 via-primary/6 to-transparent border border-primary/20 mb-6"
-            >
-              <Tag v-if="ipLocation" class="profile-ip-location">{{ ipLocation }}</Tag>
-              <div class="flex items-center gap-6 relative z-10">
-                <Tooltip content="修改头像">
-                  <template #trigger>
-                    <button
-                      type="button"
-                      class="profile-avatar-button group relative p-1 rounded-full border-2 border-primary/30 shrink-0 overflow-hidden"
-                      :disabled="isUploadingAvatar"
-                      aria-label="修改头像"
-                      @click="triggerAvatarPicker"
-                    >
-                      <Avatar :src="userInfo.pic" class="w-19 h-19 rounded-full" />
-                      <span
-                        class="absolute inset-1 rounded-full flex items-center justify-center bg-black/45 text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
+            <section class="profile-overview" aria-label="个人资料">
+              <div class="profile-overview-main">
+                <div class="profile-identity">
+                  <Tooltip content="修改头像">
+                    <template #trigger>
+                      <button
+                        type="button"
+                        class="profile-avatar-button group relative rounded-full shrink-0 overflow-hidden"
+                        :disabled="isUploadingAvatar"
+                        aria-label="修改头像"
+                        @click="triggerAvatarPicker"
                       >
+                        <Avatar :src="userInfo.pic" :size="56" class="rounded-full" />
                         <span
-                          v-if="isUploadingAvatar"
-                          class="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin"
-                        ></span>
-                        <Icon v-else :icon="iconPencil" width="20" height="20" />
-                      </span>
-                    </button>
-                  </template>
-                </Tooltip>
-                <input
-                  ref="avatarInput"
-                  type="file"
-                  accept="image/jpeg,image/png,image/gif"
-                  hidden
-                  @change="handleAvatarSelected"
-                />
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-3 mb-2 min-w-0">
-                    <h2 class="text-[20px] font-black truncate">{{ userInfo.nickname }}</h2>
-                    <div
-                      v-if="tvip"
-                      class="px-1.5 py-0.5 rounded-md bg-linear-to-r from-[#07C160] to-[#07C160]/80 text-white text-[9px] font-black shadow-sm shrink-0"
-                    >
-                      畅听
-                    </div>
-                    <div
-                      v-if="svip"
-                      class="px-1.5 py-0.5 rounded-md bg-linear-to-r from-orange-500 to-orange-500/80 text-white text-[9px] font-black shadow-sm shrink-0"
-                    >
-                      概念
-                    </div>
-                  </div>
-                  <div class="flex flex-col">
-                    <p
-                      v-if="detail.descri"
-                      class="text-[12px] text-text-secondary font-medium line-clamp-2 mb-3"
-                    >
-                      {{ detail.descri }}
-                    </p>
+                          class="absolute inset-0 rounded-full flex items-center justify-center bg-black/45 text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
+                        >
+                          <span
+                            v-if="isUploadingAvatar"
+                            class="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin"
+                          ></span>
+                          <Icon v-else :icon="iconPencil" width="20" height="20" />
+                        </span>
+                      </button>
+                    </template>
+                  </Tooltip>
 
-                    <div class="profile-stats">
-                      <button
-                        type="button"
-                        class="grade-entry profile-stat text-left"
-                        aria-label="查看我的等级与升级进度"
-                        @click="openGradeDetail"
-                      >
-                        <span class="profile-stat-value"
-                          ><RollingNumber :value="`Lv.${gradeProgress.grade ?? '—'}`" />
-                          <span class="text-primary-text">›</span></span
-                        >
-                        <span class="profile-stat-label">升级进度</span>
-                      </button>
-                      <button
-                        type="button"
-                        class="profile-stat profile-social-stat text-left"
-                        aria-label="查看好友列表"
-                        @click="openSocialDrawer('friends')"
-                      >
-                        <span class="profile-stat-value">
-                          <RollingNumber :value="friendCount" />
-                          <span class="text-primary-text">›</span>
-                        </span>
-                        <span class="profile-stat-label">好友</span>
-                      </button>
-                      <button
-                        type="button"
-                        class="profile-stat profile-social-stat text-left"
-                        aria-label="查看关注列表"
-                        @click="openSocialDrawer('follow')"
-                      >
-                        <span class="profile-stat-value">
-                          <RollingNumber :value="followCount" />
-                          <span class="text-primary-text">›</span>
-                        </span>
-                        <span class="profile-stat-label">关注</span>
-                      </button>
-                      <button
-                        type="button"
-                        class="profile-stat profile-social-stat text-left"
-                        aria-label="查看粉丝列表"
-                        @click="openSocialDrawer('fans')"
-                      >
-                        <span class="profile-stat-value">
-                          <RollingNumber :value="String(detail.fans || 0)" />
-                          <span class="text-primary-text">›</span>
-                        </span>
-                        <span class="profile-stat-label">粉丝</span>
-                      </button>
-                      <button
-                        type="button"
-                        class="profile-stat profile-social-stat text-left"
-                        aria-label="查看访客列表"
-                        @click="openSocialDrawer('visitors')"
-                      >
-                        <span class="profile-stat-value"
-                          ><RollingNumber :value="visitorCount" /><span class="text-primary-text"
-                            >›</span
-                          ></span
-                        >
-                        <span class="profile-stat-label">访客</span>
-                      </button>
+                  <input
+                    ref="avatarInput"
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif"
+                    hidden
+                    @change="handleAvatarSelected"
+                  />
+                  <div class="profile-identity-copy">
+                    <div class="profile-name-line">
+                      <h2>{{ userInfo.nickname }}</h2>
+
+                      <span v-if="tvip" class="profile-member-badge is-music">畅听</span>
+                      <span v-if="svip" class="profile-member-badge is-concept">概念</span>
                     </div>
+                    <p v-if="detail.descri" class="profile-signature">{{ detail.descri }}</p>
                   </div>
+                </div>
+                <div class="profile-overview-meta">
+                  <span v-if="ipLocation" class="profile-location">{{ ipLocation }}</span>
                 </div>
               </div>
-              <!-- 装饰背景 -->
-              <div
-                class="absolute -right-10 -bottom-10 w-40 h-40 bg-primary/5 rounded-full blur-3xl pointer-events-none"
-              ></div>
-            </div>
-
-            <div class="profile-info-grid grid gap-6">
-              <!-- 3. Account Archives -->
-              <div class="min-w-0">
-                <div class="flex items-center gap-2 mb-4">
-                  <Icon :icon="iconUser" width="16" height="16" class="text-primary-text" />
-                  <h3 class="text-[16px] font-black">账号档案</h3>
-                </div>
-                <div
-                  class="profile-archive-card space-y-0.5 p-2 rounded-[18px] bg-[var(--content-panel-bg)] border border-[var(--content-panel-border)] shadow-sm"
+              <div class="profile-stats">
+                <button
+                  type="button"
+                  class="profile-stat profile-social-stat profile-grade-stat"
+                  aria-label="查看我的等级与升级进度"
+                  @click="openGradeDetail"
                 >
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-text-secondary font-bold">用户 ID</span>
-                    <span class="text-[13px] font-black">{{ userInfo.userid }}</span>
-                  </div>
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-text-secondary font-bold">性别</span>
-                    <span class="text-[13px] font-black">{{ gender }}</span>
-                  </div>
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-text-secondary font-bold">乐龄</span>
-                    <RollingNumber
-                      class="text-[13px] font-black"
-                      :value="formatAccountAge(detail.rtime)"
-                    />
-                  </div>
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-text-secondary font-bold">累计听歌</span>
-                    <RollingNumber class="text-[13px] font-black" :value="listeningDuration" />
-                  </div>
-                  <div class="flex items-center justify-between px-4 py-3">
-                    <span class="text-[13px] text-text-secondary font-bold">所在地区</span>
-                    <span class="text-[13px] font-black">{{ location }}</span>
-                  </div>
-                </div>
+                  <span class="profile-stat-value"
+                    >Lv.{{ gradeProgress.grade ?? '—'
+                    }}<Icon :icon="iconChevronRight" width="12" /></span
+                  ><span class="profile-stat-label">等级</span>
+                </button>
+                <button
+                  type="button"
+                  class="profile-stat profile-social-stat"
+                  aria-label="查看好友列表"
+                  @click="openSocialDrawer('friends')"
+                >
+                  <span class="profile-stat-value"><RollingNumber :value="friendCount" /></span
+                  ><span class="profile-stat-label">好友</span>
+                </button>
+                <button
+                  type="button"
+                  class="profile-stat profile-social-stat"
+                  aria-label="查看关注列表"
+                  @click="openSocialDrawer('follow')"
+                >
+                  <span class="profile-stat-value"><RollingNumber :value="followCount" /></span
+                  ><span class="profile-stat-label">关注</span>
+                </button>
+                <button
+                  type="button"
+                  class="profile-stat profile-social-stat"
+                  aria-label="查看粉丝列表"
+                  @click="openSocialDrawer('fans')"
+                >
+                  <span class="profile-stat-value"
+                    ><RollingNumber :value="String(detail.fans || 0)" /></span
+                  ><span class="profile-stat-label">粉丝</span>
+                </button>
+                <button
+                  type="button"
+                  class="profile-stat profile-social-stat"
+                  aria-label="查看访客列表"
+                  @click="openSocialDrawer('visitors')"
+                >
+                  <span class="profile-stat-value"><RollingNumber :value="visitorCount" /></span
+                  ><span class="profile-stat-label">访客</span>
+                </button>
               </div>
+            </section>
 
-              <!-- 4. Membership Status -->
-              <div class="min-w-0">
-                <div class="flex items-center gap-2 mb-4">
-                  <Icon :icon="iconGift" width="16" height="16" class="text-primary-text" />
-                  <h3 class="text-[16px] font-black">会员状态</h3>
-                </div>
-                <div class="space-y-2">
-                  <!-- TVIP -->
-                  <div
-                    :class="[
-                      'flex items-center gap-3 p-3 rounded-2xl border',
-                      tvip
-                        ? 'bg-green-500/10 border-green-500/20'
-                        : 'bg-[var(--control-muted-bg)] border-transparent',
+            <div class="profile-info-grid">
+              <section class="profile-section" aria-labelledby="profile-archive-title">
+                <h3 id="profile-archive-title" class="profile-section-title">账号档案</h3>
+                <dl class="profile-archive-card">
+                  <div>
+                    <dt>用户 ID</dt>
+                    <dd>{{ userInfo.userid }}</dd>
+                  </div>
+                  <div>
+                    <dt>性别</dt>
+                    <dd>{{ gender }}</dd>
+                  </div>
+                  <div>
+                    <dt>乐龄</dt>
+                    <dd>{{ formatAccountAge(detail.rtime) }}</dd>
+                  </div>
+                  <div>
+                    <dt>所在地区</dt>
+                    <dd>{{ location }}</dd>
+                  </div>
+                  <div class="profile-listening-total">
+                    <dt>累计听歌</dt>
+                    <dd>{{ listeningDuration }}</dd>
+                  </div>
+                </dl>
+              </section>
+              <section class="profile-section" aria-labelledby="profile-membership-title">
+                <h3 id="profile-membership-title" class="profile-section-title">会员状态</h3>
+                <div class="profile-memberships">
+                  <article
+                    v-for="membership in [
+                      { label: '畅听会员', vip: tvip, icon: iconHeadphones, kind: 'music' },
+                      { label: '概念会员', vip: svip, icon: iconDiamond, kind: 'concept' },
                     ]"
+                    :key="membership.kind"
+                    class="profile-membership"
+                    :class="{ 'is-active': !!membership.vip }"
                   >
-                    <div
-                      :class="[
-                        'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
-                        tvip
-                          ? 'bg-green-500/20 text-green-500'
-                          : 'bg-[var(--control-hover-bg)] text-[var(--icon-main)]',
-                      ]"
-                    >
-                      <Icon :icon="iconHome" width="18" height="18" />
-                    </div>
-                    <div class="flex-1">
-                      <h4 :class="['text-[13px] font-black', tvip ? 'text-green-500' : '']">
-                        畅听会员
-                      </h4>
-                      <div v-if="tvip" @click.stop>
+                    <span class="profile-membership-icon" :class="`is-${membership.kind}`"
+                      ><Icon :icon="membership.icon" width="20" height="20"
+                    /></span>
+                    <div class="profile-membership-copy">
+                      <h4>{{ membership.label }}</h4>
+                      <div v-if="membership.vip" class="profile-expiry">
+                        <span>{{ getVipExpireText(membership.vip) }}</span>
                         <Popover
                           trigger="hover"
                           side="top"
-                          align="start"
+                          align="center"
                           :side-offset="6"
                           contentClass="vip-expire-popover"
                         >
-                          <template #trigger>
-                            <span
-                              class="inline-flex items-center gap-1 text-[11px] text-text-secondary font-bold uppercase cursor-pointer hover:text-text-main transition-colors"
+                          <template #trigger
+                            ><button
+                              type="button"
+                              class="profile-expiry-info app-focus-ring-soft"
+                              :aria-label="`查看${membership.label}到期时间`"
                             >
-                              {{ getVipExpireText(tvip) }}
-                              <Icon
-                                :icon="iconInfo"
-                                width="14"
-                                height="14"
-                                class="text-[var(--icon-main)]"
-                              />
-                            </span>
-                          </template>
-
-                          <div class="min-w-45 space-y-1.5 text-[13px] normal-case">
-                            <div class="flex items-center justify-between gap-3">
-                              <span class="font-bold text-text-secondary">开始时间</span>
-                              <span class="font-black">{{
-                                formatVipDate(tvip.vip_begin_time)
-                              }}</span>
+                              <Icon :icon="iconInfo" width="13" height="13" /></button
+                          ></template>
+                          <dl class="profile-expiry-details">
+                            <div>
+                              <dt>开始时间</dt>
+                              <dd>{{ formatVipDate(membership.vip.vip_begin_time) }}</dd>
                             </div>
-                            <div class="flex items-center justify-between gap-3">
-                              <span class="font-bold text-text-secondary">到期时间</span>
-                              <span class="font-black text-green-500">{{
-                                formatVipDate(tvip.vip_end_time)
-                              }}</span>
+                            <div>
+                              <dt>到期时间</dt>
+                              <dd>{{ formatVipDate(membership.vip.vip_end_time) }}</dd>
                             </div>
-                          </div>
+                          </dl>
                         </Popover>
                       </div>
-                      <p v-else class="text-[11px] text-text-secondary font-bold uppercase">
-                        未开通
-                      </p>
+                      <p v-else class="profile-expiry">未开通</p>
                     </div>
-                    <div v-if="tvip" class="text-green-500">
-                      <Icon :icon="iconCheck" width="16" height="16" />
-                    </div>
-                  </div>
-
-                  <!-- SVIP -->
-                  <div
-                    :class="[
-                      'flex items-center gap-3 p-3 rounded-2xl border',
-                      svip
-                        ? 'bg-orange-500/10 border-orange-500/20'
-                        : 'bg-[var(--control-muted-bg)] border-transparent',
-                    ]"
-                  >
-                    <div
-                      :class="[
-                        'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
-                        svip
-                          ? 'bg-orange-500/20 text-orange-500'
-                          : 'bg-[var(--control-hover-bg)] text-[var(--icon-main)]',
-                      ]"
-                    >
-                      <Icon :icon="iconScan" width="18" height="18" />
-                    </div>
-                    <div class="flex-1">
-                      <h4 :class="['text-[13px] font-black', svip ? 'text-orange-500' : '']">
-                        概念会员
-                      </h4>
-                      <div v-if="svip" @click.stop>
-                        <Popover
-                          trigger="hover"
-                          side="top"
-                          align="start"
-                          :side-offset="6"
-                          contentClass="vip-expire-popover"
-                        >
-                          <template #trigger>
-                            <span
-                              class="inline-flex items-center gap-1 text-[11px] text-text-secondary font-bold uppercase cursor-pointer hover:text-text-main transition-colors"
-                            >
-                              {{ getVipExpireText(svip) }}
-                              <Icon
-                                :icon="iconInfo"
-                                width="14"
-                                height="14"
-                                class="text-[var(--icon-main)]"
-                              />
-                            </span>
-                          </template>
-
-                          <div class="min-w-45 space-y-1.5 text-[13px] normal-case">
-                            <div class="flex items-center justify-between gap-3">
-                              <span class="font-bold text-text-secondary">开始时间</span>
-                              <span class="font-black">{{
-                                formatVipDate(svip.vip_begin_time)
-                              }}</span>
-                            </div>
-                            <div class="flex items-center justify-between gap-3">
-                              <span class="font-bold text-text-secondary">到期时间</span>
-                              <span class="font-black text-orange-500">{{
-                                formatVipDate(svip.vip_end_time)
-                              }}</span>
-                            </div>
-                          </div>
-                        </Popover>
-                      </div>
-                      <p v-else class="text-[11px] text-text-secondary font-bold uppercase">
-                        未开通
-                      </p>
-                    </div>
-                    <div v-if="svip" class="text-orange-500">
-                      <Icon :icon="iconCheck" width="16" height="16" />
-                    </div>
-                  </div>
+                    <span v-if="membership.vip" class="profile-membership-state">已开通</span>
+                  </article>
                 </div>
-              </div>
+              </section>
             </div>
           </div>
         </div>
@@ -1798,7 +1751,7 @@ onUnmounted(() => {
             v-if="socialChatTarget"
             variant="unstyled"
             size="none"
-            class="profile-social-icon-btn"
+            class="action-icon profile-social-icon-btn"
             tooltip="返回列表"
             aria-label="返回列表"
             @click="closeSocialChat"
@@ -1816,7 +1769,7 @@ onUnmounted(() => {
               v-if="!socialChatTarget"
               variant="unstyled"
               size="none"
-              class="profile-social-icon-btn"
+              class="action-icon profile-social-icon-btn"
               tooltip="刷新列表"
               aria-label="刷新列表"
               :disabled="isSocialBusy"
@@ -1832,7 +1785,7 @@ onUnmounted(() => {
             <Button
               variant="unstyled"
               size="none"
-              class="profile-social-icon-btn"
+              class="action-icon profile-social-icon-btn"
               tooltip="关闭"
               aria-label="关闭"
               @click="socialDrawerOpen = false"
@@ -1854,7 +1807,10 @@ onUnmounted(() => {
             <div v-if="isSocialBusy && activeSocialUsers.length === 0" class="profile-social-state">
               正在加载{{ activeSocialTabMeta.label }}
             </div>
-            <div v-else-if="socialError[activeSocialTab]" class="profile-social-state">
+            <div
+              v-else-if="socialError[activeSocialTab] && activeSocialUsers.length === 0"
+              class="profile-social-state"
+            >
               <p>{{ socialError[activeSocialTab] }}</p>
               <Button variant="outline" size="xs" @click="refreshSocialList">重试</Button>
             </div>
@@ -1893,7 +1849,7 @@ onUnmounted(() => {
                     <span>{{ item.friendAction === 'follow' ? '关注' : '取消关注' }}</span>
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     size="xs"
                     class="profile-social-message-btn"
                     :disabled="!item.canMessage"
@@ -1985,9 +1941,7 @@ onUnmounted(() => {
         <div class="grade-card-hero">
           <div class="grade-card-copy">
             <p class="grade-card-label">当前等级</p>
-            <p class="grade-card-level">
-              <RollingNumber :value="`Lv.${gradeProgress.grade ?? '—'}`" />
-            </p>
+            <p class="grade-card-level">Lv.{{ gradeProgress.grade ?? '—' }}</p>
           </div>
           <svg class="grade-planet" viewBox="0 0 128 112" fill="none" aria-hidden="true">
             <!-- 唱片化作星球，轨道前后分层；使用主题色适配明暗外观。 -->
@@ -2020,16 +1974,15 @@ onUnmounted(() => {
           <div class="grade-progress-meta">
             <span class="grade-progress-hint"
               >距 Lv.{{ gradeProgress.nextGrade }} 还差
-              <RollingNumber
-                class="font-semibold"
-                :value="gradeProgress.remaining?.toLocaleString() ?? '—'"
-              />
+              <span class="font-semibold">{{
+                gradeProgress.remaining?.toLocaleString() ?? '—'
+              }}</span>
               经验</span
             >
             <span class="grade-progress-nums"
               ><RollingNumber :value="gradeProgress.current?.toLocaleString() ?? '—'" /> /
-              <RollingNumber :value="gradeProgress.target?.toLocaleString() ?? '—'"
-            /></span>
+              <span>{{ gradeProgress.target?.toLocaleString() ?? '—' }}</span></span
+            >
           </div>
           <div
             class="grade-progress-track"
@@ -2052,7 +2005,7 @@ onUnmounted(() => {
       </div>
       <div class="grade-listen-row">
         <span>累计听歌</span>
-        <RollingNumber :value="listeningDuration" />
+        <span class="font-semibold text-text-main">{{ listeningDuration }}</span>
       </div>
       <template #footer>
         <Button
@@ -2081,7 +2034,7 @@ onUnmounted(() => {
           <Button
             variant="unstyled"
             size="none"
-            class="w-8 h-8 rounded-full flex items-center justify-center text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main"
+            class="action-icon w-8 h-8 flex items-center justify-center text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main"
             tooltip="刷新登录设备"
             aria-label="刷新登录设备"
             :disabled="loginDeviceStore.loading"
@@ -2151,11 +2104,11 @@ onUnmounted(() => {
             </div>
             <Button
               v-if="!device.isCurrent"
-              variant="ghost"
+              variant="danger"
               size="xs"
               :disabled="!device.canKick"
               :loading="loginDeviceStore.kickingId === device.id"
-              class="shrink-0 text-red-500/80 hover:bg-red-500/10 hover:text-red-500"
+              class="shrink-0"
               @click="requestKickDevice(device)"
             >
               <span>移除</span>
@@ -2188,78 +2141,305 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.profile-stats {
+.profile-content {
+  padding: 16px 24px 24px;
+}
+.profile-page-header {
   display: flex;
-  align-items: stretch;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.profile-overview {
+  border: 1px solid var(--content-panel-border);
+  border-radius: var(--radius-card);
+  background: var(--content-panel-bg);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.profile-overview-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 24px;
+  padding: 18px 20px;
+}
+.profile-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1;
+}
+.profile-avatar-button {
+  padding: 0;
+  border: 1px solid var(--control-border);
+  cursor: pointer;
+}
+.profile-avatar-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 4px;
+}
+.profile-identity-copy {
+  min-width: 0;
+}
+.profile-name-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.profile-name-line h2 {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  margin-right: 4px;
+}
+.profile-signature {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.profile-location {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-micro);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+.profile-overview-meta {
+  flex: none;
+  align-self: flex-start;
+}
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-subtle);
 }
 .profile-stat {
   position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  padding: 0;
-}
-.profile-stat + .profile-stat {
-  padding-left: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 8px;
 }
 .profile-stat + .profile-stat::before {
   content: '';
   position: absolute;
   left: 0;
   top: 50%;
-  height: 16px;
   width: 1px;
+  height: 18px;
   transform: translateY(-50%);
   background: var(--border-subtle);
 }
 .profile-stat-value {
-  display: flex;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+.profile-grade-stat .profile-stat-value {
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
-  height: 22px;
-  font-size: 15px;
-  font-weight: 900;
-  line-height: 1.25;
+  gap: 2px;
+  font-size: 16px;
 }
 .profile-stat-label {
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 14px;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
+  font-size: 12px;
   color: var(--color-text-secondary);
-}
-.grade-entry {
-  border-radius: 8px;
-  cursor: pointer;
-  transition: color 160ms;
-}
-.grade-entry:hover {
-  color: var(--color-primary-text);
-}
-.grade-entry:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 5px;
+  white-space: nowrap;
 }
 .profile-social-stat {
-  border: 0;
-  border-radius: 8px;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: var(--radius-control);
   background: transparent;
-  color: inherit;
+  color: var(--color-text-main);
   cursor: pointer;
-  transition:
-    color 160ms,
-    opacity 160ms;
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .profile-social-stat:hover {
   color: var(--color-primary-text);
 }
 .profile-social-stat:focus-visible {
   outline: 2px solid var(--color-primary);
-  outline-offset: 5px;
+  outline-offset: 2px;
+}
+.profile-section {
+  min-width: 0;
+}
+.profile-section-title {
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.profile-archive-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 20px;
+  padding: 16px;
+  border: 1px solid var(--content-panel-border);
+  border-radius: var(--radius-card);
+  background: var(--content-panel-bg);
+}
+.profile-archive-card > div {
+  min-width: 0;
+}
+.profile-archive-card dt {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+}
+.profile-archive-card dd {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.profile-listening-total {
+  grid-column: 1 / -1;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+.profile-listening-total dd {
+  font-size: 18px;
+  font-weight: 600;
+}
+.profile-memberships {
+  display: grid;
+  gap: 12px;
+}
+.profile-membership {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--content-panel-border);
+  border-radius: var(--radius-card);
+  background: var(--content-panel-bg);
+}
+.profile-membership-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-control);
+  color: var(--icon-main);
+  background: var(--control-muted-bg);
+}
+.profile-membership.is-active .is-music {
+  color: color-mix(in srgb, var(--state-success) 68%, var(--color-text-main));
+  background: var(--state-success-bg-soft);
+}
+.profile-membership.is-active .is-concept {
+  color: color-mix(in srgb, var(--state-warning) 68%, var(--color-text-main));
+  background: var(--state-warning-bg-soft);
+}
+.profile-membership-copy {
+  min-width: 0;
+  flex: 1;
+}
+.profile-membership-copy h4 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.profile-expiry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  text-align: left;
+}
+.profile-expiry-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: var(--radius-control);
+  color: var(--icon-main);
+  cursor: pointer;
+}
+.profile-expiry-info:hover {
+  color: var(--color-text-main);
+}
+.profile-membership-state {
+  flex: none;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+}
+.profile-membership.is-active .profile-membership-state {
+  color: var(--color-primary-text);
+}
+.profile-expiry-details {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  min-width: 190px;
+}
+.profile-expiry-details > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.profile-expiry-details dt {
+  color: var(--color-text-secondary);
+}
+.profile-expiry-details dd {
+  font-weight: 500;
+}
+@media (max-width: 600px) {
+  .profile-content {
+    padding: 16px;
+  }
+  .profile-page-header {
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  .profile-overview-main {
+    flex-wrap: nowrap;
+    padding: 16px;
+    gap: 20px;
+  }
+  .profile-identity {
+    flex: 1;
+    gap: 12px;
+  }
+  .profile-name-line h2 {
+    font-size: 18px;
+  }
+  .profile-stats {
+    padding: 14px 8px;
+  }
+  .profile-stat {
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 4px;
+  }
+  .profile-archive-card {
+    gap: 18px 16px;
+    padding: 18px;
+  }
 }
 :global(.profile-social-drawer-overlay) {
   background: var(--surface-scrim-bg);
@@ -2269,7 +2449,7 @@ onUnmounted(() => {
   right: 12px;
   bottom: var(--drawer-safe-bottom);
   width: min(460px, calc(100vw - 24px));
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   box-shadow: var(--shadow-dialog);
   overflow: hidden;
 }
@@ -2327,7 +2507,7 @@ onUnmounted(() => {
   height: 32px;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
   transition:
     background-color 160ms,
@@ -2354,7 +2534,7 @@ onUnmounted(() => {
   min-height: 180px;
   place-items: center;
   gap: 10px;
-  padding: 24px;
+  padding: 18px 20px;
   color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 700;
@@ -2375,7 +2555,7 @@ onUnmounted(() => {
   gap: 12px;
   padding: 10px;
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
 .profile-social-avatar {
@@ -2427,7 +2607,7 @@ onUnmounted(() => {
   height: 32px;
   flex-shrink: 0;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -2493,7 +2673,7 @@ onUnmounted(() => {
 .profile-chat-bubble {
   overflow: hidden;
   padding: 9px 11px;
-  border-radius: 6px 14px 14px;
+  border-radius: var(--radius-card) var(--radius-card) var(--radius-card);
   background: var(--control-muted-bg);
   color: var(--color-text-main);
   font-size: 12px;
@@ -2503,7 +2683,7 @@ onUnmounted(() => {
   white-space: pre-wrap;
 }
 .profile-chat-message.is-self .profile-chat-bubble {
-  border-radius: 14px 6px 14px 14px;
+  border-radius: var(--radius-card) var(--radius-card) var(--radius-card) var(--radius-card);
   background: var(--color-primary);
   color: var(--color-on-primary);
 }
@@ -2511,7 +2691,7 @@ onUnmounted(() => {
   display: block;
   max-width: 180px;
   max-height: 220px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   object-fit: contain;
 }
 .profile-chat-composer {
@@ -2522,7 +2702,7 @@ onUnmounted(() => {
   margin: 10px 12px 12px;
   padding: 10px 12px;
   border: 1px solid var(--control-border);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--color-bg-elevated);
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.045);
   transition:
@@ -2577,7 +2757,7 @@ onUnmounted(() => {
   min-height: 176px;
   padding: 22px 20px 18px;
   border: 1px solid var(--border-subtle);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   overflow: hidden;
   background: linear-gradient(
     135deg,
@@ -2714,24 +2894,6 @@ onUnmounted(() => {
   border-radius: inherit;
   background: var(--color-primary);
 }
-.user-card {
-  box-shadow: 0 20px 60px -10px rgba(var(--color-primary-rgb), 0.15);
-}
-
-.profile-ip-location {
-  position: absolute;
-  top: 14px;
-  right: 16px;
-  z-index: 11;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
-  pointer-events: none;
-}
-
 .profile-avatar-button:disabled {
   cursor: wait;
 }
@@ -2765,25 +2927,19 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
 }
 
-.profile-archive-card {
-  background-color: var(--content-panel-bg) !important;
-  border-color: var(--content-panel-border) !important;
-  box-shadow: var(--shadow-card) !important;
-}
-
 .login-device-row {
   min-height: 76px;
 }
 
 .profile-info-grid {
   display: grid;
-  gap: 24px;
+  gap: 20px;
   grid-template-columns: minmax(0, 1fr);
 }
 
 @media (min-width: 768px) {
   .profile-info-grid {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
   }
 }
 </style>
@@ -2832,7 +2988,7 @@ onUnmounted(() => {
   height: 44px;
   min-height: 44px;
   border-color: var(--control-border);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   padding-left: 14px;
   font-size: 13px;
 }

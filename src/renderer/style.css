@@ -1,10 +1,13 @@
 @import 'tailwindcss';
 @import './motion.css';
 @import './theme/surfaces.css';
+@import './theme/shapes.css';
+@import './theme/badges.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  --scroll-action-size: 32px;
   --surface-sidebar-base: var(--theme-shell, #f6f6f6);
   --surface-main-base: #ffffff;
   --surface-card-base: #ffffff;
@@ -206,27 +209,29 @@
     box-shadow: none;
   }
 
-  /* 菜单容器的阴影属于浮层外观，不能随鼠标引起的焦点切换被清除。 */
+  /* 焦点不能清除按钮的内描边或浮层外观；输入控件单独处理原生阴影。 */
   input:focus:not(:focus-visible),
   textarea:focus:not(:focus-visible),
-  select:focus:not(:focus-visible),
+  select:focus:not(:focus-visible) {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
   button:focus:not(:focus-visible),
   [tabindex]:not(.titlebar-more-menu):focus:not(:focus-visible) {
     outline: none !important;
-    box-shadow: none !important;
   }
 
   input:focus-visible,
-  textarea:focus-visible {
+  textarea:focus-visible,
+  select:focus-visible {
     outline: none !important;
     box-shadow: none !important;
   }
 
-  select:focus-visible,
   button:focus-visible,
   [tabindex]:not(.titlebar-more-menu):focus-visible {
     outline: none !important;
-    box-shadow: none !important;
   }
 
   input:-webkit-autofill,
@@ -318,7 +323,6 @@
 
   .app-focus-ring:focus-visible {
     outline: none !important;
-    box-shadow: none !important;
   }
 
   .app-focus-ring-soft {
@@ -327,21 +331,19 @@
 
   .app-focus-ring-soft:focus-visible {
     outline: none !important;
-    box-shadow: none !important;
   }
 
   .app-icon-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 9999px;
+    border-radius: var(--radius-control);
     outline: none;
     -webkit-tap-highlight-color: transparent;
   }
 
   .app-icon-button:focus-visible {
     outline: none !important;
-    box-shadow: none !important;
   }
 
   .app-scrollbar {
@@ -400,18 +402,26 @@
     box-shadow: none !important;
   }
 
+  .song-sort-btn,
   .song-locate-btn {
-    background-color: var(--control-muted-bg);
-    border: 1px solid var(--content-panel-border);
-    box-shadow: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    flex-shrink: 0;
+    border-radius: var(--radius-control);
+  }
+
+  .song-locate-btn {
     color: var(--icon-main);
-    transition: all 0.2s ease;
-    backdrop-filter: var(--surface-backdrop-filter);
+    transition:
+      background-color 0.2s ease,
+      color 0.2s ease;
   }
 
   .song-locate-btn:hover {
-    border-color: var(--control-border-hover);
-    background-color: var(--control-hover-bg);
     color: var(--color-text-main);
   }
 
@@ -429,7 +439,7 @@
     justify-content: center;
     width: 18px;
     height: 18px;
-    border-radius: 999px;
+    border-radius: var(--radius-control);
     color: var(--icon-main);
     transform: translateY(-50%);
     transition:
@@ -440,10 +450,6 @@
   .song-search-clear:hover {
     color: var(--color-text-main);
     background: var(--control-hover-bg);
-  }
-
-  .song-locate-btn:focus-visible {
-    border-color: var(--color-primary-text);
   }
 }
 
@@ -519,7 +525,7 @@ body.echo-surface-translucent .comment-main-tabs {
 .app-tooltip-surface {
   background-clip: padding-box;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-popover);
   background: var(--color-bg-elevated);
   color: var(--color-text-main);
   font-size: 12px;
@@ -539,7 +545,7 @@ body .search-suggestions-panel {
 .echo-popover-content,
 .drawer-panel,
 .dialog-content,
-.app-tooltip-content,
+.app-tooltip-surface,
 .song-context-menu,
 .echo-date-picker-content,
 .titlebar-more-menu,
@@ -554,10 +560,25 @@ body .search-suggestions-panel {
   --floating-surface-base: var(--surface-dialog-base);
 }
 
-.app-tooltip-content {
+.app-tooltip-surface {
   background: var(--floating-surface-bg);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
+}
+
+.floating-surface-arrow {
+  display: block;
+  width: 14px;
+  height: 8px;
+  /* The arrow uses the same material as its panel, without an SVG base stroke
+   * or an unblurred transparent triangle creating a visible horizontal seam. */
+  background: var(--floating-surface-bg);
+  -webkit-backdrop-filter: var(--floating-surface-filter);
+  backdrop-filter: var(--floating-surface-filter);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  border: 0;
+  box-shadow: none;
+  pointer-events: none;
 }
 
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
@@ -567,7 +588,7 @@ body .search-suggestions-panel {
         .echo-popover-content,
         .drawer-panel,
         .dialog-content,
-        .app-tooltip-content,
+        .app-tooltip-surface,
         .song-context-menu,
         .echo-date-picker-content,
         .titlebar-more-menu,

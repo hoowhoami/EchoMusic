@@ -99,7 +99,7 @@ const handleConfirm = () => {
       </div>
       <div class="popconfirm-actions">
         <Button
-          variant="unstyled"
+          variant="secondary"
           size="none"
           type="button"
           class="popconfirm-action popconfirm-cancel app-focus-ring-soft"
@@ -108,7 +108,7 @@ const handleConfirm = () => {
           {{ cancelText }}
         </Button>
         <Button
-          variant="unstyled"
+          :variant="tone === 'danger' ? 'danger' : 'primary'"
           size="none"
           type="button"
           :class="[
@@ -132,15 +132,11 @@ const handleConfirm = () => {
 :global(.echo-popconfirm-content.echo-popover-content) {
   --popover-background: var(--floating-surface-bg);
   padding: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: var(--popover-background);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
   box-shadow: var(--shadow-elevated);
-}
-
-:global(.echo-popconfirm-content .echo-popover-arrow) {
-  fill: var(--popover-background);
 }
 
 .popconfirm {
@@ -208,7 +204,7 @@ const handleConfirm = () => {
   min-height: 28px;
   box-sizing: border-box;
   padding: 0 12px;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
@@ -228,35 +224,5 @@ const handleConfirm = () => {
 .popconfirm-action:disabled {
   cursor: not-allowed;
   opacity: 0.6;
-}
-
-.popconfirm-cancel {
-  border: 1px solid var(--control-border);
-  background: transparent;
-  color: var(--color-text-main);
-}
-
-.popconfirm-cancel:hover {
-  background: var(--control-muted-bg);
-}
-
-.popconfirm-confirm {
-  border: 1px solid transparent;
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-.popconfirm-confirm:hover {
-  background: var(--color-primary-hover);
-  color: var(--color-on-primary-hover);
-}
-
-.popconfirm-confirm.is-danger {
-  background: var(--state-danger);
-  color: var(--color-bg-elevated);
-}
-
-.popconfirm-confirm.is-danger:hover {
-  background: color-mix(in srgb, var(--state-danger) 86%, var(--color-text-main));
 }
 </style>

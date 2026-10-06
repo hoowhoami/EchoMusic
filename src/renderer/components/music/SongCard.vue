@@ -301,7 +301,7 @@ const handleFavorite = () => {
     <!-- 封面 -->
     <div
       v-if="showCover"
-      class="song-cover-frame relative w-[46px] h-[46px] shrink-0 rounded-[12px] shadow-sm"
+      class="song-cover-frame relative w-[46px] h-[46px] shrink-0 rounded-media shadow-sm"
       :class="{
         'has-cover-play': showCoverPlayButton,
         'is-cover-loading': isCoverPlayPending,
@@ -309,12 +309,12 @@ const handleFavorite = () => {
       }"
       :style="{ opacity: contentOpacity }"
     >
-      <Cover :url="songCoverUrl" :size="160" :borderRadius="12" class="w-full h-full" />
+      <Cover :url="songCoverUrl" :size="160" class="w-full h-full" />
       <Button
         v-if="showCoverPlayButton"
         variant="unstyled"
         size="none"
-        class="song-cover-play"
+        class="action-icon song-cover-play"
         :class="{ 'is-loading': isCoverPlayPending, 'is-playing': isCoverPlaying }"
         :tooltip="coverPlayTitle"
         :aria-busy="isCoverPlayPending"
@@ -382,7 +382,7 @@ const handleFavorite = () => {
         variant="unstyled"
         size="none"
         type="button"
-        class="song-action song-action-hover-only"
+        class="action-icon song-action song-action-hover-only"
         tooltip="播放 MV"
         @click.stop="goToMvDetail"
       >
@@ -392,7 +392,7 @@ const handleFavorite = () => {
         variant="unstyled"
         size="none"
         type="button"
-        class="song-action song-action-hover-only"
+        class="action-icon song-action song-action-hover-only"
         tooltip="详情及评论"
         @click.stop="goToSongDetail"
       >
@@ -402,7 +402,7 @@ const handleFavorite = () => {
         variant="unstyled"
         size="none"
         type="button"
-        class="song-action song-action-favorite"
+        class="action-icon song-action song-action-favorite"
         :class="{ 'is-active': isFavorite }"
         :tooltip="isFavorite ? '已收藏' : '收藏'"
         :aria-pressed="isFavorite"
@@ -604,7 +604,7 @@ const handleFavorite = () => {
 .song-action {
   width: 28px;
   height: 28px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -648,7 +648,7 @@ const handleFavorite = () => {
 :deep(.song-context-menu) {
   min-width: 172px;
   padding: 6px;
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   background: var(--floating-surface-bg);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
@@ -664,7 +664,7 @@ const handleFavorite = () => {
   width: 100%;
   text-align: left;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;

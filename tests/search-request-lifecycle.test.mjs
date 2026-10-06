@@ -61,7 +61,7 @@ const hot = (keyword) => ({
   data: { list: [{ name: 'hot', keywords: [{ keyword }] }] },
 });
 const ads = (keyword) => ({ data: { ads: [{ main_title: keyword, sub_title: 'subtitle' }] } });
-function fixture(t, name = 'Search') {
+function fixture(t, name = 'Search', overrides = {}) {
   const hooks = {
     onMounted: [],
     onActivated: [],
@@ -176,6 +176,7 @@ function fixture(t, name = 'Search') {
     },
     '@/plugins/taskPanel': { taskPanelEntries: vue.ref([]), taskPanelOpen: vue.ref(false) },
     '@/icons': {},
+    ...overrides,
   };
   const mod = evaluate(scripts[name], deps, {
     window,
@@ -756,4 +757,49 @@ test('search keeps its original empty-result and nullable-alias parsing', () => 
   }
   assert.deepEqual(helpers.extractSearchLists({ data: { lists: null, list: [row(1)] } }), [row(1)]);
   assert.equal(helpers.extractSearchTotal({ data: { total: 'unknown' } }), null);
+});
+
+test('lyric result filtering shares song controls while preserving counts, sorting and queue context', async (t) => {
+  const songList = evaluate(read('../src/renderer/utils/songList.ts'));
+  const queues = [];
+  const f = fixture(t, 'Search', {
+    '@/utils/songList': songList,
+    '@/utils/playback': { replaceQueueAndPlay: async (...args) => queues.push(args) },
+  });
+  f.view.lyricResults.value = [
+    { id: '1', name: '晨光', artist: '甲', album: '专辑', lyricSnippet: 'B' },
+    { id: '2', name: '晚风', artist: '乙', album: '专辑', lyricSnippet: 'A' },
+  ];
+  f.view.songSearchQuery.value = '单曲独立筛选';
+  f.view.lyricSearchQuery.value = ' 晚风 ';
+  assert.equal(f.view.lyricCountLabel.value, '1 / 2');
+  assert.deepEqual(
+    f.view.filteredLyricResults.value.map((song) => song.id),
+    ['2'],
+  );
+  assert.equal(f.view.songSearchQuery.value, '单曲独立筛选');
+  await f.view.playLyricSearchSongs();
+  assert.deepEqual(
+    queues[0][2].map((song) => song.id),
+    ['2'],
+  );
+  f.view.lyricSearchQuery.value = '不存在';
+  await f.view.playLyricSearchSongs();
+  assert.equal(queues.length, 1);
+  f.view.lyricSearchQuery.value = '';
+  f.view.handleLyricSort('album');
+  assert.deepEqual(
+    f.view.filteredLyricResults.value.map((song) => song.id),
+    ['2', '1'],
+  );
+  assert.equal(f.view.lyricCountLabel.value, '2');
+  let located = 0;
+  f.view.lyricResultsPanelRef.value = { scrollToActive: () => located++ };
+  f.view.handleLyricLocate();
+  assert.equal(located, 1);
+  f.view.lyricSearchQuery.value = '晚风';
+  f.respond(() => page([], 0));
+  await f.view.runSearch('新关键词');
+  assert.equal(f.view.lyricSearchQuery.value, '');
+  assert.equal(f.view.songSearchQuery.value, '');
 });

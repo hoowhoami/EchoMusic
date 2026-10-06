@@ -27,7 +27,7 @@
   isolation: isolate;
   padding: 36px 42px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 18%, var(--border-subtle));
-  border-radius: 28px;
+  border-radius: var(--radius-dialog);
   background:
     linear-gradient(
       125deg,
@@ -164,7 +164,7 @@
   margin: 18px 0;
   padding: 14px 16px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 18%, var(--border-subtle));
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--color-primary) 7%, var(--content-panel-bg));
 }
 
@@ -219,7 +219,7 @@
   padding: 0 15px;
   color: var(--icon-main);
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   transition:
     border-color 0.18s ease,
@@ -271,7 +271,7 @@
   padding: 13px 16px;
   text-align: left;
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   transition: all 0.18s ease;
@@ -312,7 +312,7 @@
   height: 32px;
   padding: 0 15px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   font-size: 12px;
@@ -343,7 +343,7 @@
   overflow: hidden;
   text-align: left;
   border: 1px solid var(--border-subtle);
-  border-radius: 20px;
+  border-radius: var(--radius-card);
   background: var(--content-panel-bg);
   box-shadow: var(--shadow-card);
   transition:
@@ -453,14 +453,6 @@
   position: absolute;
   top: 13px;
   right: 13px;
-  padding: 6px 9px;
-  border: 1px solid color-mix(in srgb, white 16%, transparent);
-  border-radius: 999px;
-  color: color-mix(in srgb, white 88%, transparent);
-  background: color-mix(in srgb, #111827 64%, transparent);
-  backdrop-filter: blur(10px);
-  font-size: 9px;
-  font-weight: 850;
 }
 
 .listen-preview-type {
@@ -559,15 +551,6 @@
   margin-top: 12px;
 }
 
-.listen-room-tags > span {
-  padding: 4px 8px;
-  border-radius: 999px;
-  color: var(--color-text-secondary);
-  background: var(--control-muted-bg);
-  font-size: 9px;
-  font-weight: 800;
-}
-
 .listen-empty-state {
   min-height: 300px;
   display: flex;
@@ -652,7 +635,7 @@
   margin: -2px 0 10px;
   padding: 9px 12px;
   border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   color: color-mix(in srgb, #f59e0b 82%, var(--color-text-main));
   background: color-mix(in srgb, #f59e0b 8%, transparent);
   font-size: 11px;
@@ -690,7 +673,7 @@
   overflow: hidden;
   padding: 18px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--border-subtle));
-  border-radius: 22px;
+  border-radius: var(--radius-dialog);
   background:
     radial-gradient(
       circle at 0% 100%,
@@ -715,16 +698,7 @@
   position: absolute;
   left: 10px;
   bottom: 10px;
-  display: inline-flex;
-  align-items: center;
   gap: 6px;
-  padding: 7px 9px;
-  border-radius: 999px;
-  color: white;
-  background: color-mix(in srgb, #111827 84%, transparent);
-  backdrop-filter: blur(10px);
-  font-size: 9px;
-  font-weight: 900;
 }
 
 .listen-now-info {
@@ -756,7 +730,7 @@
   gap: 8px;
   margin-top: 22px;
   padding: 9px 11px;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   font-size: 10px;
@@ -776,7 +750,7 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-subtle);
-  border-radius: 18px;
+  border-radius: var(--radius-popover);
   background: var(--content-panel-bg);
   box-shadow: var(--shadow-card);
 }
@@ -834,7 +808,7 @@
   gap: 10px;
   min-height: 54px;
   padding: 6px 9px;
-  border-radius: 12px;
+  border-radius: var(--radius-item);
   text-align: left;
   transition:
     background 0.16s ease,
@@ -968,7 +942,7 @@
   gap: 9px;
   min-height: 46px;
   padding: 5px 7px;
-  border-radius: 10px;
+  border-radius: var(--radius-item);
 }
 
 .listen-member-item:hover {
@@ -1102,7 +1076,7 @@
   display: inline-block;
   max-width: 100%;
   padding: 7px 9px;
-  border-radius: 4px 11px 11px 11px;
+  border-radius: var(--radius-card) var(--radius-card) var(--radius-card) var(--radius-card);
   background: var(--control-muted-bg);
   font-size: 10px;
   font-weight: 650;
@@ -1122,7 +1096,7 @@
 
 .listen-message.is-self > div > span {
   color: var(--color-on-primary);
-  border-radius: 11px 4px 11px 11px;
+  border-radius: var(--radius-card) var(--radius-card) var(--radius-card) var(--radius-card);
   background: var(--color-primary);
 }
 
@@ -1148,7 +1122,7 @@
   margin: 0 9px 9px;
   padding: 7px 7px 7px 11px;
   border: 1px solid var(--border-subtle);
-  border-radius: 13px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   cursor: text;
 }
@@ -1188,16 +1162,10 @@
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  border-radius: 9px;
-  color: var(--color-on-primary);
-  background: var(--color-primary);
+  border-radius: var(--radius-control);
   transition:
     opacity 0.16s ease,
-    transform 0.16s ease;
-}
-
-.listen-chat-composer button:hover:not(:disabled) {
-  transform: translateY(-1px);
+    background-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .listen-chat-composer button:disabled {
@@ -1221,7 +1189,7 @@
   justify-content: space-between;
   overflow: hidden;
   padding: 18px;
-  border-radius: 17px;
+  border-radius: var(--radius-card);
   color: white;
   background:
     radial-gradient(
@@ -1283,7 +1251,7 @@
 .listen-preview-notice {
   margin-top: 14px;
   padding: 11px 12px;
-  border-radius: 11px;
+  border-radius: var(--radius-card);
   color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   font-size: 10px;
@@ -1351,7 +1319,7 @@
   height: 44px;
   padding-left: 14px;
   padding-right: 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   font-size: 12px;
 }
 
@@ -1376,7 +1344,7 @@
   text-align: left;
   color: var(--color-text-secondary);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   transition: all 0.16s ease;
 }
@@ -1429,7 +1397,7 @@
   gap: 9px;
   padding: 7px;
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   text-align: left;
   transition: all 0.16s ease;
 }
@@ -1484,7 +1452,7 @@
 .listen-style-options button {
   padding: 7px 11px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 800;
@@ -1503,7 +1471,7 @@
   justify-content: space-between;
   gap: 18px;
   padding: 12px;
-  border-radius: 13px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
 
@@ -1515,7 +1483,7 @@
   gap: 11px;
   padding: 11px 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 13px;
+  border-radius: var(--radius-card);
   text-align: left;
   background: var(--control-muted-bg);
   transition:
@@ -1534,7 +1502,7 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border-radius: 11px;
+  border-radius: var(--radius-card);
   color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
@@ -1631,32 +1599,6 @@
   gap: 11px;
 }
 
-.listen-song-picker-tabs {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px;
-  border-radius: 12px;
-  background: var(--control-muted-bg);
-}
-
-.listen-song-picker-tabs button {
-  min-width: 0;
-  flex: 1;
-  padding: 8px 10px;
-  border-radius: 9px;
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  font-weight: 800;
-  transition: all 0.16s ease;
-}
-
-.listen-song-picker-tabs button.is-active {
-  color: var(--color-text-main);
-  background: var(--content-panel-bg);
-  box-shadow: 0 2px 8px color-mix(in srgb, black 7%, transparent);
-}
-
 .listen-song-picker-search,
 .listen-song-picker-source {
   min-height: 42px;
@@ -1744,7 +1686,7 @@
   height: 28px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
   background: var(--control-muted-bg);
 }
@@ -1779,7 +1721,7 @@
   gap: 10px;
   padding: 7px 8px;
   border-bottom: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--radius-item);
   cursor: pointer;
 }
 
@@ -1845,7 +1787,7 @@
   height: 28px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
 }
 
@@ -1927,7 +1869,7 @@
   align-items: center;
   gap: 12px;
   padding: 13px 16px;
-  border-radius: 16px;
+  border-radius: var(--radius-control);
   background: var(--content-panel-bg);
 }
 
@@ -1945,7 +1887,7 @@
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   color: var(--color-text-secondary);
   background: var(--control-muted-bg);
   transition: all 0.18s ease;
@@ -1975,7 +1917,7 @@
   margin: 14px 0 20px;
   padding: 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 16px;
+  border-radius: var(--radius-popover);
   background: var(--content-panel-bg);
 }
 
@@ -2031,7 +1973,7 @@
 
 .listen-filter-panel .listen-search-shell {
   height: 38px;
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
 }
 
 .listen-room-grid {
@@ -2061,7 +2003,7 @@
 .listen-room-card {
   position: relative;
   padding: 0;
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: var(--content-panel-bg);
   box-shadow: none;
 }
@@ -2131,13 +2073,6 @@
 
 .listen-room-card-top .listen-room-type-badge {
   position: static;
-  flex-shrink: 0;
-  padding: 5px 7px;
-  border-color: color-mix(in srgb, var(--color-primary) 18%, var(--border-subtle));
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  backdrop-filter: none;
-  font-size: 8px;
 }
 
 .listen-room-card-body {
@@ -2148,7 +2083,7 @@
   min-height: 38px;
   margin-top: 0;
   padding: 9px 10px;
-  border-radius: 11px;
+  border-radius: var(--radius-card);
   color: var(--color-text-main);
   background: var(--control-muted-bg);
   font-size: 10px;
@@ -2453,7 +2388,7 @@
   align-items: center;
   gap: 12px;
   border: 0;
-  border-radius: 13px;
+  border-radius: var(--radius-item);
   background: transparent;
   color: var(--color-text-main);
 }
@@ -2574,7 +2509,7 @@
 .listen-hero {
   min-height: 174px;
   padding: 25px 32px;
-  border-radius: 22px;
+  border-radius: var(--radius-dialog);
   box-shadow: 0 14px 38px color-mix(in srgb, var(--color-primary) 7%, transparent);
 }
 
@@ -2609,7 +2544,7 @@
   margin: 14px 0 18px;
   padding: 11px 12px 10px;
   border: 1px solid var(--border-subtle);
-  border-radius: 18px;
+  border-radius: var(--radius-popover);
   background: var(--content-panel-bg);
   box-shadow: 0 8px 24px color-mix(in srgb, #000 4%, transparent);
 }
@@ -2634,7 +2569,7 @@
   gap: 9px;
   padding: 6px 10px;
   border-color: transparent;
-  border-radius: 13px;
+  border-radius: var(--radius-control);
   background: transparent;
 }
 
@@ -2652,7 +2587,7 @@
 .listen-room-type-icon {
   width: 34px;
   height: 34px;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
 }
 
 .listen-room-type-tabs button.is-active .listen-room-type-icon {
@@ -2672,34 +2607,9 @@
 }
 
 .listen-scope-tabs {
+  --custom-tab-width: 240px;
+  max-width: 100%;
   flex-shrink: 0;
-  display: inline-flex;
-  padding: 3px;
-  border-radius: 11px;
-  background: var(--control-muted-bg);
-}
-
-.listen-scope-tabs button {
-  height: 29px;
-  padding: 0 13px;
-  border-radius: 8px;
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  font-weight: 750;
-  transition:
-    color 0.18s ease,
-    background 0.18s ease,
-    box-shadow 0.18s ease;
-}
-
-.listen-scope-tabs button:hover {
-  color: var(--color-text-main);
-}
-
-.listen-scope-tabs button.is-active {
-  color: var(--color-text-main);
-  background: var(--content-panel-bg);
-  box-shadow: 0 2px 8px color-mix(in srgb, #000 8%, transparent);
 }
 
 .listen-browser-panel .listen-toolbar {
@@ -2711,7 +2621,7 @@
 .listen-browser-panel .listen-search-shell {
   height: 38px;
   border-color: transparent;
-  border-radius: 11px;
+  border-radius: var(--radius-popover);
   background: var(--control-muted-bg);
 }
 
@@ -2769,7 +2679,7 @@
 
 .listen-room-card {
   overflow: hidden;
-  border-radius: 17px;
+  border-radius: var(--radius-card);
   background: var(--content-panel-bg);
   box-shadow: 0 8px 24px color-mix(in srgb, #000 5%, transparent);
 }
@@ -2827,11 +2737,6 @@
 .listen-room-tags {
   min-height: 20px;
   margin-top: 10px;
-}
-
-.listen-room-tags > span {
-  padding: 3px 7px;
-  font-size: 8px;
 }
 
 @media (max-width: 900px) {

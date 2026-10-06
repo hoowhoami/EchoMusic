@@ -96,7 +96,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-item);
   background: var(--control-bg);
   border: 1px solid var(--control-border);
 }
@@ -135,14 +135,11 @@
 
 .reset-btn {
   align-self: flex-start;
-  min-height: 18px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-text-secondary);
   cursor: pointer;
   transition: color 0.2s;
-}
-
-.reset-btn:hover {
-  color: var(--color-primary-text);
 }

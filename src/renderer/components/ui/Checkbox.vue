@@ -30,8 +30,8 @@ const emit = defineEmits<{
     <CheckboxIndicator class="checkbox-indicator">
       <Icon
         :icon="props.modelValue === 'indeterminate' ? iconMinus : iconCheckMark"
-        :width="12"
-        :height="12"
+        :width="14"
+        :height="14"
         aria-hidden="true"
       />
     </CheckboxIndicator>
@@ -40,35 +40,50 @@ const emit = defineEmits<{
 
 <style scoped>
 .checkbox {
-  width: 16px;
-  height: 16px;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  padding: 0;
   flex-shrink: 0;
-  border-radius: 4px;
-  border: 1.5px solid var(--control-checkbox-border);
+  border-radius: var(--radius-detail);
+  border: 1px solid var(--control-checkbox-border);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: var(--control-checkbox-bg);
+  cursor: pointer;
   transition:
-    background 0.2s ease,
-    border-color 0.2s ease;
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .checkbox[data-state='unchecked']:not([data-disabled]):hover {
   border-color: var(--control-checkbox-border-hover);
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--control-checkbox-bg));
+  background: var(--control-hover-bg);
 }
 
-.checkbox:focus-visible {
-  outline: 2px solid var(--control-checkbox-border-hover) !important;
+.checkbox:focus-visible:not([data-disabled]) {
+  outline: 1px solid var(--control-checkbox-active-border) !important;
   outline-offset: 2px;
-  border-color: var(--control-checkbox-border-hover);
 }
 
 .checkbox[data-state='checked'],
 .checkbox[data-state='indeterminate'] {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
+  border-color: var(--control-checkbox-active-border);
+  background: var(--control-active-bg);
+}
+
+.checkbox:is([data-state='checked'], [data-state='indeterminate']):not([data-disabled]):hover {
+  background: var(--control-accent-hover-bg);
+}
+
+.checkbox[data-state='unchecked']:not([data-disabled]):active {
+  background: var(--control-neutral-pressed-bg);
+}
+
+.checkbox:is([data-state='checked'], [data-state='indeterminate']):not([data-disabled]):active {
+  background: var(--control-accent-pressed-bg);
 }
 
 .checkbox-indicator {
@@ -81,5 +96,11 @@ const emit = defineEmits<{
 .checkbox[data-disabled] {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkbox {
+    transition: none;
+  }
 }
 </style>

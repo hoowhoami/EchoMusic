@@ -3,6 +3,8 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Sortable from 'sortablejs';
 import Button from '@/components/ui/Button.vue';
+import Badge from '@/components/ui/Badge.vue';
+import { getPlayerBarBadgeTone } from './playerBarActions';
 import Popover from '@/components/ui/Popover.vue';
 import MvIcon from '@/components/ui/MvIcon.vue';
 import CastPopover from '@/components/player/CastPopover.vue';
@@ -313,7 +315,7 @@ onBeforeUnmount(() => {
             <template #trigger>
               <button
                 type="button"
-                class="playerbar-edit-entry app-focus-ring-soft"
+                class="action-icon playerbar-edit-entry app-focus-ring-soft"
                 aria-label="编辑播放栏布局"
                 @click="editMode = true"
               >
@@ -344,9 +346,13 @@ onBeforeUnmount(() => {
                 <PluginIcon v-else :icon="item.icon" :width="19" :height="19" />
               </span>
               <span class="playerbar-use-title">{{ item.title }}</span>
-              <span v-if="item.visibleBadge" class="playerbar-more-badge">{{
-                item.visibleBadge
-              }}</span>
+              <Badge
+                v-if="item.visibleBadge"
+                :count="item.visibleBadge"
+                :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+                :title="item.visibleBadge"
+                class="playerbar-more-badge"
+              />
             </button>
           </template>
         </Tooltip>
@@ -367,7 +373,7 @@ onBeforeUnmount(() => {
         <div class="playerbar-more-heading-actions">
           <button
             type="button"
-            class="playerbar-reset app-focus-ring-soft"
+            class="playerbar-reset soft-secondary-action app-focus-ring-soft"
             @click="settings.playerBarLayout = emptyPlayerBarLayout()"
           >
             恢复默认
@@ -579,10 +585,10 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
+  background: transparent;
   color: var(--icon-main);
   transition:
-    background-color 0.12s ease,
     color 0.12s ease,
     transform 0.12s ease;
 }
@@ -594,7 +600,6 @@ onBeforeUnmount(() => {
 .playerbar-more-trigger:hover,
 .playerbar-more-trigger[aria-expanded='true'] {
   color: var(--color-primary-text);
-  background: var(--control-hover-bg);
   transform: scale(1.08);
 }
 </style>
@@ -653,16 +658,11 @@ onBeforeUnmount(() => {
 }
 
 .playerbar-reset {
+  min-height: 28px;
   padding: 4px 7px;
-  border-radius: 7px;
-  color: var(--color-text-secondary);
+  border-radius: var(--radius-control);
   font-size: 11px;
   font-weight: 600;
-}
-
-.playerbar-reset:hover {
-  color: var(--color-primary-text);
-  background: var(--control-hover-bg);
 }
 
 .playerbar-edit-entry {
@@ -671,7 +671,7 @@ onBeforeUnmount(() => {
   height: 26px;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
 }
 
@@ -694,7 +694,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 9px;
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   color: var(--color-text-main);
   font-size: 12px;
   font-weight: 700;
@@ -735,7 +735,7 @@ onBeforeUnmount(() => {
   overflow-x: auto;
   padding: 10px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--floating-surface-bg) 92%, transparent),
@@ -760,7 +760,7 @@ onBeforeUnmount(() => {
   min-width: 750px;
   padding: 9px 12px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--floating-surface-bg) 58%, transparent);
 }
 
@@ -768,7 +768,7 @@ onBeforeUnmount(() => {
 .playerbar-skeleton-center,
 .playerbar-skeleton-right {
   min-width: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   opacity: 0.72;
   pointer-events: none;
 }
@@ -784,7 +784,7 @@ onBeforeUnmount(() => {
 .playerbar-skeleton-cover {
   width: 34px;
   height: 34px;
-  border-radius: 7px;
+  border-radius: var(--radius-media);
   background: color-mix(in srgb, var(--color-text-secondary) 18%, transparent);
 }
 
@@ -868,7 +868,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 3px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: transparent;
 }
 
@@ -894,7 +894,7 @@ onBeforeUnmount(() => {
   min-width: 750px;
   padding: 24px 10px 8px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--control-muted-bg) 54%, transparent);
 }
 
@@ -941,7 +941,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-item);
   color: var(--color-text-main);
   background: color-mix(in srgb, var(--floating-surface-bg) 78%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
@@ -997,7 +997,7 @@ onBeforeUnmount(() => {
   width: 14px;
   height: 14px;
   border: 1.5px solid currentColor;
-  border-radius: 3px;
+  border-radius: var(--radius-micro);
 }
 
 .playerbar-chip-badge-check.active {
@@ -1034,15 +1034,10 @@ onBeforeUnmount(() => {
 }
 
 .playerbar-more-badge {
-  flex-shrink: 0;
-  max-width: 38px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
-  color: var(--color-primary-text);
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 16px;
+  margin-inline-start: 0;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .playerbar-action-popover-proxy {
@@ -1077,7 +1072,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border: 1px dashed color-mix(in srgb, var(--color-text-main) 16%, transparent);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   color: var(--color-text-secondary);
   pointer-events: none;
 }

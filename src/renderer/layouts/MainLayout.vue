@@ -233,7 +233,7 @@ watch(routeViewKey, () => {
   isolation: isolate;
   --layout-edge-inset: 8px;
   --layout-top-inset: 8px;
-  --layout-panel-radius: 10px;
+  --layout-panel-radius: var(--radius-shell);
   --layout-panel-gap: 10px;
 }
 .layout-window-drag-strip {
@@ -322,7 +322,7 @@ watch(routeViewKey, () => {
   .main-layout {
     --layout-edge-inset: 4px;
     --layout-top-inset: 4px;
-    --layout-panel-radius: 8px;
+    --layout-panel-radius: var(--radius-shell);
     --layout-panel-gap: 6px;
   }
 }

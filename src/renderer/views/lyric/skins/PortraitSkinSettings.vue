@@ -125,7 +125,13 @@ const collapseHideControls = computed({
       </div>
     </template>
 
-    <button class="reset-btn" type="button" @click="reset">恢复默认</button>
+    <button
+      class="reset-btn soft-secondary-action app-focus-ring-soft"
+      type="button"
+      @click="reset"
+    >
+      恢复默认
+    </button>
   </div>
 
   <div class="skin-settings">

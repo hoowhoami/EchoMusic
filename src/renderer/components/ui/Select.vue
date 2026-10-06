@@ -2,7 +2,8 @@
 import { computed, ref, watch, nextTick } from 'vue';
 import Popover from './Popover.vue';
 import Tooltip from './Tooltip.vue';
-import { iconChevronDown, iconX } from '@/icons';
+import Tag from './Tag.vue';
+import { iconChevronDown, iconCheckMark, iconX } from '@/icons';
 
 type SelectValueType = string | number;
 
@@ -57,6 +58,8 @@ const scrollTop = ref(0);
 const isHovered = ref(false);
 
 const ITEM_HEIGHT = 36;
+const ITEM_GAP = 2;
+const ITEM_STRIDE = ITEM_HEIGHT + ITEM_GAP;
 const VISIBLE_COUNT = 10;
 
 // 多选值数组
@@ -127,12 +130,14 @@ watch(
   },
   { deep: true },
 );
-const totalHeight = computed(() => filteredOptions.value.length * ITEM_HEIGHT);
+const totalHeight = computed(() =>
+  Math.max(0, filteredOptions.value.length * ITEM_STRIDE - ITEM_GAP),
+);
 const startIndex = computed(() =>
   Math.max(
     0,
     Math.min(
-      Math.floor(scrollTop.value / ITEM_HEIGHT) - 2,
+      Math.floor(scrollTop.value / ITEM_STRIDE) - 2,
       filteredOptions.value.length - VISIBLE_COUNT,
     ),
   ),
@@ -144,7 +149,7 @@ const visibleItems = computed(() => {
   if (!useVirtual.value) return filteredOptions.value;
   return filteredOptions.value.slice(startIndex.value, endIndex.value);
 });
-const offsetY = computed(() => (useVirtual.value ? startIndex.value * ITEM_HEIGHT : 0));
+const offsetY = computed(() => (useVirtual.value ? startIndex.value * ITEM_STRIDE : 0));
 
 const setListScrollTop = (top: number) => {
   scrollTop.value = top;
@@ -155,7 +160,7 @@ watch(
   () => filteredOptions.value.length,
   (length) => {
     const height = listRef.value?.clientHeight || VISIBLE_COUNT * ITEM_HEIGHT;
-    const maximum = Math.max(0, length * ITEM_HEIGHT - height);
+    const maximum = Math.max(0, length * ITEM_STRIDE - ITEM_GAP - height);
     if (scrollTop.value > maximum) setListScrollTop(maximum);
   },
   { flush: 'sync' },
@@ -265,7 +270,13 @@ watch(open, (val) => {
           >
             <!-- 多选标签 -->
             <div v-if="props.multiple" class="echo-select-tags">
-              <span v-for="tag in visibleTags" :key="String(tag.value)" class="echo-select-tag">
+              <Tag
+                v-for="tag in visibleTags"
+                :key="String(tag.value)"
+                class="echo-select-tag"
+                tone="accent"
+                size="sm"
+              >
                 <span class="echo-select-tag-text">{{ tag.label }}</span>
                 <span
                   class="echo-select-tag-close motion-control-feedback"
@@ -273,10 +284,10 @@ watch(open, (val) => {
                 >
                   <Icon :icon="iconX" width="10" height="10" />
                 </span>
-              </span>
-              <span v-if="overflowCount > 0" class="echo-select-tag echo-select-tag--count">
+              </Tag>
+              <Tag v-if="overflowCount > 0" class="echo-select-tag" tone="muted" size="sm">
                 +{{ overflowCount }}
-              </span>
+              </Tag>
               <input
                 v-if="props.filterable"
                 ref="inputRef"
@@ -336,7 +347,13 @@ watch(open, (val) => {
       @keydown.esc.stop.prevent="open = false"
     >
       <div :style="useVirtual ? { height: totalHeight + 'px', position: 'relative' } : {}">
-        <div :style="useVirtual ? { transform: `translateY(${offsetY}px)` } : {}">
+        <div
+          class="echo-select-options"
+          :style="{
+            rowGap: `${ITEM_GAP}px`,
+            ...(useVirtual ? { transform: `translateY(${offsetY}px)` } : {}),
+          }"
+        >
           <Tooltip
             v-for="option in visibleItems"
             :key="String(option.value)"
@@ -358,9 +375,14 @@ watch(open, (val) => {
                 @click="handleSelect(option)"
               >
                 <span class="echo-select-item-text" data-tooltip-label>{{ option.label }}</span>
-                <span class="echo-select-item-check" aria-hidden="true">{{
-                  isSelected(option.value) ? '✓' : ''
-                }}</span>
+                <span class="echo-select-item-check" aria-hidden="true">
+                  <Icon
+                    v-if="isSelected(option.value)"
+                    :icon="iconCheckMark"
+                    width="14"
+                    height="14"
+                  />
+                </span>
               </button>
             </template>
           </Tooltip>
@@ -374,19 +396,23 @@ watch(open, (val) => {
 @reference "@/style.css";
 
 .echo-select-trigger {
-  @apply inline-flex h-9 px-3 rounded-xl border text-text-main text-[13px] font-semibold items-center gap-2 cursor-pointer overflow-hidden;
+  @apply inline-flex h-9 px-3 rounded-control text-text-main text-[13px] font-semibold items-center gap-2 cursor-pointer overflow-hidden;
   background: var(--control-muted-bg);
-  border-color: var(--control-border);
+  border: 0;
+  box-shadow: var(--control-neutral-action-shadow);
 }
 
-.echo-select-trigger:hover {
+.echo-select-trigger:hover:not(.is-disabled) {
   background: var(--control-hover-bg);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--control-border));
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 6%),
+    inset 0 0 0 1px var(--control-border-hover);
 }
 
 .echo-select-trigger[data-state='open'] {
   background: var(--control-active-bg);
-  border-color: color-mix(in srgb, var(--color-primary) 42%, var(--control-border));
+  color: var(--color-primary-text);
+  box-shadow: var(--control-active-shadow);
 }
 
 .echo-select-trigger.is-disabled {
@@ -404,12 +430,7 @@ watch(open, (val) => {
 }
 
 .echo-select-tag {
-  @apply inline-flex items-center gap-0.5 h-6 px-2 rounded-md bg-primary/10 text-primary-text text-[11px] font-semibold shrink-0;
-}
-
-.echo-select-tag--count {
-  @apply text-text-secondary;
-  background: var(--control-hover-bg);
+  gap: 2px;
 }
 
 .echo-select-tag-text {
@@ -417,7 +438,7 @@ watch(open, (val) => {
 }
 
 .echo-select-tag-close {
-  @apply flex items-center justify-center w-3.5 h-3.5 rounded-full hover:bg-primary/20 cursor-pointer;
+  @apply flex items-center justify-center w-3.5 h-3.5 rounded-control hover:bg-primary/20 cursor-pointer;
 }
 
 .echo-select-input {
@@ -442,7 +463,7 @@ watch(open, (val) => {
 }
 
 .echo-select-clear {
-  @apply flex items-center justify-center w-4 h-4 rounded-full text-text-secondary hover:text-text-main cursor-pointer shrink-0;
+  @apply flex items-center justify-center w-4 h-4 rounded-control text-text-secondary hover:text-text-main cursor-pointer shrink-0;
   background: var(--control-hover-bg);
 }
 
@@ -462,6 +483,12 @@ watch(open, (val) => {
   max-width: min(480px, calc(100vw - 24px), var(--reka-popover-content-available-width, 100vw));
   box-sizing: border-box;
   padding: 6px;
+  border-radius: var(--radius-popover);
+}
+
+/* Keep the shared floating material; only the Select boundary is strengthened. */
+.echo-popover-content.echo-select-content {
+  border: 1px solid var(--border-strong);
 }
 
 .echo-select-empty {
@@ -478,41 +505,63 @@ watch(open, (val) => {
   -webkit-overflow-scrolling: touch;
 }
 
+.echo-select-options {
+  display: flex;
+  flex-direction: column;
+}
+
 .echo-select-item {
+  box-sizing: border-box;
   width: 100%;
-  padding: 8px 12px;
-  border-radius: 10px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
   text-align: left;
   font-size: 13px;
   font-weight: 600;
+  line-height: 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   color: var(--color-text-main);
   background: transparent;
-  border: none;
-  outline: none;
+  border: 0;
+  box-shadow: inset 0 0 0 1px transparent;
   cursor: pointer;
-  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
+    opacity var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.echo-select-item:hover {
-  background: var(--row-hover-bg);
+.echo-select-item:hover:not(:disabled) {
+  background: var(--control-hover-bg);
+  box-shadow: inset 0 0 0 1px var(--control-border);
 }
-
-.echo-select-item.is-selected {
+.echo-select-item:active:not(:disabled) {
+  background: var(--control-neutral-pressed-bg);
+}
+.echo-select-item.is-selected,
+.echo-select-item.is-selected:focus-visible {
   color: var(--color-primary-text);
-  background: var(--row-selected-bg);
+  background: var(--control-active-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 24%, var(--control-border));
 }
-
+.echo-select-item.is-selected:hover:not(:disabled) {
+  background: var(--control-accent-hover-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 24%, var(--control-border));
+}
+.echo-select-item.is-selected:active:not(:disabled) {
+  background: var(--control-accent-pressed-bg);
+}
+.echo-select-item:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--control-border);
+}
 .echo-select-item.is-disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.echo-select-item.is-disabled:hover {
-  background: transparent;
 }
 
 .echo-select-item-text {
@@ -525,10 +574,17 @@ watch(open, (val) => {
 
 .echo-select-item-check {
   width: 14px;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--color-primary-text);
-  font-size: 14px;
-  font-weight: 700;
   flex-shrink: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .echo-select-trigger,
+  .echo-select-arrow,
+  .echo-select-item {
+    transition: none;
+  }
 }
 </style>

@@ -412,3 +412,26 @@ test('cached playback updates do not schedule timers and rapid menu toggles do n
   assert.equal(s.api.isPlaying.value, true);
   s.dispose();
 });
+
+test('scrolling a long context menu preserves it, while page scroll and resize dismiss it', async () => {
+  const s = await fixture();
+  const menuChild = {};
+  s.api.contextMenuRef.value = { contains: (target) => target === menuChild };
+  s.openMenu();
+  await s.flush();
+  s.emit('window:scroll', { type: 'scroll', target: menuChild });
+  await s.flush();
+  assert.equal(s.api.contextMenuOpen.value, true);
+  assert.equal(s.scroll.style.overflow, 'hidden');
+  s.emit('window:scroll', { type: 'scroll', target: s.scroll });
+  await s.flush();
+  assert.equal(s.api.contextMenuOpen.value, false);
+  assert.equal(s.scroll.style.overflow, 'auto');
+  s.openMenu();
+  await s.flush();
+  s.emit('window:resize', { type: 'resize', target: menuChild });
+  await s.flush();
+  assert.equal(s.api.contextMenuOpen.value, false);
+  assert.equal(s.listenerCount(), 0);
+  s.dispose();
+});

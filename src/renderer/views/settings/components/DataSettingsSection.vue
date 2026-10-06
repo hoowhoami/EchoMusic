@@ -8,7 +8,6 @@ import Dialog from '@/components/ui/Dialog.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
-import { iconRefreshCw } from '@/icons';
 import {
   sanitizePortableAppSettings,
   type PluginBackupProviderEntry,
@@ -514,13 +513,12 @@ onBeforeUnmount(() => {
       <div class="provider-list-header">
         <span>可用备份</span>
         <Button
-          variant="ghost"
+          variant="secondary"
           size="xs"
           :loading="isListingBackups"
           :disabled="isInspecting"
           @click="refreshProviderBackups"
         >
-          <Icon v-if="!isListingBackups" :icon="iconRefreshCw" width="14" height="14" />
           刷新
         </Button>
       </div>

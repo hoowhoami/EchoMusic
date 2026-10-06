@@ -36,8 +36,9 @@ import CommentDrawer from '@/components/music/CommentDrawer.vue';
 import CoverMode from './CoverMode.vue';
 import PortraitMode from './PortraitMode.vue';
 import LyricMode from './LyricMode.vue';
+import { loadAmllMode } from './loaders';
 // Apple Music（AMLL）皮肤为异步组件：仅当该皮肤被使用时才加载其依赖。
-const AmllMode = /* #__PURE__ */ defineAsyncComponent(() => import('./AmllMode.vue'));
+const AmllMode = /* #__PURE__ */ defineAsyncComponent(loadAmllMode);
 import LyricPlayerControls from './LyricPlayerControls.vue';
 import LyricSettingsDrawer from './LyricSettingsDrawer.vue';
 import { openSettingsDialog } from '@/composables/useSettingsDialog';
@@ -512,7 +513,7 @@ onUnmounted(() => {
         <Tooltip content="选择歌词">
           <template #trigger>
             <button
-              class="lyric-page-tool-btn"
+              class="action-icon lyric-page-tool-btn"
               aria-label="选择歌词"
               @click="lyricStore.sourceDialogOpen = true"
             >
@@ -523,7 +524,7 @@ onUnmounted(() => {
         <Tooltip v-if="hasLyrics" :content="`歌词后退 ${lyricOffsetStepLabel}`">
           <template #trigger>
             <button
-              class="lyric-page-tool-btn"
+              class="action-icon lyric-page-tool-btn"
               :aria-label="`歌词后退 ${lyricOffsetStepLabel}`"
               @click="handleOffsetAdjust(-1)"
             >
@@ -534,7 +535,7 @@ onUnmounted(() => {
         <Tooltip v-if="hasLyrics" :content="`歌词前进 ${lyricOffsetStepLabel}`">
           <template #trigger>
             <button
-              class="lyric-page-tool-btn"
+              class="action-icon lyric-page-tool-btn"
               :aria-label="`歌词前进 ${lyricOffsetStepLabel}`"
               @click="handleOffsetAdjust(1)"
             >
@@ -545,7 +546,7 @@ onUnmounted(() => {
         <Tooltip v-if="hasLyrics" content="重置单曲偏移">
           <template #trigger>
             <button
-              class="lyric-page-tool-btn"
+              class="action-icon lyric-page-tool-btn"
               :style="{
                 visibility: lyricStore.currentTrackTimeOffset !== 0 ? 'visible' : 'hidden',
               }"
@@ -586,7 +587,11 @@ onUnmounted(() => {
         </Tooltip>
         <Tooltip content="复制歌词">
           <template #trigger>
-            <button class="lyric-page-tool-btn" aria-label="复制歌词" @click="handleCopyLyrics">
+            <button
+              class="action-icon lyric-page-tool-btn"
+              aria-label="复制歌词"
+              @click="handleCopyLyrics"
+            >
               <Icon :icon="iconCopy" width="14" height="14" />
             </button>
           </template>
@@ -604,12 +609,13 @@ onUnmounted(() => {
             variant="unstyled"
             size="none"
             type="button"
-            class="top-right-btn"
+            class="action-icon top-right-btn"
             :style="{
               opacity: isCollapsed && !isMouseActive ? 0 : 1,
               transition: 'opacity 0.3s ease',
             }"
             :tooltip="portraitModeRef.isLyricCollapsed ? '展开歌词' : '收起歌词'"
+            tooltip-side="bottom"
             @click="portraitModeRef.handleCollapseClick()"
           >
             <Icon
@@ -644,7 +650,7 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               type="button"
-              class="top-right-group-btn"
+              class="action-icon top-right-group-btn"
               @click="portraitModeRef.showPreviousPortrait()"
             >
               <Icon :icon="iconChevronLeft" width="14" height="14" />
@@ -654,7 +660,7 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               type="button"
-              class="top-right-group-btn"
+              class="action-icon top-right-group-btn"
               @click="portraitModeRef.showNextPortrait()"
             >
               <Icon :icon="iconChevronRight" width="14" height="14" />
@@ -736,7 +742,7 @@ onUnmounted(() => {
           <Tooltip content="选择歌词">
             <template #trigger>
               <button
-                class="lyric-page-tool-btn"
+                class="action-icon lyric-page-tool-btn"
                 aria-label="选择歌词"
                 @click="lyricStore.sourceDialogOpen = true"
               >
@@ -747,7 +753,7 @@ onUnmounted(() => {
           <Tooltip v-if="hasLyrics" :content="`歌词后退 ${lyricOffsetStepLabel}`">
             <template #trigger>
               <button
-                class="lyric-page-tool-btn"
+                class="action-icon lyric-page-tool-btn"
                 :aria-label="`歌词后退 ${lyricOffsetStepLabel}`"
                 @click="handleOffsetAdjust(-1)"
               >
@@ -758,7 +764,7 @@ onUnmounted(() => {
           <Tooltip v-if="hasLyrics" :content="`歌词前进 ${lyricOffsetStepLabel}`">
             <template #trigger>
               <button
-                class="lyric-page-tool-btn"
+                class="action-icon lyric-page-tool-btn"
                 :aria-label="`歌词前进 ${lyricOffsetStepLabel}`"
                 @click="handleOffsetAdjust(1)"
               >
@@ -769,7 +775,7 @@ onUnmounted(() => {
           <Tooltip v-if="hasLyrics" content="重置单曲偏移">
             <template #trigger>
               <button
-                class="lyric-page-tool-btn"
+                class="action-icon lyric-page-tool-btn"
                 :style="{
                   visibility: lyricStore.currentTrackTimeOffset !== 0 ? 'visible' : 'hidden',
                 }"
@@ -810,7 +816,11 @@ onUnmounted(() => {
           </Tooltip>
           <Tooltip content="复制歌词">
             <template #trigger>
-              <button class="lyric-page-tool-btn" aria-label="复制歌词" @click="handleCopyLyrics">
+              <button
+                class="action-icon lyric-page-tool-btn"
+                aria-label="复制歌词"
+                @click="handleCopyLyrics"
+              >
                 <Icon :icon="iconCopy" width="14" height="14" />
               </button>
             </template>
@@ -941,7 +951,8 @@ onUnmounted(() => {
 
 .lyric-page-toolbar {
   position: fixed;
-  top: 56px;
+  /* Match OverlayHeader's native caption clearance when the page is zoomed out. */
+  top: max(56px, calc(35px / var(--window-zoom-factor, 1) + 10px));
   left: 16px;
   right: 16px;
   z-index: 60;
@@ -1033,7 +1044,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 50%;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
   color: var(--icon-main);
@@ -1062,7 +1073,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
   transition: all 0.2s ease;
 }
@@ -1125,7 +1136,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 50%;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
   color: var(--icon-main);

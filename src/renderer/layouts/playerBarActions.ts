@@ -1,5 +1,12 @@
 import type { PluginIcon } from '@/plugins/registry';
 
+export function getPlayerBarBadgeTone(key: string, value: string | null) {
+  if (key === 'desktop-lyric' || key === 'cast') {
+    return value === 'OFF' ? 'muted' : 'accent';
+  }
+  return 'neutral';
+}
+
 export type PlayerBarPlacement = 'left' | 'center' | 'right' | 'more';
 export type PlayerBarInteractionTrigger = 'click' | 'hover';
 type PlayerBarSavedPlacement = PlayerBarPlacement | 'toolbar';

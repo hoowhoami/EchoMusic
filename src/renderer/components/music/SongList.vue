@@ -581,13 +581,13 @@ const estimateContextMenuHeight = () => {
     (pageContextMenuItems.value.length > 0 ? 1 : 0) +
     (contextMenuCanRemove.value ? 1 : 0) +
     2;
-  return 12 + itemCount * 30 + separatorCount * 9 + Math.max(0, itemCount + separatorCount - 1) * 4;
+  return Math.min(window.innerHeight - 104, 14 + itemCount * 36 + separatorCount * 9);
 };
 
 const updateContextMenuPosition = () => {
   if (!measurementActive.value || !contextMenuOpen.value || !contextMenuPoint) return;
   const menu = contextMenuRef.value;
-  const width = menu?.offsetWidth || 172;
+  const width = menu?.offsetWidth || 180;
   const height = menu?.offsetHeight || estimateContextMenuHeight();
   const padding = 8;
   const bottomPadding = 96;
@@ -653,7 +653,9 @@ const handleDocumentKeydown = (event: KeyboardEvent) => {
   }
 };
 
-const handleWindowViewportChange = () => {
+const handleWindowViewportChange = (event: Event) => {
+  // A long extension menu scrolls independently; only page/viewport changes dismiss it.
+  if (event.type === 'scroll' && contextMenuRef.value?.contains(event.target as Node)) return;
   if (contextMenuOpen.value) closeContextMenu();
 };
 
@@ -979,7 +981,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 
             <div
               v-if="showLyricColumn && showAlbum"
-              class="min-w-0 hidden md:block pr-3 text-[12px] text-left text-text-secondary truncate"
+              class="min-w-0 hidden md:block pr-3 text-[13px] text-left text-text-secondary truncate"
             >
               {{ entry.data.lyricSnippet || '' }}
             </div>
@@ -1074,7 +1076,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
         :key="item.id"
         type="button"
         class="song-context-item"
-        :class="{ 'text-red-500': item.danger }"
+        :class="{ 'is-danger': item.danger }"
         :disabled="!isExtensionContextItemEnabled(item)"
         role="menuitem"
         @click="handleContextMenuAction(() => ctxExtensionAction(item))"
@@ -1087,7 +1089,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
         :key="item.id"
         type="button"
         class="song-context-item"
-        :class="{ 'text-red-500': item.danger }"
+        :class="{ 'is-danger': item.danger }"
         :disabled="!isPageContextItemEnabled(item)"
         role="menuitem"
         @click="handleContextMenuAction(() => ctxPageContextAction(item))"
@@ -1098,7 +1100,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
       <button
         v-if="contextMenuCanRemove"
         type="button"
-        class="song-context-item text-red-500"
+        class="song-context-item is-danger"
         role="menuitem"
         @click="handleContextMenuAction(ctxRemoveFromPlaylist)"
       >
@@ -1209,61 +1211,115 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 
 :global(.song-context-menu) {
   position: fixed;
-  min-width: 172px;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: min(180px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 104px);
   padding: 6px;
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   background: var(--floating-surface-bg);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-elevated);
   display: flex;
   flex-direction: column;
-  gap: 4px;
   z-index: 1200;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   outline: none;
   contain: paint;
   isolation: isolate;
   transform: translateZ(0);
   backface-visibility: hidden;
+  animation: song-context-enter var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 :global(.song-context-item) {
   appearance: none;
+  box-sizing: border-box;
   border: 0;
   background: transparent;
-  display: block;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
   width: 100%;
+  min-height: 36px;
   text-align: left;
-  padding: 6px 10px;
-  border-radius: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
   cursor: pointer;
   user-select: none;
   color: var(--color-text-main);
-  outline: none;
+  box-shadow: inset 0 0 0 1px transparent;
   transition:
-    background-color 0.12s ease,
-    color 0.12s ease;
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-:global(.song-context-item:not(:disabled):hover),
-:global(.song-context-item:not(:disabled):focus-visible) {
-  background-color: var(--row-hover-bg);
-  color: var(--color-primary-text);
+:global(.song-context-item:not(:disabled):hover) {
+  background: var(--control-hover-bg);
+  box-shadow: inset 0 0 0 1px var(--control-border);
+}
+
+:global(.song-context-item:not(:disabled):active) {
+  background: var(--control-neutral-pressed-bg);
+}
+
+:global(.song-context-item.is-danger) {
+  color: var(--control-danger-text);
+}
+
+:global(.song-context-item.is-danger:not(:disabled):hover) {
+  background: var(--control-danger-hover-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--state-danger) 18%, transparent);
+}
+
+:global(.song-context-item.is-danger:not(:disabled):active) {
+  background: var(--control-danger-pressed-bg);
+}
+
+:global(.song-context-item:focus-visible) {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--control-border);
 }
 
 :global(.song-context-item:disabled) {
-  cursor: default;
-  opacity: 0.45;
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 :global(.song-context-separator) {
-  border: none;
+  flex-shrink: 0;
+  border: 0;
   border-top: 1px solid var(--border-subtle);
   margin: 4px 6px;
+}
+
+@keyframes song-context-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.song-context-menu) {
+    animation: none;
+  }
+  :global(.song-context-item) {
+    transition: none;
+  }
 }
 </style>

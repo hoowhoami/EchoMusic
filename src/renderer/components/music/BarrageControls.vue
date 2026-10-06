@@ -5,17 +5,36 @@ import Slider from '@/components/ui/Slider.vue';
 import { kugouVerificationState } from '@/utils/kugouVerification';
 import type { CommentSendResource } from '@/api/comment';
 import Button from '@/components/ui/Button.vue';
+import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Popover from '@/components/ui/Popover.vue';
 import CommentComposer from './CommentComposer.vue';
 import { useCommentSubmission } from '@/composables/useCommentSubmission';
 import BarrageIcon from '@/components/ui/BarrageIcon.vue';
 import { iconX } from '@/icons';
+const densityOptions = [
+  { value: 1, label: '稀疏' },
+  { value: 2, label: '适中' },
+  { value: 3, label: '密集' },
+];
+const areaOptions = [
+  { value: 25, label: '顶部' },
+  { value: 50, label: '上半屏' },
+  { value: 100, label: '全屏' },
+];
 const props = defineProps<{ resource: CommentSendResource; variant?: 'lyric' }>();
 const settings = useSettingStore();
 const config = computed(() =>
   props.variant === 'lyric' ? settings.lyricBarrageConfig : settings.mvBarrageConfig,
 );
+const selectDensity = (index: number) => {
+  const option = densityOptions[index];
+  if (option) config.value.density = option.value;
+};
+const selectArea = (index: number) => {
+  const option = areaOptions[index];
+  if (option) config.value.area = option.value;
+};
 const enabled = defineModel<boolean>({ default: false });
 const emit = defineEmits<{ sent: [content: string] }>();
 const open = ref(false);
@@ -98,7 +117,7 @@ watch(
             variant="unstyled"
             size="none"
             type="button"
-            class="barrage-close"
+            class="action-icon barrage-close"
             aria-label="关闭弹幕面板"
             @click="open = false"
           >
@@ -145,41 +164,23 @@ watch(
             </div>
             <div class="barrage-setting">
               <div class="barrage-setting-label"><span>密度</span></div>
-              <div class="barrage-area-options" role="group" aria-label="弹幕密度">
-                <Button
-                  v-for="option in [
-                    { value: 1, label: '稀疏' },
-                    { value: 2, label: '适中' },
-                    { value: 3, label: '密集' },
-                  ]"
-                  :key="option.value"
-                  variant="unstyled"
-                  size="none"
-                  :aria-pressed="config.density === option.value"
-                  :class="{ selected: config.density === option.value }"
-                  @click="config.density = option.value"
-                  >{{ option.label }}</Button
-                >
-              </div>
+              <CustomTabBar
+                :tabs="densityOptions.map((option) => option.label)"
+                :model-value="densityOptions.findIndex((option) => option.value === config.density)"
+                role="radiogroup"
+                aria-label="弹幕密度"
+                @update:model-value="selectDensity"
+              />
             </div>
             <div class="barrage-setting">
               <div class="barrage-setting-label"><span>显示区域</span></div>
-              <div class="barrage-area-options" role="group" aria-label="弹幕显示区域">
-                <Button
-                  v-for="option in [
-                    { value: 25, label: '顶部' },
-                    { value: 50, label: '上半屏' },
-                    { value: 100, label: '全屏' },
-                  ]"
-                  :key="option.value"
-                  variant="unstyled"
-                  size="none"
-                  :aria-pressed="config.area === option.value"
-                  :class="{ selected: config.area === option.value }"
-                  @click="config.area = option.value"
-                  >{{ option.label }}</Button
-                >
-              </div>
+              <CustomTabBar
+                :tabs="areaOptions.map((option) => option.label)"
+                :model-value="areaOptions.findIndex((option) => option.value === config.area)"
+                role="radiogroup"
+                aria-label="弹幕显示区域"
+                @update:model-value="selectArea"
+              />
             </div>
           </div>
           <CommentComposer
@@ -240,7 +241,7 @@ watch(
     color 0.2s ease,
     transform 0.2s ease;
   color: rgba(255, 255, 255, 0.4);
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
 }
 .barrage-toolbar.is-lyric :deep(.barrage-trigger svg) {
@@ -263,7 +264,7 @@ watch(
   min-height: 34px;
   padding: 6px 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   color: var(--text-secondary);
   font-size: 12px;
@@ -320,25 +321,6 @@ watch(
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-.barrage-area-options {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 8px;
-  background: var(--control-muted-bg);
-}
-.barrage-area-options :deep(button) {
-  flex: 1;
-  padding: 5px 8px;
-  border-radius: 6px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-.barrage-area-options :deep(button.selected) {
-  background: var(--color-bg-elevated);
-  color: var(--color-primary-text);
-  box-shadow: var(--shadow-sm);
-}
 .barrage-panel {
   width: min(600px, calc(100vw - 64px));
   color: var(--text-main);
@@ -363,7 +345,7 @@ watch(
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-secondary);
   transition:

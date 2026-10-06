@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tag from '@/components/ui/Tag.vue';
 defineOptions({ name: 'mv-detail' });
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -487,13 +488,11 @@ watch(
           </div>
 
           <div v-if="editionList.length" class="mv-tags mv-tags--edition">
-            <span v-for="item in editionList" :key="item" class="mv-tag mv-tag--edition">{{
-              item
-            }}</span>
+            <Tag v-for="item in editionList" :key="item" size="sm">{{ item }}</Tag>
           </div>
 
           <div v-if="tagList.length" class="mv-tags">
-            <span v-for="tag in tagList" :key="tag" class="mv-tag">{{ tag }}</span>
+            <Tag v-for="tag in tagList" :key="tag" tone="accent" size="sm">{{ tag }}</Tag>
           </div>
 
           <div v-if="hasDescription" class="mv-description">{{ meta?.description }}</div>
@@ -567,7 +566,7 @@ watch(
   position: relative;
   overflow: hidden;
   aspect-ratio: 16 / 9;
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   background: #000;
 }
 
@@ -609,7 +608,7 @@ watch(
 
 .card-block {
   padding: 18px;
-  border-radius: 18px;
+  border-radius: var(--radius-card);
   background: var(--content-panel-bg);
   border: 1px solid var(--content-panel-border);
 }
@@ -630,7 +629,7 @@ watch(
   width: 96px;
   height: 96px;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: var(--radius-media);
   flex-shrink: 0;
 }
 
@@ -656,7 +655,7 @@ watch(
 .mv-version-button {
   height: 34px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--content-panel-border);
   background: var(--bg-info-card);
   color: var(--color-text-main);
@@ -737,7 +736,7 @@ watch(
 
 .mv-stat-item {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: var(--radius-item);
   background: var(--bg-info-card);
 }
 
@@ -763,23 +762,6 @@ watch(
   margin-top: -2px;
 }
 
-.mv-tag {
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  color: var(--color-primary-text);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.mv-tag--edition {
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
-  color: var(--color-text-main);
-}
-
 .mv-description {
   font-size: 13px;
   line-height: 1.8;
@@ -801,7 +783,7 @@ watch(
 
 .mv-source-card {
   padding: 14px 16px;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   border: 1px solid var(--content-panel-border);
   background: var(--bg-info-card);
   text-align: left;
@@ -843,18 +825,6 @@ watch(
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.mv-source-badge {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-text-main);
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .mv-source-status {

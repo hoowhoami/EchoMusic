@@ -159,7 +159,7 @@ const orderedPlaylists = computed(() => {
 .add-to-item {
   width: 100%;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-item);
   border: 1px solid var(--control-border);
   background: var(--control-bg);
   text-align: left;

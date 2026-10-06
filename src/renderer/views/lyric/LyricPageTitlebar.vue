@@ -13,7 +13,7 @@ defineEmits<{ close: [] }>();
         variant="unstyled"
         size="none"
         type="button"
-        class="close-btn no-drag"
+        class="action-icon titlebar-icon-action close-btn no-drag"
         tooltip="返回"
         aria-label="关闭歌词页"
         @click="$emit('close')"
@@ -29,14 +29,8 @@ defineEmits<{ close: [] }>();
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  color: var(--window-action-color, var(--icon-main));
-  transition: all 0.2s ease;
-}
-.close-btn:hover {
-  color: var(--window-action-hover-color, var(--color-primary-text));
-  background: var(--control-hover-bg);
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-control);
 }
 </style>

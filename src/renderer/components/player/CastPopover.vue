@@ -67,7 +67,13 @@ function closePopover(): void {
         <span class="inline-flex w-5 h-5 items-center justify-center">
           <Icon :icon="iconCast" width="20" height="20" />
         </span>
-        <Badge v-if="remoteActive && props.showBadge" count="ON" class="playerbar-action-badge" />
+        <Badge
+          v-if="remoteActive && props.showBadge"
+          count="ON"
+          tone="accent"
+          placement="floating"
+          class="playerbar-action-badge"
+        />
       </Button>
     </template>
 

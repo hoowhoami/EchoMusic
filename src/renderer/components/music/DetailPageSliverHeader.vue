@@ -49,6 +49,8 @@ const progress = computed(() => {
 const coverSize = props.coverBaseSize;
 const targetCoverSize = 32;
 const coverScale = computed(() => 1 - progress.value * (1 - targetCoverSize / coverSize));
+// Keep the visible media radius constant while the artwork shrinks.
+const coverRadius = computed(() => `calc(var(--radius-media, 6px) / ${coverScale.value})`);
 
 // 动态占位宽度
 const currentCoverWidth = computed(() => {
@@ -178,14 +180,20 @@ onUnmounted(() => {
             class="origin-top-left transition-shadow duration-300 shrink-0"
             :style="{
               transform: `scale(${coverScale})`,
-              borderRadius: `${16 - progress * 2}px`,
+              borderRadius: coverRadius,
               overflow: 'hidden',
               width: `${coverSize}px`,
               height: `${coverSize}px`,
             }"
           >
-            <slot name="cover" :expanded="progress < 0.9">
-              <Cover :url="coverUrl" :size="400" :width="coverSize" :height="coverSize" />
+            <slot name="cover" :expanded="progress < 0.9" :border-radius="coverRadius">
+              <Cover
+                :url="coverUrl"
+                :size="400"
+                :width="coverSize"
+                :height="coverSize"
+                :border-radius="coverRadius"
+              />
             </slot>
           </div>
         </div>
@@ -238,7 +246,7 @@ onUnmounted(() => {
 
       <!-- 吸顶后的操作按钮 -->
       <div
-        class="absolute right-5 top-0 h-full flex items-center gap-1 z-30"
+        class="sliver-collapsed-actions absolute right-5 top-0 h-full flex items-center gap-1 z-30"
         :style="{
           opacity: progress > 0.85 ? (progress - 0.85) * 6.6 : 0,
           transform: `translateX(${(1 - progress) * 20}px)`,
@@ -259,10 +267,26 @@ onUnmounted(() => {
 <style scoped>
 @reference "@/style.css";
 
+/* Compact actions must not size themselves from each caller's icon and padding. */
+.sliver-collapsed-actions :deep(.action-icon) {
+  display: inline-flex;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+}
+
+.sliver-collapsed-actions :deep(.action-icon > svg) {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
 .type-badge {
-  @apply px-2 py-0.5 rounded-full text-[10px] font-bold tracking-[1.2px] uppercase;
-  background-color: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-primary-text);
-  border: 0.5px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 </style>

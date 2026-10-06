@@ -14,6 +14,7 @@ import {
   pickValue,
   processSongTitle,
   readPositiveId,
+  readQualityMap,
   readString,
   toRecord,
 } from './shared';
@@ -378,6 +379,7 @@ export const mapPlaylistSong = (json: unknown): Song => {
     ),
     playlistSort: parseOptionalInt(record.sort),
     collectTime: parseOptionalInt(record.collecttime),
+    qualityMap: readQualityMap(transParam.qualitymap),
     privilege,
     relateGoods,
     source,

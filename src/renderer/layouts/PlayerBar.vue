@@ -15,9 +15,11 @@ import PlayerBarMoreMenu from './PlayerBarMoreMenu.vue';
 import ProgressBusyOverlay from '@/components/player/ProgressBusyOverlay.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Badge from '@/components/ui/Badge.vue';
+import { getPlayerBarBadgeTone } from './playerBarActions';
 import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import { useDeferredSeek } from '@/composables/useDeferredSeek';
+import { useLyricPagePreload } from '@/composables/useLyricPagePreload';
 import { usePlaybackProgressStatus } from '@/composables/usePlaybackProgressStatus';
 import Popover from '@/components/ui/Popover.vue';
 import MvIcon from '@/components/ui/MvIcon.vue';
@@ -122,6 +124,11 @@ const formatTime = (seconds: number) => {
 const navigateToLyric = () => {
   player.toggleLyricView(true);
 };
+
+const preloadLyricView = useLyricPagePreload(
+  () => settingStore.lyricsPageProvider,
+  () => settingStore.lyricViewMode,
+);
 
 const isArtistClickable = (artist: SongArtist) => {
   return resolveNumericId(artist.id) !== null;
@@ -572,8 +579,10 @@ onUnmounted(() => {
       <div class="flex-1 flex items-center gap-3 min-w-30 max-w-[320px] overflow-hidden">
         <div
           data-player-cover
-          class="relative w-14 h-14 shrink-0 cursor-pointer group rounded-[10px] overflow-hidden bg-[var(--control-muted-bg)]"
+          class="relative w-14 h-14 shrink-0 cursor-pointer group rounded-media overflow-hidden bg-[var(--control-muted-bg)]"
           @click="navigateToLyric"
+          @pointerenter="preloadLyricView"
+          @pointerdown="preloadLyricView"
         >
           <Cover
             v-if="currentTrack"
@@ -581,8 +590,7 @@ onUnmounted(() => {
             :size="200"
             :width="56"
             :height="56"
-            :borderRadius="10"
-            class="transition-transform duration-500 group-hover:scale-110"
+            class="player-track-cover"
           />
           <div v-else class="w-full h-full flex items-center justify-center text-text-main/30">
             <Icon :icon="iconMusic" width="24" height="24" />
@@ -674,6 +682,8 @@ onUnmounted(() => {
                 <Badge
                   v-if="item.visibleBadge"
                   :count="item.visibleBadge"
+                  :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+                  placement="floating"
                   class="playerbar-action-badge"
                 />
               </div>
@@ -764,6 +774,8 @@ onUnmounted(() => {
               <Badge
                 v-if="item.visibleBadge"
                 :count="item.visibleBadge"
+                :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+                placement="floating"
                 class="playerbar-action-badge"
               />
             </div>
@@ -859,6 +871,8 @@ onUnmounted(() => {
             <Badge
               v-if="item.visibleBadge"
               :count="item.visibleBadge"
+              :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+              placement="floating"
               class="playerbar-action-badge"
             />
           </div>
@@ -885,6 +899,22 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.player-track-cover :deep(.cover-img) {
+  transition:
+    transform 0.5s,
+    opacity var(--motion-duration-normal) var(--motion-ease-standard);
+}
+
+.group:hover .player-track-cover :deep(.cover-img) {
+  transform: scale(1.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-track-cover :deep(.cover-img) {
+    transition: none;
+  }
+}
+
 .player-song-info {
   will-change: transform;
 }

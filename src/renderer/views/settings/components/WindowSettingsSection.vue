@@ -67,7 +67,7 @@ const setBar = async (value: boolean) => {
       <div class="flex items-center gap-3 shrink-0" role="group" aria-label="界面缩放">
         <button
           type="button"
-          class="px-3 py-2 disabled:opacity-40"
+          class="settings-action w-8"
           aria-label="缩小界面"
           :disabled="!canZoomOut"
           @click="zoomOut"
@@ -77,7 +77,7 @@ const setBar = async (value: boolean) => {
         <output class="min-w-12 text-center" aria-live="polite">{{ percent }}%</output>
         <button
           type="button"
-          class="px-3 py-2 disabled:opacity-40"
+          class="settings-action w-8"
           aria-label="放大界面"
           :disabled="!canZoomIn"
           @click="zoomIn"
@@ -116,7 +116,7 @@ const setBar = async (value: boolean) => {
           <p v-if="barMessage" role="status" class="text-sm text-text-secondary">
             {{ barMessage }}
           </p>
-          <button class="text-primary-text text-sm" :disabled="barBusy" @click="setBar(true)">
+          <button class="settings-action" :disabled="barBusy" @click="setBar(true)">
             重新显示
           </button>
         </div>

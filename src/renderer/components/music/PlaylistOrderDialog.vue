@@ -9,7 +9,7 @@ import { useVirtualList } from '@/composables/useVirtualList';
 import { usePlaylistStore } from '@/stores/playlist';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
-import { iconArrowUp, iconArrowDown } from '@/icons';
+import { iconArrowUp, iconArrowDown, iconX } from '@/icons';
 import {
   loadPlaylistOrder,
   persistPlaylistOrder,
@@ -34,6 +34,7 @@ const dropId = ref('');
 const dragActive = ref(false);
 const settling = ref(false);
 const dragPreview = ref({ left: 0, top: 0, width: 0 });
+const editorRef = ref<HTMLElement | null>(null);
 const scrollbar = ref<InstanceType<typeof Scrollbar> | null>(null);
 const scroller = computed(() => scrollbar.value?.wrapRef ?? null);
 let generation = 0;
@@ -158,6 +159,7 @@ function clearDrag() {
   document.removeEventListener('pointerup', pointerUp);
   document.removeEventListener('pointercancel', clearDrag);
   window.removeEventListener('blur', clearDrag);
+  window.removeEventListener('resize', clearDrag);
 }
 function updateDropTarget() {
   const element = scroller.value;
@@ -185,6 +187,9 @@ function dragScroll() {
   }
   dragFrame = requestAnimationFrame(dragScroll);
 }
+function previewTop(viewportTop: number) {
+  return viewportTop - (editorRef.value?.getBoundingClientRect().top ?? 0);
+}
 function pointerMove(event: PointerEvent) {
   if (event.pointerId !== dragPointer) return;
   dragX = event.clientX;
@@ -192,7 +197,7 @@ function pointerMove(event: PointerEvent) {
   dragMoved ||= Math.abs(dragY - dragStartY) > 4;
   if (dragMoved) {
     dragActive.value = true;
-    dragPreview.value.top = dragY - dragGrabOffset;
+    dragPreview.value.top = previewTop(dragY - dragGrabOffset);
     updateDropTarget();
   }
 }
@@ -212,8 +217,9 @@ function pointerUp(event: PointerEvent) {
   dragPointer = -1;
   settling.value = true;
   const element = scroller.value;
-  dragPreview.value.top =
-    element.getBoundingClientRect().top + destination * 52 - element.scrollTop;
+  dragPreview.value.top = previewTop(
+    element.getBoundingClientRect().top + element.clientTop + destination * 52 - element.scrollTop,
+  );
   settleTimer = setTimeout(() => {
     settling.value = false;
     move(id, destination);
@@ -225,9 +231,17 @@ function startDrag(event: PointerEvent, id: string) {
   event.preventDefault();
   clearDrag();
   select(id);
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const origin = editorRef.value?.getBoundingClientRect();
+  if (!origin) return;
+  const target = event.currentTarget as HTMLElement;
+  const rect = (target.closest('.order-row') ?? target).getBoundingClientRect();
   dragGrabOffset = event.clientY - rect.top;
-  dragPreview.value = { left: rect.left, top: rect.top, width: rect.width };
+  // The preview shares the editor's coordinate space, including inside frosted dialogs.
+  dragPreview.value = {
+    left: rect.left - origin.left,
+    top: rect.top - origin.top,
+    width: rect.width,
+  };
   draggedId.value = id;
   dragPointer = event.pointerId;
   dragX = event.clientX;
@@ -237,6 +251,7 @@ function startDrag(event: PointerEvent, id: string) {
   document.addEventListener('pointerup', pointerUp);
   document.addEventListener('pointercancel', clearDrag);
   window.addEventListener('blur', clearDrag);
+  window.addEventListener('resize', clearDrag);
   dragFrame = requestAnimationFrame(dragScroll);
 }
 function updateOpen(open: boolean) {
@@ -302,6 +317,7 @@ watch(account, () => {
   <Dialog
     :open="open"
     :title="title"
+    content-class="playlist-order-dialog"
     description="调整列表顺序并保存到酷狗"
     :content-style="{
       width: 'min(540px, calc(100vw - 48px))',
@@ -313,7 +329,20 @@ watch(account, () => {
     :close-on-interact-outside="!saving"
     @update:open="updateOpen"
   >
-    <div class="order-editor">
+    <template #headerActions>
+      <Button
+        variant="ghost"
+        size="xs"
+        class="action-icon order-close-button"
+        type="button"
+        aria-label="关闭"
+        :disabled="saving"
+        @click="updateOpen(false)"
+      >
+        <Icon :icon="iconX" width="14" height="14" />
+      </Button>
+    </template>
+    <div ref="editorRef" class="order-editor">
       <div class="order-description">
         <p v-if="target.kind === 'tracks'" class="order-playlist-name">{{ target.title }}</p>
         <p>
@@ -324,7 +353,7 @@ watch(account, () => {
       </div>
       <div v-if="error" role="alert" class="order-error">
         <span>{{ error }}</span>
-        <Button variant="ghost" size="xs" :disabled="busy" @click="load">重新加载</Button>
+        <Button variant="secondary" size="xs" :disabled="busy" @click="load">重新加载</Button>
       </div>
       <div v-if="loading" class="order-loading" role="status" aria-label="正在加载并排序">
         <Skeleton height="44" radius="10" />
@@ -343,11 +372,11 @@ watch(account, () => {
           <span class="order-count"
             >{{ ids.length }} {{ target.kind === 'tracks' ? '首歌曲' : '个歌单' }}</span
           >
-          <div class="flex items-center gap-1.5">
+          <div class="order-tools">
             <Button
-              variant="ghost"
+              variant="soft-secondary"
               size="xs"
-              class="order-icon-button"
+              class="action-icon order-icon-button"
               tooltip="上移"
               aria-label="上移"
               :disabled="busy || selectedIndex <= 0"
@@ -356,9 +385,9 @@ watch(account, () => {
               <Icon :icon="iconArrowUp" width="16" />
             </Button>
             <Button
-              variant="ghost"
+              variant="soft-secondary"
               size="xs"
-              class="order-icon-button"
+              class="action-icon order-icon-button"
               tooltip="下移"
               aria-label="下移"
               :disabled="busy || selectedIndex < 0 || selectedIndex === ids.length - 1"
@@ -367,27 +396,29 @@ watch(account, () => {
               <Icon :icon="iconArrowDown" width="16" />
             </Button>
             <span class="order-tool-divider" aria-hidden="true"></span>
-            <label for="playlist-order-position" class="text-xs text-text-secondary">移到</label>
-            <InputNumber
-              id="playlist-order-position"
-              :model-value="position"
-              :min="1"
-              :max="Math.max(1, ids.length)"
-              :step="1"
-              :disabled="busy || !ids.length"
-              class="order-position"
-              suffix="位"
-              @update:model-value="position = Number($event)"
-              @keydown.enter.prevent="moveToPosition"
-            />
-            <Button
-              variant="secondary"
-              size="xs"
-              class="order-action-button"
-              :disabled="busy || selectedIndex < 0"
-              @click="moveToPosition()"
-              >移动</Button
-            >
+            <div class="order-position-controls">
+              <label for="playlist-order-position" class="text-xs text-text-secondary">移到</label>
+              <InputNumber
+                id="playlist-order-position"
+                :model-value="position"
+                :min="1"
+                :max="Math.max(1, ids.length)"
+                :step="1"
+                :disabled="busy || !ids.length"
+                class="order-position"
+                suffix="位"
+                @update:model-value="position = Number($event)"
+                @keydown.enter.prevent="moveToPosition"
+              />
+              <Button
+                variant="secondary"
+                size="xs"
+                class="order-action-button"
+                :disabled="busy || selectedIndex < 0"
+                @click="moveToPosition()"
+                >移动</Button
+              >
+            </div>
           </div>
         </div>
         <Scrollbar ref="scrollbar" class="order-scroll">
@@ -462,7 +493,7 @@ watch(account, () => {
     </div>
     <template #footer>
       <Button
-        variant="ghost"
+        variant="secondary"
         size="xs"
         class="order-action-button"
         :disabled="busy || !dirty"
@@ -490,7 +521,25 @@ watch(account, () => {
 </template>
 
 <style scoped>
+/* Match the shared close control position without adding a second close path. */
+:global(.dialog-content.playlist-order-dialog .dialog-header-actions) {
+  right: 16px;
+}
+:global(.dialog-content.playlist-order-dialog .dialog-header-with-actions) {
+  padding-right: 64px;
+}
+:global(.dialog-content.playlist-order-dialog .dialog-footer) {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.order-close-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--radius-control);
+}
 .order-editor {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -515,9 +564,22 @@ watch(account, () => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
   padding: 6px 8px 6px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
+}
+.order-tools,
+.order-position-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.order-tools {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+  margin-left: auto;
 }
 .order-loading {
   display: flex;
@@ -529,8 +591,8 @@ watch(account, () => {
 .order-loading-rows {
   flex: 1;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
 }
 .order-loading-row {
   display: flex;
@@ -546,13 +608,13 @@ watch(account, () => {
   font-variant-numeric: tabular-nums;
 }
 .order-icon-button {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
 }
 .order-action-button {
-  font-weight: 500;
+  font-weight: 600;
 }
 .order-tool-divider {
   width: 1px;
@@ -564,7 +626,7 @@ watch(account, () => {
   width: 92px;
   height: 32px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--color-bg-dialog);
 }
 .order-position :deep(.input-number-field) {
@@ -588,12 +650,11 @@ watch(account, () => {
 .order-scroll {
   flex: 1;
   min-height: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
 }
 .order-row {
   height: 52px;
-  border-top: 2px solid transparent;
   color: var(--color-text-main);
   transition: background-color 120ms ease;
 }
@@ -616,7 +677,8 @@ watch(account, () => {
     background-color 120ms ease;
 }
 .order-drag-preview {
-  position: fixed;
+  position: absolute;
+  box-sizing: border-box;
   z-index: 1;
   display: flex;
   align-items: center;
@@ -624,19 +686,16 @@ watch(account, () => {
   height: 52px;
   padding: 0 12px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--control-border));
-  border-radius: 10px;
-  background: var(--color-bg-dialog);
+  border-radius: var(--radius-card);
+  background: var(--floating-surface-base);
   color: var(--color-text-main);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 10%);
   pointer-events: none;
-  transform: scale(1.015);
 }
 .order-drag-preview.settling {
-  transform: scale(1);
   box-shadow: none;
   transition:
     top 160ms ease-out,
-    transform 160ms ease-out,
     box-shadow 160ms ease-out;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -657,8 +716,7 @@ watch(account, () => {
   user-select: none;
 }
 .order-row-select:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: -2px;
+  box-shadow: inset 0 0 0 1px var(--control-border);
 }
 .order-grip {
   display: grid;
@@ -701,6 +759,6 @@ watch(account, () => {
   color: var(--color-text-main);
   padding: 8px 12px;
   background: var(--control-hover-bg);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
 }
 </style>

@@ -83,7 +83,7 @@ defineExpose({ commit });
         <span class="tag-input-text">{{ tag }}</span>
         <button
           type="button"
-          class="tag-input-remove"
+          class="action-icon tag-input-remove"
           :disabled="disabled"
           :aria-label="`删除标签 ${tag}`"
           @click="remove(index)"
@@ -127,7 +127,7 @@ defineExpose({ commit });
   min-height: 36px;
   padding: 5px 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   color: var(--color-text-main);
   transition: border-color 0.15s;
@@ -146,7 +146,7 @@ defineExpose({ commit });
   gap: 4px;
   max-width: 100%;
   padding: 2px 4px 2px 8px;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: var(--control-hover-bg);
   font-size: 12px;
   line-height: 20px;
@@ -163,7 +163,7 @@ defineExpose({ commit });
   width: 20px;
   height: 20px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;

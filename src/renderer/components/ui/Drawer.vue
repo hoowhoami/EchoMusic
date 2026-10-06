@@ -162,7 +162,7 @@ onUnmounted(() => {
   right: 0;
   bottom: var(--drawer-safe-bottom);
   width: min(380px, 88vw);
-  border-radius: 10px 0 0 10px;
+  border-radius: var(--radius-popover) 0 0 var(--radius-popover);
   transform: translateX(16px);
   box-shadow: none;
 }
@@ -173,7 +173,7 @@ onUnmounted(() => {
   bottom: var(--drawer-safe-bottom);
   transform: translateY(16px);
   width: var(--drawer-content-width, 92vw);
-  border-radius: 24px;
+  border-radius: var(--radius-dialog);
 }
 
 :global(.drawer-bottom[data-state='open']) {

@@ -10,6 +10,8 @@ interface Props {
   tabIds?: string[];
   panelIds?: string[];
   disabled?: boolean;
+  /** 吸顶工具栏等紧凑区域使用同一套样式的较小尺寸。 */
+  size?: 'default' | 'sm';
   /** 切换设置值时使用单选组语义；切换内容面板时使用默认 tablist。 */
   role?: 'tablist' | 'radiogroup';
 }
@@ -18,11 +20,16 @@ const props = withDefaults(defineProps<Props>(), {
   tabs: () => [],
   modelValue: 0,
   disabled: false,
+  size: 'default',
   role: 'tablist',
 });
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: number): void;
+}>();
+
+defineSlots<{
+  tab?: (props: { label: string; index: number; selected: boolean }) => unknown;
 }>();
 
 const tabCount = computed(() => (props.tabs.length > 0 ? props.tabs.length : 1));
@@ -34,8 +41,8 @@ const hasSelection = computed(
 );
 
 const sliderStyle = computed(() => ({
-  width: `calc(100% / ${tabCount.value})`,
-  transform: `translateX(${props.modelValue * 100}%)`,
+  width: `calc((100% - ${tabCount.value - 1} * var(--custom-tab-gap)) / ${tabCount.value})`,
+  transform: `translateX(calc(${props.modelValue * 100}% + ${props.modelValue} * var(--custom-tab-gap)))`,
   visibility: hasSelection.value ? ('visible' as const) : ('hidden' as const),
 }));
 
@@ -73,7 +80,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 </script>
 
 <template>
-  <div class="custom-tab-root" :class="props.class">
+  <div class="custom-tab-root" :class="[props.class, { 'is-compact': size === 'sm' }]">
     <div
       class="custom-tab-track"
       :role="props.role"
@@ -99,7 +106,9 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
         @click="handleSelect(index)"
         @keydown="handleKeydown($event, index)"
       >
-        {{ label }}
+        <slot name="tab" :label="label" :index="index" :selected="isSelected(index)">
+          <span class="custom-tab-label">{{ label }}</span>
+        </slot>
       </Button>
     </div>
   </div>
@@ -109,12 +118,13 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 @reference "@/style.css";
 
 .custom-tab-root {
-  width: 100%;
-  height: 42px;
+  --custom-tab-gap: 4px;
+  width: var(--custom-tab-width, 100%);
+  height: 44px;
   padding: 4px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  border-radius: var(--radius-item);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--control-border);
 }
 
 .custom-tab-track {
@@ -122,7 +132,18 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   height: 100%;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--custom-tab-gap);
   align-items: center;
+}
+
+.custom-tab-root.is-compact {
+  height: 32px;
+  padding: 3px;
+}
+
+.custom-tab-root.is-compact .custom-tab-item {
+  padding: 0 8px;
+  font-size: 12px;
 }
 
 .custom-tab-slider {
@@ -130,52 +151,46 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   top: 0;
   bottom: 0;
   left: 0;
-  border-radius: 9px;
-  background: var(--content-selected-bg);
-  box-shadow: 0 2px 4px color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  border-radius: var(--radius-item);
+  background: var(--control-active-bg);
+  box-shadow: var(--control-active-shadow);
   transition: transform var(--motion-duration-normal) var(--motion-ease-standard);
   z-index: 1;
-}
-
-.dark .custom-tab-slider {
-  background: var(--color-primary);
-  box-shadow: none;
-}
-
-.dark .custom-tab-root {
-  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
-  border-color: color-mix(in srgb, var(--color-text-main) 6%, transparent);
 }
 
 .custom-tab-item {
   position: relative;
   z-index: 2;
   height: 100%;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text-secondary);
-  border-radius: 9px;
-  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+  border-radius: var(--radius-item);
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    background-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.custom-tab-item:hover {
+.custom-tab-item:not(.active):hover:not(:disabled) {
   color: var(--color-text-main);
+  background: var(--row-hover-bg);
 }
 
 .custom-tab-item.active {
   color: var(--color-primary-text);
 }
 
-.dark .custom-tab-item.active {
-  color: var(--color-on-primary);
-}
-
-.dark .custom-tab-item:hover {
-  color: var(--color-text-main);
-}
-
-.dark .custom-tab-item.active:hover {
-  color: var(--color-on-primary);
+.custom-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {

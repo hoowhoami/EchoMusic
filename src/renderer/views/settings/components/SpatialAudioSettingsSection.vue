@@ -9,7 +9,7 @@ import { useToastStore } from '@/stores/toast';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import { Icon } from '@iconify/vue';
-import { iconCheckMark, iconPencil, iconPlus, iconTrash, iconX } from '@/icons';
+import { iconCheckMark, iconPencil, iconTrash, iconX } from '@/icons';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { sectionTitles } from '../constants';
 import { normalizeAudioEffectName, type DspProviderRecord } from '../../../../shared/audio';
@@ -307,7 +307,7 @@ const commitRename = (id: string) => {
                 <template #trigger>
                   <button
                     type="button"
-                    class="spatial-file-action"
+                    class="action-icon spatial-file-action"
                     aria-label="保存名称"
                     @click="commitRename(file.id)"
                   >
@@ -319,7 +319,7 @@ const commitRename = (id: string) => {
                 <template #trigger>
                   <button
                     type="button"
-                    class="spatial-file-action"
+                    class="action-icon spatial-file-action"
                     aria-label="取消"
                     @click="cancelRename"
                   >
@@ -331,7 +331,7 @@ const commitRename = (id: string) => {
                 <template #trigger>
                   <button
                     type="button"
-                    class="spatial-file-action"
+                    class="action-icon spatial-file-action"
                     aria-label="重命名"
                     @click="beginRename(file.id, file.name)"
                   >
@@ -343,7 +343,7 @@ const commitRename = (id: string) => {
                 <template #trigger>
                   <button
                     type="button"
-                    class="spatial-file-delete"
+                    class="action-icon spatial-file-delete"
                     aria-label="移除"
                     @click="removeFile(file.id)"
                   >
@@ -361,12 +361,12 @@ const commitRename = (id: string) => {
       <template #footer>
         <Button
           v-if="activeFileTab === 'local'"
-          variant="outline"
+          variant="primary"
           size="sm"
           type="button"
           :loading="importing"
           @click="importFiles"
-          ><Icon :icon="iconPlus" width="14" height="14" class="mr-1" />导入本地文件</Button
+          >导入本地文件</Button
         >
         <span v-else class="file-download-hint">请在播放器的「音效广场」中下载对应分类的音效</span>
       </template>
@@ -399,7 +399,7 @@ const commitRename = (id: string) => {
               <template #trigger>
                 <button
                   type="button"
-                  class="spatial-file-delete engine-delete"
+                  class="action-icon spatial-file-delete engine-delete"
                   aria-label="删除音效引擎"
                   @click="removeProvider(provider)"
                 >
@@ -432,7 +432,7 @@ const commitRename = (id: string) => {
               </template>
             </Tooltip>
             <Button
-              variant="outline"
+              variant="secondary"
               size="xs"
               type="button"
               @click="
@@ -449,13 +449,12 @@ const commitRename = (id: string) => {
       </div>
       <template #footer>
         <Button
-          variant="outline"
+          variant="primary"
           size="sm"
           type="button"
           :disabled="importingProvider"
           @click="importProvider"
         >
-          <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
           导入音效引擎
         </Button>
       </template>
@@ -472,7 +471,7 @@ const commitRename = (id: string) => {
   min-height: 42px;
   padding: 0 10px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-item);
 }
 .spatial-file-list {
   padding-right: 4px;
@@ -503,7 +502,7 @@ const commitRename = (id: string) => {
   flex: 1;
   height: 28px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 50%, transparent);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   padding: 0 7px;
   background: transparent;
   color: var(--color-text-main);
@@ -526,7 +525,7 @@ const commitRename = (id: string) => {
 .spatial-empty {
   padding: 24px;
   border: 1px dashed color-mix(in srgb, var(--color-text-main) 16%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
   text-align: center;
   font-size: 12px;
@@ -569,7 +568,7 @@ const commitRename = (id: string) => {
 .file-tab:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: -2px;
-  border-radius: 4px;
+  border-radius: var(--radius-item);
 }
 .file-download-hint {
   color: var(--color-text-secondary);
@@ -587,7 +586,7 @@ const commitRename = (id: string) => {
 .engine-card {
   padding: 14px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 11%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   transition:
     border-color 0.16s ease,
@@ -633,16 +632,6 @@ const commitRename = (id: string) => {
   white-space: nowrap;
 }
 
-.engine-active-badge {
-  flex: 0 0 auto;
-  padding: 2px 7px;
-  border-radius: 9999px;
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-size: 9px;
-  font-weight: 700;
-}
-
 .engine-technical-info,
 .engine-file-name {
   overflow: hidden;
@@ -660,7 +649,7 @@ const commitRename = (id: string) => {
   flex: 0 0 28px;
   align-items: center;
   justify-content: center;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
 }
 
 .engine-delete:hover {

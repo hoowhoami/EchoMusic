@@ -11,6 +11,41 @@
   --motion-stagger: 32ms;
 }
 
+/* Catalog cards share a quiet border/lift response. Shadows stay unchanged. */
+.card-hover {
+  --card-hover-border: color-mix(in srgb, var(--color-primary) 45%, var(--control-border));
+  transition: transform var(--motion-duration-normal) var(--motion-ease-standard);
+}
+
+.card-hover-border {
+  transition: border-color var(--motion-duration-normal) var(--motion-ease-standard);
+}
+
+.card-hover.card-hover-border {
+  transition:
+    transform var(--motion-duration-normal) var(--motion-ease-standard),
+    border-color var(--motion-duration-normal) var(--motion-ease-standard);
+}
+
+.card-hover:not(:disabled):not(.unavailable):hover .card-hover-border,
+.card-hover.card-hover-border:not(:disabled):not(.unavailable):hover {
+  border-color: var(--card-hover-border);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .card-hover:not(:disabled):not(.unavailable):hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-hover,
+  .card-hover-border,
+  .card-hover.card-hover-border {
+    transition: none;
+  }
+}
+
 /* Opt in per content section, never per virtualized row. No forwards fill or
    persistent will-change: text returns to normal rasterization after entry. */
 @media (prefers-reduced-motion: no-preference) {

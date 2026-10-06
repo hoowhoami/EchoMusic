@@ -44,8 +44,12 @@ const handleClick = () => {
 </script>
 
 <template>
-  <div class="artist-card group" :class="{ 'is-singer': isSinger }" @click="handleClick">
-    <div class="card-container flex flex-col">
+  <div
+    class="artist-card group"
+    :class="{ 'is-singer': isSinger, 'card-hover': isSinger }"
+    @click="handleClick"
+  >
+    <div class="card-container card-hover-border flex flex-col">
       <div class="cover-shell">
         <div class="cover-wrapper">
           <Cover :url="coverUrl" :size="coverSize" :borderRadius="'50%'" class="w-full h-full" />
@@ -62,28 +66,15 @@ const handleClick = () => {
 <style scoped>
 @reference "@/style.css";
 
-.artist-card {
-  @apply transition-all duration-300 ease-out;
-}
-
 .artist-card.is-singer {
   @apply cursor-pointer;
 }
 
-.artist-card.is-singer:hover {
-  transform: scale(1.03);
-}
-
 .card-container {
-  @apply p-3 rounded-[20px] transition-all duration-300;
+  @apply p-3 rounded-card;
   background: var(--content-panel-bg);
   border: 1px solid var(--content-panel-border);
   box-shadow: var(--shadow-card);
-}
-
-.artist-card.is-singer:hover .card-container {
-  box-shadow: var(--shadow-card-hover);
-  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--border-subtle));
 }
 
 .cover-shell {

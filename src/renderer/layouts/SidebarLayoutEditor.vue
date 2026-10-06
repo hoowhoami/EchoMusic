@@ -183,10 +183,10 @@ onBeforeUnmount(destroySortables);
   >
     <template #trigger>
       <Button
+        class="action-icon sidebar-app-tool sidebar-layout-entry"
         variant="unstyled"
         size="none"
         type="button"
-        :class="['sidebar-layout-entry', collapsed ? 'is-rail' : 'is-pill']"
         aria-label="编辑侧边栏"
         tooltip="编辑侧边栏"
         tooltip-side="top"
@@ -204,7 +204,7 @@ onBeforeUnmount(destroySortables);
           <template #trigger>
             <button
               type="button"
-              class="sidebar-layout-reset app-focus-ring-soft"
+              class="sidebar-layout-reset soft-secondary-action app-focus-ring-soft"
               aria-label="恢复默认"
               @click="settings.sidebarLayout = resetSidebarMenus(settings.sidebarLayout)"
             >
@@ -236,7 +236,6 @@ onBeforeUnmount(destroySortables);
                     :size="64"
                     :width="22"
                     :height="22"
-                    :borderRadius="7"
                   />
                   <PluginIcon
                     v-else-if="sectionVisualItem(section)?.layoutIcon"
@@ -259,7 +258,7 @@ onBeforeUnmount(destroySortables);
               <template #trigger>
                 <button
                   type="button"
-                  class="sidebar-layout-icon-button app-focus-ring-soft"
+                  class="action-icon sidebar-layout-icon-button app-focus-ring-soft"
                   :aria-pressed="!section.isHidden"
                   :aria-label="section.isHidden ? '显示分组' : '隐藏分组'"
                   @click="toggleSection(section)"
@@ -291,7 +290,6 @@ onBeforeUnmount(destroySortables);
                       :size="64"
                       :width="22"
                       :height="22"
-                      :borderRadius="7"
                     />
                     <PluginIcon
                       v-else-if="item.layoutIcon"
@@ -307,7 +305,7 @@ onBeforeUnmount(destroySortables);
                 <template #trigger>
                   <button
                     type="button"
-                    class="sidebar-layout-icon-button is-small app-focus-ring-soft"
+                    class="action-icon sidebar-layout-icon-button is-small app-focus-ring-soft"
                     :aria-pressed="!item.isHidden"
                     :aria-label="item.isHidden ? '显示入口' : '隐藏入口'"
                     @click="toggleItem(item)"
@@ -327,8 +325,11 @@ onBeforeUnmount(destroySortables);
 <style scoped>
 .sidebar-layout-entry {
   display: flex;
+  width: 32px;
+  height: 32px;
   align-items: center;
   justify-content: center;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
   background: transparent;
   transition:
@@ -337,23 +338,9 @@ onBeforeUnmount(destroySortables);
     transform 0.18s ease;
 }
 
-.sidebar-layout-entry.is-pill {
-  width: 38px;
-  height: 30px;
-  border-radius: 11px;
-  color: var(--icon-main);
-}
-
 .sidebar-layout-entry:hover {
   color: var(--color-text-main);
-  background: color-mix(in srgb, var(--color-text-main) 7%, transparent);
-}
-
-.sidebar-layout-entry.is-rail {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  color: var(--icon-main);
+  background: var(--control-hover-bg);
 }
 </style>
 
@@ -363,7 +350,7 @@ onBeforeUnmount(destroySortables);
   max-width: min(368px, calc(100vw - 24px));
   max-height: min(620px, calc(100vh - 24px));
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--radius-popover);
   padding: 0;
   background: var(--floating-surface-bg);
   -webkit-backdrop-filter: var(--floating-surface-filter);
@@ -413,7 +400,6 @@ onBeforeUnmount(destroySortables);
   color: var(--color-text-secondary);
 }
 
-.sidebar-layout-reset,
 .sidebar-layout-icon-button {
   border: 0;
   display: flex;
@@ -430,9 +416,13 @@ onBeforeUnmount(destroySortables);
 }
 
 .sidebar-layout-reset {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   height: 28px;
   padding: 0 8px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 650;
 }
@@ -440,16 +430,15 @@ onBeforeUnmount(destroySortables);
 .sidebar-layout-icon-button {
   width: 28px;
   height: 28px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
 }
 
 .sidebar-layout-icon-button.is-small {
   width: 28px;
   height: 28px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
 }
 
-.sidebar-layout-reset:hover,
 .sidebar-layout-icon-button:hover,
 .sidebar-layout-icon-button.active {
   color: var(--color-text-main);
@@ -468,7 +457,7 @@ onBeforeUnmount(destroySortables);
 }
 
 .sidebar-layout-section {
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--color-bg-main) 64%, transparent);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--color-text-main) 7%, transparent),
@@ -514,7 +503,7 @@ onBeforeUnmount(destroySortables);
   flex-shrink: 0;
   cursor: grab;
   color: var(--icon-main);
-  border-radius: 9px;
+  border-radius: var(--radius-item);
   background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
 }
 
@@ -565,13 +554,13 @@ onBeforeUnmount(destroySortables);
   top: 4px;
   bottom: 4px;
   width: 1px;
-  border-radius: 1px;
+  border-radius: var(--radius-micro);
   background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
 }
 
 .sidebar-layout-item-row {
   min-height: 32px;
-  border-radius: 10px;
+  border-radius: var(--radius-item);
   padding: 2px 0 2px 3px;
   color: var(--color-text-main);
 }

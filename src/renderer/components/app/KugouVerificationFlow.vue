@@ -593,7 +593,7 @@ onBeforeUnmount(resetTencentCaptcha);
     <template #footer>
       <Button
         v-if="!captchaPanelOpen"
-        variant="ghost"
+        variant="secondary"
         class="w-full"
         :disabled="isVerifying"
         @click="cancelKugouVerification"

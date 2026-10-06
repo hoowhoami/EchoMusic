@@ -11,19 +11,19 @@ test('song effect selection stays on the requested effect while switching and af
   );
   const code = transformSync(
     popover.slice(
-      popover.indexOf('const audioEffectPresetActive ='),
+      popover.indexOf('const isAudioEffectOptionActive ='),
       popover.indexOf('// 节流 EQ 更新'),
     ),
     { loader: 'ts' },
   ).code;
   const player = reactive({ audioEffect: 'vocal', audioEffectError: '' });
   const status = reactive({ cloud: false, switching: false });
-  const { active, selected } = new Function(
+  const selected = new Function(
     'computed',
     'player',
     'isResolvedCloudSource',
     'isAudioEffectPresetSelectionDisabled',
-    `${code}; return { active: audioEffectPresetActive, selected: isAudioEffectOptionActive };`,
+    `${code}; return isAudioEffectOptionActive;`,
   )(
     computed,
     player,
@@ -35,12 +35,10 @@ test('song effect selection stays on the requested effect while switching and af
     if (!switching) player.audioEffectError = '切换失败';
     assert.equal(selected('vocal'), true);
     assert.equal(selected('none'), false);
-    assert.equal(active.value, true);
   }
   status.cloud = true;
   assert.equal(selected('none'), true);
   assert.equal(selected('vocal'), false);
-  assert.equal(active.value, false);
 });
 
 const source = readFileSync(

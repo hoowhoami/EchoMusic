@@ -1590,7 +1590,7 @@ onBeforeUnmount(() => {
   color: #fff;
   background-color: transparent;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   overflow: hidden;
   transition: background-color 0.3s;
   cursor: default;
@@ -1758,15 +1758,15 @@ onBeforeUnmount(() => {
 }
 
 .desktop-lyric[data-echo-lyric-layout='vertical'] .tran-group .menu-btn:first-child {
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
 }
 
 .desktop-lyric[data-echo-lyric-layout='vertical'] .tran-group .menu-btn:last-child {
-  border-radius: 0 0 8px 8px;
+  border-radius: 0 0 var(--radius-control) var(--radius-control);
 }
 
 .desktop-lyric[data-echo-lyric-layout='vertical'] .tran-group .menu-btn:only-child {
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 
 .desktop-lyric[data-echo-lyric-layout='vertical'] .tran-group .menu-btn + .menu-btn {
@@ -1815,7 +1815,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   flex: 0 0 auto;
   padding: 6px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: none;
   background: transparent;
   color: inherit;
@@ -1846,7 +1846,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   background: transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   overflow: hidden;
   gap: 0;
   opacity: 0;
@@ -1870,15 +1870,15 @@ onBeforeUnmount(() => {
 }
 
 .tran-group .menu-btn:first-child {
-  border-radius: 8px 0 0 8px;
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
 }
 
 .tran-group .menu-btn:last-child {
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
 }
 
 .tran-group .menu-btn:only-child {
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 
 .tran-group .menu-btn + .menu-btn {

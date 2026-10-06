@@ -18,7 +18,7 @@ const props = withDefaults(
     enabled?: boolean;
     active?: boolean;
     size?: number;
-    borderRadius?: number;
+    borderRadius?: string | number;
     alt?: string;
   }>(),
   {
@@ -26,7 +26,7 @@ const props = withDefaults(
     enabled: false,
     active: true,
     size: 800,
-    borderRadius: 12,
+    borderRadius: 'var(--radius-media, 6px)',
     alt: '专辑封面',
   },
 );
@@ -146,7 +146,11 @@ onBeforeUnmount(() => releaseVideo(videoRef.value));
 </script>
 
 <template>
-  <div ref="root" class="dynamic-album-cover" :style="{ borderRadius: `${borderRadius}px` }">
+  <div
+    ref="root"
+    class="dynamic-album-cover"
+    :style="{ borderRadius: typeof borderRadius === 'number' ? `${borderRadius}px` : borderRadius }"
+  >
     <Cover
       :url="url"
       :size="size"
