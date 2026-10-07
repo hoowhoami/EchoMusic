@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Button from '@/components/ui/Button.vue';
+import SkinSettingSection from './SkinSettingSection.vue';
 import { computed } from 'vue';
 import Switch from '@/components/ui/Switch.vue';
 import { useLyricSkin } from '../composables/useLyricSkin';
@@ -17,22 +19,24 @@ const dynamicAlbumCover = computed({
 
 <template>
   <div class="skin-settings">
-    <div class="setting-row">
-      <div class="setting-text">
-        <span class="setting-label">专辑动态封面</span>
-        <span class="setting-hint">无资源时显示静态封面</span>
+    <SkinSettingSection title="封面显示">
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">动态专辑封面</span>
+          <span class="setting-hint">没有动态资源时显示静态封面</span>
+        </div>
+        <Switch v-model="dynamicAlbumCover" aria-label="动态专辑封面" />
       </div>
-      <Switch v-model="dynamicAlbumCover" />
-    </div>
-  </div>
-
-  <div class="skin-settings">
-    <div class="setting-row setting-row-compact">
-      <div class="setting-text">
-        <span class="setting-label">歌词样式</span>
-        <span class="setting-hint">封面模式下歌词的字号、字重与颜色</span>
-      </div>
-    </div>
+      <template #footer>
+        <Button
+          variant="secondary"
+          size="xs"
+          :disabled="!dynamicAlbumCover"
+          @click="dynamicAlbumCover = false"
+          >恢复封面默认</Button
+        >
+      </template>
+    </SkinSettingSection>
     <LyricTextStyleSettings :skin-key="HOST_SKIN_KEYS.cover" />
   </div>
 </template>

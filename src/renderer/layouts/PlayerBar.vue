@@ -157,7 +157,6 @@ const goToCurrentAlbum = () => {
   router.push({ name: 'album-detail', params: { id: String(albumId) } });
 };
 
-const isHoveringProgress = ref(false);
 const playerBarRef = ref<HTMLElement | null>(null);
 const leftActionsRef = ref<HTMLElement | null>(null);
 const centerAreaRef = ref<HTMLElement | null>(null);
@@ -798,16 +797,15 @@ onUnmounted(() => {
             :step="0.1"
             :aria-busy="isProgressBusy"
             :aria-label="progressAriaLabel"
-            class="relative flex items-center select-none touch-none flex-1 min-w-0 h-4 cursor-pointer group/progress"
+            class="echo-slider echo-slider-progress relative flex items-center flex-1 min-w-0 h-4 group/progress"
+            :data-dragging="isDraggingSeek"
             @update:model-value="handleSeek"
             @pointerdown.capture="handleSeekStart"
             @value-commit="handleSeekCommit"
             @pointerup="handleSeekEnd"
             @pointercancel="handleSeekCancel"
-            @mouseenter="isHoveringProgress = true"
-            @mouseleave="isHoveringProgress = false"
           >
-            <SliderTrack class="player-progress-track relative grow rounded-full h-0.75">
+            <SliderTrack class="echo-slider-track">
               <div class="climax-mark-layer">
                 <template
                   v-for="(mark, index) in player.climaxMarks"
@@ -824,13 +822,18 @@ onUnmounted(() => {
                   ></span>
                 </template>
               </div>
-              <SliderRange class="absolute bg-primary rounded-full h-full">
+              <SliderRange class="echo-slider-range">
                 <ProgressBusyOverlay v-if="isProgressBusy" />
               </SliderRange>
             </SliderTrack>
             <SliderThumb
-              class="player-progress-thumb block w-2.5 h-2.5 border rounded-full shadow-md focus-visible:outline-none transition-[opacity,transform] duration-200"
-              :class="[isHoveringProgress ? 'opacity-100 scale-125' : 'opacity-0 scale-50']"
+              class="echo-slider-thumb"
+              :aria-label="progressAriaLabel"
+              :aria-valuetext="
+                formatTime(
+                  isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : player.currentTime,
+                )
+              "
             />
           </SliderRoot>
           <span
@@ -1073,20 +1076,6 @@ onUnmounted(() => {
 :global(.dark) .player-toggle {
   background-color: var(--control-hover-bg);
   border-color: transparent;
-  box-shadow: none;
-}
-
-.player-progress-track {
-  background-color: var(--control-track-bg);
-}
-
-.player-progress-thumb {
-  background: var(--control-thumb-bg);
-  border-color: var(--control-border);
-  box-shadow: var(--shadow-control);
-}
-
-.player-progress-thumb:focus-visible {
   box-shadow: none;
 }
 </style>

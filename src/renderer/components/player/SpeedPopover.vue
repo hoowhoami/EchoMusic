@@ -76,7 +76,7 @@ const popoverOpen = computed({
       <div class="flex items-center gap-2">
         <span class="text-[10px] font-semibold text-text-secondary shrink-0">0.1</span>
         <SliderRoot
-          class="relative flex items-center select-none touch-none cursor-pointer flex-1 h-5"
+          class="echo-slider relative flex items-center flex-1 h-6"
           :model-value="[Math.round(player.playbackRate * 10)]"
           :min="1"
           :max="50"
@@ -84,11 +84,13 @@ const popoverOpen = computed({
           orientation="horizontal"
           @update:model-value="handlePlaybackRateSlider"
         >
-          <SliderTrack class="speed-track relative grow rounded-full h-[3px] cursor-pointer">
-            <SliderRange class="speed-range absolute h-full rounded-full" />
+          <SliderTrack class="echo-slider-track">
+            <SliderRange class="echo-slider-range" />
           </SliderTrack>
           <SliderThumb
-            class="speed-thumb block w-3 h-3 cursor-pointer border rounded-full shadow-md focus-visible:outline-none"
+            class="echo-slider-thumb"
+            aria-label="播放倍速"
+            :aria-valuetext="playbackRateDisplay"
           />
         </SliderRoot>
         <span class="text-[10px] font-semibold text-text-secondary shrink-0">5x</span>
@@ -127,19 +129,5 @@ const popoverOpen = computed({
   .speed-presets {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
-}
-
-.speed-track {
-  background: var(--control-track-bg);
-}
-
-.speed-range {
-  background: var(--color-primary);
-}
-
-.speed-thumb {
-  background: var(--control-thumb-bg);
-  border-color: var(--control-border);
-  box-shadow: var(--shadow-control);
 }
 </style>

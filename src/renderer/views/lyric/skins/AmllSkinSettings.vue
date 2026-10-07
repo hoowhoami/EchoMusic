@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import Button from '@/components/ui/Button.vue';
+import SkinSettingSection from './SkinSettingSection.vue';
+import SkinSettingSlider from './SkinSettingSlider.vue';
 import Switch from '@/components/ui/Switch.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import { useLyricSkin } from '../composables/useLyricSkin';
@@ -62,126 +64,108 @@ const restoreDefaults = () => patch({ ...LYRIC_SKIN_AMLL_DEFAULTS });
 
 <template>
   <div class="skin-settings">
-    <div class="setting-row setting-row-compact">
-      <div class="setting-text">
-        <span class="setting-label">歌词位置</span>
-        <span class="setting-hint">活跃歌词行在页面高度上的居停位置</span>
-      </div>
-      <span class="setting-value">{{ alignPositionLabel }}</span>
-    </div>
-    <SliderRoot
-      :model-value="[settings.alignPosition]"
-      :min="0"
-      :max="1"
-      :step="0.05"
-      class="settings-slider-root"
-      @update:model-value="(v) => v?.length && patches.alignPosition(Number(v[0]))"
-    >
-      <SliderTrack class="settings-slider-track">
-        <SliderRange class="settings-slider-range" />
-      </SliderTrack>
-      <SliderThumb class="settings-slider-thumb" />
-    </SliderRoot>
-
-    <div class="setting-row">
-      <div class="setting-text">
-        <span class="setting-label">弹簧动画</span>
-        <span class="setting-hint">物理弹簧驱动歌词位移，性能较弱的设备可关闭</span>
-      </div>
-      <Switch
-        :model-value="settings.enableSpring"
-        @update:model-value="(v: boolean) => patch({ enableSpring: v })"
+    <SkinSettingSection title="歌词显示">
+      <SkinSettingSlider
+        label="歌词位置"
+        hint="当前歌词在页面高度上的停留位置"
+        :model-value="settings.alignPosition"
+        :value-label="alignPositionLabel"
+        :min="0"
+        :max="1"
+        :step="0.05"
+        @update:model-value="patches.alignPosition"
       />
-    </div>
-
-    <div class="setting-row">
-      <div class="setting-text">
-        <span class="setting-label">模糊律动</span>
-        <span class="setting-hint">歌词行切换时的模糊过渡效果</span>
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">隐藏已播放</span
+          ><span class="setting-hint">只显示当前与后续歌词</span>
+        </div>
+        <Switch
+          :model-value="settings.hidePassedLines"
+          aria-label="隐藏已播放"
+          @update:model-value="(v: boolean) => patch({ hidePassedLines: v })"
+        />
       </div>
-      <Switch
-        :model-value="settings.enableBlur"
-        @update:model-value="(v: boolean) => patch({ enableBlur: v })"
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">歌词颜色</span
+          ><span class="setting-hint">主文字与逐字高亮的基础颜色</span>
+        </div>
+        <button
+          type="button"
+          class="color-option color-option-inline soft-neutral-action app-focus-ring-soft"
+          aria-label="歌词颜色"
+          @click="openTextColor"
+        >
+          <span>更改</span
+          ><span class="color-swatch" :style="{ backgroundColor: effectiveTextColor }" />
+        </button>
+      </div>
+    </SkinSettingSection>
+    <SkinSettingSection title="歌词动画">
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">弹簧动画</span
+          ><span class="setting-hint">使用物理弹簧驱动歌词位移</span>
+        </div>
+        <Switch
+          :model-value="settings.enableSpring"
+          aria-label="弹簧动画"
+          @update:model-value="(v: boolean) => patch({ enableSpring: v })"
+        />
+      </div>
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">模糊律动</span
+          ><span class="setting-hint">歌词切换时柔和过渡</span>
+        </div>
+        <Switch
+          :model-value="settings.enableBlur"
+          aria-label="模糊律动"
+          @update:model-value="(v: boolean) => patch({ enableBlur: v })"
+        />
+      </div>
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">缩放律动</span
+          ><span class="setting-hint">突出当前播放的歌词行</span>
+        </div>
+        <Switch
+          :model-value="settings.enableScale"
+          aria-label="缩放律动"
+          @update:model-value="(v: boolean) => patch({ enableScale: v })"
+        />
+      </div>
+      <SkinSettingSlider
+        label="渐变宽度"
+        hint="逐字高亮的过渡范围，以字号为单位"
+        :model-value="settings.wordFadeWidth"
+        :value-label="wordFadeWidthLabel"
+        :min="0.05"
+        :max="1"
+        :step="0.05"
+        @update:model-value="patches.wordFadeWidth"
       />
-    </div>
-
-    <div class="setting-row">
-      <div class="setting-text">
-        <span class="setting-label">缩放律动</span>
-        <span class="setting-hint">活跃歌词行的缩放动画</span>
+    </SkinSettingSection>
+    <SkinSettingSection title="封面显示">
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">动态专辑封面</span
+          ><span class="setting-hint">封面随播放律动呼吸</span>
+        </div>
+        <Switch
+          :model-value="settings.dynamicAlbumCover"
+          aria-label="动态专辑封面"
+          @update:model-value="(v: boolean) => patch({ dynamicAlbumCover: v })"
+        />
       </div>
-      <Switch
-        :model-value="settings.enableScale"
-        @update:model-value="(v: boolean) => patch({ enableScale: v })"
-      />
+    </SkinSettingSection>
+    <div class="skin-settings-footer">
+      <Button variant="secondary" size="xs" :disabled="!hasCustomSettings" @click="restoreDefaults"
+        >恢复全部默认</Button
+      >
     </div>
-
-    <div class="setting-row">
-      <div class="setting-text">
-        <span class="setting-label">隐藏已播放</span>
-        <span class="setting-hint">隐藏已经播放过的歌词行</span>
-      </div>
-      <Switch
-        :model-value="settings.hidePassedLines"
-        @update:model-value="(v: boolean) => patch({ hidePassedLines: v })"
-      />
-    </div>
-
-    <div class="setting-row">
-      <div class="setting-text">
-        <span class="setting-label">动态专辑封面</span>
-        <span class="setting-hint">封面随播放律动呼吸，性能较弱的设备可关闭</span>
-      </div>
-      <Switch
-        :model-value="settings.dynamicAlbumCover"
-        @update:model-value="(v: boolean) => patch({ dynamicAlbumCover: v })"
-      />
-    </div>
-
-    <div class="setting-row setting-row-compact">
-      <div class="setting-text">
-        <span class="setting-label">渐变宽度</span>
-        <span class="setting-hint">逐字高亮渐变的宽度（倍于字号）</span>
-      </div>
-      <span class="setting-value">{{ wordFadeWidthLabel }}</span>
-    </div>
-    <SliderRoot
-      :model-value="[settings.wordFadeWidth]"
-      :min="0.05"
-      :max="1"
-      :step="0.05"
-      class="settings-slider-root"
-      @update:model-value="(v) => v?.length && patches.wordFadeWidth(Number(v[0]))"
-    >
-      <SliderTrack class="settings-slider-track">
-        <SliderRange class="settings-slider-range" />
-      </SliderTrack>
-      <SliderThumb class="settings-slider-thumb" />
-    </SliderRoot>
-
-    <div class="setting-row">
-      <div class="setting-text">
-        <span class="setting-label">歌词颜色</span>
-        <span class="setting-hint">Apple Music 歌词主文字颜色</span>
-      </div>
-      <button
-        class="color-swatch"
-        :style="{ backgroundColor: effectiveTextColor }"
-        aria-label="歌词颜色"
-        @click="openTextColor"
-      ></button>
-    </div>
-
-    <button
-      class="reset-btn soft-secondary-action app-focus-ring-soft"
-      type="button"
-      :class="{ invisible: !hasCustomSettings }"
-      @click="restoreDefaults"
-    >
-      恢复默认
-    </button>
   </div>
-
   <ColorPickerDialog
     :open="isTextColorOpen"
     title="选择歌词颜色"

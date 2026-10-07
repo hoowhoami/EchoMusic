@@ -66,6 +66,7 @@ const handleWheel = (e: WheelEvent) => {
       :side-offset="0"
       :show-arrow="props.showArrow"
       content-class="vol-popover"
+      @open-auto-focus="$event.preventDefault()"
     >
       <template #trigger>
         <Button
@@ -91,13 +92,17 @@ const handleWheel = (e: WheelEvent) => {
           :model-value="[player.volume]"
           :max="100"
           orientation="vertical"
-          class="vol-slider"
+          class="vol-slider echo-slider"
           @update:model-value="handleVolumeChange"
         >
-          <SliderTrack class="vol-track">
-            <SliderRange class="vol-range" />
+          <SliderTrack class="echo-slider-track">
+            <SliderRange class="echo-slider-range" />
           </SliderTrack>
-          <SliderThumb class="vol-thumb" />
+          <SliderThumb
+            class="echo-slider-thumb"
+            aria-label="音量"
+            :aria-valuetext="`${Math.round(player.volume)}%`"
+          />
         </SliderRoot>
         <span class="vol-value">{{ Math.round(player.volume) }}</span>
       </div>
@@ -128,40 +133,8 @@ const handleWheel = (e: WheelEvent) => {
   user-select: none;
   touch-action: none;
   cursor: pointer;
-  width: 20px;
+  width: 24px;
   flex: 1;
-}
-
-.vol-track {
-  position: relative;
-  flex-grow: 1;
-  border-radius: 9999px;
-  width: 3px;
-  background: var(--control-track-bg);
-  cursor: pointer;
-}
-
-.vol-range {
-  position: absolute;
-  border-radius: 9999px;
-  width: 100%;
-  background: var(--color-primary);
-}
-
-.vol-thumb {
-  display: block;
-  width: 12px;
-  height: 12px;
-  background: var(--control-thumb-bg);
-  border: 1px solid var(--control-border);
-  border-radius: 9999px;
-  box-shadow: var(--shadow-control);
-  outline: none;
-  cursor: pointer;
-}
-
-.vol-thumb:focus-visible {
-  box-shadow: none;
 }
 
 .vol-value {

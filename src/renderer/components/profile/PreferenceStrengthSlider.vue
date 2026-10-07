@@ -49,7 +49,8 @@ const valueText = computed(() => `${strengthLabel(props.modelValue)}，${props.m
   height: 48px;
   border-radius: var(--radius-card);
   background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
+  border: 1px solid var(--border-strong);
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-standard);
   isolation: isolate;
 }
 .preference-strength-fill {
@@ -57,7 +58,7 @@ const valueText = computed(() => `${strengthLabel(props.modelValue)}，${props.m
   inset: 0 auto 0 0;
   z-index: -1;
   border-radius: var(--radius-card);
-  background: rgba(var(--color-primary-rgb), 0.2);
+  background: var(--control-active-bg);
   pointer-events: none;
 }
 .preference-strength-name {
@@ -87,12 +88,12 @@ const valueText = computed(() => `${strengthLabel(props.modelValue)}，${props.m
   opacity: 0;
   cursor: ew-resize;
 }
-.preference-strength:hover {
-  border-color: rgba(var(--color-primary-rgb), 0.45);
+.preference-strength:not(.is-disabled):hover {
+  border-color: var(--control-border-hover);
 }
-.preference-strength:focus-within {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 3px;
+.preference-strength:has(input:focus-visible) {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
 }
 .preference-strength.is-blocked .preference-strength-value {
   color: var(--color-text-main);
@@ -102,5 +103,10 @@ const valueText = computed(() => `${strengthLabel(props.modelValue)}，${props.m
 }
 .preference-strength input:disabled {
   cursor: not-allowed;
+}
+@media (prefers-reduced-motion: reduce) {
+  .preference-strength {
+    transition: none;
+  }
 }
 </style>

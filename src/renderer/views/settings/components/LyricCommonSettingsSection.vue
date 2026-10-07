@@ -75,7 +75,7 @@ const updateLyricOffsetStep = (value: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">显示翻译</h3>
-        <p class="text-sm text-text-secondary">有翻译时显示，播放页、桌面和 Mini 歌词共用</p>
+        <p class="text-sm text-text-secondary">有翻译时显示</p>
       </div>
       <Switch
         :model-value="wantsTranslation"
@@ -86,7 +86,7 @@ const updateLyricOffsetStep = (value: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">显示音译</h3>
-        <p class="text-sm text-text-secondary">有音译时显示，播放页、桌面和 Mini 歌词共用</p>
+        <p class="text-sm text-text-secondary">有音译时显示</p>
       </div>
       <Switch
         :model-value="wantsRomanization"
@@ -110,9 +110,7 @@ const updateLyricOffsetStep = (value: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">歌词文字转换</h3>
-        <p class="text-sm text-text-secondary">
-          对播放页、桌面歌词和 Mini 歌词的歌词文本进行简繁转换
-        </p>
+        <p class="text-sm text-text-secondary">对歌词文本进行简繁转换</p>
       </div>
       <Select
         class="w-45 shrink-0"
@@ -126,7 +124,7 @@ const updateLyricOffsetStep = (value: string) => {
       <div class="space-y-1">
         <h3 class="font-semibold">全局歌词时间偏移</h3>
         <p id="global-lyric-offset-help" class="text-sm text-text-secondary">
-          对所有歌曲和歌词视图生效。正数让歌词提前，负数让歌词延后；与单曲微调叠加。
+          正数让歌词提前，负数让歌词延后；与单曲微调叠加
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">

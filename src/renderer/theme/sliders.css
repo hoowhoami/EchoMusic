@@ -1,0 +1,129 @@
+/* Shared appearance for Reka, plugin and compact-window sliders. Layout and
+ * playback/commit behavior remain with their owning components. */
+.echo-slider {
+  --slider-thumb-size: 12px;
+  --slider-tone: var(--content-tone, var(--fg, #000000));
+  --slider-accent: var(--color-primary, var(--accent, #0071e3));
+  --slider-track-color: color-mix(in srgb, var(--slider-tone) 18%, transparent);
+  --slider-track-hover-color: color-mix(in srgb, var(--slider-tone) 24%, transparent);
+  --slider-thumb-color: var(--control-thumb-bg, #ffffff);
+  --slider-thumb-border: color-mix(in srgb, var(--slider-tone) 24%, transparent);
+  --slider-thumb-shadow:
+    inset 0 0 0 0.5px var(--slider-thumb-border), 0 1px 2px rgba(0, 0, 0, 0.12);
+  --slider-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--slider-accent) 22%, transparent);
+
+  min-width: 0;
+  user-select: none;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.echo-slider-track {
+  position: relative;
+  flex-grow: 1;
+  min-width: 0;
+  border-radius: 999px;
+  background: var(--slider-track-color);
+  transition: background-color var(--motion-duration-fast, 120ms) var(--motion-ease-standard, ease);
+}
+
+.echo-slider[data-orientation='horizontal'] .echo-slider-track {
+  height: var(--slider-track-size, 4px);
+  margin-inline: calc(var(--slider-thumb-size) / 2);
+}
+
+.echo-slider[data-orientation='vertical'] .echo-slider-track {
+  width: var(--slider-track-size, 4px);
+  margin-block: calc(var(--slider-thumb-size) / 2);
+}
+
+/* Match Reka's contained thumb path: the fill ends at the thumb center. */
+.echo-slider[data-orientation='horizontal'] .echo-slider-thumb {
+  top: calc(50% - var(--slider-thumb-size) / 2);
+}
+
+.echo-slider[data-orientation='vertical'] .echo-slider-thumb {
+  left: calc(50% - var(--slider-thumb-size) / 2);
+}
+
+.echo-slider-range {
+  position: absolute;
+  border-radius: inherit;
+  background: var(--slider-accent);
+}
+
+.echo-slider[data-orientation='horizontal'] .echo-slider-range {
+  height: 100%;
+}
+
+.echo-slider[data-orientation='vertical'] .echo-slider-range {
+  width: 100%;
+}
+
+.echo-slider-thumb {
+  display: block;
+  box-sizing: border-box;
+  width: var(--slider-thumb-size);
+  height: var(--slider-thumb-size);
+  border: 0;
+  border-radius: 50%;
+  background: var(--slider-thumb-color);
+  box-shadow: var(--slider-thumb-shadow);
+  outline: none;
+  scale: 1;
+  transition:
+    opacity var(--motion-duration-fast, 120ms) var(--motion-ease-standard, ease),
+    box-shadow var(--motion-duration-fast, 120ms) var(--motion-ease-standard, ease);
+}
+
+.echo-slider:not([data-disabled]):hover .echo-slider-track {
+  background: var(--slider-track-hover-color);
+}
+
+.echo-slider-thumb:focus-visible {
+  box-shadow: var(--slider-thumb-shadow), var(--slider-focus-shadow);
+}
+
+.echo-slider-progress .echo-slider-thumb {
+  opacity: 0;
+}
+
+.echo-slider-progress:is(:hover, :focus-within, [data-dragging='true']) .echo-slider-thumb {
+  opacity: 1;
+}
+
+.echo-slider[data-disabled] {
+  opacity: var(--slider-disabled-opacity, 0.5);
+  cursor: not-allowed;
+}
+
+.echo-slider[data-disabled] .echo-slider-thumb {
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .echo-slider-track,
+  .echo-slider-thumb {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .echo-slider-track {
+    background: GrayText;
+  }
+
+  .echo-slider-range {
+    background: Highlight;
+  }
+
+  .echo-slider-thumb {
+    border: 1px solid Highlight;
+    background: Canvas;
+  }
+
+  .echo-slider-thumb:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}

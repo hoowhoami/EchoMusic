@@ -1211,7 +1211,7 @@ test('independent windows pair image/plugin accents with their floating foregrou
       assert.ok(api.contrast(vars['--floating-accent-text'], surface) >= 4.5);
     }
     assert.equal(s.override.background.textColor, '#fefefe');
-    assert.equal(vars['--control-thumb-bg'], vars['--text-main']);
+    assert.equal(vars['--control-thumb-bg'], '#ffffff');
     assert.equal(vars['--theme-shell'], s.cssTokens['--theme-shell']);
   }
   assert.deepEqual(api.independentWindowColorVariables({}), {});

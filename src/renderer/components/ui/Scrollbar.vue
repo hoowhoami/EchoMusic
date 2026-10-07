@@ -470,7 +470,8 @@ watch(
   right: 0;
   width: 12px;
   height: v-bind('`calc(100% - ${effectiveScrollbarTopInset}px)`');
-  padding: v-bind('`${effectiveScrollbarInset}px 2px`');
+  /* thumbTop already includes the vertical inset; padding must not add it again. */
+  padding: 0 2px;
   padding-right: v-bind('`${effectiveScrollbarRightInset}px`');
   box-sizing: border-box;
   z-index: 160;

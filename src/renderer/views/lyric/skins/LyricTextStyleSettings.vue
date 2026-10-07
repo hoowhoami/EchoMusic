@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import Button from '@/components/ui/Button.vue';
+import SkinSettingSection from './SkinSettingSection.vue';
+import SkinSettingSlider from './SkinSettingSlider.vue';
 import { computed, ref } from 'vue';
-import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import { useLyricSkin } from '../composables/useLyricSkin';
 import {
@@ -79,73 +81,59 @@ const restoreDefaults = () =>
 </script>
 
 <template>
-  <div class="skin-settings">
-    <div class="setting-row setting-row-compact">
-      <span class="setting-label">字号</span>
-      <span class="setting-value">{{ fontScaleLabel }}</span>
-    </div>
-    <SliderRoot
-      :model-value="[settings.fontScale]"
+  <SkinSettingSection title="歌词样式">
+    <SkinSettingSlider
+      label="字号"
+      :model-value="settings.fontScale"
+      :value-label="fontScaleLabel"
       :min="0.7"
       :max="1.4"
       :step="0.1"
-      class="settings-slider-root"
-      @update:model-value="(v) => v?.length && patch({ fontScale: Number(v[0]) })"
-    >
-      <SliderTrack class="settings-slider-track">
-        <SliderRange class="settings-slider-range" />
-      </SliderTrack>
-      <SliderThumb class="settings-slider-thumb" />
-    </SliderRoot>
-
-    <div class="setting-row setting-row-compact">
-      <span class="setting-label">字重</span>
-      <span class="setting-value">{{ fontWeightLabel }}</span>
-    </div>
-    <SliderRoot
-      :model-value="[settings.fontWeightIndex]"
+      @update:model-value="(value) => patch({ fontScale: value })"
+    />
+    <SkinSettingSlider
+      label="字重"
+      :model-value="settings.fontWeightIndex"
+      :value-label="fontWeightLabel"
       :min="0"
       :max="8"
       :step="1"
-      class="settings-slider-root"
-      @update:model-value="(v) => v?.length && patch({ fontWeightIndex: Number(v[0]) })"
-    >
-      <SliderTrack class="settings-slider-track">
-        <SliderRange class="settings-slider-range" />
-      </SliderTrack>
-      <SliderThumb class="settings-slider-thumb" />
-    </SliderRoot>
-
-    <div class="setting-row">
-      <div class="setting-text">
-        <span class="setting-label">歌词颜色</span>
-        <span class="setting-hint">设置逐字歌词的已播颜色与未播颜色</span>
+      @update:model-value="(value) => patch({ fontWeightIndex: value })"
+    />
+    <div class="setting-colors">
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">歌词颜色</span>
+          <span class="setting-hint">分别设置已播放与未播放的文字颜色</span>
+        </div>
       </div>
       <div class="settings-color-grid">
         <button
-          class="color-swatch"
-          :style="{ backgroundColor: effectivePlayedColor }"
+          type="button"
+          class="color-option soft-neutral-action app-focus-ring-soft"
           aria-label="已播字色"
           @click="openPicker('playedColor')"
-        ></button>
+        >
+          <span>已播</span
+          ><span class="color-swatch" :style="{ backgroundColor: effectivePlayedColor }" />
+        </button>
         <button
-          class="color-swatch"
-          :style="{ backgroundColor: effectiveUnplayedColor }"
+          type="button"
+          class="color-option soft-neutral-action app-focus-ring-soft"
           aria-label="未播字色"
           @click="openPicker('unplayedColor')"
-        ></button>
+        >
+          <span>未播</span
+          ><span class="color-swatch" :style="{ backgroundColor: effectiveUnplayedColor }" />
+        </button>
       </div>
     </div>
-    <button
-      class="reset-btn soft-secondary-action app-focus-ring-soft"
-      type="button"
-      :class="{ invisible: !hasCustomTextStyle }"
-      @click="restoreDefaults"
-    >
-      恢复默认
-    </button>
-  </div>
-
+    <template #footer>
+      <Button variant="secondary" size="xs" :disabled="!hasCustomTextStyle" @click="restoreDefaults"
+        >恢复歌词默认</Button
+      >
+    </template>
+  </SkinSettingSection>
   <ColorPickerDialog
     :open="pickerOpen"
     :title="activeTitle"
@@ -158,10 +146,3 @@ const restoreDefaults = () =>
 </template>
 
 <style scoped src="./skinSettings.css"></style>
-
-<style scoped>
-.settings-color-grid {
-  display: flex;
-  gap: 8px;
-}
-</style>
