@@ -572,7 +572,8 @@ const handleVolumeWheel = (event: WheelEvent) => {
 };
 
 const ratioFromEvent = (event: PointerEvent, el: HTMLElement) => {
-  const rect = el.getBoundingClientRect();
+  const track = el.querySelector<HTMLElement>('.mini-progress-track');
+  const rect = (track ?? el).getBoundingClientRect();
   if (rect.width <= 0) return 0;
   return Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
 };
@@ -899,6 +900,7 @@ onUnmounted(() => {
       'expand-up': activeShellDirection === 'up',
       'expand-down': activeShellDirection === 'down',
       'is-always-on-top': alwaysOnTop,
+      'is-mac': isMac,
       'is-wayland': isWayland,
     }"
     @pointerenter="handlePointerEnter"
@@ -945,7 +947,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="mini-cover mini-cover-btn no-drag"
-          :class="{ active: isLyricOpen }"
+          :aria-expanded="isLyricOpen"
           :disabled="!playback"
           aria-label="显示歌词"
           @click.stop="toggleLyricPanel"
@@ -1049,7 +1051,7 @@ onUnmounted(() => {
               <Icon :icon="volumeIcon" width="19" height="19" />
             </button>
             <div
-              class="mini-volume-slider no-drag"
+              class="mini-volume-slider echo-slider no-drag"
               @pointerdown="handleVolumePointerDown"
               @pointermove="handleVolumePointerMove"
               @pointerup="handleVolumePointerUp"
@@ -1057,7 +1059,10 @@ onUnmounted(() => {
             >
               <div class="mini-volume-track">
                 <div class="mini-volume-value" :style="{ width: `${volumePercent}%` }"></div>
-                <div class="mini-volume-thumb" :style="{ left: `${volumePercent}%` }"></div>
+                <div
+                  class="mini-volume-thumb echo-slider-thumb"
+                  :style="{ left: `${volumePercent}%` }"
+                ></div>
               </div>
               <span class="mini-volume-label">{{ volumePercent }}</span>
             </div>
@@ -1065,7 +1070,8 @@ onUnmounted(() => {
         </div>
 
         <div
-          class="mini-progress no-drag"
+          class="mini-progress echo-slider no-drag"
+          :data-dragging="isDraggingSeek"
           :aria-busy="isProgressBusy"
           :aria-label="progressAriaLabel"
           @pointerdown="handleSeekPointerDown"
@@ -1073,8 +1079,10 @@ onUnmounted(() => {
           @pointerup="handleSeekPointerUp"
           @pointercancel="handleSeekPointerUp"
         >
-          <div class="mini-progress-value" :style="{ width: `${displayPercent}%` }">
-            <ProgressBusyOverlay v-if="isProgressBusy" />
+          <div class="mini-progress-track">
+            <div class="mini-progress-value" :style="{ width: `${displayPercent}%` }">
+              <ProgressBusyOverlay v-if="isProgressBusy" />
+            </div>
           </div>
         </div>
       </div>
@@ -1112,13 +1120,7 @@ onUnmounted(() => {
                 @click="playQueueTrack(entry.track.trackId)"
               >
                 <div class="mini-queue-cover">
-                  <Cover
-                    :url="entry.track.coverUrl"
-                    :size="80"
-                    width="30px"
-                    height="30px"
-                    :borderRadius="4"
-                  />
+                  <Cover :url="entry.track.coverUrl" :size="80" width="30px" height="30px" />
                   <span
                     v-if="entry.track.trackId === currentQueueTrackId"
                     class="mini-queue-playing"
@@ -1180,14 +1182,21 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  /* 无投影，仅描边 + 圆角，铺满窗口，风格与主窗口一致（只是小窗） */
-  border-radius: 10px;
-  border: 1px solid var(--control-border);
+  /* 客户端边界不占布局空间，控制条高度与原生窗口高度保持一致。 */
+  border-radius: var(--radius-shell);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--control-border);
   background: var(--surface-elevated-base);
   color: var(--text-main);
   overflow: hidden;
   transition: height 0.24s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: height;
+}
+
+.mini-shell.is-mac .mini-card {
+  /* macOS 由原生窗口裁切圆角，内容铺到边缘，避免两层轮廓叠加。 */
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .mini-shell.is-wayland .mini-card {
@@ -1235,6 +1244,7 @@ onUnmounted(() => {
 .mini-window-btn,
 .mini-action-btn,
 .mini-center-btn {
+  border-radius: var(--radius-control);
   border: 0;
   outline: none;
   background: transparent;
@@ -1292,7 +1302,7 @@ button:disabled {
 .mini-cover-placeholder {
   width: 44px;
   height: 44px;
-  border-radius: 6px;
+  border-radius: var(--radius-media);
   overflow: hidden;
 }
 
@@ -1309,10 +1319,6 @@ button:disabled {
 
 .mini-cover-btn:hover {
   transform: translateY(-1px);
-}
-
-.mini-cover-btn.active {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 55%, transparent);
 }
 
 /* Cover 组件默认用 -webkit-mask 径向渐变做圆角，在透明窗口 + 高度过渡的合成下会渲染出黑色条纹；
@@ -1404,7 +1410,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   /* 与主窗口一致：上一首/下一首默认中性色，hover 才跟随主题色 */
   color: var(--icon-main);
 }
@@ -1415,6 +1421,7 @@ button:disabled {
 }
 
 .mini-center-play {
+  border-radius: 50%;
   width: 30px;
   height: 30px;
   /* 圆形背景用中性底色 + 细边框（不跟随主题色）；图标默认中性、hover/播放时才主题色 */
@@ -1484,7 +1491,7 @@ button:disabled {
   gap: 7px;
   width: 132px;
   padding: 7px 10px 7px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-popover);
   background: var(--surface-elevated-base);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
   z-index: 6;
@@ -1505,6 +1512,7 @@ button:disabled {
   position: relative;
   flex: 1 1 auto;
   height: 12px;
+  margin-inline: calc(var(--slider-thumb-size) / 2);
   border-radius: 999px;
 }
 
@@ -1514,9 +1522,9 @@ button:disabled {
   left: 0;
   right: 0;
   top: 50%;
-  height: 3px;
+  height: 4px;
   border-radius: 999px;
-  background: var(--control-track-bg);
+  background: var(--slider-track-color);
   transform: translateY(-50%);
 }
 
@@ -1524,27 +1532,21 @@ button:disabled {
   position: absolute;
   left: 0;
   top: 50%;
-  height: 3px;
+  height: 4px;
   border-radius: inherit;
-  background: var(--color-primary);
+  background: var(--slider-accent);
   transform: translateY(-50%);
 }
 
 .mini-volume-thumb {
   position: absolute;
   top: 50%;
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: var(--control-thumb-bg);
-  border: 1px solid var(--control-border);
-  box-shadow: var(--shadow-control);
-  transform: translate(-50%, -50%) scale(0.9);
-  transition: transform 0.12s ease;
+  transform: translate(-50%, -50%);
 }
 
-.mini-volume.open .mini-volume-thumb {
-  transform: translate(-50%, -50%) scale(1);
+.mini-volume-slider:hover .mini-volume-track::before,
+.mini-progress:hover .mini-progress-track::before {
+  background: var(--slider-track-hover-color);
 }
 
 .mini-volume-label {
@@ -1561,8 +1563,8 @@ button:disabled {
   position: absolute;
   left: 91px;
   right: 16px;
-  bottom: 9px;
-  height: 8px;
+  bottom: 5px;
+  height: 16px;
   border-radius: 999px;
   background: transparent;
   overflow: visible;
@@ -1573,7 +1575,7 @@ button:disabled {
   position: relative;
   z-index: 1;
   top: 50%;
-  height: 3px;
+  height: 4px;
   width: 0;
   border-radius: inherit;
   background: var(--color-primary);
@@ -1582,15 +1584,25 @@ button:disabled {
   transition: width 0.12s linear;
 }
 
-.mini-progress::before {
+.mini-progress[data-dragging='true'] .mini-progress-value {
+  transition: none;
+}
+
+.mini-progress-track {
+  position: absolute;
+  inset: 0 calc(var(--slider-thumb-size) / 2);
+  border-radius: inherit;
+}
+
+.mini-progress-track::before {
   content: '';
   position: absolute;
   left: 0;
   right: 0;
   top: 50%;
-  height: 3px;
+  height: 4px;
   border-radius: 999px;
-  background: var(--control-track-bg);
+  background: var(--slider-track-color);
   transform: translateY(-50%);
 }
 
@@ -1598,21 +1610,28 @@ button:disabled {
   content: '';
   position: absolute;
   top: 50%;
-  right: -4px;
-  width: 8px;
-  height: 8px;
+  right: calc(var(--slider-thumb-size) / -2);
+  width: var(--slider-thumb-size);
+  height: var(--slider-thumb-size);
   border-radius: 999px;
-  background: var(--color-primary);
+  box-sizing: border-box;
+  border: 0;
+  background: var(--slider-thumb-color);
+  box-shadow: var(--slider-thumb-shadow);
   opacity: 0;
   transform: translateY(-50%);
-  transition:
-    opacity 0.14s ease,
-    transform 0.14s ease;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.mini-progress:hover .mini-progress-value::after {
+.mini-progress:is(:hover, [data-dragging='true']) .mini-progress-value::after {
   opacity: 1;
-  transform: translateY(-50%) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mini-progress-value,
+  .mini-progress-value::after {
+    transition: none;
+  }
 }
 
 .mini-queue {
@@ -1620,8 +1639,7 @@ button:disabled {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid transparent;
-  border-bottom: 1px solid transparent;
+  border: 0;
   opacity: 0;
   transform: translateY(-8px);
   transition:
@@ -1630,14 +1648,14 @@ button:disabled {
 }
 
 .mini-shell.is-expanded .mini-queue {
-  border-top-color: var(--control-border);
+  border-top: 1px solid var(--control-border);
   opacity: 1;
   transform: none;
 }
 
 .mini-shell.is-expanded.expand-up .mini-queue {
-  border-top-color: transparent;
-  border-bottom-color: var(--control-border);
+  border-top: 0;
+  border-bottom: 1px solid var(--control-border);
   transform: none;
 }
 
@@ -1661,7 +1679,7 @@ button:disabled {
   gap: 9px;
   padding: 0 7px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-item);
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -1683,7 +1701,7 @@ button:disabled {
   width: 30px;
   height: 30px;
   flex: 0 0 30px;
-  border-radius: 4px;
+  border-radius: var(--radius-media);
   overflow: hidden;
 }
 

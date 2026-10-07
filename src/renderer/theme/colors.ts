@@ -142,6 +142,8 @@ export function themeColorVariables(
     '--text-secondary': readableSurfaceText(tokens.secondary, surfaces, tokens.text),
     '--border-light': tokens.border,
     '--content-tone': colors.tone,
+    // Thumb fill is a control surface, independent of text polarity.
+    '--control-thumb-bg': '#ffffff',
     '--floating-text-main': floating.text,
     '--floating-text-secondary': floating.secondary,
     '--floating-card-base': floating.card,
@@ -162,7 +164,6 @@ export function independentWindowColorVariables(
     '--content-tone': '--floating-tone',
     '--border-light': '--floating-border',
     '--surface-card-base': '--floating-card-base',
-    '--control-thumb-bg': '--floating-text-main',
   };
   for (const [role, source] of Object.entries(roles)) {
     if (colors[source]) variables[role] = colors[source];

@@ -40,10 +40,10 @@ const visibleLines = computed(() => {
 });
 
 // AMLL 要求传入数组内部信息不得修改：computed 每次重新构建全新数组，
-// 依赖 visibleLines 引用、当前歌词模式与「注音」偏好，
-// 切歌 / 译音 / 简繁 / 过滤规则变化时才会重建。
+// 始终保留译文和音译数据；显示开关只改变可见性，不重建时间轴和歌词组。
+// 依赖 visibleLines 引用与「注音」偏好，切歌 / 过滤规则变化时才会重建。
 const lyricLines = computed(() =>
-  buildAmllLyricLines(visibleLines.value, lyricStore.lyricsMode, lyricStore.showRomanizationAsRuby),
+  buildAmllLyricLines(visibleLines.value, 'both', lyricStore.showRomanizationAsRuby),
 );
 
 // 直接使用 AMLL core 实例：手动管理生命周期，命令式驱动时间轴，
@@ -168,6 +168,7 @@ const initializePlayer = () => {
   player.setEnableScale(skin.enableScale);
   player.setHidePassedLines(skin.hidePassedLines);
   player.setWordFadeWidth(skin.wordFadeWidth);
+  player.setSecondaryVisibility(lyricStore.showTranslation, lyricStore.showRomanization);
   // Start at the live position so opening does not animate from the song's beginning.
   const initialTimeMs = timeline.getTimelineMs(
     { clock: playerStore.playbackClock },
@@ -219,6 +220,14 @@ watch(lyricLines, (lines) => {
   if (!playerStore.isPlaying || document.hidden) playerRef.value?.pause();
   requestFrame();
 });
+
+watch(
+  () => [lyricStore.showTranslation, lyricStore.showRomanization] as const,
+  ([translation, romanization]) => {
+    playerRef.value?.setSecondaryVisibility(translation, romanization);
+    requestFrame();
+  },
+);
 
 watch(
   () => playerStore.isPlaying,
@@ -299,6 +308,10 @@ const playerAreaStyle = computed(() =>
 </template>
 
 <style scoped>
+.amll-player-area :deep([class$='_romanWord']) {
+  display: var(--echo-amll-roman-display, flex);
+}
+
 .amll-mode {
   display: flex;
   gap: 32px;

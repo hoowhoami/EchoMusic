@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import Button from '@/components/ui/Button.vue';
+import SkinSettingSection from './SkinSettingSection.vue';
+import SkinSettingSlider from './SkinSettingSlider.vue';
 import { computed } from 'vue';
-import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Switch from '@/components/ui/Switch.vue';
 import { useLyricSkin } from '../composables/useLyricSkin';
 import { HOST_SKIN_KEYS, LYRIC_SKIN_PORTRAIT_DEFAULTS } from './config';
@@ -11,9 +13,15 @@ const { settings, patch, reset } = useLyricSkin(
   LYRIC_SKIN_PORTRAIT_DEFAULTS,
 );
 
+const hasCustomSettings = computed(() =>
+  Object.entries(LYRIC_SKIN_PORTRAIT_DEFAULTS).some(
+    ([key, value]) => settings.value[key] !== value,
+  ),
+);
+
 const backdropOpacityLabel = computed(() => `${settings.value.backdropOpacity}%`);
-const carouselIntervalLabel = computed(() => `${settings.value.carouselInterval}s`);
-const autoCollapseDelayLabel = computed(() => `${settings.value.autoCollapseDelay}s`);
+const carouselIntervalLabel = computed(() => `${settings.value.carouselInterval} 秒`);
+const autoCollapseDelayLabel = computed(() => `${settings.value.autoCollapseDelay} 秒`);
 
 const carouselEnabled = computed({
   get: () => Boolean(settings.value.carouselEnabled),
@@ -38,110 +46,73 @@ const collapseHideControls = computed({
 
 <template>
   <div class="skin-settings">
-    <div class="setting-row setting-row-compact">
-      <span class="setting-label">背景透明度</span>
-      <span class="setting-value">{{ backdropOpacityLabel }}</span>
-    </div>
-    <SliderRoot
-      :model-value="[settings.backdropOpacity]"
-      :min="10"
-      :max="100"
-      :step="5"
-      class="settings-slider-root"
-      @update:model-value="(v) => v?.length && patch({ backdropOpacity: Number(v[0]) })"
-    >
-      <SliderTrack class="settings-slider-track">
-        <SliderRange class="settings-slider-range" />
-      </SliderTrack>
-      <SliderThumb class="settings-slider-thumb" />
-    </SliderRoot>
-
-    <div class="setting-row">
-      <div class="setting-text">
-        <span class="setting-label">自动轮播</span>
-        <span class="setting-hint">多张写真时自动切换</span>
+    <SkinSettingSection title="写真背景">
+      <SkinSettingSlider
+        label="背景透明度"
+        :model-value="settings.backdropOpacity"
+        :value-label="backdropOpacityLabel"
+        :min="10"
+        :max="100"
+        :step="5"
+        @update:model-value="(value) => patch({ backdropOpacity: value })"
+      />
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">自动轮播</span
+          ><span class="setting-hint">有多张写真时自动切换</span>
+        </div>
+        <Switch v-model="carouselEnabled" aria-label="自动轮播" />
       </div>
-      <Switch v-model="carouselEnabled" />
-    </div>
-    <div class="setting-row">
-      <div class="setting-text">
-        <span class="setting-label">无写真时展示封面</span>
-        <span class="setting-hint">没有写真图片时使用歌曲封面填充背景</span>
-      </div>
-      <Switch v-model="portraitFallbackCover" />
-    </div>
-
-    <template v-if="settings.carouselEnabled">
-      <div class="setting-row setting-row-compact">
-        <span class="setting-label">轮播间隔</span>
-        <span class="setting-value">{{ carouselIntervalLabel }}</span>
-      </div>
-      <SliderRoot
-        :model-value="[settings.carouselInterval]"
+      <SkinSettingSlider
+        v-if="settings.carouselEnabled"
+        label="轮播间隔"
+        :model-value="settings.carouselInterval"
+        :value-label="carouselIntervalLabel"
         :min="5"
         :max="60"
         :step="5"
-        class="settings-slider-root"
-        @update:model-value="(v) => v?.length && patch({ carouselInterval: Number(v[0]) })"
-      >
-        <SliderTrack class="settings-slider-track">
-          <SliderRange class="settings-slider-range" />
-        </SliderTrack>
-        <SliderThumb class="settings-slider-thumb" />
-      </SliderRoot>
-    </template>
-
-    <div class="setting-row">
-      <div class="setting-text">
-        <span class="setting-label">歌词自动收起</span>
-        <span class="setting-hint">无操作后收起到底部两行</span>
+        @update:model-value="(value) => patch({ carouselInterval: value })"
+      />
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">无写真时展示封面</span
+          ><span class="setting-hint">使用歌曲封面填充背景</span>
+        </div>
+        <Switch v-model="portraitFallbackCover" aria-label="无写真时展示封面" />
       </div>
-      <Switch v-model="autoCollapseEnabled" />
-    </div>
-    <template v-if="settings.autoCollapseEnabled">
-      <div class="setting-row setting-row-compact">
-        <span class="setting-label">收起延迟</span>
-        <span class="setting-value">{{ autoCollapseDelayLabel }}</span>
+    </SkinSettingSection>
+    <SkinSettingSection title="自动收起">
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">歌词自动收起</span
+          ><span class="setting-hint">无操作后保留底部两行歌词</span>
+        </div>
+        <Switch v-model="autoCollapseEnabled" aria-label="歌词自动收起" />
       </div>
-      <SliderRoot
-        :model-value="[settings.autoCollapseDelay]"
+      <SkinSettingSlider
+        v-if="settings.autoCollapseEnabled"
+        label="收起延迟"
+        :model-value="settings.autoCollapseDelay"
+        :value-label="autoCollapseDelayLabel"
         :min="5"
         :max="60"
         :step="1"
-        class="settings-slider-root"
-        @update:model-value="(v) => v?.length && patch({ autoCollapseDelay: Number(v[0]) })"
-      >
-        <SliderTrack class="settings-slider-track">
-          <SliderRange class="settings-slider-range" />
-        </SliderTrack>
-        <SliderThumb class="settings-slider-thumb" />
-      </SliderRoot>
-      <div class="setting-row">
+        @update:model-value="(value) => patch({ autoCollapseDelay: value })"
+      />
+      <div v-if="settings.autoCollapseEnabled" class="setting-row">
         <div class="setting-text">
-          <span class="setting-label">收起时隐藏控制栏</span>
-          <span class="setting-hint">让写真画面更干净</span>
+          <span class="setting-label">收起时隐藏控制栏</span
+          ><span class="setting-hint">保留更完整的写真画面</span>
         </div>
-        <Switch v-model="collapseHideControls" />
+        <Switch v-model="collapseHideControls" aria-label="收起时隐藏控制栏" />
       </div>
-    </template>
-
-    <button
-      class="reset-btn soft-secondary-action app-focus-ring-soft"
-      type="button"
-      @click="reset"
-    >
-      恢复默认
-    </button>
-  </div>
-
-  <div class="skin-settings">
-    <div class="setting-row setting-row-compact">
-      <div class="setting-text">
-        <span class="setting-label">歌词样式</span>
-        <span class="setting-hint">写真模式下歌词的字号、字重与颜色</span>
-      </div>
-    </div>
+    </SkinSettingSection>
     <LyricTextStyleSettings :skin-key="HOST_SKIN_KEYS.portrait" />
+    <div class="skin-settings-footer">
+      <Button variant="secondary" size="xs" :disabled="!hasCustomSettings" @click="reset"
+        >恢复全部默认</Button
+      >
+    </div>
   </div>
 </template>
 

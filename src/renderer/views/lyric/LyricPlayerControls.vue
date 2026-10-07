@@ -141,8 +141,10 @@ const progressTooltipStyle = computed(() => {
   // Reserve half the actual tooltip width plus a small gap on each side.
   // Long durations, font changes and zoom must not push the time outside the bar.
   const edgeGap = progressTooltipWidth.value / 2 + 8;
+  const percent = progressTooltipPercent.value;
+  const thumbOffset = 0.5 - percent / 100;
   return {
-    left: `clamp(${edgeGap}px, ${progressTooltipPercent.value}%, calc(100% - ${edgeGap}px))`,
+    left: `clamp(${edgeGap}px, calc(${percent}% + var(--slider-thumb-size, 12px) * ${thumbOffset}), calc(100% - ${edgeGap}px))`,
   };
 });
 
@@ -475,7 +477,8 @@ useResizeObserver(
         :step="0.1"
         :aria-busy="isProgressBusy"
         :aria-label="progressAriaLabel"
-        class="bar-slider-top group/progress"
+        class="bar-slider-top echo-slider echo-slider-progress group/progress"
+        :data-dragging="isDraggingSeek"
         @update:model-value="handleSeek"
         @pointerdown.capture="handleSeekStart"
         @value-commit="handleSeekCommit"
@@ -484,7 +487,7 @@ useResizeObserver(
         @mouseenter="isHoveringProgress = true"
         @mouseleave="isHoveringProgress = false"
       >
-        <SliderTrack class="bar-slider-track-top">
+        <SliderTrack class="echo-slider-track">
           <div class="bar-climax-layer">
             <template
               v-for="(mark, index) in playerStore.climaxMarks"
@@ -501,14 +504,11 @@ useResizeObserver(
               ></span>
             </template>
           </div>
-          <SliderRange class="bar-slider-range-top">
+          <SliderRange class="echo-slider-range">
             <ProgressBusyOverlay v-if="isProgressBusy" />
           </SliderRange>
         </SliderTrack>
-        <SliderThumb
-          class="bar-slider-thumb-top"
-          :class="[isHoveringProgress ? 'opacity-100 scale-125' : 'opacity-0 scale-50']"
-        />
+        <SliderThumb class="echo-slider-thumb" :aria-label="progressAriaLabel" />
       </SliderRoot>
       <!-- 时间 tooltip -->
       <div
@@ -764,14 +764,6 @@ useResizeObserver(
   cursor: pointer;
 }
 
-.bar-slider-track-top {
-  background: var(--control-track-bg);
-  position: relative;
-  flex-grow: 1;
-  border-radius: 9999px;
-  height: 3px;
-}
-
 .bar-climax-layer {
   position: absolute;
   inset: 0;
@@ -786,26 +778,6 @@ useResizeObserver(
   border-radius: 1px;
   background: var(--color-primary);
   opacity: 0.78;
-}
-
-.bar-slider-range-top {
-  position: absolute;
-  background: var(--color-primary);
-  border-radius: 9999px;
-  height: 100%;
-}
-
-.bar-slider-thumb-top {
-  display: block;
-  width: 10px;
-  height: 10px;
-  background: var(--control-thumb-bg);
-  border: 1px solid var(--control-border);
-  border-radius: 50%;
-  box-shadow: var(--shadow-control);
-  transition:
-    opacity 0.2s,
-    transform 0.2s;
 }
 
 /* 主控制区域 */

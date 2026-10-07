@@ -938,13 +938,17 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                   :step="0.1"
                   :disabled="providerEqLocked"
                   orientation="vertical"
-                  class="eq-slider"
+                  class="eq-slider echo-slider"
                   @update:model-value="(val) => updateGain(index, val)"
                 >
-                  <SliderTrack class="eq-track">
-                    <SliderRange class="eq-range" />
+                  <SliderTrack class="echo-slider-track">
+                    <SliderRange class="echo-slider-range" />
                   </SliderTrack>
-                  <SliderThumb class="eq-thumb" />
+                  <SliderThumb
+                    class="echo-slider-thumb"
+                    :aria-label="`${frequencies[index]} 均衡增益`"
+                    :aria-valuetext="`${gain.toFixed(1)} dB`"
+                  />
                 </SliderRoot>
                 <span class="eq-freq">{{ frequencies[index] }}</span>
               </div>
@@ -1437,17 +1441,21 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                     :step="control.range?.step ?? 0.01"
                     :inverted="control.range?.inverted ?? false"
                     :disabled="providerControlDisabled(control)"
-                    class="provider-slider"
+                    class="provider-slider echo-slider"
                     :aria-label="control.label || control.id"
                     @update:model-value="
                       (value) => previewProviderControl(control, value?.[0] ?? 0)
                     "
                     @value-commit="(value) => setProviderControl(control, value?.[0] ?? 0)"
                   >
-                    <SliderTrack class="provider-slider-track">
-                      <SliderRange class="provider-slider-range" />
+                    <SliderTrack class="echo-slider-track">
+                      <SliderRange class="echo-slider-range" />
                     </SliderTrack>
-                    <SliderThumb class="provider-slider-thumb" />
+                    <SliderThumb
+                      class="echo-slider-thumb"
+                      :aria-label="control.label || control.id"
+                      :aria-valuetext="`${providerControlLabel(control)}${control.unit || ''}`"
+                    />
                   </SliderRoot>
                   <div
                     v-if="control.range?.minLabel || control.range?.maxLabel"
@@ -1958,6 +1966,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 }
 
 .eq-container.is-disabled .eq-bands {
+  --slider-disabled-opacity: 1;
   opacity: 0.42;
 }
 
@@ -2470,6 +2479,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 }
 
 .provider-control.is-disabled {
+  --slider-disabled-opacity: 1;
   opacity: 0.42;
 }
 
@@ -2489,7 +2499,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   position: relative;
   display: flex;
   width: 100%;
-  height: 14px;
+  height: 24px;
   align-items: center;
   user-select: none;
   touch-action: none;
@@ -2501,33 +2511,6 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   gap: 12px;
   color: var(--color-text-secondary);
   font-size: 11px;
-}
-
-.provider-slider-track {
-  position: relative;
-  height: 4px;
-  flex: 1;
-  overflow: hidden;
-  border-radius: 9999px;
-  background: var(--control-track-bg);
-}
-
-.provider-slider-range {
-  position: absolute;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--color-primary);
-}
-
-.provider-slider-thumb {
-  display: block;
-  width: 12px;
-  height: 12px;
-  border: 1px solid var(--control-border);
-  border-radius: 9999px;
-  background: var(--control-thumb-bg);
-  box-shadow: var(--shadow-control);
-  outline: none;
 }
 
 .provider-switch-control {
@@ -2612,34 +2595,6 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   width: 100%;
   flex: 1;
   min-height: 0;
-}
-
-.eq-track {
-  position: relative;
-  flex-grow: 1;
-  border-radius: 9999px;
-  width: 4px;
-  background: var(--control-track-bg);
-  cursor: pointer;
-}
-
-.eq-range {
-  position: absolute;
-  border-radius: 9999px;
-  width: 100%;
-  background: var(--color-primary);
-}
-
-.eq-thumb {
-  display: block;
-  width: 12px;
-  height: 12px;
-  background: var(--control-thumb-bg);
-  border: 1px solid var(--control-border);
-  border-radius: 9999px;
-  box-shadow: var(--shadow-control);
-  outline: none;
-  cursor: pointer;
 }
 
 .eq-freq {

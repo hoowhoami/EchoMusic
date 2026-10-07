@@ -519,7 +519,7 @@ onUnmounted(() => {
         <Tooltip content="选择歌词">
           <template #trigger>
             <button
-              class="action-icon lyric-page-tool-btn"
+              class="action-icon lyric-page-tool-btn soft-secondary-action"
               aria-label="选择歌词"
               @click="lyricStore.sourceDialogOpen = true"
             >
@@ -530,7 +530,7 @@ onUnmounted(() => {
         <Tooltip v-if="hasLyrics" :content="`歌词后退 ${lyricOffsetStepLabel}`">
           <template #trigger>
             <button
-              class="action-icon lyric-page-tool-btn"
+              class="action-icon lyric-page-tool-btn soft-secondary-action"
               :aria-label="`歌词后退 ${lyricOffsetStepLabel}`"
               @click="handleOffsetAdjust(-1)"
             >
@@ -541,7 +541,7 @@ onUnmounted(() => {
         <Tooltip v-if="hasLyrics" :content="`歌词前进 ${lyricOffsetStepLabel}`">
           <template #trigger>
             <button
-              class="action-icon lyric-page-tool-btn"
+              class="action-icon lyric-page-tool-btn soft-secondary-action"
               :aria-label="`歌词前进 ${lyricOffsetStepLabel}`"
               @click="handleOffsetAdjust(1)"
             >
@@ -552,7 +552,7 @@ onUnmounted(() => {
         <Tooltip v-if="hasLyrics" content="重置单曲偏移">
           <template #trigger>
             <button
-              class="action-icon lyric-page-tool-btn"
+              class="action-icon lyric-page-tool-btn soft-secondary-action"
               :style="{
                 visibility: lyricStore.currentTrackTimeOffset !== 0 ? 'visible' : 'hidden',
               }"
@@ -571,7 +571,8 @@ onUnmounted(() => {
           <template #trigger>
             <button
               class="lyric-page-tool-btn"
-              :class="{ active: lyricStore.wantTranslation }"
+              :class="lyricStore.wantTranslation ? 'soft-accent-action' : 'soft-secondary-action'"
+              :aria-pressed="lyricStore.wantTranslation"
               aria-label="翻译"
               @click="lyricStore.wantTranslation = !lyricStore.wantTranslation"
             >
@@ -583,7 +584,8 @@ onUnmounted(() => {
           <template #trigger>
             <button
               class="lyric-page-tool-btn"
-              :class="{ active: lyricStore.wantRomanization }"
+              :class="lyricStore.wantRomanization ? 'soft-accent-action' : 'soft-secondary-action'"
+              :aria-pressed="lyricStore.wantRomanization"
               aria-label="音译"
               @click="lyricStore.wantRomanization = !lyricStore.wantRomanization"
             >
@@ -594,7 +596,7 @@ onUnmounted(() => {
         <Tooltip content="复制歌词">
           <template #trigger>
             <button
-              class="action-icon lyric-page-tool-btn"
+              class="action-icon lyric-page-tool-btn soft-secondary-action"
               aria-label="复制歌词"
               @click="handleCopyLyrics"
             >
@@ -606,20 +608,21 @@ onUnmounted(() => {
     </div>
 
     <template v-else>
-      <!-- 顶部工具栏：左（展开按钮）、中（轮播切换）、右（播放器模式） -->
+      <!-- 顶部工具栏：左侧收起按钮，居中写真切换或歌曲信息 -->
       <div class="lyric-page-toolbar no-drag">
         <!-- 左侧：展开/折叠按钮 -->
         <div class="toolbar-left">
           <Button
             v-if="viewMode === 'portrait' && portraitModeRef"
-            variant="unstyled"
+            variant="secondary"
             size="none"
             type="button"
-            class="action-icon top-right-btn"
+            class="portrait-collapse-btn"
             :style="{
               opacity: isCollapsed && !isMouseActive ? 0 : 1,
-              transition: 'opacity 0.3s ease',
+              pointerEvents: isCollapsed && !isMouseActive ? 'none' : 'auto',
             }"
+            :aria-expanded="!portraitModeRef.isLyricCollapsed"
             :tooltip="portraitModeRef.isLyricCollapsed ? '展开歌词' : '收起歌词'"
             tooltip-side="bottom"
             @click="portraitModeRef.handleCollapseClick()"
@@ -646,27 +649,35 @@ onUnmounted(() => {
               portraitModeRef &&
               portraitModeRef.artistPortraitUrls.length > 1
             "
-            class="top-right-group"
+            class="portrait-switcher soft-neutral-action"
+            role="group"
+            aria-label="写真切换"
+            :aria-hidden="isCollapsed"
+            :inert="isCollapsed"
             :style="{
               opacity: isCollapsed ? 0 : 1,
-              transition: 'opacity 0.3s ease',
+              pointerEvents: isCollapsed ? 'none' : 'auto',
             }"
           >
             <Button
-              variant="unstyled"
+              variant="ghost"
               size="none"
               type="button"
-              class="action-icon top-right-group-btn"
+              class="portrait-switcher-btn"
+              tooltip="上一张写真"
+              tooltip-side="bottom"
               @click="portraitModeRef.showPreviousPortrait()"
             >
               <Icon :icon="iconChevronLeft" width="14" height="14" />
             </Button>
-            <span class="top-right-group-label">{{ portraitModeRef.portraitCounterLabel }}</span>
+            <span class="portrait-switcher-label">{{ portraitModeRef.portraitCounterLabel }}</span>
             <Button
-              variant="unstyled"
+              variant="ghost"
               size="none"
               type="button"
-              class="action-icon top-right-group-btn"
+              class="portrait-switcher-btn"
+              tooltip="下一张写真"
+              tooltip-side="bottom"
               @click="portraitModeRef.showNextPortrait()"
             >
               <Icon :icon="iconChevronRight" width="14" height="14" />
@@ -748,7 +759,7 @@ onUnmounted(() => {
           <Tooltip content="选择歌词">
             <template #trigger>
               <button
-                class="action-icon lyric-page-tool-btn"
+                class="action-icon lyric-page-tool-btn soft-secondary-action"
                 aria-label="选择歌词"
                 @click="lyricStore.sourceDialogOpen = true"
               >
@@ -759,7 +770,7 @@ onUnmounted(() => {
           <Tooltip v-if="hasLyrics" :content="`歌词后退 ${lyricOffsetStepLabel}`">
             <template #trigger>
               <button
-                class="action-icon lyric-page-tool-btn"
+                class="action-icon lyric-page-tool-btn soft-secondary-action"
                 :aria-label="`歌词后退 ${lyricOffsetStepLabel}`"
                 @click="handleOffsetAdjust(-1)"
               >
@@ -770,7 +781,7 @@ onUnmounted(() => {
           <Tooltip v-if="hasLyrics" :content="`歌词前进 ${lyricOffsetStepLabel}`">
             <template #trigger>
               <button
-                class="action-icon lyric-page-tool-btn"
+                class="action-icon lyric-page-tool-btn soft-secondary-action"
                 :aria-label="`歌词前进 ${lyricOffsetStepLabel}`"
                 @click="handleOffsetAdjust(1)"
               >
@@ -781,7 +792,7 @@ onUnmounted(() => {
           <Tooltip v-if="hasLyrics" content="重置单曲偏移">
             <template #trigger>
               <button
-                class="action-icon lyric-page-tool-btn"
+                class="action-icon lyric-page-tool-btn soft-secondary-action"
                 :style="{
                   visibility: lyricStore.currentTrackTimeOffset !== 0 ? 'visible' : 'hidden',
                 }"
@@ -800,7 +811,8 @@ onUnmounted(() => {
             <template #trigger>
               <button
                 class="lyric-page-tool-btn"
-                :class="{ active: lyricStore.wantTranslation }"
+                :class="lyricStore.wantTranslation ? 'soft-accent-action' : 'soft-secondary-action'"
+                :aria-pressed="lyricStore.wantTranslation"
                 aria-label="翻译"
                 @click="lyricStore.wantTranslation = !lyricStore.wantTranslation"
               >
@@ -812,7 +824,10 @@ onUnmounted(() => {
             <template #trigger>
               <button
                 class="lyric-page-tool-btn"
-                :class="{ active: lyricStore.wantRomanization }"
+                :class="
+                  lyricStore.wantRomanization ? 'soft-accent-action' : 'soft-secondary-action'
+                "
+                :aria-pressed="lyricStore.wantRomanization"
                 aria-label="音译"
                 @click="lyricStore.wantRomanization = !lyricStore.wantRomanization"
               >
@@ -823,7 +838,7 @@ onUnmounted(() => {
           <Tooltip content="复制歌词">
             <template #trigger>
               <button
-                class="action-icon lyric-page-tool-btn"
+                class="action-icon lyric-page-tool-btn soft-secondary-action"
                 aria-label="复制歌词"
                 @click="handleCopyLyrics"
               >
@@ -968,13 +983,14 @@ onUnmounted(() => {
   left: 16px;
   right: 16px;
   z-index: 60;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(32px, 1fr) auto minmax(32px, 1fr);
+  column-gap: 12px;
   align-items: center;
   height: 36px;
 }
 
 .toolbar-left {
-  flex: 1;
   display: flex;
   align-items: center;
   min-width: 0;
@@ -1050,56 +1066,46 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.top-right-btn {
+.portrait-collapse-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 32px;
   height: 32px;
   border-radius: var(--radius-control);
-  background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
-  color: var(--icon-main);
-  transition: all 0.2s ease;
+  border: 0;
+  padding: 0;
 }
 
-.top-right-btn:hover {
-  background: var(--control-hover-bg);
-  color: var(--color-primary-text);
-}
-
-.top-right-group {
+.portrait-switcher {
   display: inline-flex;
   align-items: center;
   gap: 0;
-  padding: 3px 4px;
-  height: 36px;
-  border-radius: 999px;
-  background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
+  padding: 2px;
+  height: 32px;
+  box-sizing: border-box;
+  border-radius: var(--radius-control);
+  border: 0;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.top-right-group-btn {
+.portrait-switcher-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
   border-radius: var(--radius-control);
-  color: var(--icon-main);
-  transition: all 0.2s ease;
+  padding: 0;
+  border: 0;
 }
 
-.top-right-group-btn:hover {
-  background: var(--control-hover-bg);
-  color: var(--color-primary-text);
-}
-
-.top-right-group-label {
+.portrait-switcher-label {
   font-size: 12px;
   font-weight: 700;
-  color: var(--icon-main);
-  min-width: 2em;
+  color: inherit;
+  min-width: 3em;
+  font-variant-numeric: tabular-nums;
   text-align: center;
   padding: 0 2px;
 }
@@ -1149,9 +1155,7 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   border-radius: var(--radius-control);
-  background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
-  color: var(--icon-main);
+  border: 0;
   font-size: 12px;
   font-weight: 700;
   font-family:
@@ -1159,17 +1163,16 @@ onUnmounted(() => {
     -apple-system,
     sans-serif;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.lyric-page-tool-btn:hover {
-  background: var(--control-hover-bg);
-  color: var(--color-primary-text);
-}
-
-.lyric-page-tool-btn.active {
-  background: var(--control-active-bg);
-  color: var(--color-primary-text);
-  border-color: var(--color-primary-text);
+@media (prefers-reduced-motion: reduce) {
+  .lyric-page-tool-btn,
+  .portrait-switcher {
+    transition: none;
+  }
 }
 </style>

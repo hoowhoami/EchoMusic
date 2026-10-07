@@ -209,16 +209,14 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   scrollbar-width: thin;
   outline: none;
   -webkit-app-region: no-drag;
-  padding: 6px;
+  padding: 8px;
   border-radius: var(--radius-popover);
   background: var(--floating-surface-bg);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
   color: var(--color-text-main);
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 12%, transparent);
-  box-shadow:
-    var(--shadow-elevated),
-    0 0 0 1px color-mix(in srgb, var(--color-text-main) 3%, transparent);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-elevated);
   /* 与歌曲右键菜单一致，隔离 hover 重绘；定位由 Reka 外层容器负责。 */
   contain: paint;
   isolation: isolate;
@@ -230,6 +228,9 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   visibility: hidden;
   pointer-events: none;
 }
+.titlebar-more-menu[data-state='open'] {
+  animation: motion-popover-in var(--motion-duration-normal) var(--motion-ease-enter);
+}
 .titlebar-more-menu .titlebar-more-item {
   display: flex;
   flex: 1;
@@ -237,16 +238,17 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   text-align: left;
   align-items: center;
   gap: 10px;
-  min-height: 40px;
-  padding: 9px 10px;
-  border-radius: var(--radius-popover);
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: var(--radius-item);
   font-size: 13px;
+  font-weight: 500;
   color: var(--color-text-main);
   outline: none;
   cursor: pointer;
   transition:
-    background-color 0.12s ease,
-    color 0.12s ease;
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .titlebar-more-menu .titlebar-more-item svg {
   flex-shrink: 0;
@@ -256,7 +258,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
 }
 .titlebar-more-menu .titlebar-more-item:not(:disabled):hover,
 .titlebar-more-menu .titlebar-more-item:focus-visible:not(:disabled) {
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  background: var(--control-hover-bg);
   color: var(--color-primary-text);
 }
 .titlebar-more-menu .titlebar-more-item:disabled {
@@ -269,14 +271,18 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
 .titlebar-more-row {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
+  margin-bottom: 3px;
   border-radius: var(--radius-item);
 }
 .titlebar-more-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px 10px;
+  min-height: 36px;
+  padding: 0 4px 8px 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
   font-size: 13px;
   font-weight: 600;
 }
@@ -293,6 +299,12 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
 }
 .titlebar-pin:hover {
   background: var(--control-hover-bg);
+}
+.titlebar-pin,
+.titlebar-reset {
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .titlebar-pin.pinned {
   color: var(--color-primary-text);
@@ -328,5 +340,18 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   padding: 12px;
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+</style>
+
+<style>
+@media (prefers-reduced-motion: reduce) {
+  .titlebar-more-menu .titlebar-more-item,
+  .titlebar-pin,
+  .titlebar-reset {
+    transition: none;
+  }
+  .titlebar-more-menu[data-state='open'] {
+    animation: none;
+  }
 }
 </style>

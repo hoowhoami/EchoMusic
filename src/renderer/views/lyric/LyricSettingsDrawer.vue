@@ -8,6 +8,7 @@ import { computed } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import Drawer from '@/components/ui/Drawer.vue';
 import Button from '@/components/ui/Button.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import SelectionBadge from '@/components/ui/SelectionBadge.vue';
 import LyricSkinSettingsPanel from './LyricSkinSettingsPanel.vue';
 import {
@@ -116,6 +117,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
     side="right"
     overlay-class="lyric-settings-overlay"
     panel-class="lyric-settings-panel"
+    :title="view === 'settings' ? '皮肤设置' : '换肤'"
     @update:open="emit('update:open', $event)"
   >
     <div class="settings-drawer">
@@ -153,6 +155,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
             variant="unstyled"
             size="none"
             class="action-icon settings-close-btn"
+            aria-label="关闭皮肤设置"
             @click="close"
           >
             <Icon :icon="iconX" width="18" height="18" />
@@ -161,91 +164,96 @@ const cardStyle = (skin: LyricSkin, index: number) => {
       </div>
 
       <!-- 内容 -->
-      <div class="settings-body">
-        <!-- 换肤：皮肤列表 -->
-        <template v-if="view === 'skins'">
-          <div class="skin-groups">
-            <div v-for="group in skinGroups" :key="group.key" class="skin-group">
-              <div class="skin-group-label">{{ group.label }}</div>
-              <div class="skin-grid">
-                <button
-                  v-for="(skin, index) in group.skins"
-                  :key="skin.key"
-                  type="button"
-                  class="skin-card card-hover card-hover-border"
-                  :class="{
-                    active: skin.key === activeSkinKey,
-                    unavailable: !isSkinAvailable(skin),
-                  }"
-                  @click="selectSkin(skin)"
-                >
-                  <div class="skin-card-preview">
-                    <img v-if="skin.preview" :src="skin.preview" alt="" />
-                    <!-- 内置皮肤：用 CSS 绘制能体现各自特征的缩略图 -->
-                    <div
-                      v-else-if="skin.pluginId === 'host'"
-                      class="skin-thumb"
-                      :class="`skin-thumb--${skin.id}`"
-                    >
-                      <template v-if="skin.id === 'cover'">
-                        <div class="thumb-cover-art"></div>
-                        <div class="thumb-cover-lines"><span></span><span></span><span></span></div>
-                      </template>
-                      <template v-else-if="skin.id === 'portrait'">
-                        <div class="thumb-portrait-img"></div>
-                        <div class="thumb-portrait-lines"><span></span><span></span></div>
-                      </template>
-                      <template v-else-if="skin.id === 'lyric'">
-                        <div class="thumb-lyric-lines">
-                          <span></span>
-                          <span class="is-current"></span>
-                          <span></span>
-                          <span></span>
-                        </div>
-                      </template>
-                      <template v-else-if="skin.id === 'amll'">
-                        <div class="thumb-amll-lines">
-                          <span></span>
-                          <span class="is-current"></span>
-                          <span></span>
-                        </div>
-                      </template>
+      <Scrollbar class="settings-scrollbar">
+        <div class="settings-body">
+          <!-- 换肤：皮肤列表 -->
+          <template v-if="view === 'skins'">
+            <div class="skin-groups">
+              <div v-for="group in skinGroups" :key="group.key" class="skin-group">
+                <div class="skin-group-label">{{ group.label }}</div>
+                <div class="skin-grid">
+                  <button
+                    v-for="(skin, index) in group.skins"
+                    :key="skin.key"
+                    type="button"
+                    :aria-pressed="skin.key === activeSkinKey"
+                    class="skin-card card-hover card-hover-border"
+                    :class="{
+                      active: skin.key === activeSkinKey,
+                      unavailable: !isSkinAvailable(skin),
+                    }"
+                    @click="selectSkin(skin)"
+                  >
+                    <div class="skin-card-preview">
+                      <img v-if="skin.preview" :src="skin.preview" alt="" />
+                      <!-- 内置皮肤：用 CSS 绘制能体现各自特征的缩略图 -->
+                      <div
+                        v-else-if="skin.pluginId === 'host'"
+                        class="skin-thumb"
+                        :class="`skin-thumb--${skin.id}`"
+                      >
+                        <template v-if="skin.id === 'cover'">
+                          <div class="thumb-cover-art"></div>
+                          <div class="thumb-cover-lines">
+                            <span></span><span></span><span></span>
+                          </div>
+                        </template>
+                        <template v-else-if="skin.id === 'portrait'">
+                          <div class="thumb-portrait-img"></div>
+                          <div class="thumb-portrait-lines"><span></span><span></span></div>
+                        </template>
+                        <template v-else-if="skin.id === 'lyric'">
+                          <div class="thumb-lyric-lines">
+                            <span></span>
+                            <span class="is-current"></span>
+                            <span></span>
+                            <span></span>
+                          </div>
+                        </template>
+                        <template v-else-if="skin.id === 'amll'">
+                          <div class="thumb-amll-lines">
+                            <span></span>
+                            <span class="is-current"></span>
+                            <span></span>
+                          </div>
+                        </template>
+                      </div>
+                      <!-- 插件皮肤：渐变背景 + 音符图标 -->
+                      <div v-else class="skin-card-placeholder" :style="cardStyle(skin, index)">
+                        <Icon :icon="iconMusic" width="26" height="26" class="skin-card-icon" />
+                      </div>
+                      <SelectionBadge v-if="skin.key === activeSkinKey" class="skin-card-check" />
+                      <span
+                        v-if="skin.key === activeSkinKey"
+                        class="skin-card-settings selection-mark-surface"
+                        aria-hidden="true"
+                      >
+                        <Icon :icon="iconSettings" width="13" height="13" />
+                      </span>
                     </div>
-                    <!-- 插件皮肤：渐变背景 + 音符图标 -->
-                    <div v-else class="skin-card-placeholder" :style="cardStyle(skin, index)">
-                      <Icon :icon="iconMusic" width="26" height="26" class="skin-card-icon" />
+                    <div class="skin-card-title">{{ skinDisplayTitle(skin) }}</div>
+                    <div v-if="!isSkinAvailable(skin)" class="skin-card-unavailable-label">
+                      不可用
                     </div>
-                    <SelectionBadge v-if="skin.key === activeSkinKey" class="skin-card-check" />
-                    <span
-                      v-if="skin.key === activeSkinKey"
-                      class="skin-card-settings selection-mark-surface"
-                      aria-hidden="true"
-                    >
-                      <Icon :icon="iconSettings" width="13" height="13" />
-                    </span>
-                  </div>
-                  <div class="skin-card-title">{{ skinDisplayTitle(skin) }}</div>
-                  <div v-if="!isSkinAvailable(skin)" class="skin-card-unavailable-label">
-                    不可用
-                  </div>
-                </button>
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </template>
+          </template>
 
-        <!-- 皮肤设置 -->
-        <template v-else>
-          <div v-if="activeSkin?.settings?.component" class="skin-settings-wrap">
-            <LyricSkinSettingsPanel :skin="activeSkin" :key="activeSkin.key" />
-          </div>
-          <div v-else class="skin-settings-empty">
-            当前皮肤没有可用的自定义设置。
-            <br />
-            可前往「全局设置 → 歌词设置 → 播放页」调整外观选项。
-          </div>
-        </template>
-      </div>
+          <!-- 皮肤设置 -->
+          <template v-else>
+            <div v-if="activeSkin?.settings?.component" class="skin-settings-wrap">
+              <LyricSkinSettingsPanel :skin="activeSkin" :key="activeSkin.key" />
+            </div>
+            <div v-else class="skin-settings-empty">
+              当前皮肤没有可用的自定义设置。
+              <br />
+              可前往「全局设置 → 歌词设置 → 播放页」调整外观选项。
+            </div>
+          </template>
+        </div>
+      </Scrollbar>
     </div>
   </Drawer>
 </template>
@@ -258,6 +266,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   bottom: var(--drawer-safe-bottom) !important;
   width: min(360px, calc(100vw - 24px)) !important;
   border-radius: var(--radius-popover) !important;
+  border-color: var(--border-strong);
   box-shadow: var(--shadow-dialog) !important;
   overflow: hidden !important;
 }
@@ -278,7 +287,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 
 <style scoped>
 .settings-drawer {
-  --lyric-settings-divider-border: var(--border-subtle);
+  --lyric-settings-divider-border: var(--border-strong);
 
   display: flex;
   flex-direction: column;
@@ -291,9 +300,9 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 
 .settings-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  padding: 20px 20px 16px;
+  padding: 16px;
   border-bottom: 1px solid var(--lyric-settings-divider-border);
   flex-shrink: 0;
   gap: 16px;
@@ -322,11 +331,10 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-control);
   color: var(--icon-main);
-  transition: all 0.2s;
 }
 
 .settings-header-actions {
@@ -339,11 +347,10 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-control);
   color: var(--icon-main);
-  transition: all 0.2s;
 }
 
 .settings-header-action:hover {
@@ -356,18 +363,16 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   background: var(--control-hover-bg);
 }
 
-.settings-body {
+.settings-scrollbar {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+}
+
+.settings-body {
   padding: 16px 16px 24px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  scrollbar-width: none;
-}
-
-.settings-body::-webkit-scrollbar {
-  display: none;
 }
 
 /* 换肤面板 */
@@ -671,7 +676,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 .skin-settings-wrap {
   display: flex;
   flex-direction: column;
-  padding: 4px 4px 8px;
+  min-width: 0;
 }
 
 .skin-settings-empty {

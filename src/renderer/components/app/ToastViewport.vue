@@ -253,6 +253,7 @@ onUnmounted(() => {
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
   border-color: var(--border-subtle);
+  border-radius: var(--radius-popover);
   box-shadow:
     0 10px 30px rgba(0, 0, 0, 0.14),
     0 2px 8px rgba(0, 0, 0, 0.08);
@@ -260,12 +261,12 @@ onUnmounted(() => {
 }
 
 .toast-card.is-mini {
-  @apply pointer-events-none h-9 gap-2 rounded-full px-3;
+  @apply pointer-events-none h-9 gap-2 px-3;
   max-width: min(100%, 380px);
 }
 
 .toast-card.is-standard {
-  @apply pointer-events-auto min-h-12 gap-3 rounded-2xl px-4 py-3;
+  @apply pointer-events-auto min-h-12 gap-3 px-4 py-3;
   border-color: color-mix(in srgb, var(--color-text-main) 20%, var(--border-subtle));
 }
 
@@ -294,7 +295,8 @@ onUnmounted(() => {
 }
 
 .toast-icon {
-  @apply flex h-5 w-5 shrink-0 items-center justify-center rounded-full;
+  @apply flex h-5 w-5 shrink-0 items-center justify-center;
+  border-radius: var(--radius-control);
   color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
@@ -333,7 +335,8 @@ onUnmounted(() => {
 }
 
 .toast-close {
-  @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition;
+  @apply flex h-6 w-6 shrink-0 items-center justify-center transition;
+  border-radius: var(--radius-control);
   color: var(--icon-main);
 }
 
@@ -343,11 +346,13 @@ onUnmounted(() => {
 }
 
 .toast-action {
-  @apply h-7 shrink-0 rounded-lg px-2 text-[12px] font-semibold transition;
+  @apply h-7 shrink-0 px-2 text-[12px] font-semibold transition;
+  border-radius: var(--radius-control);
 }
 
 .toast-count {
-  @apply absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none;
+  @apply absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center px-1 text-[10px] font-bold leading-none;
+  border-radius: var(--radius-detail);
   color: var(--color-on-primary);
   background: var(--color-primary);
   border: 2px solid var(--color-bg-elevated);

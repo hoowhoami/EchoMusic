@@ -15,6 +15,35 @@ function releaseAnimations(element: HTMLElement) {
 /** Own AMLL entry alignment and the lifetime of lyric animation resources. */
 export class OpeningLyricPlayer extends LyricPlayer {
   private openingLayout = true;
+  private showTranslation = true;
+  private showRomanization = true;
+  private secondaryLayoutIndex: number | undefined;
+
+  setSecondaryVisibility(translation: boolean, romanization: boolean) {
+    if (translation === this.showTranslation && romanization === this.showRomanization) return;
+    this.showTranslation = translation;
+    this.showRomanization = romanization;
+    this.getElement().style.setProperty(
+      '--echo-amll-roman-display',
+      romanization ? 'flex' : 'none',
+    );
+    this.applySecondaryVisibility();
+    this.secondaryLayoutIndex = this.timelineState.scrollToIndex;
+  }
+
+  private applySecondaryVisibility() {
+    if (this.currentLyricGroups.length === 0) return;
+    for (const group of this.currentLyricGroups) {
+      for (const line of [group.mainLine, group.bgLine]) {
+        if (!line) continue;
+        // Core creates permanent main/translation/romanization containers, also
+        // for culled lines. Preserve those elements and all word animations.
+        const children = line.getElement().children;
+        (children[1] as HTMLElement).style.display = this.showTranslation ? '' : 'none';
+        (children[2] as HTMLElement).style.display = this.showRomanization ? '' : 'none';
+      }
+    }
+  }
 
   initializeViewport() {
     // Core starts at [0, 0] until ResizeObserver delivers. Its fallback line
@@ -28,7 +57,17 @@ export class OpeningLyricPlayer extends LyricPlayer {
   override calcLayout(sync = false, force = false): Promise<void> {
     // The base constructor may call this before the field initializer runs.
     // AMLL's sync flag removes stagger delays; only force bypasses its springs.
-    return super.calcLayout(sync, force || this.openingLayout !== false);
+    // Revealed/cull-entering lines can report their new heights across several
+    // ResizeObserver deliveries. Snap those sync layouts for the same hot line;
+    // normal following and user scrolling still keep their springs.
+    const secondaryLayout =
+      this.secondaryLayoutIndex !== undefined &&
+      this.secondaryLayoutIndex === this.timelineState?.scrollToIndex;
+    if (!secondaryLayout) this.secondaryLayoutIndex = undefined;
+    return super.calcLayout(
+      sync,
+      force || this.openingLayout !== false || (sync && secondaryLayout),
+    );
   }
 
   override update(delta = 0): void {
@@ -45,7 +84,9 @@ export class OpeningLyricPlayer extends LyricPlayer {
   override setLyricLines(...args: Parameters<LyricPlayer['setLyricLines']>): void {
     // Interlude dots survive a lyric replacement; only discard old lyric words.
     for (const group of this.currentLyricGroups) releaseAnimations(group.element);
+    this.secondaryLayoutIndex = undefined;
     super.setLyricLines(...args);
+    this.applySecondaryVisibility();
   }
 
   override dispose(): void {

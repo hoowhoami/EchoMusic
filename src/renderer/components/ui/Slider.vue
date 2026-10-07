@@ -18,6 +18,9 @@ interface Props {
   rangeClass?: string;
   thumbClass?: string;
   ariaLabel?: string;
+  ariaLabelledby?: string;
+  ariaDescribedby?: string;
+  ariaValueText?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -48,13 +51,13 @@ const handleCommit = (value?: number[]) => {
 };
 
 const rootClass = computed(() => [
-  'slider-root',
+  'slider-root echo-slider',
   props.orientation === 'vertical' ? 'slider-root-vertical' : 'slider-root-horizontal',
 ]);
 
-const trackClass = computed(() => ['slider-track', props.trackClass]);
-const rangeClass = computed(() => ['slider-range', props.rangeClass]);
-const thumbClass = computed(() => ['slider-thumb', props.thumbClass]);
+const trackClass = computed(() => ['echo-slider-track', props.trackClass]);
+const rangeClass = computed(() => ['echo-slider-range', props.rangeClass]);
+const thumbClass = computed(() => ['echo-slider-thumb', props.thumbClass]);
 const valueLabel = computed(() =>
   props.formatValue
     ? props.formatValue(normalizedValue.value)
@@ -77,7 +80,6 @@ const valueLabel = computed(() =>
       :step="props.step"
       :disabled="props.disabled"
       :orientation="props.orientation"
-      :aria-label="props.ariaLabel"
       :class="rootClass"
       @update:model-value="handleUpdate"
       @value-commit="handleCommit"
@@ -85,7 +87,13 @@ const valueLabel = computed(() =>
       <SliderTrack :class="trackClass">
         <SliderRange :class="rangeClass" />
       </SliderTrack>
-      <SliderThumb :class="thumbClass" />
+      <SliderThumb
+        :class="thumbClass"
+        :aria-label="props.ariaLabel"
+        :aria-labelledby="props.ariaLabelledby"
+        :aria-describedby="props.ariaDescribedby"
+        :aria-valuetext="props.ariaValueText || valueLabel"
+      />
     </SliderRoot>
     <span v-if="props.showValue" class="slider-value-label">{{ valueLabel }}</span>
   </div>
@@ -105,11 +113,12 @@ const valueLabel = computed(() =>
 }
 
 .slider-wrapper-horizontal.has-value-label {
-  @apply pt-4;
+  @apply pt-5;
 }
 
 .slider-wrapper-vertical {
-  @apply flex flex-col items-center gap-2;
+  @apply relative flex flex-col items-center gap-2;
+  min-height: 0;
 }
 
 .slider-root-horizontal {
@@ -120,58 +129,18 @@ const valueLabel = computed(() =>
 
 .slider-root-vertical {
   @apply flex flex-col items-center w-6;
-}
-
-.slider-track {
-  background-color: var(--control-track-bg);
-  @apply relative grow rounded-full;
-  min-width: 0;
-}
-
-:global(.dark) .slider-track {
-  background-color: var(--control-track-bg);
-}
-
-.slider-root-horizontal .slider-track {
-  @apply h-[3px];
-}
-
-.slider-root-vertical .slider-track {
-  @apply w-[3px];
-}
-
-.slider-range {
-  @apply absolute rounded-full bg-primary;
-}
-
-.slider-root-horizontal .slider-range {
-  @apply h-full;
-}
-
-.slider-root-vertical .slider-range {
-  @apply w-full;
-}
-
-.slider-thumb {
-  @apply block w-3 h-3 rounded-full shadow-sm transition-shadow focus-visible:outline-none;
-  background: var(--control-thumb-bg);
-  border: 1px solid var(--control-border);
-  box-shadow: var(--shadow-control);
+  height: 100%;
+  min-height: 0;
 }
 
 .slider-value-label {
   @apply absolute top-0 right-0 text-[11px] font-semibold text-text-secondary tabular-nums leading-none pointer-events-none;
+  padding: 2px 6px;
+  border-radius: var(--radius-detail);
+  background: var(--control-muted-bg);
 }
 
-.slider-thumb:focus-visible {
-  box-shadow: none;
-}
-
-.slider-root[data-disabled] {
-  @apply opacity-60 cursor-not-allowed;
-}
-
-.slider-root[data-disabled] .slider-thumb {
-  @apply cursor-not-allowed;
+.slider-wrapper-vertical .slider-value-label {
+  position: static;
 }
 </style>

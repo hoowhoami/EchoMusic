@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useResizeObserver } from '@vueuse/core';
 import type { MiniPlayerExpandDirection, MiniPlayerLyricPayload } from '../../shared/miniPlayer';
 import { computeLyricCharBackgroundPosition } from '@/composables/useLyricTimeline';
 
@@ -155,33 +156,15 @@ const resolveLyricSecondaryLines = (line: MiniPlayerLyricPayload['lines'][number
   const wantRomanization = props.lyric?.wantRomanization ?? false;
   // 注音行：音译已标注在每个字上方，副歌词只保留翻译
   const romanShownAsRuby = isRubyLine(line);
-  if (wantTranslation && wantRomanization) {
-    return romanShownAsRuby
-      ? translated
-        ? [{ text: translated, kind: 'translation' as const }]
-        : []
-      : [
-          ...(romanized ? [{ text: romanized, kind: 'romanization' as const }] : []),
-          ...(translated ? [{ text: translated, kind: 'translation' as const }] : []),
-        ];
+  // 两个开关独立控制对应内容，缺少音译时也不能绕过翻译开关。
+  const secondaryLines: MiniSecondaryLine[] = [];
+  if (wantRomanization && !romanShownAsRuby && romanized) {
+    secondaryLines.push({ text: romanized, kind: 'romanization' });
   }
-  if (wantRomanization) {
-    return romanShownAsRuby
-      ? []
-      : romanized
-        ? [{ text: romanized, kind: 'romanization' as const }]
-        : translated
-          ? [{ text: translated, kind: 'translation' as const }]
-          : [];
+  if (wantTranslation && translated) {
+    secondaryLines.push({ text: translated, kind: 'translation' });
   }
-  if (wantTranslation) {
-    return translated
-      ? [{ text: translated, kind: 'translation' as const }]
-      : romanized
-        ? [{ text: romanized, kind: 'romanization' as const }]
-        : [];
-  }
-  return [] as MiniSecondaryLine[];
+  return secondaryLines;
 };
 
 const lyricEntries = computed(() =>
@@ -272,6 +255,11 @@ const positionActiveLyric = (animate: boolean) => {
   if (isUserScrolling.value) return;
   positionLyricIndex(activeLyricIndex.value, animate);
 };
+
+// 展开动画、换行及译文/注音切换都会改变可视区域或行高。
+useResizeObserver([lyricViewportRef, lyricTrackRef], () => {
+  if (props.visible) positionActiveLyric(false);
+});
 
 const handleLyricWheel = (event: WheelEvent) => {
   if (!props.visible || lyricLines.value.length === 0) return;
@@ -387,7 +375,8 @@ onBeforeUnmount(() => {
             v-if="lyric?.hasTranslation"
             type="button"
             class="mini-lyric-mode-btn"
-            :class="{ active: lyric?.wantTranslation }"
+            :class="lyric?.wantTranslation ? 'soft-accent-action' : 'soft-secondary-action'"
+            :aria-pressed="Boolean(lyric?.wantTranslation)"
             aria-label="翻译"
             @click="handleToggleTranslation"
           >
@@ -397,7 +386,8 @@ onBeforeUnmount(() => {
             v-if="lyric?.hasRomanization"
             type="button"
             class="mini-lyric-mode-btn"
-            :class="{ active: lyric?.wantRomanization }"
+            :class="lyric?.wantRomanization ? 'soft-accent-action' : 'soft-secondary-action'"
+            :aria-pressed="Boolean(lyric?.wantRomanization)"
             aria-label="音译"
             @click="handleToggleRomanization"
           >
@@ -407,7 +397,8 @@ onBeforeUnmount(() => {
             v-if="canShowRubyToggle"
             type="button"
             class="mini-lyric-mode-btn"
-            :class="{ active: lyric?.showRomanizationAsRuby }"
+            :class="lyric?.showRomanizationAsRuby ? 'soft-accent-action' : 'soft-secondary-action'"
+            :aria-pressed="Boolean(lyric?.showRomanizationAsRuby)"
             aria-label="音译注音：将音译标注在原词上方"
             @click="handleToggleRomanizationAsRuby"
           >
@@ -523,14 +514,13 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
   border-top: 1px solid var(--control-border);
-  border-bottom: 1px solid transparent;
   isolation: isolate;
   contain: paint;
 }
 
 .mini-lyric.expand-up {
-  border-top-color: transparent;
-  border-bottom-color: var(--control-border);
+  border-top: 0;
+  border-bottom: 1px solid var(--control-border);
 }
 
 .mini-lyric-bg,
@@ -592,30 +582,29 @@ onBeforeUnmount(() => {
 .mini-lyric-mode-btn {
   appearance: none;
   flex: 0 0 auto;
-  border: 1px solid var(--control-border);
-  background: var(--control-bg);
-  color: var(--text-secondary);
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  border: 0;
+  font-size: 11px;
   line-height: 1;
-  font-weight: 700;
-  padding: 4px 7px;
-  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 0 8px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   transition:
-    color 0.15s ease,
-    border-color 0.15s ease,
-    background 0.15s ease;
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.mini-lyric-mode-btn:hover {
-  color: var(--color-primary-text);
-  border-color: var(--control-border-hover);
-}
-
-.mini-lyric-mode-btn.active {
-  color: var(--color-on-primary);
-  background: var(--color-primary);
-  border-color: transparent;
+@media (prefers-reduced-motion: reduce) {
+  .mini-lyric-mode-btn {
+    transition: none;
+  }
 }
 
 .mini-lyric-song,
@@ -651,6 +640,14 @@ onBeforeUnmount(() => {
   overflow-anchor: none;
   overscroll-behavior: none;
   touch-action: pan-y;
+  /* 让滚动边缘的非当前行淡出，避免半行文字被硬切。 */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 14px,
+    black calc(100% - 14px),
+    transparent
+  );
 }
 
 .mini-lyric-track {

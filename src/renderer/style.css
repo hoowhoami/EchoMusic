@@ -3,6 +3,7 @@
 @import './theme/surfaces.css';
 @import './theme/shapes.css';
 @import './theme/badges.css';
+@import './theme/sliders.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import '@/theme/sliders.css';
 import { neutralThemePalette, DEFAULT_THEME_ACCENT } from '../../shared/themePalette';
 import { createAccentPaletteFromPrimary } from '../../shared/accentPalette';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
@@ -130,7 +131,7 @@ onUnmounted(() => {
       </button>
     </div>
     <SliderRoot
-      class="progress"
+      class="progress echo-slider"
       :min="0"
       :max="duration || 1"
       :model-value="progressValue"
@@ -145,8 +146,10 @@ onUnmounted(() => {
       @pointercancel="seek.handleCancel"
       @blur.capture="seek.handleCancel"
     >
-      <SliderTrack class="progress-track"><SliderRange class="progress-range" /></SliderTrack>
-      <SliderThumb class="progress-thumb" aria-label="播放进度" />
+      <SliderTrack class="progress-track echo-slider-track"
+        ><SliderRange class="progress-range echo-slider-range"
+      /></SliderTrack>
+      <SliderThumb class="progress-thumb echo-slider-thumb" aria-label="播放进度" />
     </SliderRoot>
   </section>
 </template>
@@ -262,14 +265,15 @@ button.play {
   fill: currentColor;
 }
 .progress {
+  --slider-track-size: 3px;
   -webkit-app-region: no-drag;
   position: absolute;
   bottom: 0;
   left: 0;
   width: 100%;
-  height: 8px;
+  height: 16px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   touch-action: none;
   margin: 0;
   accent-color: var(--accent);
@@ -279,28 +283,6 @@ button.play {
 .bar:hover .progress,
 .progress:focus-within {
   opacity: 1;
-}
-.progress-track {
-  position: relative;
-  flex: 1;
-  height: 3px;
-  background: #8885;
-}
-.progress-range {
-  position: absolute;
-  height: 100%;
-  background: var(--accent);
-}
-.progress-thumb {
-  display: block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-.progress-thumb:focus-visible {
-  outline: 1px solid var(--fg);
-  outline-offset: -1px;
 }
 @media (max-width: 260px) {
   .cover {

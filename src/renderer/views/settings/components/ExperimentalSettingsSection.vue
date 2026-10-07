@@ -290,6 +290,7 @@ const confirmResetDeviceIdentity = async () => {
           <Slider
             class="w-60"
             :model-value="settingStore.dpiScale"
+            aria-label="缩放因子"
             :min="0.5"
             :max="2"
             :step="0.1"

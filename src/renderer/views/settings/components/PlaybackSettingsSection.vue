@@ -335,6 +335,7 @@ const handleRemoveImpulseResponse = (id: string) => {
         <Slider
           class="w-48"
           :model-value="settingStore.volumeFadeTime"
+          aria-label="淡入时长"
           :min="500"
           :max="3000"
           :step="100"
@@ -368,6 +369,7 @@ const handleRemoveImpulseResponse = (id: string) => {
         <Slider
           class="w-48"
           :model-value="settingStore.volumeNormalizationLufs"
+          aria-label="参考响度"
           :min="-20"
           :max="-8"
           :step="1"
