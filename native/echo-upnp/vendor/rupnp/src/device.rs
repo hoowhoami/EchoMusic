@@ -154,16 +154,22 @@ impl DeviceSpec {
             Some(d) => d
                 .children()
                 .filter(Node::is_element)
-                .map(|node| DeviceSpec::from_xml(node, extra_keys))
-                .collect::<Result<_>>()?,
+                // EchoMusic patch: same tolerance as `services` below — an
+                // embedded device we cannot read must not hide the root device.
+                .filter_map(|node| DeviceSpec::from_xml(node, extra_keys).ok())
+                .collect(),
             None => Vec::new(),
         };
+        // EchoMusic patch: skip services we cannot parse instead of failing the
+        // whole device. One non-conforming `<service>` block on a real device
+        // would otherwise make every device unreachable. AVTransport is what the
+        // transport needs, so a device whose AVTransport parses still works.
         let services = match services {
             Some(s) => s
                 .children()
                 .filter(Node::is_element)
-                .map(Service::from_xml)
-                .collect::<Result<_>>()?,
+                .filter_map(|node| Service::from_xml(node).ok())
+                .collect(),
             None => Vec::new(),
         };
 
