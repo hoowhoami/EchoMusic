@@ -15,7 +15,7 @@ const code = transformSync(
 ).code;
 const mod = { exports: {} };
 new Function('require', 'module', 'exports', code)(require, mod, mod.exports);
-const { MediaServer, parseRange, sliceBytes } = mod.exports;
+const { MediaServer, parseRange, sliceBytes, pickLanIpv4 } = mod.exports;
 const turn = () => new Promise((resolve) => setImmediate(resolve));
 async function bounded(promise, ms = 1000) {
   let timer;
@@ -287,5 +287,49 @@ test('revoking one session leaves another active transfer intact', async (t) => 
     assert.equal(f.relay.activeResourceCount, 1);
   } finally {
     for (const client of clients) client.destroy();
+  }
+});
+
+// 注入的 provider 不带网卡名，调用方已自行选定，按给定顺序取第一个私网地址。
+test('pickLanIpv4 keeps the provider order when interface names are unknown', () => {
+  assert.equal(
+    pickLanIpv4(() => ['172.26.192.1', '192.168.6.142']),
+    '172.26.192.1',
+  );
+});
+
+test('pickLanIpv4 falls back to loopback when the provider yields no private address', () => {
+  assert.equal(
+    pickLanIpv4(() => ['8.8.8.8', '127.0.0.1']),
+    '127.0.0.1',
+  );
+});
+
+test('pickLanIpv4 ignores loopback and public addresses', () => {
+  assert.equal(
+    pickLanIpv4(() => ['127.0.0.1', '8.8.8.8', '192.168.6.142']),
+    '192.168.6.142',
+  );
+});
+
+test('pickLanIpv4 returns loopback when no private address exists', () => {
+  assert.equal(
+    pickLanIpv4(() => ['8.8.8.8', '127.0.0.1']),
+    '127.0.0.1',
+  );
+});
+
+test('pickLanIpv4 picks the physical adapter by interface name', () => {
+  const os = require('node:os');
+  const original = os.networkInterfaces;
+  os.networkInterfaces = () => ({
+    'vEthernet (Default Switch)': [{ family: 'IPv4', address: '172.26.192.1', internal: false }],
+    WLAN: [{ family: 'IPv4', address: '192.168.6.142', internal: false }],
+    'Loopback Pseudo-Interface 1': [{ family: 'IPv4', address: '127.0.0.1', internal: true }],
+  });
+  try {
+    assert.equal(pickLanIpv4(), '192.168.6.142');
+  } finally {
+    os.networkInterfaces = original;
   }
 });

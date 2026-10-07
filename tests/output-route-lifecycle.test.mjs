@@ -5,10 +5,10 @@ import { EventEmitter } from 'node:events';
 import http from 'node:http';
 import { tmpdir } from 'node:os';
 import path, { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build, transformSync } from 'esbuild';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'echo-route-lifecycle-'));
 const outfile = join(dir, 'host.mjs');
 await build({
@@ -689,7 +689,7 @@ function runtimeHarness(options = {}) {
   const discovery = {
     list: () => [],
     start: options.start ?? (async () => {}),
-    search: options.search ?? (async () => calls.push('search')),
+    search: options.search ?? (async (once) => calls.push(once ? 'search once' : 'search')),
     stop: async () => {
       calls.push('discovery stop');
     },
@@ -736,6 +736,8 @@ function runtimeHarness(options = {}) {
             return gate.promise;
           },
           noteDlnaDevices() {},
+          noteDlnaDescriptionFailures() {},
+          noteDlnaScanning: (scanning) => calls.push(scanning ? 'scanning on' : 'scanning off'),
         };
       },
     },
@@ -883,4 +885,296 @@ test('re-enabling scanning during a pending stop retains sockets and launches th
   assert.ok(!box.calls.includes('discovery stop'));
   box.gate.resolve();
   await box.api.shutdownOutputRuntime();
+});
+
+test('a DLNA device whose description cannot be read is reported instead of looking absent', async () => {
+  // 设备描述不合规的设备不会进入投放列表。UI 若只显示「没有找到设备」，
+  // 描述解析失败就会被伪装成发现失败，排查时无从下手。
+  const box = harness();
+  const usn = 'uuid:broken-device';
+  const location = 'http://192.168.6.184:9999/broken.xml';
+  // 描述失败的设备不会进入投放列表，这里复现「AirPlay 无设备、DLNA 描述读不出」
+  // 的组合：既没有可投的目标，也没有任何 AirPlay 结果。
+  box.host.removeDlnaDevice('dlna');
+  box.host.setEnabled(true);
+  box.host.noteDlnaDescriptionFailures([
+    {
+      usn,
+      location,
+      error: 'device description failed: Invalid response: path does not start with slash',
+    },
+  ]);
+  await box.host.refresh();
+  await tick();
+  const view = box.host.sessionView();
+  assert.match(view.diagnostics, /已发现 1 台 DLNA 设备，但读取设备描述失败/);
+  assert.match(view.diagnostics, /path does not start with slash/);
+  assert.deepEqual(
+    view.targets.filter((t) => t.protocol === 'dlna').map((t) => t.targetId),
+    [],
+  );
+});
+
+test('description failures clear once the device description loads', async () => {
+  const box = harness();
+  const usn = 'uuid:broken-device';
+  box.host.noteDlnaDescriptionFailures([
+    { usn, location: 'http://192.168.6.184:9999/broken.xml', error: 'boom' },
+  ]);
+  box.host.noteDlnaDescriptionFailures([]);
+  assert.doesNotMatch(box.host.sessionView().diagnostics, /读取设备描述失败/);
+});
+
+test('DLNA searching follows the SSDP flight instead of the diagnostics wording', async () => {
+  // `searching` 曾由 `diagnostics.startsWith('正在搜索投放设备')` 推断。
+  // 文案会因为描述失败、AirPlay 未构建等原因停在别的字符串上，用它判断会让
+  // 刷新按钮在扫描早已结束后继续转圈。
+  const box = harness();
+  box.host.setEnabled(true);
+  assert.equal(box.host.searching, false, 'idle host is not searching');
+  const view = box.host.sessionView();
+  assert.equal(view.searching, false);
+
+  box.host.noteDlnaScanning(true);
+  assert.equal(box.host.searching, true, 'a live SSDP flight counts as searching');
+  assert.equal(box.host.sessionView().searching, true);
+
+  box.host.noteDlnaScanning(true);
+  box.host.noteDlnaScanning(false);
+  assert.equal(box.host.searching, false, 'the flight ended');
+});
+
+test('a description failure is not a searching state', async () => {
+  // 描述读取失败时 diagnostics 会是「已发现 N 台…」，若继续用文案前缀判断
+  // 就会误报仍在搜索。这里确认两者互不干扰。
+  const box = harness();
+  box.host.setEnabled(true);
+  box.host.noteDlnaDescriptionFailures([
+    { usn: 'uuid:x', location: 'http://192.168.6.184:9999/x.xml', error: 'boom' },
+  ]);
+  assert.doesNotMatch(box.host.sessionView().diagnostics, /^正在搜索投放设备/);
+  assert.equal(box.host.searching, false);
+});
+
+test('the refresh button starts a fresh SSDP round even while one is idle-running', async () => {
+  // `syncOutputScan` 只在空闲时启动扫描，所以刷新必须走 rescan 才真的有
+  // 网络动作；否则一轮跑完后连点刷新什么也不会发生。
+  const search = deferred();
+  let searches = 0;
+  const modes = [];
+  const box = runtimeHarness({
+    search: async (once) => {
+      searches += 1;
+      modes.push(once ? 'once' : 'full');
+      if (searches === 1) await search.promise;
+    },
+  });
+  box.setWantsScan(true);
+  box.api.syncOutputScan();
+  await tick();
+  assert.equal(searches, 1, 'the initial scan is the full three-round cycle');
+  assert.deepEqual(modes, ['full']);
+
+  // 扫描仍在进行：刷新要排队到当前轮结束后再补一轮，而不是被静默忽略。
+  const rescan = box.api.rescanDlnaDevices();
+  await tick();
+  assert.equal(searches, 1, 'the rescan waits for the in-flight cycle');
+  search.resolve();
+  await rescan;
+  assert.equal(searches, 2, 'the rescan ran its own round');
+  assert.deepEqual(modes, ['full', 'once'], 'a manual refresh only needs one round');
+});
+
+test('rescan while idle starts a single round without waiting', async () => {
+  let searches = 0;
+  const modes = [];
+  const box = runtimeHarness({
+    search: async (once) => {
+      searches += 1;
+      modes.push(once ? 'once' : 'full');
+    },
+  });
+  box.setWantsScan(true);
+  await box.api.rescanDlnaDevices();
+  assert.equal(searches, 1);
+  assert.deepEqual(modes, ['once']);
+});
+
+test('the refresh IPC handler runs one round and never starts the full cycle', async () => {
+  // `syncOutputScan` 在空闲时会启动完整的三轮周期（约 7 秒）。刷新的 IPC
+  // 处理器若先调它再补一轮，一次点击就要等约 8 秒。
+  const calls = [];
+  const host = {
+    wantsScan: true,
+    targets: () => [],
+    refresh: async () => 'refreshed',
+    sessionView: () => ({}),
+    setEnabled() {},
+    setBrowsing() {},
+    activateLocal: async () => {},
+  };
+  const handlers = new Map();
+  const mocks = {
+    './registry': {
+      ipcRegistry: {
+        registerHandler: (channel, handler) => handlers.set(channel, handler),
+      },
+    },
+    '../outputs/outputHost': { getOutputHost: () => host },
+    '../outputs/outputRuntime': {
+      rescanDlnaDevices: async () => calls.push('rescan'),
+      syncOutputScan: () => calls.push('sync'),
+    },
+  };
+  const code = transformSync(readFileSync(join(root, 'src/main/ipc/output.ts'), 'utf8'), {
+    loader: 'ts',
+    format: 'cjs',
+  }).code;
+  const mod = { exports: {} };
+  new Function('require', 'module', 'exports', code)(
+    (name) => {
+      assert.ok(name in mocks, `unexpected dependency: ${name}`);
+      return mocks[name];
+    },
+    mod,
+    mod.exports,
+  );
+  mod.exports.registerOutputIpc();
+  assert.equal(await handlers.get('output:refresh')(), 'refreshed');
+  assert.deepEqual(calls, ['rescan'], 'a refresh rescans once and never starts the full cycle');
+});
+
+test('a chained rescan never reports searching as finished in between', async () => {
+  // 扫描进行中点刷新会排队补一轮。若前一轮结束时把 searching 清成 false，
+  // 按钮会在一次点击中途假停一下。
+  const search = deferred();
+  let searches = 0;
+  const box = runtimeHarness({
+    search: async () => {
+      searches += 1;
+      if (searches === 1) await search.promise;
+    },
+  });
+  box.setWantsScan(true);
+  box.api.syncOutputScan();
+  await tick();
+  assert.ok(box.calls.includes('scanning on'));
+
+  const rescan = box.api.rescanDlnaDevices();
+  await tick();
+  search.resolve();
+  await rescan;
+  assert.deepEqual(
+    box.calls.filter((call) => call.startsWith('scanning')),
+    ['scanning on', 'scanning off'],
+    'scanning only reports once at the end of both rounds',
+  );
+});
+
+test('scanning settles back to idle after the panel opens and scans finish', async () => {
+  // 投放面板打开时的真实序列：setBrowsing(true) 启动扫描 -> refresh 补一轮。
+  // 两次扫描都必须真的收敛到「不在搜索」，否则刷新按钮会一直转圈。
+  const box = runtimeHarness();
+  box.setWantsScan(true);
+  box.api.syncOutputScan();
+  await box.api.rescanDlnaDevices();
+  await tick();
+  assert.deepEqual(
+    box.calls.filter((call) => call.startsWith('scanning')),
+    ['scanning on', 'scanning off'],
+  );
+  assert.equal(box.calls.includes('scanning off'), true);
+  // 空闲后不会再自发启动扫描：M-SEARCH 不是周期任务。
+  const before = box.calls.filter((call) => call.startsWith('search')).length;
+  await tick();
+  await tick();
+  assert.equal(
+    box.calls.filter((call) => call.startsWith('search')).length,
+    before,
+    'no scan runs on its own once idle',
+  );
+});
+
+test('closing the panel while network playback is on does not leave scanning stuck', async () => {
+  const search = deferred();
+  const box = runtimeHarness({
+    search: () => search.promise,
+  });
+  // 网络播放开启时 wantsScan 恒为 true，面板关闭后 syncOutputScan 仍会看到它。
+  box.setWantsScan(true);
+  box.api.syncOutputScan();
+  await tick();
+  assert.ok(box.calls.includes('scanning on'));
+  search.resolve();
+  await tick();
+  await tick();
+  assert.ok(box.calls.includes('scanning off'), 'the scan settles');
+});
+
+test('closing the panel does not trigger a fresh SSDP burst while network playback stays on', async () => {
+  // `wantsScan` 含 `enabled`（网络播放开关），所以面板关闭后它仍为真。
+  // 若 syncOutputScan 每次都补一轮，关闭面板这种与搜索无关的操作就会触发
+  // 一次 7 秒 M-SEARCH 突发，并把 searching 重新点亮 7 秒。
+  const box = runtimeHarness();
+  box.setWantsScan(true);
+  box.api.syncOutputScan();
+  await tick();
+  const afterOpen = box.calls.filter((call) => call.startsWith('search')).length;
+  assert.equal(afterOpen, 1);
+
+  // 面板关闭：wantsScan 仍为 true（网络播放开着），sync 被再次调用。
+  box.api.syncOutputScan();
+  await tick();
+  await tick();
+  assert.equal(
+    box.calls.filter((call) => call.startsWith('search')).length,
+    afterOpen,
+    'an idle resync does not rescan',
+  );
+});
+
+test('re-entering the scanning state scans again after leaving it', async () => {
+  const box = runtimeHarness();
+  box.setWantsScan(true);
+  box.api.syncOutputScan();
+  await tick();
+  assert.equal(box.calls.filter((call) => call.startsWith('search')).length, 1);
+
+  box.setWantsScan(false);
+  box.api.syncOutputScan();
+  await tick();
+  await tick();
+
+  box.setWantsScan(true);
+  box.api.syncOutputScan();
+  await tick();
+  assert.equal(
+    box.calls.filter((call) => call.startsWith('search')).length,
+    2,
+    'the edge trigger re-arms after leaving the scanning state',
+  );
+});
+
+test('the last published searching value is false once an AirPlay scan ends', async () => {
+  // renderer 只消费 publish 出来的 payload，不看 host.searching getter。
+  // `scanAirplayDevices` 的收尾 publish 发生在 airplayScanFlight 清空之前，
+  // 那一次 payload 里 searching 仍是 true —— 断言 getter 会漏掉它。
+  const gate = deferred();
+  const box = harness({ airplay: { discover: () => gate.promise } });
+  const published = () =>
+    box.events.filter((e) => e.payload && 'searching' in e.payload).map((e) => e.payload.searching);
+  box.host.setEnabled(true);
+  await box.host.refresh();
+  await tick();
+  assert.equal(published().at(-1), true, 'the in-flight scan publishes searching=true');
+
+  gate.resolve([]);
+  for (let i = 0; i < 20 && box.host.searching; i += 1) await tick();
+  await tick();
+  assert.equal(box.host.searching, false, 'the getter settled');
+  assert.equal(
+    published().at(-1),
+    false,
+    'and the renderer was told so — otherwise the refresh button spins forever',
+  );
 });

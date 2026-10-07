@@ -166,6 +166,13 @@ interface DlnaTarget {
   maxAgeSec?: number;
 }
 
+/** SSDP 已发现、但设备描述读取失败的设备。 */
+export interface DlnaDescriptionFailure {
+  usn: string;
+  location: string;
+  error: string;
+}
+
 interface DlnaDeviceEntry {
   usn: string;
   location: string;
@@ -260,7 +267,8 @@ function formatDlnaTarget(target: DlnaTarget): string {
 
 function hostLabelFromLocation(location: string): string {
   try {
-    return new URL(location).host;
+    // 只要主机名：端口对识别设备没有帮助，却会在窄面板里挤掉设备名。
+    return new URL(location).hostname;
   } catch {
     return '';
   }
@@ -277,10 +285,17 @@ function describeUrlForLog(value: string): string {
 }
 
 function compactJoin(parts: Array<string | undefined | null>): string {
-  return parts
-    .map((part) => String(part ?? '').trim())
-    .filter(Boolean)
-    .join(' · ');
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const part of parts) {
+    // 设备常把型号同时填进 modelName 和 modelNumber，去重后才不会显示成
+    // `S12 · S12` 这种在窄面板里毫无信息量的重复。
+    const value = String(part ?? '').trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    kept.push(value);
+  }
+  return kept.join(' · ');
 }
 
 function dlnaTargetNote(target: DlnaTarget): string | undefined {
@@ -418,6 +433,10 @@ export class OutputHost {
   private loggedLocalAirplayIds = new Set<string>();
   private lastDlnaPollLogAt = 0;
   private lastDlnaPollLogKey = '';
+  /** SSDP 找到了设备但设备描述读取失败的记录，用于在 UI 上说明原因。 */
+  private dlnaDescriptionFailures: DlnaDescriptionFailure[] = [];
+  /** DLNA SSDP 扫描正在进行。由 outputRuntime 在扫描 flight 前后置位。 */
+  private dlnaScanning = false;
 
   constructor(private readonly deps: OutputHostDeps) {
     this.now = deps.now ?? (() => Date.now());
@@ -438,6 +457,17 @@ export class OutputHost {
 
   get wantsScan(): boolean {
     return !this.shuttingDown && (this.enabled || this.browsing || this.mode !== 'local');
+  }
+
+  /**
+   * 是否真的在扫描。
+   *
+   * 由扫描生命周期驱动，而不是靠 `diagnostics` 的文案前缀猜测：文案会因为
+   * 描述失败、AirPlay 未构建等原因停在不同字符串上，用它判断会让刷新按钮在
+   * 扫描早已结束后继续转圈。
+   */
+  get searching(): boolean {
+    return !this.shuttingDown && (this.airplayScanFlight !== null || this.dlnaScanning);
   }
 
   get diagnosticMessage(): string {
@@ -463,6 +493,56 @@ export class OutputHost {
     if (this.shuttingDown) return;
     this.trackMeta = { ...meta };
     if (this.backend) void this.backend.setTrackMeta(this.trackMeta);
+  }
+
+  /**
+   * 置位/清位 DLNA 扫描状态，供 `searching` 判定使用。
+   *
+   * SSDP 的一次 `search()` 是固定三轮（约 7 秒），有明确的开始与结束；
+   * UI 的「正在搜索」应该跟随这个真实生命周期，而不是跟随 diagnostics 文案。
+   */
+  noteDlnaScanning(scanning: boolean): void {
+    if (this.shuttingDown) return;
+    if (this.dlnaScanning === scanning) return;
+    this.dlnaScanning = scanning;
+    this.publish();
+  }
+
+  /**
+   * 记录 SSDP 已发现、但设备描述读取失败的设备。
+   *
+   * 这些设备无法出现在投放列表里，用户只会看到「没有找到设备」。把原因带到
+   * `diagnostics`，让「设备描述不合规」这类问题不再表现为「搜不到设备」。
+   */
+  noteDlnaDescriptionFailures(failures: DlnaDescriptionFailure[]): void {
+    if (this.shuttingDown) return;
+    const previous = this.dlnaDescriptionFailures;
+    const unchanged =
+      previous.length === failures.length &&
+      previous.every((entry, index) => {
+        const next = failures[index];
+        return next.usn === entry.usn && next.error === entry.error;
+      });
+    if (unchanged) return;
+    this.dlnaDescriptionFailures = failures;
+    if (failures.length > 0) {
+      const first = failures[0];
+      this.log(
+        'warn',
+        `DLNA 设备描述不可用: ${failures.length} 台，最新 ${first.usn} -> ${first.error}`,
+      );
+    }
+    this.publish();
+  }
+
+  /** 描述失败时的用户提示；没有失败返回空串。 */
+  private dlnaFailureDiagnostics(): string {
+    const failures = this.dlnaDescriptionFailures;
+    if (failures.length === 0) return '';
+    if (failures.length === 1) {
+      return `已发现 1 台 DLNA 设备，但读取设备描述失败：${failures[0].error}`;
+    }
+    return `已发现 ${failures.length} 台 DLNA 设备，但读取设备描述失败：${failures[0].error}`;
   }
 
   noteDlnaDevices(entries: DlnaDeviceEntry[]): void {
@@ -636,8 +716,15 @@ export class OutputHost {
     this.diagnostics = '正在搜索投放设备...';
     this.publish();
     const token = ++this.airplayScanToken;
-    this.airplayScanFlight = this.scanAirplayDevices(token).finally(() => {
+    const flight = this.scanAirplayDevices(token);
+    this.airplayScanFlight = flight;
+    void flight.finally(() => {
+      if (this.shuttingDown || this.airplayScanFlight !== flight) return;
       this.airplayScanFlight = null;
+      // `scanAirplayDevices` 的最后一次 publish 发生在 flight 清空之前，
+      // 那次 payload 里 `searching` 仍是 true。renderer 只认 publish 出来的值，
+      // 不看 getter，所以必须在这里补一次，否则刷新按钮会永远转圈。
+      this.publish();
     });
   }
 
@@ -685,7 +772,9 @@ export class OutputHost {
       } else if (stats.found > 0 && stats.filteredLocal === stats.found) {
         this.diagnostics = `仅发现本机 AirPlay，已隐藏`;
       } else if (stats.found === 0 && this.dlnaTargets.size === 0) {
+        // 描述读取失败时优先说明真实原因，否则用户只会看到「没有找到设备」。
         this.diagnostics =
+          this.dlnaFailureDiagnostics() ||
           '未发现 AirPlay / DLNA 设备，请确认设备在同一局域网且 AirPlay 接收器已允许当前网络访问';
       } else if (stats.found === 0) {
         this.diagnostics = '未发现 AirPlay 设备，请确认设备在同一局域网且 AirPlay 接收器已开启';
@@ -1352,7 +1441,12 @@ export class OutputHost {
   }
 
   sessionView() {
-    return { snapshot: this.snapshot(), targets: this.targets(), diagnostics: this.diagnostics };
+    return {
+      snapshot: this.snapshot(),
+      targets: this.targets(),
+      diagnostics: this.diagnostics,
+      searching: this.searching,
+    };
   }
 
   /** GENA 通知。旧会话的回调在替换 backend 后自然落到新门上会被拒绝。 */
@@ -1918,6 +2012,7 @@ export class OutputHost {
         snapshot: this.snapshot(),
         targets: this.targets(),
         diagnostics: this.diagnostics,
+        searching: this.searching,
       },
     });
   }

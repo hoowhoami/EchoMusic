@@ -843,6 +843,7 @@ export interface IElectronAPI {
         paired?: boolean;
       }>;
       diagnostics?: string;
+      searching?: boolean;
     }>;
     setEnabled: (enabled: boolean) => Promise<{
       snapshot?: {
@@ -852,6 +853,7 @@ export interface IElectronAPI {
         actualFormat: string | null;
       } | null;
       diagnostics?: string;
+      searching?: boolean;
     }>;
     setBrowsing: (open: boolean) => Promise<boolean>;
     setTrackMeta: (meta: {
@@ -891,8 +893,9 @@ export interface IElectronAPI {
         paired?: boolean;
       }>;
       diagnostics?: string;
+      searching?: boolean;
     }>;
-    clearRecords: () => Promise<{ diagnostics?: string }>;
+    clearRecords: () => Promise<{ diagnostics?: string; searching?: boolean }>;
     onEvent: (func: (event: { type: string; payload?: unknown }) => void) => () => void;
   };
   player: {

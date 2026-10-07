@@ -32,6 +32,7 @@ import {
   type AirplayControl,
   type AirplayDeviceInfo,
   type AirplayStatus,
+  type DlnaDescriptionFailure,
 } from './outputHost';
 import { runMacAirplayBonjourDiagnostics } from './airplayBonjourDiagnostics';
 
@@ -40,6 +41,14 @@ const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 let discovery: SsdpHandle | null = null;
 let scanTimer: NodeJS.Timeout | null = null;
 let scanSearchFlight: Promise<void> | null = null;
+/** 进行中的 SSDP 扫描数。串行补轮时用它避免 `searching` 中途假停。 */
+let dlnaScansInFlight = 0;
+/** 排队等待补一轮的刷新数。串行补轮时用它避免 `searching` 中途假停。 */
+let dlnaRescanQueued = 0;
+/** 上一次 sync 时是否处在「应当扫描」的状态，用于边沿触发完整周期。 */
+let scanWanted = false;
+/** 一次性许可：进入扫描状态时置位，能发起扫描时才消费。 */
+let scanArmed = false;
 let scanStopFlight: Promise<void> | null = null;
 let shuttingDown = false;
 let shutdownFlight: Promise<void> | null = null;
@@ -327,6 +336,9 @@ function scheduleDlnaDescriptionLoad(device: SsdpDeviceEntry): void {
 function pushDlnaDevices(): void {
   const host = getOutputHost();
   if (!host || !discovery) return;
+  // 描述失败的设备不会进入投放列表。把它单列上报，否则 UI 只能显示
+  // 「没有找到设备」，把描述解析问题伪装成发现失败。
+  const failures: DlnaDescriptionFailure[] = [];
   const entries = [];
   for (const device of discovery.list()) {
     scheduleDlnaDescriptionLoad(device);
@@ -334,6 +346,13 @@ function pushDlnaDevices(): void {
       const description = dlnaDescriptionCache.get(device.usn);
       if (description && description.location === device.location && !description.pending) {
         host.removeDlnaDevice(device.usn);
+        if (description.lastError && !description.name) {
+          failures.push({
+            usn: device.usn,
+            location: device.location,
+            error: description.lastError,
+          });
+        }
       }
       continue;
     }
@@ -364,6 +383,7 @@ function pushDlnaDevices(): void {
     });
   }
   host.noteDlnaDevices(entries);
+  host.noteDlnaDescriptionFailures(failures);
 }
 
 function handleDlnaDeviceChange(device: SsdpDeviceEntry): void {
@@ -378,6 +398,88 @@ function handleDlnaDeviceChange(device: SsdpDeviceEntry): void {
   pushDlnaDevices();
 }
 
+/** 保证设备推送定时器在扫描期望期间运行。它不发网络包，只把结果推给 UI。 */
+function ensureScanTimer(): void {
+  if (!scanTimer) scanTimer = setInterval(pushDlnaDevices, 4000);
+}
+
+let dlnaScanningReported = false;
+
+/**
+ * 由「进行中的扫描数 + 排队等待的刷新数」推导 `searching` 并只在变化时上报。
+ *
+ * 刷新会在当前轮结束后串行补一轮。若每轮各自清状态，按钮会在一次点击中途
+ * 假停一下，所以这两者必须合起来看。
+ */
+function syncDlnaScanningState(): void {
+  const scanning = dlnaScansInFlight > 0 || dlnaRescanQueued > 0;
+  if (scanning === dlnaScanningReported) return;
+  dlnaScanningReported = scanning;
+  getOutputHost()?.noteDlnaScanning(scanning);
+}
+
+/**
+ * 启动一轮 SSDP 扫描。`once` 为真时只发一轮 M-SEARCH（手动刷新用，约 1 秒），
+ * 否则跑完整的三轮周期（约 7 秒，重发对抗丢包）。
+ */
+function launchDlnaSearch(once: boolean): Promise<void> {
+  const host = getOutputHost();
+  const scanner = discovery;
+  dlnaScansInFlight += 1;
+  // 扫描状态跟随这个 flight，而不是靠 diagnostics 文案推断 ——
+  // 否则扫描结束后刷新按钮会一直转圈。
+  syncDlnaScanningState();
+  const flight = (async () => {
+    await scanStopFlight;
+    if (!scanner || shuttingDown || !host?.wantsScan) return;
+    await scanner.start();
+    if (shuttingDown || !host.wantsScan) return;
+    await scanner.search(once);
+  })()
+    .catch((error) => log.warn(`[Output] SSDP 启动失败: ${String(error)}`))
+    .finally(() => {
+      dlnaScansInFlight = Math.max(0, dlnaScansInFlight - 1);
+      if (scanSearchFlight === flight) scanSearchFlight = null;
+      syncDlnaScanningState();
+      if (dlnaScansInFlight === 0) pushDlnaDevices();
+    });
+  scanSearchFlight = flight;
+  return flight;
+}
+
+/**
+ * 手动刷新：等当前扫描结束后立刻补一轮新的 M-SEARCH。
+ *
+ * `syncOutputScan()` 只在空闲时启动扫描，所以刷新按钮必须走这里才真的能
+ * 重新搜索 —— 否则一轮跑完后连点刷新不会有任何网络动作。
+ *
+ * 注意这里不能先调 `syncOutputScan()`：那会在空闲时启动完整的 7 秒周期，
+ * 于是一次刷新要先等完三轮再补一轮（约 8 秒）。刷新只需要一轮。
+ */
+export function rescanDlnaDevices(): Promise<void> {
+  const host = getOutputHost();
+  if (!host || !discovery || shuttingDown || !host.wantsScan) {
+    pushDlnaDevices();
+    return Promise.resolve();
+  }
+  ensureScanTimer();
+  const inFlight = scanSearchFlight;
+  // 先占位再等待：本轮结束时扫描还没结束，所以 searching 不会中途变 false。
+  dlnaRescanQueued += 1;
+  syncDlnaScanningState();
+  return (inFlight ? inFlight.then(() => undefined) : Promise.resolve())
+    .then(() => {
+      const current = getOutputHost();
+      if (!current?.wantsScan || shuttingDown || !discovery) return undefined;
+      return launchDlnaSearch(true);
+    })
+    .finally(() => {
+      dlnaRescanQueued = Math.max(0, dlnaRescanQueued - 1);
+      syncDlnaScanningState();
+      pushDlnaDevices();
+    });
+}
+
 export function syncOutputScan(): void {
   const host = getOutputHost();
   if (!host || !discovery || shuttingDown) return;
@@ -386,24 +488,27 @@ export function syncOutputScan(): void {
       scanActiveLogged = true;
       log.info(`DLNA SSDP 扫描启动: echo-upnp=${upnpNative ? 'ready' : 'missing'}`);
     }
-    if (!scanSearchFlight) {
-      const scanner = discovery;
-      const flight = (async () => {
-        await scanStopFlight;
-        if (shuttingDown || !host.wantsScan) return;
-        await scanner.start();
-        if (shuttingDown || !host.wantsScan) return;
-        await scanner.search();
-      })()
-        .catch((error) => log.warn(`[Output] SSDP 启动失败: ${String(error)}`))
-        .finally(() => {
-          if (scanSearchFlight === flight) scanSearchFlight = null;
-        });
-      scanSearchFlight = flight;
+    // 边沿触发：只在「从不扫描到要扫描」这一次启动完整周期。
+    // `wantsScan` 里含 `enabled`（网络播放开关），所以面板关闭时它往往仍为真；
+    // 若每次 sync 都补一轮，关闭面板这种与搜索无关的操作也会触发一次 7 秒
+    // 的 M-SEARCH 突发，并把 `searching` 重新点亮 7 秒。
+    //
+    // scanArmed 是一次性许可：进入扫描状态时置位，等到真的能发起扫描（当前没有
+    // flight 在跑）才消费。否则「扫描中→关闭→再打开」这条路径会把许可白白用掉，
+    // 停在 pending stop 之后的那次 sync 就再也发不出扫描。
+    if (!scanWanted) {
+      scanWanted = true;
+      scanArmed = true;
     }
-    if (!scanTimer) scanTimer = setInterval(pushDlnaDevices, 4000);
+    if (scanArmed && !scanSearchFlight) {
+      scanArmed = false;
+      launchDlnaSearch(false);
+    }
+    ensureScanTimer();
     return;
   }
+  scanWanted = false;
+  scanArmed = false;
   if (scanTimer) {
     clearInterval(scanTimer);
     scanTimer = null;

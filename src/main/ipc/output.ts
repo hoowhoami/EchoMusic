@@ -1,6 +1,6 @@
 import { ipcRegistry } from './registry';
 import { getOutputHost } from '../outputs/outputHost';
-import { syncOutputScan } from '../outputs/outputRuntime';
+import { rescanDlnaDevices, syncOutputScan } from '../outputs/outputRuntime';
 import type { HostTrackMeta } from '../outputs/outputHost';
 
 function host() {
@@ -12,7 +12,9 @@ function host() {
 export function registerOutputIpc(): void {
   ipcRegistry.registerHandler('output:list-targets', () => host().targets());
   ipcRegistry.registerHandler('output:refresh', async () => {
-    syncOutputScan();
+    // 不要先调 `syncOutputScan()`：它会在空闲时启动完整的 7 秒周期，刷新就
+    // 要先等完三轮再补一轮。`rescanDlnaDevices` 只需一轮，自己管扫描状态。
+    await rescanDlnaDevices();
     return host().refresh();
   });
   ipcRegistry.registerHandler('output:connect', async (_event, targetId: string, pin?: string) => {

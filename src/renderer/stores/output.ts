@@ -36,6 +36,7 @@ interface OutputView {
   snapshot?: OutputSessionView | null;
   targets?: OutputTargetView[];
   diagnostics?: string;
+  searching?: boolean;
 }
 
 function outputErrorMessage(error?: string): string {
@@ -58,15 +59,15 @@ export const useOutputStore = defineStore('output', () => {
   const targets = ref<OutputTargetView[]>([]);
   const snapshot = ref<OutputSessionView | null>(null);
   const diagnostics = ref('网络播放未开启');
+  const remoteSearching = ref(false);
   const error = ref('');
   const busy = ref(false);
   const refreshing = ref(false);
   const connectingTargetId = ref<string | null>(null);
   const switchingLocal = ref(false);
   const browsing = ref(false);
-  const searching = computed(
-    () => refreshing.value || diagnostics.value.startsWith('正在搜索投放设备'),
-  );
+  // 主进程按真实扫描生命周期上报，诊断文案在描述失败等场景下不是搜索态。
+  const searching = computed(() => refreshing.value || remoteSearching.value);
   const visibleTargets = computed(() => targets.value);
   let started = false;
   let browsingRequests = 0;
@@ -77,6 +78,7 @@ export const useOutputStore = defineStore('output', () => {
     if (view.snapshot !== undefined) snapshot.value = view.snapshot;
     if (view.targets) targets.value = view.targets;
     if (typeof view.diagnostics === 'string') diagnostics.value = view.diagnostics;
+    if (typeof view.searching === 'boolean') remoteSearching.value = view.searching;
   }
 
   function outputApi() {
