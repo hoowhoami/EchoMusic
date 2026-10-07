@@ -1311,17 +1311,17 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 }
 
 .settings-input {
-  @apply px-3 py-1.5 text-[12px] font-medium border rounded-lg text-text-main transition-all;
-  background: var(--control-muted-bg);
-  border-color: var(--control-border);
+  @apply px-3 py-1.5 text-[12px] font-medium border-0 rounded-lg text-text-main transition-all;
+  background: var(--field-bg);
 }
 
-.settings-input:hover {
-  @apply border-primary/50;
+.settings-input:hover:not(:disabled):not(:focus) {
+  background: var(--field-hover-bg);
 }
 
-.settings-input:focus {
-  @apply border-primary outline-none ring-1 ring-primary/30;
+.settings-input:focus:not(:disabled) {
+  @apply outline-none;
+  background: var(--field-focus-bg);
 }
 
 .settings-back-to-top:hover {

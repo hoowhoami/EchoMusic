@@ -1221,7 +1221,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
   background: var(--floating-surface-bg);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--surface-outline);
   box-shadow: var(--shadow-elevated);
   display: flex;
   flex-direction: column;
@@ -1257,7 +1257,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
   cursor: pointer;
   user-select: none;
   color: var(--color-text-main);
-  box-shadow: inset 0 0 0 1px transparent;
+  box-shadow: none;
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
     color var(--motion-duration-fast) var(--motion-ease-standard),
@@ -1266,7 +1266,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 
 :global(.song-context-item:not(:disabled):hover) {
   background: var(--control-hover-bg);
-  box-shadow: inset 0 0 0 1px var(--control-border);
+  box-shadow: none;
 }
 
 :global(.song-context-item:not(:disabled):active) {
@@ -1279,16 +1279,17 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 
 :global(.song-context-item.is-danger:not(:disabled):hover) {
   background: var(--control-danger-hover-bg);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--state-danger) 18%, transparent);
+  box-shadow: none;
 }
 
 :global(.song-context-item.is-danger:not(:disabled):active) {
   background: var(--control-danger-pressed-bg);
 }
 
-:global(.song-context-item:focus-visible) {
+:global(.song-context-item:not(:disabled):focus-visible),
+:global(.song-context-item.is-danger:not(:disabled):focus-visible) {
   outline: none;
-  box-shadow: inset 0 0 0 1px var(--control-border);
+  box-shadow: inset 0 0 0 1px var(--color-primary-text);
 }
 
 :global(.song-context-item:disabled) {

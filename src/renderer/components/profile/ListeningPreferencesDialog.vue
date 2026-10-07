@@ -428,7 +428,7 @@ watch(account, () => {
   gap: 20px;
   margin-top: 18px;
   padding-top: 18px;
-  border-top: 1px solid var(--content-panel-border);
+  border-top: 1px solid var(--border-subtle);
 }
 .preferences-state {
   min-height: 108px;

@@ -240,7 +240,7 @@ const handleInteractOutside = (event: Event) => {
   background: var(--floating-surface-bg);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
-  border-color: var(--border-subtle);
+  border-color: var(--surface-outline);
   box-shadow: var(--shadow-dialog);
   /* 右侧留白由标题、正文和页脚承担；滚动区延伸到边缘，滑块右侧间距统一由 Scrollbar 控制。 */
   padding: 24px 0 24px 24px;

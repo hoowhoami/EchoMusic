@@ -225,16 +225,51 @@ test('artwork lands at measured geometry and returns to the current player-bar p
   assert.equal(env.flights[1].removed, true);
 });
 
-test('coverless skins and a missing player-bar anchor use the panel transition', async () => {
+test('coverless skins and a missing player-bar anchor fade in place in both directions', async () => {
   for (const options of [{ cover: false }, { sourceVisible: false }]) {
     const env = setup(options);
     env.transition.enter(env.host, () => {});
     await env.frame();
-    assert.equal(env.host.dataset.motion, 'panel');
+    assert.equal(env.host.dataset.motion, 'fade');
     assert.equal(env.flights.length, 0);
-    assert.equal(env.animations[0].frames[0].transform, 'translateY(100%)');
+    assert.equal(env.animations.length, 1);
+    assert.equal(env.animations[0].element, env.host);
+    assert.deepEqual(env.animations[0].frames, [{ opacity: 0 }, { opacity: 1 }]);
     await env.finish();
+    env.transition.leave(env.host, () => {});
+    assert.deepEqual(env.animations[1].frames, [{ opacity: 1 }, { opacity: 0 }]);
+    await env.finish();
+    assert.ok(env.animations.every((animation) => animation.cancelled));
+    assert.equal(env.host.style.opacity, undefined);
+    assert.equal(env.flights.length, 0);
   }
+});
+
+test('reversing a coverless fade preserves visible opacity and disposes without retained motion', async () => {
+  const env = setup({ cover: false });
+  let enters = 0,
+    leaves = 0;
+  env.transition.enter(env.host, () => enters++);
+  await env.frame();
+  env.host.currentStyle = { opacity: '0.45' };
+  env.transition.cancel(env.host);
+  env.transition.leave(env.host, () => leaves++);
+  assert.deepEqual(env.animations[1].frames, [{ opacity: '0.45' }, { opacity: 0 }]);
+  await tick();
+  assert.equal(enters, 0);
+  env.host.currentStyle = { opacity: '0.2' };
+  env.transition.cancel(env.host);
+  env.transition.enter(env.host, () => enters++);
+  await env.frame();
+  assert.deepEqual(env.animations[2].frames, [{ opacity: '0.2' }, { opacity: 1 }]);
+  assert.equal(leaves, 0);
+  env.dispose();
+  await tick();
+  assert.equal(enters, 0);
+  assert.ok(env.animations.every((animation) => animation.cancelled));
+  assert.equal(env.host.style.opacity, undefined);
+  assert.equal(env.timers.size, 0);
+  assert.equal(env.flights.length, 0);
 });
 
 test('async cover geometry is awaited and closing before readiness cannot create an orphan flight', async () => {

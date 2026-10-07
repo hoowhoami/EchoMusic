@@ -5,6 +5,7 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
+import Tag from '@/components/ui/Tag.vue';
 import {
   iconArrowBarToDown,
   iconCheck,
@@ -87,7 +88,8 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
           </Tooltip>
           <Tooltip :content="statusTitle">
             <template #trigger>
-              <span
+              <Tag
+                size="sm"
                 class="plugin-status-badge"
                 :class="{
                   'is-active': plugin.installed && !plugin.updateAvailable,
@@ -95,7 +97,7 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
                 }"
               >
                 {{ statusLabel }}
-              </span>
+              </Tag>
             </template>
           </Tooltip>
         </div>
@@ -107,17 +109,17 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
     <div class="plugin-card-version-source">
       <Tooltip :content="getVersionTitle(plugin)">
         <template #trigger>
-          <span class="plugin-card-version">v{{ plugin.version }}</span>
+          <Tag size="sm" tone="muted" class="plugin-card-version">v{{ plugin.version }}</Tag>
         </template>
       </Tooltip>
       <PluginSourceInfo :name="getPluginSourceName(plugin.sourceName, plugin.sourceUrl)" />
     </div>
 
     <div v-if="plugin.installed && plugin.updateAvailable" class="marketplace-version-row">
-      <span class="marketplace-version-pill is-update">
+      <Tag size="sm" class="marketplace-version-pill is-update">
         <span>已装</span>
         <strong>v{{ plugin.installedVersion }}</strong>
-      </span>
+      </Tag>
     </div>
 
     <Tooltip :content="plugin.description || '暂无描述'" overflow-only>
@@ -134,13 +136,13 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
     </div>
 
     <div v-if="plugin.tags.length" class="marketplace-tags">
-      <span v-for="tag in plugin.tags" :key="tag">{{ tag }}</span>
+      <Tag v-for="tag in plugin.tags" :key="tag" size="sm">{{ tag }}</Tag>
     </div>
 
     <div v-if="featureTags.length" class="plugin-feature-tags">
-      <span v-for="tag in featureTags" :key="tag">
+      <Tag v-for="tag in featureTags" :key="tag" size="sm">
         {{ tag }}
-      </span>
+      </Tag>
     </div>
 
     <div class="plugin-card-details">

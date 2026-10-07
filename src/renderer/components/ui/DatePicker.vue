@@ -257,18 +257,19 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   min-width: 0;
   padding: 0 8px 0 13px;
   color: var(--color-text-main);
-  background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
+  background: var(--field-bg);
+  border: 0;
   border-radius: var(--radius-control);
   outline: none;
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.echo-date-picker-field:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.12);
+.echo-date-picker-field:hover:not([data-disabled]):not(:focus-within) {
+  background: var(--field-hover-bg);
+}
+
+.echo-date-picker-field:focus-within:not([data-disabled]) {
+  background: var(--field-focus-bg);
 }
 
 .echo-date-picker-field[data-disabled] {

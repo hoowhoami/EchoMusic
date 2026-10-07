@@ -128,7 +128,6 @@ const handleClick = () => {
 
 .playlist-card-list:hover {
   background-color: var(--row-hover-bg);
-  border-color: var(--border-subtle);
 }
 
 .playlist-card-list .title {

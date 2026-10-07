@@ -4,6 +4,7 @@ const SOURCE = '[data-player-cover]';
 const TARGET = '[data-lyric-cover]';
 const ENTER_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
 const LEAVE_EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
+const FADE_DURATION = 400;
 
 interface Motion {
   host: HTMLElement;
@@ -17,7 +18,6 @@ interface Motion {
 interface InterruptedMotion {
   at: number;
   opacity: string;
-  transform: string;
   cover: DOMRect | null;
   clipOpacities?: [string, string];
 }
@@ -35,7 +35,6 @@ export function useLyricPageTransition() {
     interrupted = {
       at: performance.now(),
       opacity: style.opacity,
-      transform: style.transform,
       cover: bounds && bounds.width > 0 ? bounds : null,
       clipOpacities: active.clips?.map((clip) => getComputedStyle(clip).opacity) as
         | [string, string]
@@ -63,11 +62,12 @@ export function useLyricPageTransition() {
     duration: number,
     entering: boolean,
     delay = 0,
+    easing = entering ? ENTER_EASE : LEAVE_EASE,
   ) => {
     const animation = element.animate(frames, {
       duration,
       delay,
-      easing: entering ? ENTER_EASE : LEAVE_EASE,
+      easing,
       fill: 'both',
     });
     motion.animations.push(animation);
@@ -283,22 +283,17 @@ export function useLyricPageTransition() {
           });
       }
     } else {
-      host.dataset.motion = 'panel';
-      const collapsed = { transform: 'translateY(100%)', opacity: 1 };
-      const expanded = { transform: 'none', opacity: 1 };
+      // Coverless pages crossfade in place, including plugin-owned content.
+      // Reversals continue from the visible opacity without moving the page.
+      host.dataset.motion = 'fade';
       animate(
         motion,
         host,
-        [
-          previous
-            ? { opacity: previous.opacity, transform: previous.transform }
-            : entering
-              ? collapsed
-              : expanded,
-          entering ? expanded : collapsed,
-        ],
-        duration,
+        [{ opacity: previous?.opacity ?? (entering ? 0 : 1) }, { opacity: entering ? 1 : 0 }],
+        FADE_DURATION,
         entering,
+        0,
+        'ease-in-out',
       );
     }
 

@@ -34,7 +34,6 @@ const titleId = useId();
   min-width: 0;
   border-radius: var(--radius-card);
   background: var(--content-panel-bg);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
 .skin-section-body > :deep(:not(:first-child)) {

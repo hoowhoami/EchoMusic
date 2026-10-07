@@ -1424,9 +1424,9 @@ button:disabled {
   border-radius: 50%;
   width: 30px;
   height: 30px;
-  /* 圆形背景用中性底色 + 细边框（不跟随主题色）；图标默认中性、hover/播放时才主题色 */
+  /* 圆形背景用中性底色；图标默认中性、hover/播放时才主题色。 */
   background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
+  border: 0;
   color: var(--icon-main);
 }
 

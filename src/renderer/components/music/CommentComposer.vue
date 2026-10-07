@@ -62,6 +62,7 @@ async function submit() {
         >{{ count }} / {{ limit }}</span
       >
       <Button
+        class="comment-send"
         type="submit"
         size="xs"
         :disabled="overLimit || sending || !content.trim() || !available || !user.isLoggedIn"
@@ -119,7 +120,7 @@ textarea::placeholder {
 textarea:focus {
   outline: none;
 }
-.comment-composer:not(.is-barrage) {
+.comment-composer {
   border: 1px solid var(--control-border);
   border-radius: var(--radius-card);
   background: var(--color-bg-elevated);
@@ -128,7 +129,7 @@ textarea:focus {
     border-color 0.15s,
     box-shadow 0.15s;
 }
-.comment-composer:not(.is-barrage):focus-within {
+.comment-composer:focus-within {
   border-color: color-mix(in srgb, var(--color-primary) 55%, var(--control-border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 8%, transparent);
 }
@@ -142,28 +143,11 @@ textarea:focus {
   flex-direction: column;
   align-items: stretch;
   gap: 12px;
-  padding: 0;
 }
 .is-barrage textarea {
-  box-sizing: border-box;
   width: 100%;
   min-height: 112px;
   max-height: 112px;
-  resize: none;
-  padding: 12px 14px;
-  font-size: 14px;
-  line-height: 1.6;
-  border: 1px solid var(--control-border);
-  background: var(--control-muted-bg);
-  border-radius: var(--radius-card);
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
-}
-.is-barrage textarea:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 .composer-footer {
   display: flex;
@@ -177,10 +161,6 @@ textarea:focus {
   color: var(--text-secondary);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-}
-.composer-footer > button {
-  min-width: 72px;
-  font-weight: 600;
 }
 .is-over-limit {
   color: #ef4444;

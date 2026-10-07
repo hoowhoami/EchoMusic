@@ -28,7 +28,7 @@ export interface PlayerBarAction {
   id: string;
   title: string;
   icon: PluginIcon;
-  component?: 'sleep-timer' | 'volume' | 'speed' | 'quality' | 'effect' | 'cast';
+  component?: 'sleep-timer' | 'volume' | 'speed' | 'quality' | 'effect' | 'cast' | 'barrage';
   trigger?: PlayerBarInteractionTrigger;
   tooltip?: string;
   defaultPlacement: PlayerBarPlacement;

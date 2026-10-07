@@ -404,9 +404,6 @@ watch(open, (val) => {
 
 .echo-select-trigger:hover:not(.is-disabled) {
   background: var(--control-hover-bg);
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 6%),
-    inset 0 0 0 1px var(--control-border-hover);
 }
 
 .echo-select-trigger[data-state='open'] {
@@ -420,9 +417,8 @@ watch(open, (val) => {
   cursor: not-allowed;
 }
 
-.echo-select-trigger:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+.echo-select-trigger:focus-visible:not(.is-disabled):not([data-state='open']) {
+  background: var(--control-hover-bg);
 }
 
 .echo-select-tags {
@@ -486,9 +482,9 @@ watch(open, (val) => {
   border-radius: var(--radius-popover);
 }
 
-/* Keep the shared floating material; only the Select boundary is strengthened. */
+/* Floating panels retain one quiet outer boundary; options use fill and a check. */
 .echo-popover-content.echo-select-content {
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--surface-outline);
 }
 
 .echo-select-empty {
@@ -527,7 +523,7 @@ watch(open, (val) => {
   color: var(--color-text-main);
   background: transparent;
   border: 0;
-  box-shadow: inset 0 0 0 1px transparent;
+  box-shadow: none;
   cursor: pointer;
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
@@ -538,7 +534,7 @@ watch(open, (val) => {
 
 .echo-select-item:hover:not(:disabled) {
   background: var(--control-hover-bg);
-  box-shadow: inset 0 0 0 1px var(--control-border);
+  box-shadow: none;
 }
 .echo-select-item:active:not(:disabled) {
   background: var(--control-neutral-pressed-bg);
@@ -547,17 +543,18 @@ watch(open, (val) => {
 .echo-select-item.is-selected:focus-visible {
   color: var(--color-primary-text);
   background: var(--control-active-bg);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 24%, var(--control-border));
+  box-shadow: none;
 }
 .echo-select-item.is-selected:hover:not(:disabled) {
   background: var(--control-accent-hover-bg);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 24%, var(--control-border));
+  box-shadow: none;
 }
 .echo-select-item.is-selected:active:not(:disabled) {
   background: var(--control-accent-pressed-bg);
 }
-.echo-select-item:focus-visible {
-  box-shadow: inset 0 0 0 1px var(--control-border);
+.echo-select-item:focus-visible:not(:disabled),
+.echo-select-item.is-selected:focus-visible:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--color-primary-text);
 }
 .echo-select-item.is-disabled {
   opacity: 0.5;

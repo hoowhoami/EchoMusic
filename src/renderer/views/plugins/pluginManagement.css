@@ -201,7 +201,7 @@
 .plugin-card {
   min-height: 212px;
   background: var(--content-panel-bg);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--content-panel-border);
   border-radius: var(--radius-card);
   padding: 1rem;
   display: flex;
@@ -214,13 +214,11 @@
 }
 
 .plugin-card.is-error {
-  --card-hover-border: color-mix(in srgb, var(--state-danger) 45%, var(--control-border));
   border-color: color-mix(in srgb, var(--state-danger) 30%, var(--border-subtle));
   background: var(--state-danger-bg-soft);
 }
 
 .plugin-card.is-warning {
-  --card-hover-border: color-mix(in srgb, var(--state-warning) 45%, var(--control-border));
   border-color: color-mix(in srgb, var(--state-warning) 34%, var(--border-subtle));
   background: var(--state-warning-bg-soft);
 }
@@ -374,19 +372,11 @@
 }
 
 .plugin-card-version {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 100%;
-  padding: 1px 7px;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--border-subtle);
-  background: var(--control-muted-bg);
-  font-size: 0.6875rem;
-  line-height: 1.5;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .plugin-card-meta {

@@ -1920,7 +1920,7 @@ watch(total, (value) => {
 .comment-load-more button {
   padding: 8px 24px;
   border-radius: var(--radius-control);
-  border: 1px solid var(--control-border);
+  border: 1px solid transparent;
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-main);

@@ -124,7 +124,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   padding: 4px;
   border-radius: var(--radius-item);
   background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
+  border: 1px solid transparent;
 }
 
 .custom-tab-track {
@@ -153,7 +153,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
   left: 0;
   border-radius: var(--radius-item);
   background: var(--control-active-bg);
-  box-shadow: var(--control-active-shadow);
+  box-shadow: none;
   transition: transform var(--motion-duration-normal) var(--motion-ease-standard);
   z-index: 1;
 }

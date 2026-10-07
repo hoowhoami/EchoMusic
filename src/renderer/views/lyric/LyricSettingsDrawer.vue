@@ -266,7 +266,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   bottom: var(--drawer-safe-bottom) !important;
   width: min(360px, calc(100vw - 24px)) !important;
   border-radius: var(--radius-popover) !important;
-  border-color: var(--border-strong);
+  border-color: var(--surface-outline);
   box-shadow: var(--shadow-dialog) !important;
   overflow: hidden !important;
 }
@@ -414,8 +414,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   padding: 10px;
   border-radius: var(--radius-card);
   background: var(--content-panel-bg);
-  border: 1px solid var(--border-strong);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  border: 1px solid transparent;
   cursor: pointer;
   text-align: left;
 }

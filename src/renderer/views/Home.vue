@@ -775,13 +775,11 @@ const handleRejectAgreement = () => {
 
 .style-tag-btn:hover {
   color: var(--color-text-main);
-  border-color: var(--control-border-hover);
   background: var(--control-hover-bg);
 }
 
 .style-tag-btn.active {
   color: var(--color-primary-text);
-  border-color: var(--color-primary);
   background: var(--control-active-bg);
 }
 

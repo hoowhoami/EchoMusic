@@ -57,7 +57,7 @@ const handleClear = () => {
       :disabled="disabled"
       :readonly="readonly"
       :class="[
-        'w-full h-14 pl-6 pr-12 bg-[var(--control-muted-bg)] border border-transparent rounded-control outline-none motion-control-feedback font-medium text-[15px] text-text-main placeholder:text-text-secondary placeholder:opacity-100',
+        'echo-input-control w-full h-14 pl-6 pr-12 bg-[var(--field-bg)] border-0 rounded-control outline-none motion-control-feedback font-medium text-[15px] text-text-main placeholder:text-text-secondary placeholder:opacity-100',
         props.inputClass,
       ]"
     />
@@ -74,3 +74,19 @@ const handleClear = () => {
     </button>
   </div>
 </template>
+
+<style scoped>
+.echo-input-control:hover:not(:disabled):not(:focus) {
+  background: var(--field-hover-bg);
+}
+
+.echo-input-control:focus:not(:disabled) {
+  background: var(--field-focus-bg);
+}
+
+.echo-input-control[aria-invalid='true'],
+.echo-input-control[aria-invalid='true']:focus,
+.echo-input-control[aria-invalid='true']:hover:not(:disabled) {
+  background: var(--control-danger-bg);
+}
+</style>

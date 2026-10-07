@@ -6,6 +6,7 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
 import Switch from '@/components/ui/Switch.vue';
+import Tag from '@/components/ui/Tag.vue';
 import { iconSettings, iconTriangleAlert } from '@/icons';
 import type { PluginRuntimeRecord } from '@/plugins/runtime';
 
@@ -80,7 +81,8 @@ const emit = defineEmits<{
           </Tooltip>
           <Tooltip :content="statusTitle">
             <template #trigger>
-              <span
+              <Tag
+                size="sm"
                 class="plugin-status-badge"
                 :class="{
                   'is-active': record.status === 'active' && !hasCurrentFailure,
@@ -90,7 +92,7 @@ const emit = defineEmits<{
                 }"
               >
                 {{ statusLabel }}
-              </span>
+              </Tag>
             </template>
           </Tooltip>
         </div>
@@ -102,7 +104,7 @@ const emit = defineEmits<{
     </div>
 
     <div class="plugin-card-version-source">
-      <span class="plugin-card-version">v{{ record.descriptor.version }}</span>
+      <Tag size="sm" tone="muted" class="plugin-card-version">v{{ record.descriptor.version }}</Tag>
       <PluginSourceInfo :name="getInstalledPluginSourceName(record.descriptor.installSource)" />
     </div>
 
@@ -115,13 +117,13 @@ const emit = defineEmits<{
     </Tooltip>
 
     <div v-if="record.descriptor.tags?.length" class="marketplace-tags">
-      <span v-for="tag in record.descriptor.tags" :key="tag">{{ tag }}</span>
+      <Tag v-for="tag in record.descriptor.tags" :key="tag" size="sm">{{ tag }}</Tag>
     </div>
 
     <div v-if="featureTags.length" class="plugin-feature-tags">
-      <span v-for="tag in featureTags" :key="tag">
+      <Tag v-for="tag in featureTags" :key="tag" size="sm">
         {{ tag }}
-      </span>
+      </Tag>
     </div>
 
     <div v-if="compatibilityMessage" class="plugin-card-error is-warning">

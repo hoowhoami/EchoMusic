@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
 import Sortable from 'sortablejs';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
 import { getPlayerBarBadgeTone } from './playerBarActions';
 import Popover from '@/components/ui/Popover.vue';
 import MvIcon from '@/components/ui/MvIcon.vue';
+import BarrageIcon from '@/components/ui/BarrageIcon.vue';
 import CastPopover from '@/components/player/CastPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
@@ -45,6 +46,7 @@ const props = withDefaults(
 );
 
 const settings = useSettingStore();
+const slots = useSlots();
 const open = ref(false);
 const editMode = ref(false);
 const isSorting = ref(false);
@@ -90,7 +92,7 @@ const openFloatingAction = (item: ResolvedPlayerBarAction, event: MouseEvent) =>
 const activate = (item: ResolvedPlayerBarAction, event: MouseEvent) => {
   if (isSorting.value) return;
   if (item.disabled) return;
-  if (item.component && popoverComponents.has(item.component)) {
+  if (item.component && (popoverComponents.has(item.component) || slots['floating-action'])) {
     openFloatingAction(item, event);
     return;
   }
@@ -109,6 +111,8 @@ const updateOpen = (value: boolean) => {
 
 const handleDocumentMousedown = (event: MouseEvent) => {
   if (!floatingAction.value) return;
+  // Slot panels own dismissal, including temporary closure during verification.
+  if (!popoverComponents.has(floatingAction.value.component ?? '')) return;
   const target = event.target as Node;
   if (floatingActionRef.value?.contains(target)) return;
   if (target instanceof Element && target.closest('.echo-popover-content')) return;
@@ -165,8 +169,18 @@ const badgeControlLabel = (control: PlayerBarBadgeControl) =>
   `${control.active ? '隐藏' : '显示'}${control.label}徽标`;
 
 let sortables: Sortable[] = [];
+let dragOrigin: { item: HTMLElement; parent: Node; nextSibling: Node | null } | null = null;
+
+const restoreDraggedItem = () => {
+  if (!dragOrigin) return;
+  const { item, parent, nextSibling } = dragOrigin;
+  dragOrigin = null;
+  // Restore Tooltip's fragment ownership before Vue removes or reorders it.
+  parent.insertBefore(item, nextSibling?.parentNode === parent ? nextSibling : null);
+};
 
 const destroySortables = () => {
+  restoreDraggedItem();
   sortables.forEach((sortable) => sortable.destroy());
   sortables = [];
 };
@@ -179,8 +193,7 @@ const readBoardKeys = () => {
     .filter((key): key is string => Boolean(key));
 };
 
-const saveBoardMove = (key: string, placement: PlayerBarPlacement) => {
-  const keys = readBoardKeys();
+const saveBoardMove = (key: string, placement: PlayerBarPlacement, keys = readBoardKeys()) => {
   const ordered = keys.length ? keys : visibleItems.value.map((item) => item.key);
   const layout = reorderPlayerBarLayout(settings.playerBarLayout, props.items, ordered);
   settings.playerBarLayout = setPlayerBarActionPlacement(layout, key, placement);
@@ -213,7 +226,10 @@ const setupSortables = async () => {
         fallbackTolerance: 5,
         ghostClass: 'playerbar-sort-ghost',
         chosenClass: 'playerbar-sort-chosen',
-        onStart: () => {
+        onStart: (event) => {
+          const parent = event.item.parentNode;
+          if (parent)
+            dragOrigin = { item: event.item, parent, nextSibling: event.item.nextSibling };
           lockEditMenuHeight();
           isSorting.value = true;
         },
@@ -222,7 +238,9 @@ const setupSortables = async () => {
           const placement = event.to.dataset.playerbarPlacementList as
             | PlayerBarPlacement
             | undefined;
-          if (key && placement) saveBoardMove(key, placement);
+          const keys = readBoardKeys();
+          restoreDraggedItem();
+          if (key && placement) saveBoardMove(key, placement, keys);
           window.setTimeout(() => {
             isSorting.value = false;
             void nextTick(unlockEditMenuHeight);
@@ -343,6 +361,7 @@ onBeforeUnmount(() => {
             >
               <span class="playerbar-use-icon">
                 <MvIcon v-if="item.key === 'mv'" class="w-[19px] h-[19px]" />
+                <BarrageIcon v-else-if="item.component === 'barrage'" width="19" height="19" />
                 <PluginIcon v-else :icon="item.icon" :width="19" :height="19" />
               </span>
               <span class="playerbar-use-title">{{ item.title }}</span>
@@ -442,6 +461,11 @@ onBeforeUnmount(() => {
                     >
                       <span class="playerbar-chip-icon">
                         <MvIcon v-if="item.key === 'mv'" class="w-[18px] h-[18px]" />
+                        <BarrageIcon
+                          v-else-if="item.component === 'barrage'"
+                          width="18"
+                          height="18"
+                        />
                         <PluginIcon v-else :icon="item.icon" :width="18" :height="18" />
                       </span>
                       <span class="playerbar-chip-title">{{ item.title }}</span>
@@ -502,6 +526,11 @@ onBeforeUnmount(() => {
                   >
                     <span class="playerbar-chip-icon">
                       <MvIcon v-if="item.key === 'mv'" class="w-[18px] h-[18px]" />
+                      <BarrageIcon
+                        v-else-if="item.component === 'barrage'"
+                        width="18"
+                        height="18"
+                      />
                       <PluginIcon v-else :icon="item.icon" :width="18" :height="18" />
                     </span>
                     <span class="playerbar-chip-title">{{ item.title }}</span>
@@ -588,6 +617,7 @@ onBeforeUnmount(() => {
           :show-arrow="true"
           @update:open="!$event && closeFloatingPanels()"
         />
+        <slot v-else name="floating-action" :item="floatingAction" :close="closeFloatingPanels" />
       </div>
     </Transition>
   </Teleport>
@@ -625,7 +655,7 @@ onBeforeUnmount(() => {
   max-width: calc(100vw - 24px);
   overflow: visible;
   padding: 8px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--surface-outline);
 }
 
 .playerbar-more-popover.echo-popover-content.is-editing {
@@ -763,7 +793,7 @@ onBeforeUnmount(() => {
   gap: 9px;
   overflow-x: auto;
   padding: 10px;
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  border: 1px solid transparent;
   border-radius: var(--radius-card);
   background: var(--control-muted-bg);
   scrollbar-width: thin;
@@ -783,7 +813,7 @@ onBeforeUnmount(() => {
   gap: 7px 12px;
   min-width: 0;
   padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
+  border: 1px solid transparent;
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--floating-surface-bg) 58%, transparent);
 }
@@ -891,7 +921,7 @@ onBeforeUnmount(() => {
   position: relative;
   min-width: 0;
   padding: 8px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid transparent;
   border-radius: var(--radius-item);
   background: var(--floating-surface-bg);
 }
@@ -917,7 +947,7 @@ onBeforeUnmount(() => {
   position: relative;
   min-width: 0;
   padding: 24px 10px 8px;
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
+  border: 1px solid transparent;
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--control-muted-bg) 54%, transparent);
 }
@@ -968,7 +998,7 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-item);
   color: var(--color-text-main);
   background: var(--control-muted-bg);
-  border: 1px solid var(--border-strong);
+  border: 1px solid transparent;
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
     border-color var(--motion-duration-fast) var(--motion-ease-standard),

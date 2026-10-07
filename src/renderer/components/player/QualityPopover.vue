@@ -214,7 +214,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
   box-sizing: border-box;
   max-width: calc(100vw - 24px);
   padding: 6px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--surface-outline);
   border-radius: var(--radius-popover);
 }
 
@@ -269,7 +269,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
   color: var(--color-text-main);
   background: transparent;
   border: 0;
-  box-shadow: inset 0 0 0 1px transparent;
+  box-shadow: none;
   cursor: pointer;
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
@@ -280,7 +280,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
 
 .pm-item:hover:not(:disabled) {
   background: var(--control-hover-bg);
-  box-shadow: inset 0 0 0 1px var(--control-border);
+  box-shadow: none;
 }
 
 .pm-item:active:not(:disabled) {
@@ -293,20 +293,22 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
 .pm-item.is-pending:focus-visible {
   color: var(--color-primary-text);
   background: var(--control-active-bg);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 24%, var(--control-border));
+  box-shadow: none;
 }
 
 .pm-item.is-active:hover:not(:disabled) {
   background: var(--control-accent-hover-bg);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 24%, var(--control-border));
+  box-shadow: none;
 }
 
 .pm-item.is-active:active:not(:disabled) {
   background: var(--control-accent-pressed-bg);
 }
 
-.pm-item:focus-visible {
-  box-shadow: inset 0 0 0 1px var(--control-border);
+.pm-item:focus-visible:not(:disabled),
+.pm-item.is-active:focus-visible:not(:disabled),
+.pm-item.is-pending:focus-visible:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--color-primary-text);
 }
 
 .pm-item.is-disabled {

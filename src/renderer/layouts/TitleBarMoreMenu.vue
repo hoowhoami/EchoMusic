@@ -215,7 +215,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
   color: var(--color-text-main);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--surface-outline);
   box-shadow: var(--shadow-elevated);
   /* 与歌曲右键菜单一致，隔离 hover 重绘；定位由 Reka 外层容器负责。 */
   contain: paint;

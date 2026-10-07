@@ -1581,12 +1581,12 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 
 .spatial-provider-card {
   padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, transparent);
+  border: 1px solid transparent;
   border-radius: var(--radius-card);
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, var(--color-primary) 11%, var(--color-bg-elevated)),
-    color-mix(in srgb, var(--color-primary) 3%, var(--color-bg-elevated))
+    color-mix(in srgb, var(--color-primary) 11%, transparent),
+    color-mix(in srgb, var(--color-primary) 3%, transparent)
   );
 }
 
@@ -2044,14 +2044,13 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   gap: 12px;
   margin: -2px 10px 8px;
   padding: 9px 10px;
-  border: 1px solid var(--control-border);
+  border: 1px solid transparent;
   border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
 
 .current-spatial-effect.is-active {
-  border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
-  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-elevated));
+  background: color-mix(in srgb, var(--color-primary) 7%, transparent);
 }
 
 .current-spatial-effect-copy {
@@ -2132,7 +2131,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   gap: 5px;
   margin: 0 10px 8px;
   padding: 9px 10px 8px;
-  border: 1px solid var(--control-border);
+  border: 1px solid transparent;
   border-radius: var(--radius-card);
   background: var(--control-muted-bg);
 }
@@ -2473,7 +2472,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   flex-direction: column;
   gap: 8px;
   padding: 9px 10px;
-  border: 1px solid var(--control-border);
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: var(--control-muted-bg);
 }
@@ -2531,7 +2530,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 .provider-value {
   min-height: 28px;
   padding: 0 8px;
-  border: 1px solid var(--control-border);
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: var(--color-bg-elevated);
   color: var(--color-text-main);

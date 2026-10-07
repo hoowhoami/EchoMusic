@@ -4,7 +4,7 @@
  * 复刻 PlayerBar 三栏布局：左侧歌曲信息+操作、中间播放控制+进度条、右侧功能按钮
  * 沉浸在页面底部，不浮动
  */
-import { computed, ref } from 'vue';
+import { computed, ref, useSlots } from 'vue';
 import { useElementSize, useResizeObserver } from '@vueuse/core';
 import type { IconifyIcon } from '@iconify/types';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
@@ -39,6 +39,7 @@ import {
 } from '@/layouts/playerBarActions';
 import { playerbarItems } from '@/plugins/playerbar';
 import { useOutputStore } from '@/stores/output';
+import { kugouVerificationState } from '@/utils/kugouVerification';
 import {
   iconMusic,
   iconPause,
@@ -77,6 +78,7 @@ const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
 const toastStore = useToastStore();
 const outputStore = useOutputStore();
+const slots = useSlots();
 
 const {
   player: playerStore,
@@ -333,6 +335,22 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
     onClick: goToMv,
   },
   {
+    id: 'barrage',
+    title: '弹幕',
+    icon: iconMessageCircle as IconifyIcon,
+    component: 'barrage',
+    trigger: 'click',
+    defaultPlacement: 'left',
+    order: 32,
+    visible: Boolean(slots.barrage),
+    disabled: !currentTrack.value?.hash || kugouVerificationState.open,
+    active: settingStore.lyricBarrageEnabled,
+    tooltip: settingStore.lyricBarrageEnabled
+      ? '弹幕已开启 · 设置与发送'
+      : '弹幕已关闭 · 设置与发送',
+    onClick: () => {},
+  },
+  {
     id: 'lyric-skins',
     title: '换肤',
     icon: iconShirt as IconifyIcon,
@@ -455,7 +473,7 @@ const updateActionCapacity = () => {
   const fallbackRightWidth = Math.max(0, barWidth - leftWidth - centerWidth - 56);
   const rightWidth = Math.max(measuredRightWidth, fallbackRightWidth);
   actionCapacity.value = {
-    left: countPlayerBarActionSlots(leftWidth, 64, 28),
+    left: countPlayerBarActionSlots(leftWidth, slots.barrage ? 40 : 64, 28),
     center: countPlayerBarActionSlots(centerWidth, 0, 36),
     right: countPlayerBarActionSlots(rightWidth, 112, 36),
   };
@@ -566,6 +584,7 @@ useResizeObserver(
                 variant="lyric"
                 :show-badge="Boolean(item.visibleBadge)"
               />
+              <slot v-else-if="item.component === 'barrage'" name="barrage" />
               <div v-else class="bar-action-anchor">
                 <Button
                   variant="unstyled"
@@ -629,6 +648,7 @@ useResizeObserver(
               variant="lyric"
               :show-badge="Boolean(item.visibleBadge)"
             />
+            <slot v-else-if="item.component === 'barrage'" name="barrage" />
             <div v-else class="bar-action-anchor">
               <Button
                 variant="unstyled"
@@ -688,6 +708,7 @@ useResizeObserver(
             variant="lyric"
             :show-badge="Boolean(item.visibleBadge)"
           />
+          <slot v-else-if="item.component === 'barrage'" name="barrage" />
           <div v-else class="bar-action-anchor">
             <Button
               variant="unstyled"
@@ -714,7 +735,16 @@ useResizeObserver(
           :items="resolvedPlayerBarActions"
           :menu-items="overflowPlayerBarActions"
           :badges="playerBarBadgeControls"
-        />
+        >
+          <template #floating-action="{ item, close }">
+            <slot
+              v-if="item.component === 'barrage'"
+              name="barrage"
+              :open="true"
+              :on-update-open="(value: boolean) => !value && close()"
+            />
+          </template>
+        </PlayerBarMoreMenu>
       </div>
     </div>
   </footer>

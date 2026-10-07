@@ -12,6 +12,7 @@ interface Props {
   height?: string | number;
   borderRadius?: string | number;
   showShadow?: boolean;
+  /** Compatibility flag: keep a subtle boundary shadow instead of a painted border. */
   showBorder?: boolean;
   alt?: string;
   class?: string;
@@ -96,7 +97,7 @@ const containerStyle = computed(() => {
   <div
     :class="[
       'cover-container relative overflow-hidden bg-[var(--control-muted-bg)] flex items-center justify-center',
-      showBorder ? 'cover-bordered' : '',
+      showBorder && !showShadow ? 'cover-boundary' : '',
       showShadow ? 'shadow-xl shadow-black/20' : '',
       props.class,
     ]"
@@ -143,19 +144,12 @@ const containerStyle = computed(() => {
 
 <style scoped>
 .cover-container {
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
   backface-visibility: hidden;
 }
 
-/* Draw above the artwork so the edge survives opaque images and placeholders.
- * An inset outline keeps the media's dimensions and inherited radius intact. */
-.cover-bordered::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-main) 18%, transparent);
-  pointer-events: none;
+/* A soft outer shadow keeps artwork separate from its surface without painting
+ * over the image or changing its dimensions. Explicit shadows remain unchanged. */
+.cover-boundary {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
 }
 </style>

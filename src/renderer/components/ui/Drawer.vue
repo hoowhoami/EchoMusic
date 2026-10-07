@@ -132,7 +132,7 @@ onUnmounted(() => {
   background: var(--floating-surface-bg);
   -webkit-backdrop-filter: var(--floating-surface-filter);
   backdrop-filter: var(--floating-surface-filter);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--surface-outline);
   box-shadow: var(--shadow-dialog);
   opacity: 0;
   visibility: hidden;

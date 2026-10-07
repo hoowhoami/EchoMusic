@@ -173,7 +173,7 @@ export function fixture(t, kind, initialProps = {}, options = {}) {
     },
   };
   const listeners = Object.fromEntries(
-    ['sent', 'deleted', 'close'].map((name) => [
+    ['sent', 'deleted', 'close', 'update:open'].map((name) => [
       `on${name[0].toUpperCase()}${name.slice(1)}`,
       (...args) => emitted.push([name, ...args]),
     ]),

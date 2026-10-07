@@ -22,7 +22,10 @@ const areaOptions = [
   { value: 50, label: '上半屏' },
   { value: 100, label: '全屏' },
 ];
-const props = defineProps<{ resource: CommentSendResource; variant?: 'lyric' }>();
+const props = withDefaults(
+  defineProps<{ resource: CommentSendResource; variant?: 'lyric'; open?: boolean }>(),
+  { open: undefined },
+);
 const settings = useSettingStore();
 const config = computed(() =>
   props.variant === 'lyric' ? settings.lyricBarrageConfig : settings.mvBarrageConfig,
@@ -36,8 +39,18 @@ const selectArea = (index: number) => {
   if (option) config.value.area = option.value;
 };
 const enabled = defineModel<boolean>({ default: false });
-const emit = defineEmits<{ sent: [content: string] }>();
-const open = ref(false);
+const emit = defineEmits<{ sent: [content: string]; 'update:open': [value: boolean] }>();
+const open = ref(props.open ?? false);
+const updateOpen = (value: boolean) => {
+  open.value = value;
+  if (props.open !== undefined) emit('update:open', value);
+};
+watch(
+  () => props.open,
+  (value) => {
+    if (value !== undefined) open.value = value;
+  },
+);
 // 验证弹窗会关闭并卸载 Popover 内容，草稿和发送状态必须由外层保留。
 const draft = ref('');
 const sending = ref(false);
@@ -59,7 +72,7 @@ watch(sending, (busy) => {
 });
 function handleSent(content: string) {
   resumeComposer = false;
-  open.value = false;
+  updateOpen(false);
   emit('sent', content);
 }
 const { submit: submitComment } = useCommentSubmission({
@@ -71,7 +84,7 @@ const { submit: submitComment } = useCommentSubmission({
 watch(
   () => props.resource.hash,
   () => {
-    open.value = false;
+    updateOpen(false);
     draft.value = '';
     resumeComposer = false;
   },
@@ -84,12 +97,13 @@ watch(
     :class="{ 'is-lyric': variant === 'lyric', 'is-video': variant !== 'lyric' }"
   >
     <Popover
-      v-model:open="open"
+      :open="open"
       trigger="click"
       :side="variant === 'lyric' ? 'top' : 'bottom'"
       align="end"
       :show-arrow="false"
       content-class="barrage-send-popover"
+      @update:open="updateOpen"
     >
       <template #trigger>
         <Button
@@ -119,7 +133,7 @@ watch(
             type="button"
             class="action-icon barrage-close"
             aria-label="关闭弹幕面板"
-            @click="open = false"
+            @click="updateOpen(false)"
           >
             <Icon :icon="iconX" width="16" height="16" />
           </Button>
@@ -263,7 +277,7 @@ watch(
   gap: 8px;
   min-height: 34px;
   padding: 6px 12px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: var(--control-muted-bg);
   color: var(--text-secondary);
@@ -278,12 +292,10 @@ watch(
 .barrage-toolbar.is-video :deep(.barrage-trigger:hover) {
   color: var(--text-main);
   background: var(--color-bg-elevated);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--border-subtle));
 }
 .barrage-toolbar.is-video :deep(.barrage-trigger.is-active) {
   color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-elevated));
-  border-color: color-mix(in srgb, var(--color-primary) 22%, var(--border-subtle));
 }
 .barrage-trigger-status {
   padding-left: 8px;

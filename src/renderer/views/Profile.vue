@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useLoginDeviceStore, type LoginDeviceSession } from '@/stores/loginDevices';
 import Button from '@/components/ui/Button.vue';
+import Badge from '@/components/ui/Badge.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import DatePicker from '@/components/ui/DatePicker.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -113,6 +114,7 @@ const isUploadingAvatar = ref(false);
 const avatarInput = ref<HTMLInputElement | null>(null);
 
 type EditableGender = 0 | 1 | 2;
+const PROFILE_SIGNATURE_LIMIT = 100;
 
 const profileForm = reactive({
   nickname: '',
@@ -122,6 +124,9 @@ const profileForm = reactive({
   province: '',
   city: '',
 });
+const profileSignatureOverLimit = computed(
+  () => profileForm.signature.length > PROFILE_SIGNATURE_LIMIT,
+);
 
 const genderOptions = [
   { label: '女', value: 0 },
@@ -384,6 +389,10 @@ const saveProfile = async () => {
   const nickname = profileForm.nickname.trim();
   if (!nickname) {
     toastStore.warning('昵称不能为空');
+    return;
+  }
+  if (profileSignatureOverLimit.value) {
+    toastStore.warning(`个性签名最多 ${PROFILE_SIGNATURE_LIMIT} 个字符`);
     return;
   }
 
@@ -1501,7 +1510,7 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <div class="profile-overview-meta">
-                  <span v-if="ipLocation" class="profile-location">{{ ipLocation }}</span>
+                  <Badge v-if="ipLocation" :count="ipLocation" tone="muted" class="badge-size-sm" />
                 </div>
               </div>
               <div class="profile-stats">
@@ -1556,85 +1565,78 @@ onUnmounted(() => {
               </div>
             </section>
 
-            <div class="profile-info-grid">
-              <section class="profile-section" aria-labelledby="profile-archive-title">
-                <h3 id="profile-archive-title" class="profile-section-title">账号档案</h3>
-                <dl class="profile-archive-card">
-                  <div>
-                    <dt>用户 ID</dt>
-                    <dd>{{ userInfo.userid }}</dd>
-                  </div>
-                  <div>
-                    <dt>性别</dt>
-                    <dd>{{ gender }}</dd>
-                  </div>
-                  <div>
-                    <dt>乐龄</dt>
-                    <dd>{{ formatAccountAge(detail.rtime) }}</dd>
-                  </div>
-                  <div>
-                    <dt>所在地区</dt>
-                    <dd>{{ location }}</dd>
-                  </div>
-                  <div class="profile-listening-total">
-                    <dt>累计听歌</dt>
-                    <dd>{{ listeningDuration }}</dd>
-                  </div>
-                </dl>
-              </section>
-              <section class="profile-section" aria-labelledby="profile-membership-title">
-                <h3 id="profile-membership-title" class="profile-section-title">会员状态</h3>
-                <div class="profile-memberships">
-                  <article
-                    v-for="membership in [
-                      { label: '畅听会员', vip: tvip, icon: iconHeadphones, kind: 'music' },
-                      { label: '概念会员', vip: svip, icon: iconDiamond, kind: 'concept' },
-                    ]"
-                    :key="membership.kind"
-                    class="profile-membership"
-                    :class="{ 'is-active': !!membership.vip }"
-                  >
-                    <span class="profile-membership-icon" :class="`is-${membership.kind}`"
-                      ><Icon :icon="membership.icon" width="20" height="20"
-                    /></span>
-                    <div class="profile-membership-copy">
-                      <h4>{{ membership.label }}</h4>
-                      <div v-if="membership.vip" class="profile-expiry">
-                        <span>{{ getVipExpireText(membership.vip) }}</span>
-                        <Popover
-                          trigger="hover"
-                          side="top"
-                          align="center"
-                          :side-offset="6"
-                          contentClass="vip-expire-popover"
-                        >
-                          <template #trigger
-                            ><button
-                              type="button"
-                              class="profile-expiry-info app-focus-ring-soft"
-                              :aria-label="`查看${membership.label}到期时间`"
-                            >
-                              <Icon :icon="iconInfo" width="13" height="13" /></button
-                          ></template>
-                          <dl class="profile-expiry-details">
-                            <div>
-                              <dt>开始时间</dt>
-                              <dd>{{ formatVipDate(membership.vip.vip_begin_time) }}</dd>
-                            </div>
-                            <div>
-                              <dt>到期时间</dt>
-                              <dd>{{ formatVipDate(membership.vip.vip_end_time) }}</dd>
-                            </div>
-                          </dl>
-                        </Popover>
-                      </div>
-                      <p v-else class="profile-expiry">未开通</p>
-                    </div>
-                    <span v-if="membership.vip" class="profile-membership-state">已开通</span>
-                  </article>
+            <section class="profile-details" aria-label="账号概况">
+              <dl class="profile-account-summary" aria-label="账号档案">
+                <div>
+                  <dt>用户 ID</dt>
+                  <dd>{{ userInfo.userid }}</dd>
                 </div>
+                <div>
+                  <dt>性别</dt>
+                  <dd>{{ gender }}</dd>
+                </div>
+                <div>
+                  <dt>乐龄</dt>
+                  <dd>{{ formatAccountAge(detail.rtime) }}</dd>
+                </div>
+                <div>
+                  <dt>所在地区</dt>
+                  <dd>{{ location }}</dd>
+                </div>
+                <div>
+                  <dt>累计听歌</dt>
+                  <dd>{{ listeningDuration }}</dd>
+                </div>
+              </dl>
+              <section class="profile-memberships" aria-label="会员状态">
+                <article
+                  v-for="membership in [
+                    { label: '畅听会员', vip: tvip, icon: iconHeadphones, kind: 'music' },
+                    { label: '概念会员', vip: svip, icon: iconDiamond, kind: 'concept' },
+                  ]"
+                  :key="membership.kind"
+                  class="profile-membership"
+                  :class="{ 'is-active': !!membership.vip }"
+                >
+                  <span class="profile-membership-icon" :class="`is-${membership.kind}`"
+                    ><Icon :icon="membership.icon" width="20" height="20"
+                  /></span>
+                  <div class="profile-membership-copy">
+                    <h4>{{ membership.label }}</h4>
+                    <div v-if="membership.vip" class="profile-expiry">
+                      <span>{{ getVipExpireText(membership.vip) }}</span>
+                      <Popover
+                        trigger="hover"
+                        side="top"
+                        align="center"
+                        :side-offset="6"
+                        contentClass="vip-expire-popover"
+                      >
+                        <template #trigger
+                          ><button
+                            type="button"
+                            class="profile-expiry-info app-focus-ring-soft"
+                            :aria-label="`查看${membership.label}到期时间`"
+                          >
+                            <Icon :icon="iconInfo" width="13" height="13" /></button
+                        ></template>
+                        <dl class="profile-expiry-details">
+                          <div>
+                            <dt>开始时间</dt>
+                            <dd>{{ formatVipDate(membership.vip.vip_begin_time) }}</dd>
+                          </div>
+                          <div>
+                            <dt>到期时间</dt>
+                            <dd>{{ formatVipDate(membership.vip.vip_end_time) }}</dd>
+                          </div>
+                        </dl>
+                      </Popover>
+                    </div>
+                    <p v-else class="profile-expiry">未开通</p>
+                  </div>
+                </article>
               </section>
-            </div>
+            </section>
           </div>
         </div>
       </template>
@@ -1714,10 +1716,19 @@ onUnmounted(() => {
           <Textarea
             v-model="profileForm.signature"
             :rows="3"
+            :maxlength="PROFILE_SIGNATURE_LIMIT"
+            :aria-invalid="profileSignatureOverLimit"
             placeholder="写下一句想说的话"
             textareaClass="profile-editor-signature"
           />
-          <small>留空保存可清除个性签名</small>
+          <small class="flex items-center justify-between gap-3">
+            <span>留空保存可清除个性签名</span>
+            <span
+              class="shrink-0 tabular-nums"
+              :class="{ 'text-[var(--state-danger)]': profileSignatureOverLimit }"
+              >{{ profileForm.signature.length }} / {{ PROFILE_SIGNATURE_LIMIT }}</span
+            >
+          </small>
         </label>
       </div>
       <template #footer>
@@ -1728,7 +1739,12 @@ onUnmounted(() => {
           @click="showProfileEditor = false"
           >取消</Button
         >
-        <Button variant="primary" size="sm" :loading="isSavingProfile" @click="saveProfile"
+        <Button
+          variant="primary"
+          size="sm"
+          :loading="isSavingProfile"
+          :disabled="profileSignatureOverLimit"
+          @click="saveProfile"
           >保存修改</Button
         >
       </template>
@@ -2142,6 +2158,8 @@ onUnmounted(() => {
 
 <style scoped>
 .profile-content {
+  max-width: 1000px;
+  margin-inline: auto;
   padding: 16px 24px 24px;
 }
 .profile-page-header {
@@ -2174,7 +2192,7 @@ onUnmounted(() => {
 }
 .profile-avatar-button {
   padding: 0;
-  border: 1px solid var(--control-border);
+  border: 1px solid transparent;
   cursor: pointer;
 }
 .profile-avatar-button:focus-visible {
@@ -2207,14 +2225,6 @@ onUnmounted(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-.profile-location {
-  display: inline-block;
-  padding: 2px 6px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-micro);
-  font-size: 11px;
-  color: var(--color-text-secondary);
 }
 .profile-overview-meta {
   flex: none;
@@ -2279,59 +2289,55 @@ onUnmounted(() => {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
-.profile-section {
-  min-width: 0;
-}
-.profile-section-title {
-  margin-bottom: 12px;
-  font-size: 15px;
-  font-weight: 600;
-}
-.profile-archive-card {
+.profile-details {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px 20px;
-  padding: 16px;
-  border: 1px solid var(--content-panel-border);
+  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr);
+  gap: 32px;
+  padding: 24px;
   border-radius: var(--radius-card);
   background: var(--content-panel-bg);
 }
-.profile-archive-card > div {
+.profile-account-summary {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  margin: 0;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.profile-account-summary > div {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 20px;
   min-width: 0;
 }
-.profile-archive-card dt {
-  font-size: 12px;
+.profile-account-summary dt {
   color: var(--color-text-secondary);
-  margin-bottom: 6px;
 }
-.profile-archive-card dd {
-  font-size: 13px;
+.profile-account-summary dd {
+  margin: 0;
   font-weight: 500;
-  line-height: 1.5;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
-.profile-listening-total {
-  grid-column: 1 / -1;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
-}
-.profile-listening-total dd {
-  font-size: 18px;
-  font-weight: 600;
-}
 .profile-memberships {
   display: grid;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  padding-left: 32px;
+  border-left: 1px solid var(--border-subtle);
 }
 .profile-membership {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--content-panel-border);
-  border-radius: var(--radius-card);
-  background: var(--content-panel-bg);
+  gap: 16px;
+  padding-block: 12px;
+  min-width: 0;
+}
+.profile-membership + .profile-membership {
+  border-top: 1px solid var(--border-subtle);
 }
 .profile-membership-icon {
   display: grid;
@@ -2339,31 +2345,26 @@ onUnmounted(() => {
   flex: none;
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-control);
   color: var(--icon-main);
-  background: var(--control-muted-bg);
 }
 .profile-membership.is-active .is-music {
   color: color-mix(in srgb, var(--state-success) 68%, var(--color-text-main));
-  background: var(--state-success-bg-soft);
 }
 .profile-membership.is-active .is-concept {
   color: color-mix(in srgb, var(--state-warning) 68%, var(--color-text-main));
-  background: var(--state-warning-bg-soft);
 }
 .profile-membership-copy {
   min-width: 0;
-  flex: 1;
 }
 .profile-membership-copy h4 {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .profile-expiry {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  margin-top: 5px;
+  gap: 8px;
+  margin: 8px 0 0;
   font-size: 12px;
   line-height: 1.5;
   color: var(--color-text-secondary);
@@ -2383,14 +2384,6 @@ onUnmounted(() => {
 .profile-expiry-info:hover {
   color: var(--color-text-main);
 }
-.profile-membership-state {
-  flex: none;
-  font-size: 10px;
-  color: var(--color-text-secondary);
-}
-.profile-membership.is-active .profile-membership-state {
-  color: var(--color-primary-text);
-}
 .profile-expiry-details {
   display: grid;
   gap: 8px;
@@ -2407,6 +2400,24 @@ onUnmounted(() => {
 }
 .profile-expiry-details dd {
   font-weight: 500;
+}
+@media (max-width: 700px) {
+  .profile-details {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .profile-memberships {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+    padding: 16px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .profile-membership + .profile-membership {
+    border-top: 0;
+    border-left: 1px solid var(--border-subtle);
+    padding-left: 20px;
+  }
 }
 @media (max-width: 600px) {
   .profile-content {
@@ -2436,9 +2447,18 @@ onUnmounted(() => {
     gap: 2px;
     padding: 2px 4px;
   }
-  .profile-archive-card {
-    gap: 18px 16px;
-    padding: 18px;
+  .profile-details {
+    padding: 16px;
+  }
+}
+@media (max-width: 440px) {
+  .profile-memberships {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .profile-membership + .profile-membership {
+    padding-left: 0;
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
   }
 }
 :global(.profile-social-drawer-overlay) {
@@ -2929,18 +2949,6 @@ onUnmounted(() => {
 
 .login-device-row {
   min-height: 76px;
-}
-
-.profile-info-grid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: minmax(0, 1fr);
-}
-
-@media (min-width: 768px) {
-  .profile-info-grid {
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  }
 }
 </style>
 

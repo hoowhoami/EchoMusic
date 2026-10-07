@@ -686,11 +686,10 @@ watch(
   text-align: left;
   min-width: 0;
   cursor: pointer;
-  border: 1px solid var(--border-strong);
+  border: 1px solid transparent;
   background: var(--content-panel-bg);
   padding: 10px;
   border-radius: var(--radius-card);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 .theme-select-card:focus-visible {
   outline: 2px solid var(--color-primary);

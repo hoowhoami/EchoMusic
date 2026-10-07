@@ -174,6 +174,34 @@ function fixture(t) {
   };
 }
 
+for (const signature of ['签'.repeat(100), '']) {
+  test(`profile saves ${signature ? 'a 100-character signature' : 'an empty signature'}`, async (t) => {
+    const f = fixture(t);
+    f.user.info.extendsInfo.detail.descri = '旧签名';
+    f.view.openProfileEditor();
+    f.view.profileForm.signature = signature;
+    const writes = [];
+    f.user.updateProfile = async (params) => writes.push(params);
+    await f.view.saveProfile();
+    assert.deepEqual(writes, [{ signature }]);
+    assert.equal(f.view.showProfileEditor.value, false);
+  });
+}
+
+test('profile rejects an oversized signature without changing the draft or sending a write', async (t) => {
+  const f = fixture(t);
+  f.view.openProfileEditor();
+  const signature = '签'.repeat(101);
+  f.view.profileForm.signature = signature;
+  const writes = [];
+  f.user.updateProfile = async (params) => writes.push(params);
+  await f.view.saveProfile();
+  assert.deepEqual(writes, []);
+  assert.deepEqual(f.notices, [['warning', '个性签名最多 100 个字符']]);
+  assert.equal(f.view.profileForm.signature, signature);
+  assert.equal(f.view.showProfileEditor.value, true);
+});
+
 for (const [name, change] of Object.entries({
   token: (u) => {
     u.info.token = 'two';

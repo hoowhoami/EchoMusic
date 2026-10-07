@@ -1586,12 +1586,12 @@ watch(
   justify-content: center;
   border-radius: var(--radius-control);
   background: var(--control-bg);
-  box-shadow: inset 0 0 0 1px var(--control-border);
+  box-shadow: none;
 }
 
 .sidebar-rail-avatar-btn:hover {
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
+  box-shadow: none;
 }
 
 .sidebar-rail-nav,
@@ -1702,7 +1702,7 @@ watch(
 
 .sidebar-rail-cover-btn.is-active {
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 26%, transparent);
+  box-shadow: none;
 }
 
 .sidebar-rail-cover {
@@ -1745,7 +1745,7 @@ watch(
 .sidebar-rail-item.is-active {
   color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 12%, transparent);
+  box-shadow: none;
 }
 
 .sidebar-rail-item.is-disabled {
@@ -1876,7 +1876,7 @@ watch(
 .sidebar-settings-btn:hover,
 .sidebar-icon-btn:hover {
   background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 8%, transparent);
+  box-shadow: none;
 }
 
 .sidebar-section-action-slot {
@@ -1914,7 +1914,7 @@ watch(
 
 .sidebar-playlist-action:hover {
   background-color: color-mix(in srgb, var(--color-text-main) 18%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-main) 4%, transparent);
+  box-shadow: none;
 }
 
 :deep(.sidebar-dialog) {

@@ -128,7 +128,7 @@ const updateToolbarCapacity = () => {
     parseFloat(style.paddingRight || '0');
   // Reserve the search/navigation width, window controls, More, divider and a drag area.
   // Measure fixed space only, so moving overflow items cannot cause resize oscillation.
-  const navigationWidth = parseFloat(getComputedStyle(navigationRef.value).flexBasis) || 410;
+  const navigationWidth = parseFloat(getComputedStyle(navigationRef.value).flexBasis) || 350;
   const fixedWidth =
     navigationWidth + (windowActionsRef.value?.offsetWidth ?? 0) + 34 + 12 + 4 + 64;
   toolbarCapacity.value = Math.max(0, Math.floor((available - fixedWidth) / 38));
@@ -931,7 +931,7 @@ onUnmounted(() => {
 }
 .titlebar-nav {
   min-width: 0;
-  flex: 0 1 410px;
+  flex: 0 1 350px;
   transition: padding-left 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -964,7 +964,7 @@ onUnmounted(() => {
 .tb-search {
   flex: 1;
   min-width: 80px;
-  max-width: 280px;
+  max-width: 220px;
   margin: 0 8px;
   position: relative;
   display: flex;
@@ -1012,16 +1012,18 @@ onUnmounted(() => {
   align-items: center;
   height: 30px;
   border-radius: var(--radius-control);
-  background: var(--control-muted-bg);
+  background: var(--field-bg);
   padding: 0 4px 0 10px;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+  border: 0;
+}
+
+.tb-search-input-wrap:hover:not(:focus-within) {
+  background: var(--field-hover-bg);
 }
 
 .tb-search-input-wrap:focus-within {
-  background: var(--control-muted-bg);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 12%, transparent);
+  background: var(--field-focus-bg);
 }
 
 .tb-search-icon {

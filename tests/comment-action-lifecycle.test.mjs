@@ -621,3 +621,58 @@ test('control: reply input unmount after parent success does not duplicate feedb
   assert.equal(parent.notices.filter((n) => n[0] === 'show').length, 1);
   assert.deepEqual(child.notices, []);
 });
+
+for (const success of [false, true]) {
+  test(`layout-managed barrage keeps its owner during verification and ${success ? 'reports success' : 'reopens for retry'}`, async (t) => {
+    const f = fixture(t, 'BarrageControls', {
+      resource: { type: 'song-barrage', hash: 'A' },
+      open: true,
+    });
+    const task = deferred();
+    f.api.sendComment = () => task.promise;
+    f.view.draft.value = 'managed barrage';
+    const request = f.view.submitComment();
+    f.verification.open = true;
+    await flush();
+    assert.equal(f.view.open.value, false);
+    assert.deepEqual(f.emitted, [], 'temporary verification closure must not dismiss the owner');
+    if (success) task.resolve();
+    else task.reject(new Error('retry barrage'));
+    await request;
+    f.verification.open = false;
+    await flush();
+    assert.equal(f.view.open.value, !success);
+    assert.equal(f.view.draft.value, success ? '' : 'managed barrage');
+    assert.deepEqual(
+      f.emitted,
+      success
+        ? [
+            ['update:open', false],
+            ['sent', 'managed barrage'],
+          ]
+        : [],
+    );
+  });
+}
+
+test('layout-managed barrage synchronizes external opening and reports user dismissal', async (t) => {
+  const f = fixture(t, 'BarrageControls', {
+    resource: { type: 'song-barrage', hash: 'A' },
+    open: false,
+  });
+  f.props.open = true;
+  await flush();
+  assert.equal(f.view.open.value, true);
+  f.view.updateOpen(false);
+  assert.equal(f.view.open.value, false);
+  assert.deepEqual(f.emitted, [['update:open', false]]);
+});
+
+test('uncontrolled video barrage retains its internal open behavior', (t) => {
+  const f = fixture(t, 'BarrageControls', { resource: { type: 'video-barrage', hash: 'A' } });
+  f.view.updateOpen(true);
+  assert.equal(f.view.open.value, true);
+  f.view.updateOpen(false);
+  assert.equal(f.view.open.value, false);
+  assert.deepEqual(f.emitted, []);
+});

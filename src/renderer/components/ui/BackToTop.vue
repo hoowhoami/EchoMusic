@@ -75,7 +75,7 @@ onUnmounted(() => {
         variant="unstyled"
         size="none"
         @click="scrollToTop"
-        class="action-icon inline-flex items-center justify-center border border-[var(--control-border)] back-to-top-btn shadow-lg hover:shadow-xl group"
+        class="action-icon inline-flex items-center justify-center back-to-top-btn"
         aria-label="回到顶部"
       >
         <Icon class="back-to-top-icon" :icon="iconArrowUp" width="16" height="16" />
@@ -88,24 +88,39 @@ onUnmounted(() => {
 @reference "@/style.css";
 
 .back-to-top-btn {
+  --back-to-top-hover-y: 0px;
+  --back-to-top-active-scale: 1;
   width: var(--scroll-action-size);
   height: var(--scroll-action-size);
   background: var(--color-bg-elevated);
   color: var(--color-text-main);
-  border-color: var(--control-border);
+  border: 1px solid var(--control-border);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+  -webkit-backdrop-filter: var(--surface-backdrop-filter);
   backdrop-filter: var(--surface-backdrop-filter);
+  scale: 1;
+  transform: translateY(var(--back-to-top-hover-y)) scale(var(--back-to-top-active-scale));
 }
 
 .back-to-top-btn:hover {
   color: var(--color-primary-text);
+  border-color: color-mix(in srgb, var(--color-primary) 60%, var(--control-border));
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18);
+  --back-to-top-hover-y: -1px;
+}
+
+.back-to-top-btn:active {
+  --back-to-top-active-scale: 0.96;
 }
 
 :global(.dark .back-to-top-btn) {
-  border-color: rgba(255, 255, 255, 0.26) !important;
+  border-color: rgba(255, 255, 255, 0.26);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
 }
 
 :global(.dark .back-to-top-btn:hover) {
-  color: var(--color-primary-text);
+  border-color: color-mix(in srgb, var(--color-primary) 58%, rgba(255, 255, 255, 0.26));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
 }
 
 .back-to-top-leave-active {
@@ -113,6 +128,14 @@ onUnmounted(() => {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  .back-to-top-btn {
+    transition:
+      color var(--motion-duration-fast) var(--motion-ease-standard),
+      border-color var(--motion-duration-fast) var(--motion-ease-standard),
+      box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
+      transform var(--motion-duration-fast) var(--motion-ease-standard);
+  }
+
   .back-to-top-enter-active {
     transition: opacity var(--motion-duration-fast) var(--motion-ease-enter);
   }
@@ -132,6 +155,12 @@ onUnmounted(() => {
 
   .back-to-top-btn:hover .back-to-top-icon {
     translate: 0 -2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .back-to-top-btn {
+    transform: none;
   }
 }
 </style>

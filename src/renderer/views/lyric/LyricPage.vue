@@ -728,15 +728,17 @@ onUnmounted(() => {
           @open-add-to-playlist="handleOpenAddToPlaylist"
           @open-skins="openSettings('skins')"
         >
-          <template #song-actions>
+          <template #barrage="{ open, onUpdateOpen }">
             <BarrageControls
               v-model="barrageEnabled"
               variant="lyric"
+              :open="open"
               :resource="{
                 type: 'song-barrage',
                 hash: currentTrack?.hash || '',
                 name: currentTrack?.name,
               }"
+              @update:open="onUpdateOpen?.($event)"
               @sent="barrageRef?.onSent($event)"
             />
           </template>

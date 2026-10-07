@@ -1,33 +1,25 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
+import Tag from '@/components/ui/Tag.vue';
 
 defineProps<{ name: string }>();
 </script>
 
 <template>
-  <span class="plugin-source-info">
+  <Tag size="sm" tone="muted" class="plugin-source-info">
     <Tooltip :content="name" overflow-only>
       <template #trigger>
         <span class="plugin-source-name">{{ name }}</span>
       </template>
     </Tooltip>
-  </span>
+  </Tag>
 </template>
 
 <style scoped>
 .plugin-source-info {
-  display: inline-flex;
-  align-items: center;
+  flex: 0 1 auto;
   max-width: 100%;
-  padding: 1px 7px;
-  border-radius: var(--radius-detail);
-  border: 1px solid var(--border-subtle);
-  background: var(--control-muted-bg);
   min-width: 0;
-  font-size: 0.6875rem;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-  font-weight: 500;
 }
 .plugin-source-name {
   min-width: 0;

@@ -595,11 +595,8 @@ watch(
   transition: none !important;
 }
 
-.lyric-overlay-host[data-motion='cover'] {
+.lyric-overlay-host[data-motion='cover'],
+.lyric-overlay-host[data-motion='fade'] {
   will-change: opacity;
-}
-
-.lyric-overlay-host[data-motion='panel'] {
-  will-change: transform;
 }
 </style>

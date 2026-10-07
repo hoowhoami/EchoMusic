@@ -16,7 +16,8 @@
   --icon-secondary: color-mix(in srgb, var(--text-main) 60%, transparent);
   --text-placeholder: var(--text-secondary);
   --content-panel-bg: color-mix(in srgb, var(--content-tone) 5%, transparent);
-  --content-panel-border: color-mix(in srgb, var(--content-tone) 10%, transparent);
+  /* Content groups use their surface and spacing; badges and fields own their boundaries. */
+  --content-panel-border: transparent;
   --content-selected-bg: color-mix(in srgb, var(--content-tone) 12%, transparent);
   --bg-card: var(--content-panel-bg);
   --bg-info-card: var(--content-panel-bg);
@@ -27,17 +28,18 @@
   --color-border-light: var(--border-light);
   --border-subtle: color-mix(in srgb, var(--border-light) 72%, transparent);
   --border-strong: color-mix(in srgb, var(--content-tone) 18%, transparent);
+  --surface-outline: color-mix(in srgb, var(--content-tone) 10%, transparent);
   --control-bg: color-mix(in srgb, var(--content-tone) 7%, transparent);
   --control-muted-bg: color-mix(in srgb, var(--content-tone) 5%, transparent);
+  --field-bg: color-mix(in srgb, var(--content-tone) 5%, transparent);
+  --field-hover-bg: color-mix(in srgb, var(--content-tone) 5%, transparent);
+  --field-focus-bg: color-mix(in srgb, var(--content-tone) 7%, transparent);
   --control-hover-bg: color-mix(in srgb, var(--content-tone) 10%, transparent);
   --control-active-bg: color-mix(in srgb, var(--color-primary) 12%, transparent);
   --control-accent-hover-bg: color-mix(in srgb, var(--color-primary) 18%, transparent);
   --control-accent-pressed-bg: color-mix(in srgb, var(--color-primary) 22%, transparent);
-  --control-active-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.06),
-    inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
-  --control-neutral-action-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.06), inset 0 0 0 1px var(--border-strong);
+  --control-active-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --control-neutral-action-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   --control-neutral-pressed-bg: color-mix(in srgb, var(--content-tone) 14%, transparent);
   --control-secondary-bg: var(--control-muted-bg);
   --control-secondary-hover-bg: var(--control-hover-bg);
@@ -46,9 +48,7 @@
   --control-danger-hover-bg: color-mix(in srgb, var(--state-danger) 12%, transparent);
   --control-danger-pressed-bg: color-mix(in srgb, var(--state-danger) 16%, transparent);
   --control-danger-text: color-mix(in srgb, var(--state-danger) 76%, var(--color-text-main));
-  --control-danger-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.06),
-    inset 0 0 0 1px color-mix(in srgb, var(--state-danger) 18%, transparent);
+  --control-danger-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   --control-border: color-mix(in srgb, var(--border-light) 76%, transparent);
   --control-border-hover: color-mix(in srgb, var(--content-tone) 24%, transparent);
   --control-track-bg: color-mix(in srgb, var(--content-tone) 12%, transparent);
@@ -91,12 +91,15 @@
   box-shadow: var(--control-neutral-action-shadow);
 }
 .soft-neutral-action:enabled:hover,
+.soft-neutral-action:enabled:focus-visible,
 .soft-secondary-action:enabled:hover,
+.soft-secondary-action:enabled:focus-visible,
 .song-locate-btn:enabled:hover,
+.song-locate-btn:enabled:focus-visible,
 .soft-neutral-action:has(> .soft-selection-trigger:enabled:hover),
 .settings-action:where(
     :not(.settings-action-danger, .settings-action-primary, .soft-accent-action)
-  ):enabled:hover {
+  ):is(:enabled:hover, :enabled:focus-visible) {
   background: var(--control-hover-bg);
 }
 .soft-neutral-action:enabled:active,
@@ -115,7 +118,9 @@
   box-shadow: var(--control-active-shadow);
 }
 .soft-accent-action:enabled:hover,
+.soft-accent-action:enabled:focus-visible,
 .settings-action-primary:enabled:hover,
+.settings-action-primary:enabled:focus-visible,
 .soft-accent-action:has(> .soft-selection-trigger:enabled:hover) {
   background: var(--control-accent-hover-bg);
 }
@@ -131,7 +136,9 @@
   box-shadow: var(--control-danger-shadow);
 }
 .soft-danger-action:enabled:hover,
-.settings-action-danger:enabled:hover {
+.soft-danger-action:enabled:focus-visible,
+.settings-action-danger:enabled:hover,
+.settings-action-danger:enabled:focus-visible {
   background: var(--control-danger-hover-bg);
 }
 .soft-danger-action:enabled:active,
