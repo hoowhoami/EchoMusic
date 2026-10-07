@@ -127,6 +127,8 @@ const blurCoverUrl = computed(() => {
 const settledBlurCoverUrl = ref('');
 let blurCoverSettleTimer: number | null = null;
 const BLUR_COVER_SETTLE_MS = 180;
+// 模糊背景图解码完成后再渐入：图片挂载即绘制会突然浮现（写真皮层有等价处理）
+const blurImgLoaded = ref(false);
 
 watch(
   blurCoverUrl,
@@ -459,7 +461,11 @@ onUnmounted(() => {
         <img
           :src="settledBlurCoverUrl"
           class="lyric-blur-bg-img"
-          :class="{ 'lyric-blur-bg-img--rhythm': isBlurBackgroundRhythmEnabled }"
+          :class="{
+            'lyric-blur-bg-img--rhythm': isBlurBackgroundRhythmEnabled,
+            'is-loaded': blurImgLoaded,
+          }"
+          @load="blurImgLoaded = true"
         />
         <LyricFluidBackground
           :cover-url="settledBlurCoverUrl"
@@ -931,9 +937,15 @@ onUnmounted(() => {
   object-fit: cover;
   filter: blur(40px);
   transform: scale(1.2);
+  opacity: 0;
   transition:
     opacity 0.8s ease,
     transform 0.8s ease;
+}
+
+/* 解码完成后渐入；律动模式由流体背景接管视觉，图片保持隐藏 */
+.lyric-blur-bg-img.is-loaded:not(.lyric-blur-bg-img--rhythm) {
+  opacity: 1;
 }
 
 .lyric-blur-bg-img--rhythm {

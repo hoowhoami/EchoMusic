@@ -4,9 +4,11 @@ import { OpeningLyricPlayer } from './amll/OpeningLyricPlayer';
 import '@applemusic-like-lyrics/core/style.css';
 import { useLyricStore } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
+import { useSettingStore } from '@/stores/setting';
 import { createLyricTimeline } from '@/composables/useLyricTimeline';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import DynamicAlbumCover from '@/components/music/DynamicAlbumCover.vue';
+import { isLyricLineFiltered } from '@/utils/lyricFilter';
 import { useLyricSkin } from './composables/useLyricSkin';
 import {
   AMLL_TEXT_COLOR_FALLBACK,
@@ -19,13 +21,29 @@ import { afterPaint } from '@/utils/afterPaint';
 
 const lyricStore = useLyricStore();
 const playerStore = usePlayerStore();
+const settingStore = useSettingStore();
 const { currentTrack } = usePlayerControls();
 const { settings } = useLyricSkin(HOST_SKIN_KEYS.amll, LYRIC_SKIN_AMLL_DEFAULTS);
 
+// 与 LyricScroller 共用的全局歌词过滤配置
+const lyricFilterConfig = computed(() => ({
+  enabled: settingStore.lyricFilterEnabled,
+  pattern: settingStore.lyricFilterPattern,
+}));
+
+// AMLL 引擎按时间定位当前行，直接剔除被过滤行即可让引擎自动跳到相邻可见行；
+// 未启用过滤时保持原数组引用，避免行数组无谓重建。
+const visibleLines = computed(() => {
+  const config = lyricFilterConfig.value;
+  if (!config.enabled) return lyricStore.displayLines;
+  return lyricStore.displayLines.filter((line) => !isLyricLineFiltered(line, config));
+});
+
 // AMLL 要求传入数组内部信息不得修改：computed 每次重新构建全新数组，
 // 始终保留译文和音译数据；显示开关只改变可见性，不重建时间轴和歌词组。
+// 依赖 visibleLines 引用与「注音」偏好，切歌 / 过滤规则变化时才会重建。
 const lyricLines = computed(() =>
-  buildAmllLyricLines(lyricStore.displayLines, 'both', lyricStore.showRomanizationAsRuby),
+  buildAmllLyricLines(visibleLines.value, 'both', lyricStore.showRomanizationAsRuby),
 );
 
 // 直接使用 AMLL core 实例：手动管理生命周期，命令式驱动时间轴，
