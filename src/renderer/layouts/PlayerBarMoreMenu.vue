@@ -14,7 +14,7 @@ import SleepTimerPopover from '@/components/player/SleepTimerPopover.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
 import PluginIcon from '@/plugins/PluginIcon.vue';
-import { iconDots, iconSlidersHorizontal } from '@/icons';
+import { iconChevronLeft, iconDots, iconSlidersHorizontal } from '@/icons';
 import { useSettingStore } from '@/stores/setting';
 import {
   emptyPlayerBarLayout,
@@ -115,11 +115,11 @@ const handleDocumentMousedown = (event: MouseEvent) => {
   closeFloatingPanels();
 };
 
-const layoutZones: { value: PlayerBarPlacement; ariaLabel: string }[] = [
-  { value: 'center', ariaLabel: '播放控制区按钮' },
-  { value: 'left', ariaLabel: '歌曲信息区按钮' },
-  { value: 'right', ariaLabel: '功能按钮区按钮' },
-  { value: 'more', ariaLabel: '更多菜单按钮' },
+const layoutZones: { value: PlayerBarPlacement; ariaLabel: string; label: string }[] = [
+  { value: 'center', ariaLabel: '播放控制区按钮', label: '播放控制' },
+  { value: 'left', ariaLabel: '歌曲信息区按钮', label: '歌曲信息' },
+  { value: 'right', ariaLabel: '功能按钮区按钮', label: '功能按钮' },
+  { value: 'more', ariaLabel: '更多菜单按钮', label: '更多' },
 ];
 const previewLayoutZones = computed(() => layoutZones.filter((zone) => zone.value !== 'more'));
 const moreLayoutZone = computed(() => layoutZones.find((zone) => zone.value === 'more'));
@@ -330,7 +330,7 @@ onBeforeUnmount(() => {
         <Tooltip
           v-for="item in visibleMenuItems"
           :key="item.key"
-          :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
+          :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : undefined"
         >
           <template #trigger>
             <button
@@ -369,7 +369,19 @@ onBeforeUnmount(() => {
       aria-label="编辑播放栏布局"
     >
       <div class="playerbar-more-heading">
-        <span>编辑布局</span>
+        <div class="playerbar-more-heading-actions">
+          <Button
+            variant="ghost"
+            size="none"
+            class="playerbar-edit-entry"
+            aria-label="返回更多功能"
+            tooltip="返回更多功能"
+            @click="editMode = false"
+          >
+            <Icon :icon="iconChevronLeft" width="17" height="17" />
+          </Button>
+          <span>编辑布局</span>
+        </div>
         <div class="playerbar-more-heading-actions">
           <button
             type="button"
@@ -380,6 +392,8 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
+
+      <p class="playerbar-layout-hint">拖动按钮调整位置，上方复选框控制徽标显示。</p>
 
       <div ref="boardRef" class="playerbar-layout-board" aria-label="播放栏按钮布局">
         <div class="playerbar-layout-preview">
@@ -405,6 +419,7 @@ onBeforeUnmount(() => {
           </div>
           <template v-for="zone in previewLayoutZones" :key="zone.value">
             <div class="playerbar-layout-zone" :class="`zone-${zone.value}`">
+              <span class="playerbar-layout-zone-label">{{ zone.label }}</span>
               <div
                 class="playerbar-layout-zone-list"
                 :data-playerbar-placement-list="zone.value"
@@ -589,8 +604,8 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--icon-main);
   transition:
-    color 0.12s ease,
-    transform 0.12s ease;
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    background-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .playerbar-more-anchor {
@@ -600,17 +615,17 @@ onBeforeUnmount(() => {
 .playerbar-more-trigger:hover,
 .playerbar-more-trigger[aria-expanded='true'] {
   color: var(--color-primary-text);
-  transform: scale(1.08);
+  background: var(--control-hover-bg);
 }
 </style>
 
 <style>
 .playerbar-more-popover.echo-popover-content {
-  width: 264px;
+  width: 280px;
   max-width: calc(100vw - 24px);
   overflow: visible;
-  padding: 9px;
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
+  padding: 8px;
+  border: 1px solid var(--border-strong);
 }
 
 .playerbar-more-popover.echo-popover-content.is-editing {
@@ -645,9 +660,12 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 4px 6px 8px;
-  font-size: 12px;
-  font-weight: 700;
+  min-height: 36px;
+  padding: 0 4px 8px 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .playerbar-more-heading-actions {
@@ -659,16 +677,16 @@ onBeforeUnmount(() => {
 
 .playerbar-reset {
   min-height: 28px;
-  padding: 4px 7px;
+  padding: 4px 8px;
   border-radius: var(--radius-control);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .playerbar-edit-entry {
   display: inline-flex;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-control);
@@ -678,6 +696,14 @@ onBeforeUnmount(() => {
 .playerbar-edit-entry:hover {
   color: var(--color-primary-text);
   background: var(--control-hover-bg);
+}
+
+.playerbar-reset,
+.playerbar-edit-entry,
+.playerbar-chip-badge-check {
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .playerbar-use-grid {
@@ -690,15 +716,18 @@ onBeforeUnmount(() => {
   position: relative;
   display: flex;
   min-width: 0;
-  height: 34px;
+  min-height: 38px;
   align-items: center;
-  gap: 9px;
-  padding: 0 8px;
+  gap: 10px;
+  padding: 8px 10px;
   border-radius: var(--radius-item);
   color: var(--color-text-main);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 500;
   text-align: left;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .playerbar-use-item:hover:not(:disabled),
@@ -729,35 +758,30 @@ onBeforeUnmount(() => {
 
 .playerbar-layout-board {
   display: flex;
-  min-width: 780px;
+  min-width: 0;
   flex-direction: column;
   gap: 9px;
   overflow-x: auto;
   padding: 10px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
   border-radius: var(--radius-card);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--floating-surface-bg) 92%, transparent),
-    color-mix(in srgb, var(--control-muted-bg) 70%, transparent)
-  );
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
+  background: var(--control-muted-bg);
   scrollbar-width: thin;
 }
 
 .playerbar-layout-preview {
   display: grid;
   grid-template-columns:
-    minmax(208px, 1.12fr)
-    minmax(300px, 1.68fr)
-    minmax(208px, 1.12fr);
+    minmax(0, 1fr)
+    minmax(0, 1.4fr)
+    minmax(0, 1fr);
   grid-template-areas:
     'left-skeleton center-skeleton right-skeleton'
     'left center right';
-  grid-template-rows: 42px 68px;
+  grid-template-rows: 42px auto;
   align-items: center;
   gap: 7px 12px;
-  min-width: 750px;
+  min-width: 0;
   padding: 9px 12px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
   border-radius: var(--radius-card);
@@ -831,8 +855,8 @@ onBeforeUnmount(() => {
 }
 
 .playerbar-skeleton-controls span:nth-child(2) {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   margin-top: -5px;
   background: color-mix(in srgb, var(--color-primary) 16%, transparent);
 }
@@ -866,15 +890,15 @@ onBeforeUnmount(() => {
 .playerbar-layout-zone {
   position: relative;
   min-width: 0;
-  padding: 3px;
-  border: 0;
-  border-radius: var(--radius-card);
-  background: transparent;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-item);
+  background: var(--floating-surface-bg);
 }
 
 .playerbar-layout-zone.zone-center {
   grid-area: center;
-  background: color-mix(in srgb, var(--floating-surface-bg) 42%, transparent);
+  background: var(--floating-surface-bg);
 }
 
 .playerbar-layout-zone.zone-left {
@@ -891,7 +915,7 @@ onBeforeUnmount(() => {
 
 .playerbar-layout-more-shelf {
   position: relative;
-  min-width: 750px;
+  min-width: 0;
   padding: 24px 10px 8px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
   border-radius: var(--radius-card);
@@ -925,7 +949,7 @@ onBeforeUnmount(() => {
 }
 
 .playerbar-layout-zone.zone-center .playerbar-layout-zone-list {
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .playerbar-layout-zone.zone-more .playerbar-layout-zone-list {
@@ -943,9 +967,12 @@ onBeforeUnmount(() => {
   padding: 0;
   border-radius: var(--radius-item);
   color: var(--color-text-main);
-  background: color-mix(in srgb, var(--floating-surface-bg) 78%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
-  box-shadow: 0 1px 2px color-mix(in srgb, #000 7%, transparent);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--border-strong);
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
   cursor: grab;
 }
 
@@ -982,7 +1009,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-control);
   color: var(--color-text-secondary);
   background: transparent;
   cursor: pointer;
@@ -996,7 +1023,8 @@ onBeforeUnmount(() => {
   position: relative;
   width: 14px;
   height: 14px;
-  border: 1.5px solid currentColor;
+  border: 1px solid var(--control-checkbox-border);
+  background: var(--control-checkbox-bg);
   border-radius: var(--radius-micro);
 }
 
@@ -1005,7 +1033,7 @@ onBeforeUnmount(() => {
 }
 
 .playerbar-chip-badge-check.active .playerbar-chip-check-box {
-  border-color: var(--color-primary-text);
+  border-color: var(--control-checkbox-active-border);
   background: var(--color-primary);
 }
 
@@ -1016,13 +1044,14 @@ onBeforeUnmount(() => {
   top: 1px;
   width: 4.5px;
   height: 8px;
-  border: solid var(--color-on-primary, #fff);
+  border: solid var(--control-checkbox-indicator);
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
 }
 
 .playerbar-chip-badge-check:hover {
   color: var(--color-primary-text);
+  background: var(--control-hover-bg);
 }
 
 .playerbar-chip-badge-label {
@@ -1091,6 +1120,47 @@ onBeforeUnmount(() => {
 
 .playerbar-sort-chosen {
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+
+.playerbar-layout-hint {
+  margin: 0;
+  padding: 0 8px 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.playerbar-layout-zone-label {
+  display: block;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 640px) {
+  .playerbar-layout-preview {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'left' 'center' 'right';
+    grid-template-rows: auto;
+    padding: 8px;
+    gap: 8px;
+  }
+  .playerbar-skeleton-left,
+  .playerbar-skeleton-center,
+  .playerbar-skeleton-right {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playerbar-use-item,
+  .playerbar-layout-chip,
+  .playerbar-reset,
+  .playerbar-edit-entry,
+  .playerbar-chip-badge-check,
+  .playerbar-more-trigger {
+    transition: none;
+  }
 }
 
 @media (max-width: 420px) {
