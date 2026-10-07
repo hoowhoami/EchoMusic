@@ -627,7 +627,6 @@ watch(account, () => {
   height: 32px;
   flex-shrink: 0;
   border-radius: var(--radius-control);
-  background: var(--color-bg-dialog);
 }
 .order-position :deep(.input-number-field) {
   padding-left: 10px;

@@ -31,7 +31,10 @@ const isWindows = window.electron?.platform === 'win32';
           @update:model-value="setFrostedKeepOnBlur"
         />
       </div>
-      <p class="effects-status">实验性选项，开启后移动窗口时会暂时切换为系统毛玻璃（Windows 10 上会暂时丢失模糊），切换立即生效</p>
+      <p class="effects-status">
+        实验性选项，开启后移动窗口时会暂时切换为系统毛玻璃（Windows 10
+        上会暂时丢失模糊），切换立即生效
+      </p>
     </template>
     <p
       v-if="error || setting.windowBackgroundUnavailableReason"
