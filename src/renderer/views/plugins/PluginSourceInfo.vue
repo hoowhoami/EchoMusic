@@ -6,7 +6,7 @@ defineProps<{ name: string }>();
 
 <template>
   <div class="plugin-source-info">
-    <span class="plugin-source-label">来源:</span>
+    <span class="plugin-source-label" v-text="'来源: '" />
     <Tooltip :content="name" overflow-only>
       <template #trigger>
         <span
@@ -30,6 +30,7 @@ defineProps<{ name: string }>();
 }
 .plugin-source-label {
   flex-shrink: 0;
+  white-space: pre;
 }
 .plugin-source-name {
   min-width: 0;
