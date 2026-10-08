@@ -37,8 +37,7 @@ export function useLyricPageTransition() {
       opacity: style.opacity,
       cover: bounds && bounds.width > 0 ? bounds : null,
       clipOpacities: active.clips?.map((clip) => getComputedStyle(clip).opacity) as
-        | [string, string]
-        | undefined,
+        [string, string] | undefined,
     };
   };
 

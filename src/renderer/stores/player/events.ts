@@ -2,13 +2,7 @@ import type { Song } from '@/models/song';
 
 /** 播放生命周期事件名 */
 export type PlayerEventName =
-  | 'trackchange'
-  | 'play'
-  | 'pause'
-  | 'ended'
-  | 'seek'
-  | 'error'
-  | 'timeupdate';
+  'trackchange' | 'play' | 'pause' | 'ended' | 'seek' | 'error' | 'timeupdate';
 
 /** 播放事件统一负载，携带当前播放状态快照，订阅方无需再单独查询 */
 export interface PlayerEventPayload {

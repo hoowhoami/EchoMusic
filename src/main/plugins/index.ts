@@ -589,8 +589,7 @@ const scanPluginDescriptors = async (): Promise<EchoPluginDescriptor[]> => {
     try {
       const descriptor = await toDescriptor(directory, entry.name, enabledState);
       const source = getKvStorage().get(getPluginInstallSourceKey(descriptor.id)) as
-        | EchoPluginDescriptor['installSource']
-        | null;
+        EchoPluginDescriptor['installSource'] | null;
       if (source?.kind === 'local' || source?.kind === 'marketplace') {
         descriptor.installSource = source;
       }

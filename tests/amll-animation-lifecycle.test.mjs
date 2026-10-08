@@ -50,8 +50,8 @@ class Engine {
   update() {
     for (const group of this.currentLyricGroups) {
       if (group.element.parentElement && !group.isInSight) {
-        // Core is about to drop the word arrays and their DOM.
-        assert.ok(group.animations.every((a) => a.cancelled && a.effect === null));
+        // Core 0.6 detaches the group while retaining words and effects.
+        assert.ok(group.animations.every((a) => !a.cancelled && a.effect));
         group.element.parentElement = null;
       }
     }
@@ -64,6 +64,9 @@ class Engine {
   }
   dispose() {
     assert.equal(this.dots.effect, null);
+    for (const group of this.currentLyricGroups) {
+      for (const animation of group.animations) animation.cancel();
+    }
     this.disposed = true;
   }
 }
@@ -79,7 +82,7 @@ function group(inSight, mounted = true) {
   return { isInSight: inSight, element: element(animations, mounted), animations };
 }
 
-test('leaving lyrics release effects and callbacks before their DOM is discarded', () => {
+test('leaving lyrics retain animations for reuse when core remounts their DOM', () => {
   const player = new OpeningLyricPlayer();
   const leaving = group(false),
     visible = group(true),
@@ -87,16 +90,16 @@ test('leaving lyrics release effects and callbacks before their DOM is discarded
   player.currentLyricGroups = [leaving, visible, detached];
   player.update(16);
   for (const a of leaving.animations) {
-    assert.equal(a.effect, null);
-    assert.equal(a.onfinish, null);
-    assert.equal(a.oncancel, null);
+    assert.ok(a.effect);
+    assert.equal(typeof a.onfinish, 'function');
+    assert.equal(typeof a.oncancel, 'function');
   }
   assert.equal(visible.element.queries, 0);
   assert.equal(detached.element.queries, 0);
   assert.ok(visible.animations.every((a) => a.effect && !a.cancelled));
   // Steady playback does not query animations again or touch visible word effects.
   for (let i = 0; i < 60; i++) player.update(16);
-  assert.equal(leaving.element.queries, 1);
+  assert.equal(leaving.element.queries, 0);
   assert.equal(visible.element.queries, 0);
 });
 
@@ -115,10 +118,13 @@ test('replacing lyrics frees old words, preserves interlude animations and initi
 
 test('disposing frees persistent animations, disconnects observation and drops group references', () => {
   const player = new OpeningLyricPlayer();
-  player.currentLyricGroups = [group(true)];
+  const visible = group(true);
+  const detached = group(false, false);
+  player.currentLyricGroups = [visible, detached];
   player.dispose();
   assert.equal(player.disposed, true);
   assert.equal(player.disconnected, true);
   assert.equal(player.dots.effect, null);
+  assert.ok([...visible.animations, ...detached.animations].every((a) => a.cancelled));
   assert.deepEqual(player.currentLyricGroups, []);
 });

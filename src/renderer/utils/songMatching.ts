@@ -233,11 +233,9 @@ const extractAlbumAudioId = (item: unknown): string | number | undefined => {
     audio_info?: unknown;
   };
   const base = record?.base as
-    | { album_audio_id?: unknown; mixsongid?: unknown; MixSongID?: unknown }
-    | undefined;
+    { album_audio_id?: unknown; mixsongid?: unknown; MixSongID?: unknown } | undefined;
   const audioInfo = record?.audio_info as
-    | { album_audio_id?: unknown; mixsongid?: unknown; MixSongID?: unknown }
-    | undefined;
+    { album_audio_id?: unknown; mixsongid?: unknown; MixSongID?: unknown } | undefined;
   return normalizePositiveNumericId(
     record?.album_audio_id ??
       record?.mixsongid ??

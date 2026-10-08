@@ -7,12 +7,7 @@ import type { WindowBackground } from '../../shared/windowBackground';
 export const supportsWindowsAccent = () => Boolean(getNativePlatform());
 
 type CompositionMode =
-  | 'none'
-  | 'clear'
-  | 'electron-transparent'
-  | 'accent-acrylic'
-  | 'accent-acrylic-keep'
-  | 'acrylic';
+  'none' | 'clear' | 'electron-transparent' | 'accent-acrylic' | 'accent-acrylic-keep' | 'acrylic';
 
 const active = new WeakMap<BrowserWindow, { mode: CompositionMode; tint: number | undefined }>();
 

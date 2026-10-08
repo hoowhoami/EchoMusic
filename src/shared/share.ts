@@ -2,12 +2,7 @@ export const SHARE_SCHEME = 'echomusic';
 export const SHARE_WEB_BASE_URL = 'https://hoowhoami.github.io/EchoMusic/share/';
 
 export type ShareResourceType =
-  | 'song'
-  | 'playlist'
-  | 'artist'
-  | 'album'
-  | 'plugin'
-  | 'listen-together';
+  'song' | 'playlist' | 'artist' | 'album' | 'plugin' | 'listen-together';
 export type ShareTargetQuery = Record<string, string>;
 
 export interface ShareTarget {

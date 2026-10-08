@@ -3,12 +3,15 @@ import { DEFAULT_THEME_ACCENT } from '../../shared/themePalette';
 import { independentWindowColorVariables } from '@/theme/colors';
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import SliderRoot from '@/components/ui/SliderRoot.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import ProgressBusyOverlay from '@/components/player/ProgressBusyOverlay.vue';
 import MiniLyricPanel from './MiniLyricPanel.vue';
 import { useVirtualList } from '@/composables/useVirtualList';
 import { usePlaybackProgressStatus } from '@/composables/usePlaybackProgressStatus';
+import { useDeferredSeek } from '@/composables/useDeferredSeek';
 import {
   iconHeart,
   iconHeartFilled,
@@ -73,8 +76,18 @@ const shellDirectionHold = ref<MiniPlayerExpandDirection | null>(null);
 const isPreparingExpand = ref(false);
 const preparingExpandedMode = ref<'queue' | 'lyric' | null>(null);
 const isHovered = ref(false);
-const isDraggingSeek = ref(false);
-const pendingSeekRatio = ref<number | null>(null);
+const {
+  isDragging: isDraggingSeek,
+  progressValue,
+  handleStart: handleSeekStart,
+  handleValueUpdate: handleSeekUpdate,
+  handleCommit: handleSeekCommit,
+  handleEnd: handleSeekEnd,
+  handleCancel: handleSeekCancel,
+} = useDeferredSeek({
+  getCurrentTime: () => playback.value?.currentTime ?? 0,
+  seek: commitMiniSeek,
+});
 const isVolumeOpen = ref(false);
 const isDraggingVolume = ref(false);
 let volumeCloseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -96,20 +109,6 @@ const activeShellDirection = computed(() => {
 const volumePercent = computed(() =>
   Math.round(normalizePlayerVolume(playback.value?.volume ?? 0)),
 );
-
-const progressPercent = computed(() => {
-  const duration = playback.value?.duration ?? 0;
-  if (duration <= 0) return 0;
-  return Math.min(100, Math.max(0, ((playback.value?.currentTime ?? 0) / duration) * 100));
-});
-
-// 拖动 seek 时优先显示拖动位置，避免 120ms 回传造成的跳动
-const displayPercent = computed(() => {
-  if (isDraggingSeek.value && pendingSeekRatio.value !== null) {
-    return Math.min(100, Math.max(0, pendingSeekRatio.value * 100));
-  }
-  return progressPercent.value;
-});
 
 const volumeIcon = computed(() => {
   const value = playback.value?.volume ?? 0;
@@ -524,34 +523,19 @@ const adjustVolume = (delta: number) => {
   }
 };
 
-const setVolumeFromEvent = (event: PointerEvent, sliderEl: HTMLElement) => {
-  // 横向轨道保持在 mini 窗口内部，不触发 BrowserWindow 尺寸变化。
-  const track = sliderEl.querySelector('.mini-volume-track') as HTMLElement | null;
-  const rect = (track ?? sliderEl).getBoundingClientRect();
-  if (rect.width <= 0) return;
-  const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-  setVolume(ratio * 100);
+const handleVolumeValueUpdate = (value: number[] | undefined) => {
+  if (playback.value && value?.length) setVolume(value[0]);
 };
 
-const handleVolumePointerDown = (event: PointerEvent) => {
+const handleVolumePointerDown = () => {
   if (!playback.value) return;
   clearVolumeCloseTimer();
   openVolume();
-  const el = event.currentTarget as HTMLElement;
   isDraggingVolume.value = true;
-  el.setPointerCapture(event.pointerId);
-  setVolumeFromEvent(event, el);
-};
-
-const handleVolumePointerMove = (event: PointerEvent) => {
-  if (!isDraggingVolume.value) return;
-  setVolumeFromEvent(event, event.currentTarget as HTMLElement);
 };
 
 const handleVolumePointerUp = (event: PointerEvent) => {
   if (!isDraggingVolume.value) return;
-  const el = event.currentTarget as HTMLElement;
-  if (el.hasPointerCapture(event.pointerId)) el.releasePointerCapture(event.pointerId);
   isDraggingVolume.value = false;
   // Pointer capture can defer leave events until release; check the actual hit target.
   isVolumeHovered = !!document
@@ -571,39 +555,14 @@ const handleVolumeWheel = (event: WheelEvent) => {
   scheduleVolumeClose();
 };
 
-const ratioFromEvent = (event: PointerEvent, el: HTMLElement) => {
-  const track = el.querySelector<HTMLElement>('.mini-progress-track');
-  const rect = (track ?? el).getBoundingClientRect();
-  if (rect.width <= 0) return 0;
-  return Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-};
-
-const handleSeekPointerDown = (event: PointerEvent) => {
-  if (!playback.value) return;
-  const el = event.currentTarget as HTMLElement;
-  isDraggingSeek.value = true;
-  pendingSeekRatio.value = ratioFromEvent(event, el);
-  el.setPointerCapture(event.pointerId);
-};
-
-const handleSeekPointerMove = (event: PointerEvent) => {
-  if (!isDraggingSeek.value) return;
-  pendingSeekRatio.value = ratioFromEvent(event, event.currentTarget as HTMLElement);
-};
-
-const handleSeekPointerUp = (event: PointerEvent) => {
-  if (!isDraggingSeek.value) return;
-  const el = event.currentTarget as HTMLElement;
-  const ratio = ratioFromEvent(event, el);
-  isDraggingSeek.value = false;
-  pendingSeekRatio.value = null;
-  if (el.hasPointerCapture(event.pointerId)) el.releasePointerCapture(event.pointerId);
+function commitMiniSeek(value: number) {
   const duration = playback.value?.duration ?? 0;
-  if (duration > 0) {
+  if (duration > 0 && Number.isFinite(value)) {
+    const time = Math.min(duration, Math.max(0, value));
     // 乐观更新本地进度，避免等待 ~120ms 回传时进度条回跳
     if (playback.value) {
       const now = Date.now();
-      playback.value.currentTime = ratio * duration;
+      playback.value.currentTime = time;
       playback.value.updatedAt = now;
       playback.value.seekTimestamp = now;
       playback.value.clock = buildPlaybackClockSnapshot({
@@ -618,9 +577,9 @@ const handleSeekPointerUp = (event: PointerEvent) => {
       });
       refreshLiveLyricIndex({ forceSync: true, resetStable: true });
     }
-    command({ type: 'seek', value: ratio * duration });
+    command({ type: 'seek', value: time });
   }
-};
+}
 
 let expandFrameTimer: ReturnType<typeof setTimeout> | null = null;
 let expandRequestSeq = 0;
@@ -1050,41 +1009,48 @@ onUnmounted(() => {
             >
               <Icon :icon="volumeIcon" width="19" height="19" />
             </button>
-            <div
-              class="mini-volume-slider echo-slider no-drag"
-              @pointerdown="handleVolumePointerDown"
-              @pointermove="handleVolumePointerMove"
-              @pointerup="handleVolumePointerUp"
-              @pointercancel="handleVolumePointerUp"
-            >
-              <div class="mini-volume-track">
-                <div class="mini-volume-value" :style="{ width: `${volumePercent}%` }"></div>
-                <div
-                  class="mini-volume-thumb echo-slider-thumb"
-                  :style="{ left: `${volumePercent}%` }"
-                ></div>
-              </div>
+            <div class="mini-volume-slider no-drag">
+              <SliderRoot
+                class="mini-volume-track echo-slider"
+                :model-value="[volumePercent]"
+                :disabled="!playback"
+                @pointerdown.capture="handleVolumePointerDown"
+                @pointerup="handleVolumePointerUp"
+                @pointercancel="handleVolumePointerUp"
+                @update:model-value="handleVolumeValueUpdate"
+              >
+                <SliderTrack class="echo-slider-track">
+                  <SliderRange class="echo-slider-range" />
+                </SliderTrack>
+                <SliderThumb class="echo-slider-thumb" aria-label="音量" />
+              </SliderRoot>
               <span class="mini-volume-label">{{ volumePercent }}</span>
             </div>
           </div>
         </div>
 
-        <div
-          class="mini-progress echo-slider no-drag"
+        <SliderRoot
+          class="mini-progress echo-slider echo-slider-progress no-drag"
+          :model-value="progressValue"
+          :max="playback?.duration || 100"
+          :step="0.1"
+          :disabled="!playback || playback.duration <= 0"
           :data-dragging="isDraggingSeek"
           :aria-busy="isProgressBusy"
           :aria-label="progressAriaLabel"
-          @pointerdown="handleSeekPointerDown"
-          @pointermove="handleSeekPointerMove"
-          @pointerup="handleSeekPointerUp"
-          @pointercancel="handleSeekPointerUp"
+          @pointerdown.capture="handleSeekStart"
+          @update:model-value="handleSeekUpdate"
+          @value-commit="handleSeekCommit"
+          @pointerup="handleSeekEnd"
+          @pointercancel="handleSeekCancel"
         >
-          <div class="mini-progress-track">
-            <div class="mini-progress-value" :style="{ width: `${displayPercent}%` }">
+          <SliderTrack class="echo-slider-track">
+            <SliderRange class="echo-slider-range">
               <ProgressBusyOverlay v-if="isProgressBusy" />
-            </div>
-          </div>
-        </div>
+            </SliderRange>
+          </SliderTrack>
+          <SliderThumb class="echo-slider-thumb" :aria-label="progressAriaLabel" />
+        </SliderRoot>
       </div>
 
       <MiniLyricPanel
@@ -1510,43 +1476,10 @@ button:disabled {
 
 .mini-volume-track {
   position: relative;
+  display: flex;
+  align-items: center;
   flex: 1 1 auto;
   height: 12px;
-  margin-inline: calc(var(--slider-thumb-size) / 2);
-  border-radius: 999px;
-}
-
-.mini-volume-track::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--slider-track-color);
-  transform: translateY(-50%);
-}
-
-.mini-volume-value {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  height: 4px;
-  border-radius: inherit;
-  background: var(--slider-accent);
-  transform: translateY(-50%);
-}
-
-.mini-volume-thumb {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.mini-volume-slider:hover .mini-volume-track::before,
-.mini-progress:hover .mini-progress-track::before {
-  background: var(--slider-track-hover-color);
 }
 
 .mini-volume-label {
@@ -1569,69 +1502,8 @@ button:disabled {
   background: transparent;
   overflow: visible;
   cursor: pointer;
-}
-
-.mini-progress-value {
-  position: relative;
-  z-index: 1;
-  top: 50%;
-  height: 4px;
-  width: 0;
-  border-radius: inherit;
-  background: var(--color-primary);
-  min-width: 0;
-  transform: translateY(-50%);
-  transition: width 0.12s linear;
-}
-
-.mini-progress[data-dragging='true'] .mini-progress-value {
-  transition: none;
-}
-
-.mini-progress-track {
-  position: absolute;
-  inset: 0 calc(var(--slider-thumb-size) / 2);
-  border-radius: inherit;
-}
-
-.mini-progress-track::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--slider-track-color);
-  transform: translateY(-50%);
-}
-
-.mini-progress-value::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  right: calc(var(--slider-thumb-size) / -2);
-  width: var(--slider-thumb-size);
-  height: var(--slider-thumb-size);
-  border-radius: 999px;
-  box-sizing: border-box;
-  border: 0;
-  background: var(--slider-thumb-color);
-  box-shadow: var(--slider-thumb-shadow);
-  opacity: 0;
-  transform: translateY(-50%);
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
-}
-
-.mini-progress:is(:hover, [data-dragging='true']) .mini-progress-value::after {
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mini-progress-value,
-  .mini-progress-value::after {
-    transition: none;
-  }
+  display: flex;
+  align-items: center;
 }
 
 .mini-queue {

@@ -234,8 +234,7 @@ const setupSortables = async () => {
         onEnd: (event) => {
           const key = event.item.dataset.playerbarKey;
           const placement = event.to.dataset.playerbarPlacementList as
-            | PlayerBarPlacement
-            | undefined;
+            PlayerBarPlacement | undefined;
           const keys = readBoardKeys();
           restoreDraggedItem();
           if (key && placement) saveBoardMove(key, placement, keys);

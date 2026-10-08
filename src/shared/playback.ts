@@ -29,13 +29,7 @@ export const matchesPendingSeekTarget = (
 };
 
 export type PlaybackClockReason =
-  | 'tick'
-  | 'seek'
-  | 'load'
-  | 'play'
-  | 'pause'
-  | 'gapless'
-  | 'recover';
+  'tick' | 'seek' | 'load' | 'play' | 'pause' | 'gapless' | 'recover';
 
 export interface PlaybackClockSnapshot {
   trackId: string | null;

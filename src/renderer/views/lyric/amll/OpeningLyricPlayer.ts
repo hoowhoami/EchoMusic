@@ -28,7 +28,7 @@ export class OpeningLyricPlayer extends LyricPlayer {
       romanization ? 'flex' : 'none',
     );
     this.applySecondaryVisibility();
-    this.secondaryLayoutIndex = this.timelineState.scrollToIndex;
+    this.secondaryLayoutIndex = this.timelineController.getSnapshot().scrollToIndex;
   }
 
   private applySecondaryVisibility() {
@@ -54,31 +54,22 @@ export class OpeningLyricPlayer extends LyricPlayer {
     this.size[1] = element.clientHeight;
   }
 
-  override calcLayout(sync = false, force = false): Promise<void> {
+  override calcLayout(reason: Parameters<LyricPlayer['calcLayout']>[0]): void {
     // The base constructor may call this before the field initializer runs.
-    // AMLL's sync flag removes stagger delays; only force bypasses its springs.
     // Revealed/cull-entering lines can report their new heights across several
-    // ResizeObserver deliveries. Snap those sync layouts for the same hot line;
+    // ResizeObserver deliveries. Snap those resize layouts for the same hot line;
     // normal following and user scrolling still keep their springs.
     const secondaryLayout =
       this.secondaryLayoutIndex !== undefined &&
-      this.secondaryLayoutIndex === this.timelineState?.scrollToIndex;
+      this.secondaryLayoutIndex === this.timelineController?.getSnapshot().scrollToIndex;
     if (!secondaryLayout) this.secondaryLayoutIndex = undefined;
-    return super.calcLayout(
-      sync,
-      force || this.openingLayout !== false || (sync && secondaryLayout),
+    // 0.6 uses layout reasons. Continuous scrolling snaps positions without
+    // resetting the timeline, interlude or manual-scroll state.
+    super.calcLayout(
+      this.openingLayout !== false || (reason === 'resize' && secondaryLayout)
+        ? 'continuous-scroll'
+        : reason,
     );
-  }
-
-  override update(delta = 0): void {
-    // Core's next update tears down these groups. Query animations only when a
-    // mounted group leaves the viewport, never on every visible word/frame.
-    for (const group of this.currentLyricGroups) {
-      if (group.element.parentElement && !group.isInSight) {
-        releaseAnimations(group.element);
-      }
-    }
-    super.update(delta);
   }
 
   override setLyricLines(...args: Parameters<LyricPlayer['setLyricLines']>): void {

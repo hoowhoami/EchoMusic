@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import Tag from '@/components/ui/Tag.vue';
+import SliderRoot from '@/components/ui/SliderRoot.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { computed, nextTick, ref, shallowRef, useId, watch } from 'vue';
 import { useThrottleFn } from '@vueuse/core';
 import {
-  SliderRoot,
   SliderTrack,
   SliderRange,
   SliderThumb,

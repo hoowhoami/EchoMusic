@@ -1,11 +1,7 @@
 export type OpenccProfile = 's2t' | 't2s' | 's2tw' | 's2hk';
 
 export type LyricTextConversionMode =
-  | 'none'
-  | 'simplified'
-  | 'traditional'
-  | 'traditional-tw'
-  | 'traditional-hk';
+  'none' | 'simplified' | 'traditional' | 'traditional-tw' | 'traditional-hk';
 
 export const LYRIC_TEXT_CONVERSION_MODES: readonly LyricTextConversionMode[] = [
   'none',

@@ -75,13 +75,7 @@ export const kugouVerificationState = reactive({
   eventId: '',
   verifyInfo: null as KugouVerificationInfo | null,
   status: 'idle' as
-    | 'idle'
-    | 'loading'
-    | 'ready'
-    | 'awaiting-login'
-    | 'verifying'
-    | 'success'
-    | 'error',
+    'idle' | 'loading' | 'ready' | 'awaiting-login' | 'verifying' | 'success' | 'error',
   error: '',
 });
 

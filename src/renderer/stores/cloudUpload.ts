@@ -25,12 +25,7 @@ export type CloudUploadStatus = 'idle' | 'running' | 'completed' | 'aborted';
 export type CloudUploadPhase = 'matching' | 'uploading';
 export type CloudUploadOpenMode = 'start' | 'detail';
 export type CloudUploadMatchStatus =
-  | 'pending'
-  | 'linked'
-  | 'not_found'
-  | 'low_score'
-  | 'no_cloud_ids'
-  | 'failed';
+  'pending' | 'linked' | 'not_found' | 'low_score' | 'no_cloud_ids' | 'failed';
 
 export interface CloudUploadItem {
   name: string;

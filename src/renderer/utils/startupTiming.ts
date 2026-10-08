@@ -9,8 +9,7 @@ export const markStartup = (stage: string) => {
     .getEntriesByType('mark')
     .filter((entry) => entry.name.startsWith('echo:'));
   const navigation = performance.getEntriesByType('navigation')[0] as
-    | PerformanceNavigationTiming
-    | undefined;
+    PerformanceNavigationTiming | undefined;
   logger.info('Startup', stage, {
     ...Object.fromEntries(
       stages.map((entry) => [`${entry.name.slice(5)}Ms`, Math.round(entry.startTime * 10) / 10]),

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import { SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import SliderRoot from '@/components/ui/SliderRoot.vue';
 
 type SliderOrientation = 'horizontal' | 'vertical';
 

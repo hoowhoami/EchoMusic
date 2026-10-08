@@ -3,7 +3,8 @@ import '@/theme/sliders.css';
 import { neutralThemePalette, DEFAULT_THEME_ACCENT } from '../../shared/themePalette';
 import { createAccentPaletteFromPrimary } from '../../shared/accentPalette';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import { SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import SliderRoot from '@/components/ui/SliderRoot.vue';
 import type { NowPlayingCommand, NowPlayingSnapshot } from '../../shared/nowPlaying';
 import { useTaskbarSeek } from './useTaskbarSeek';
 
@@ -281,7 +282,7 @@ button.play {
   cursor: pointer;
 }
 .bar:hover .progress,
-.progress:focus-within {
+.progress:not([data-pointer-focus='true']):has(.echo-slider-thumb:focus-visible) {
   opacity: 1;
 }
 @media (max-width: 260px) {

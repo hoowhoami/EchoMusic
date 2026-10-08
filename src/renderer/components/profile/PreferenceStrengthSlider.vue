@@ -93,7 +93,7 @@ const valueText = computed(() => `${strengthLabel(props.modelValue)}，${props.m
 }
 .preference-strength:has(input:focus-visible) {
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 .preference-strength.is-blocked .preference-strength-value {
   color: var(--color-text-main);

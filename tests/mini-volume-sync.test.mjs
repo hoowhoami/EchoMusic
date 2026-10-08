@@ -45,7 +45,7 @@ test('wheel at zero does not restore old volume', () => {
   const code = transformSync(
     source.slice(
       source.indexOf('const adjustVolume ='),
-      source.indexOf('const setVolumeFromEvent ='),
+      source.indexOf('const handleVolumeValueUpdate ='),
     ),
     { loader: 'ts' },
   ).code;

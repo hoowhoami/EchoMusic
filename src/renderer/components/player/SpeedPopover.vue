@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import { SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import SliderRoot from '@/components/ui/SliderRoot.vue';
 import Popover from '@/components/ui/Popover.vue';
 import Button from '@/components/ui/Button.vue';
 import { iconSpeedometer } from '@/icons';

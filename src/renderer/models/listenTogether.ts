@@ -1,12 +1,7 @@
 import type { Song } from './song';
 
 export type ListenTogetherSessionPhase =
-  | 'idle'
-  | 'joining'
-  | 'creating'
-  | 'joined'
-  | 'leaving'
-  | 'error';
+  'idle' | 'joining' | 'creating' | 'joined' | 'leaving' | 'error';
 
 export type ListenTogetherRoomType = 0 | 1;
 export type ListenTogetherStudyRoomKind = 'official' | 'community';
@@ -144,7 +139,6 @@ export interface ListenTogetherMusicRoomCreateInput extends ListenTogetherCreate
 }
 
 export type ListenTogetherCreateInput =
-  | ListenTogetherStudyRoomCreateInput
-  | ListenTogetherMusicRoomCreateInput;
+  ListenTogetherStudyRoomCreateInput | ListenTogetherMusicRoomCreateInput;
 
 export type ListenTogetherSong = Song;

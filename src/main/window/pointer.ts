@@ -75,8 +75,7 @@ export function installWindowPointerEvents(win: BrowserWindow, options: WindowPo
     // Counters distinguish "the OS never produced a double-click" from "it was
     // dropped by gating" when a transparent/acrylic window misbehaves.
     let monitorDiagnostics:
-      | { installed: boolean; totalDblclick: number; foregroundDblclick: number }
-      | undefined;
+      { installed: boolean; totalDblclick: number; foregroundDblclick: number } | undefined;
     const readDblclickDiagnostics = () => {
       const native = getWindowsDoubleClickMonitor();
       if (native?.getWindowsDoubleClickDiagnostics) {

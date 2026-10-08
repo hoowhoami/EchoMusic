@@ -44,7 +44,14 @@ const ROUTE_TABS = Object.fromEntries(
   ]),
 );
 const { getRouteViewCacheQuery } = load('../src/renderer/utils/routeViewCache.ts');
-const node = (type) => ({ type, children: [], parent: null });
+const node = (type) => ({
+  type,
+  children: [],
+  parent: null,
+  getRootNode() {
+    return this.parent?.getRootNode() ?? this;
+  },
+});
 const detach = (child) => {
   if (child.parent) child.parent.children.splice(child.parent.children.indexOf(child), 1);
 };

@@ -27,11 +27,7 @@ export interface PluginAudioSourceTransformContext extends PluginAudioSourceReso
 }
 
 export type PluginAudioSourceResolveResult =
-  | string
-  | Partial<ResolvedAudioSource>
-  | null
-  | undefined
-  | false;
+  string | Partial<ResolvedAudioSource> | null | undefined | false;
 
 /**
  * null/undefined 表示保持当前候选，false 表示拒绝当前候选并继续播放器兜底链。

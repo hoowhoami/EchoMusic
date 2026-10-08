@@ -12,12 +12,7 @@ export type WindowBackgroundTransparentMode = 'layered' | 'pure';
 export type WindowBackgroundFrostMode = 'none' | 'native' | 'compositor';
 
 export type WindowBackgroundFrostBackend =
-  | 'none'
-  | 'vibrancy'
-  | 'acrylic'
-  | 'accent-acrylic'
-  | 'blur-behind'
-  | 'hyprland-blur';
+  'none' | 'vibrancy' | 'acrylic' | 'accent-acrylic' | 'blur-behind' | 'hyprland-blur';
 
 export interface WindowBackgroundCapabilities {
   strategy: WindowBackgroundStrategyId;

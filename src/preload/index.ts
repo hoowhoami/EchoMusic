@@ -782,15 +782,13 @@ contextBridge.exposeInMainWorld('electron', {
     onTimeUpdate: (
       func: (
         payload:
-          | number
-          | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
+          number | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
       ) => void,
     ) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
         payload:
-          | number
-          | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
+          number | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
       ) => func(payload);
       ipcRenderer.on('player:time-update', listener);
       return () => ipcRenderer.removeListener('player:time-update', listener);

@@ -868,8 +868,7 @@ export interface EchoPluginCompatibility {
 }
 
 export type PluginInstallSource =
-  | { kind: 'local' }
-  | { kind: 'marketplace'; id: string; name: string; url: string };
+  { kind: 'local' } | { kind: 'marketplace'; id: string; name: string; url: string };
 
 export interface EchoPluginDescriptor {
   tags?: string[];

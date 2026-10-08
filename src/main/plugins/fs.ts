@@ -43,8 +43,7 @@ import {
 import { isPathInside, resolvePluginFile, toPortableRelativePath } from './path';
 
 type PluginLocalFilesAccessResult =
-  | { ok: true; plugin: EchoPluginDescriptor }
-  | { ok: false; error: string };
+  { ok: true; plugin: EchoPluginDescriptor } | { ok: false; error: string };
 
 export interface PluginFileApiDependencies {
   getLocalFilesAccess: (pluginId: string) => PluginLocalFilesAccessResult;

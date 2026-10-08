@@ -3,8 +3,7 @@
  * 不转码、不转封装；格式不被设备接受时明确拒绝。
  */
 export type RelaySource =
-  | { kind: 'file'; path: string }
-  | { kind: 'http'; url: string; headers?: Record<string, string> };
+  { kind: 'file'; path: string } | { kind: 'http'; url: string; headers?: Record<string, string> };
 
 export interface DeliveryRequest {
   url: string;

@@ -17,11 +17,10 @@ class Engine {
   size = [0, 0];
   element = { clientWidth: 640, clientHeight: 480 };
   constructor() {
-    this.calcLayout();
+    this.calcLayout('rebuild-view');
   }
-  calcLayout(sync = false, force = false) {
-    this.calls.push({ sync, force });
-    return Promise.resolve();
+  calcLayout(reason) {
+    this.calls.push(reason);
   }
   getElement() {
     return this.element;
@@ -35,37 +34,33 @@ new Function('require', 'module', 'exports', code)(
 );
 const { OpeningLyricPlayer } = module.exports;
 
-test('constructor, settings and initial resize all snap, including synchronous layouts', async () => {
+test('constructor, initial playback, resize and settings layouts all snap', async () => {
   const player = new OpeningLyricPlayer();
-  await player.calcLayout();
-  await player.calcLayout(true);
-  await player.calcLayout(false, false);
+  await player.calcLayout('playback-tick');
+  await player.calcLayout('resize');
+  await player.calcLayout('config-change');
   assert.equal(player.calls.length, 4);
-  assert.ok(player.calls.every((call) => call.force));
-  assert.equal(player.calls[2].sync, true);
+  assert.ok(player.calls.every((reason) => reason === 'continuous-scroll'));
+  assert.equal(player.calls[2], 'continuous-scroll');
 });
 
-test('after opening, normal lyric following uses springs and explicit forced layouts still work', async () => {
+test('after opening, normal lyric following uses springs and explicit continuous scrolling still work', async () => {
   const player = new OpeningLyricPlayer();
   player.finishOpeningLayout();
-  await player.calcLayout();
-  await player.calcLayout(true);
-  await player.calcLayout(false, true);
-  assert.deepEqual(player.calls.slice(1), [
-    { sync: false, force: false },
-    { sync: true, force: false },
-    { sync: false, force: true },
-  ]);
+  await player.calcLayout('playback-tick');
+  await player.calcLayout('resize');
+  await player.calcLayout('continuous-scroll');
+  assert.deepEqual(player.calls.slice(1), ['playback-tick', 'resize', 'continuous-scroll']);
 });
 
 test('reopening starts a fresh initial layout without affecting an already opened player', async () => {
   const previous = new OpeningLyricPlayer();
   previous.finishOpeningLayout();
   const reopened = new OpeningLyricPlayer();
-  await previous.calcLayout(true);
-  await reopened.calcLayout(true);
-  assert.equal(previous.calls.at(-1).force, false);
-  assert.equal(reopened.calls.at(-1).force, true);
+  await previous.calcLayout('resize');
+  await reopened.calcLayout('resize');
+  assert.equal(previous.calls.at(-1), 'resize');
+  assert.equal(reopened.calls.at(-1), 'continuous-scroll');
 });
 
 test('seeded viewport preserves nonzero fallback line heights before the first resize delivery', () => {

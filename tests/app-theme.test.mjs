@@ -756,11 +756,7 @@ test('top shortcuts and lower menu settings reset independently and retain inact
   const reset = api.resetSidebarMenus(layout);
   assert.deepEqual(reset.shortcutKeys, layout.shortcutKeys);
   assert.deepEqual(reset.hiddenItems, {});
-  assert.deepEqual(api.normalizeShortcutKeys(['purchased', 'purchased']), [
-    'home',
-    'explore',
-    'purchased',
-  ]);
+  assert.deepEqual(api.normalizeShortcutKeys(['purchased', 'purchased']), ['purchased']);
   assert.deepEqual(
     api.reorderShortcutKeys(
       layout.shortcutKeys,

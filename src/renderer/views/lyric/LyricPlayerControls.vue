@@ -7,7 +7,8 @@
 import { markRaw, computed, ref, useSlots } from 'vue';
 import { useElementSize, useResizeObserver } from '@vueuse/core';
 import type { IconifyIcon } from '@iconify/types';
-import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import { SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import SliderRoot from '@/components/ui/SliderRoot.vue';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useDeferredSeek } from '@/composables/useDeferredSeek';
 import { usePlaybackProgressStatus } from '@/composables/usePlaybackProgressStatus';

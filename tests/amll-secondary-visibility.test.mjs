@@ -22,7 +22,8 @@ function setup() {
   class Engine {
     currentLyricGroups = [group(), group()];
     time = 12000;
-    timelineState = { scrollToIndex: 1 };
+    timeline = { scrollToIndex: 1 };
+    timelineController = { getSnapshot: () => this.timeline };
     hot = new Set([1]);
     scrollOffset = 95;
     replacements = 0;
@@ -39,8 +40,8 @@ function setup() {
     getElement() {
       return this.root;
     }
-    calcLayout(sync, force) {
-      this.layouts.push({ sync, force });
+    calcLayout(reason) {
+      this.layouts.push(reason);
       return Promise.resolve();
     }
     setLyricLines() {
@@ -73,13 +74,13 @@ test('secondary toggles preserve lyric groups, playback and manual scroll while 
   assert.equal(p.replacements, 0);
   assert.ok(groups.every((g) => g.mainLine.getElement().children[1].style.display === 'none'));
   assert.ok(groups.every((g) => g.mainLine.getElement().children[2].style.display === ''));
-  await p.calcLayout(true);
-  assert.equal(p.layouts.at(-1).force, true);
-  await p.calcLayout();
-  assert.equal(p.layouts.at(-1).force, false, 'normal playback keeps its springs');
-  p.timelineState.scrollToIndex = 2;
-  await p.calcLayout(true);
-  assert.equal(p.layouts.at(-1).force, false, 'next lyric follows normal layout');
+  await p.calcLayout('resize');
+  assert.equal(p.layouts.at(-1), 'continuous-scroll');
+  await p.calcLayout('playback-tick');
+  assert.equal(p.layouts.at(-1), 'playback-tick', 'normal playback keeps its springs');
+  p.timeline.scrollToIndex = 2;
+  await p.calcLayout('resize');
+  assert.equal(p.layouts.at(-1), 'resize', 'next lyric follows normal layout');
   p.setSecondaryVisibility(true, false);
   assert.equal(p['--echo-amll-roman-display'], 'none');
   assert.ok(groups.every((g) => g.mainLine.getElement().children[1].style.display === ''));
@@ -104,12 +105,12 @@ test('replacement lyrics inherit secondary visibility, including unmounted group
 test('delayed measurements snap only the same lyric and fresh data clears that state', async () => {
   const { player: p } = setup();
   p.setSecondaryVisibility(false, false);
-  await p.calcLayout(true);
-  await p.calcLayout(true);
-  assert.ok(p.layouts.every((l) => l.force));
-  await p.calcLayout(false);
-  assert.equal(p.layouts.at(-1).force, false, 'manual scrolling retains normal springs');
+  await p.calcLayout('resize');
+  await p.calcLayout('resize');
+  assert.ok(p.layouts.every((reason) => reason === 'continuous-scroll'));
+  await p.calcLayout('discrete-scroll');
+  assert.equal(p.layouts.at(-1), 'discrete-scroll', 'manual scrolling retains normal springs');
   p.setLyricLines([], 35000);
-  await p.calcLayout(true);
-  assert.equal(p.layouts.at(-1).force, false, 'new lyrics resume ordinary resize behavior');
+  await p.calcLayout('resize');
+  assert.equal(p.layouts.at(-1), 'resize', 'new lyrics resume ordinary resize behavior');
 });

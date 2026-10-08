@@ -242,9 +242,8 @@ export const registerPluginHandlers = (context: IpcContext) => {
     return result;
   };
 
-  ipcRegistry.registerHandler(
-    'plugins:list',
-    (): Promise<PluginListResult> => refreshPluginMetadata(),
+  ipcRegistry.registerHandler('plugins:list', (): Promise<PluginListResult> =>
+    refreshPluginMetadata(),
   );
   ipcRegistry.registerHandler('plugins:get-directory', (): string => getPluginDirectory());
   ipcRegistry.registerHandler('plugins:open-directory', (): string => openPluginDirectory());
@@ -660,9 +659,8 @@ export const registerPluginHandlers = (context: IpcContext) => {
     'plugins:startup:mark',
     (_event, pluginIds: string[]): PluginReportFailureResult => markPluginStartup(pluginIds),
   );
-  ipcRegistry.registerHandler(
-    'plugins:startup:clear',
-    (): PluginReportFailureResult => clearPluginStartup(),
+  ipcRegistry.registerHandler('plugins:startup:clear', (): PluginReportFailureResult =>
+    clearPluginStartup(),
   );
   ipcRegistry.registerHandler(
     'plugins:active-session:set',
@@ -712,9 +710,8 @@ export const registerPluginHandlers = (context: IpcContext) => {
     if (result.ok && isPluginAppIconStorageKey(key)) refreshPluginAppIcons({ force: true });
     return result;
   });
-  ipcRegistry.registerHandler(
-    'plugins:icons:refresh',
-    (): PluginAppIconRefreshResult => refreshPluginAppIcons({ force: true }),
+  ipcRegistry.registerHandler('plugins:icons:refresh', (): PluginAppIconRefreshResult =>
+    refreshPluginAppIcons({ force: true }),
   );
   ipcRegistry.registerHandler(
     'plugins:icons:restore-default-desktop',

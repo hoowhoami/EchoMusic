@@ -386,8 +386,7 @@ const singerInfo = computed<Record<string, unknown> | null>(() => {
     (privilegeData.value.authors as unknown[] | undefined);
   if (!Array.isArray(singerRaw) || singerRaw.length === 0) return null;
   const first = singerRaw.find((item) => typeof item === 'object' && item !== null) as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   return first ?? null;
 });
 

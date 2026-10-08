@@ -4,7 +4,8 @@ import { markRaw, computed, ref, onMounted, onUnmounted, watch, nextTick } from 
 import { useResizeObserver } from '@vueuse/core';
 import type { SongArtist } from '@/models/song';
 import type { IconifyIcon } from '@iconify/types';
-import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import { SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import SliderRoot from '@/components/ui/SliderRoot.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import SleepTimerPopover from '@/components/player/SleepTimerPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';

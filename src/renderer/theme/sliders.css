@@ -10,7 +10,6 @@
   --slider-thumb-border: color-mix(in srgb, var(--slider-tone) 24%, transparent);
   --slider-thumb-shadow:
     inset 0 0 0 0.5px var(--slider-thumb-border), 0 1px 2px rgba(0, 0, 0, 0.12);
-  --slider-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--slider-accent) 22%, transparent);
 
   min-width: 0;
   user-select: none;
@@ -29,15 +28,13 @@
 
 .echo-slider[data-orientation='horizontal'] .echo-slider-track {
   height: var(--slider-track-size, 4px);
-  margin-inline: calc(var(--slider-thumb-size) / 2);
 }
 
 .echo-slider[data-orientation='vertical'] .echo-slider-track {
   width: var(--slider-track-size, 4px);
-  margin-block: calc(var(--slider-thumb-size) / 2);
 }
 
-/* Match Reka's contained thumb path: the fill ends at the thumb center. */
+/* Reka owns thumb positioning along the value axis. Center only the cross axis. */
 .echo-slider[data-orientation='horizontal'] .echo-slider-thumb {
   top: calc(50% - var(--slider-thumb-size) / 2);
 }
@@ -80,15 +77,20 @@
   background: var(--slider-track-hover-color);
 }
 
-.echo-slider-thumb:focus-visible {
-  box-shadow: var(--slider-thumb-shadow), var(--slider-focus-shadow);
+.echo-slider:not([data-pointer-focus='true']) .echo-slider-thumb:focus-visible {
+  /* Keep keyboard focus inside the thumb; pointer focus must not produce a halo. */
+  box-shadow:
+    inset 0 0 0 1px var(--slider-thumb-border),
+    0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 .echo-slider-progress .echo-slider-thumb {
   opacity: 0;
 }
 
-.echo-slider-progress:is(:hover, :focus-within, [data-dragging='true']) .echo-slider-thumb {
+.echo-slider-progress:is(:hover, [data-dragging='true']) .echo-slider-thumb,
+.echo-slider-progress:not([data-pointer-focus='true']):has(.echo-slider-thumb:focus-visible)
+  .echo-slider-thumb {
   opacity: 1;
 }
 
