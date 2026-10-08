@@ -16,7 +16,7 @@ const errorSource = computed(() => (route.query.from as string) || '当前页面
 const copied = ref(false);
 
 const handleGoHome = () => {
-  router.replace('/main/home');
+  router.replace('/main');
 };
 
 const handleGoBack = () => {

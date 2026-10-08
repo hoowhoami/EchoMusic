@@ -100,7 +100,7 @@ test('logout waits for confirmation and profile navigation closes the popover', 
   api.requestLogout();
   assert.deepEqual(calls, []);
   api.logout();
-  assert.deepEqual(calls, ['reset-devices', 'logout', '/main/home']);
+  assert.deepEqual(calls, ['reset-devices', 'logout', '/main']);
   calls.length = 0;
   api.open.value = true;
   api.navigate('/main/profile');

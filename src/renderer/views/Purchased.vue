@@ -368,11 +368,12 @@ onMounted(() => {
           title="已购音乐"
           :coverUrl="coverUrl"
           :hasDetails="true"
+          distribute-details
           :expandedHeight="176"
           :collapsedHeight="56"
         >
           <template #details>
-            <div class="flex flex-col gap-2">
+            <div class="contents">
               <div class="text-[13px] font-semibold text-text-secondary">
                 浏览您已购买的单曲和专辑，随时畅听。
               </div>

@@ -332,8 +332,7 @@ const startLoginVerification = async () => {
   try {
     awaitKugouLoginVerification();
     const currentRoute = router.currentRoute.value;
-    const from =
-      currentRoute.name === 'login' ? '/main/home' : currentRoute.fullPath || '/main/home';
+    const from = currentRoute.name === 'login' ? '/main' : currentRoute.fullPath || '/main';
     await router.push({
       name: 'login',
       query: { from },

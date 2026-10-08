@@ -65,4 +65,7 @@ export type ResolvedAudioSource = {
   loudness: TrackLoudness | null;
   sourceKind?: PlaybackSourceKind;
   noticeCode?: string;
+  /** Cause of a rejected requested quality, even when a lower-quality source is available. */
+  qualityFailureReason?: string;
+  failureReason?: string;
 };

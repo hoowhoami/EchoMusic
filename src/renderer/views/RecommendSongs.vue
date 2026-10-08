@@ -3,7 +3,7 @@ import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'recommend-songs' });
 import { computed, onMounted, ref } from 'vue';
 import { getEverydayRecommend } from '@/api/music';
-import { extractList } from '@/utils/extractors';
+import { extractList, extractObject } from '@/utils/extractors';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
@@ -36,6 +36,8 @@ const themeStore = useThemeStore();
 
 const loading = ref(true);
 const songs = ref<Song[]>([]);
+const recommendDate = ref('');
+const recommendSubtitle = ref('');
 const showBatchDrawer = ref(false);
 const searchQuery = ref('');
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
@@ -46,7 +48,10 @@ const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
 
 const recommendCoverUrl = computed(() =>
-  createThemedDateCoverUrl(themeStore.sourceColor, new Date().getDate()),
+  createThemedDateCoverUrl(
+    themeStore.sourceColor,
+    recommendDate.value ? Number(recommendDate.value.slice(-2)) : new Date().getDate(),
+  ),
 );
 
 const handleSort = (field: SortField) => {
@@ -108,8 +113,16 @@ const fetchRecommendSongs = async () => {
   try {
     const res = await getEverydayRecommend();
     songs.value = extractList(res).map((item) => mapTopSong(item));
+    const data = extractObject(res);
+    const date = String(data?.creation_date ?? '');
+    recommendDate.value = /^\d{8}$/.test(date)
+      ? `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`
+      : '';
+    recommendSubtitle.value = typeof data?.sub_title === 'string' ? data.sub_title.trim() : '';
   } catch {
     songs.value = [];
+    recommendDate.value = '';
+    recommendSubtitle.value = '';
   } finally {
     loading.value = false;
   }
@@ -129,12 +142,24 @@ onMounted(() => {
         title="每日推荐"
         :coverUrl="recommendCoverUrl"
         :hasDetails="true"
+        distribute-details
         :expandedHeight="176"
         :collapsedHeight="56"
       >
         <template #details>
-          <div class="flex flex-col gap-2">
-            <div class="text-[13px] font-semibold text-text-secondary">为你量身定制的每日歌单</div>
+          <div class="contents">
+            <div class="text-[13px] font-semibold text-text-secondary">
+              {{ recommendSubtitle || '为你量身定制的每日歌单' }}
+            </div>
+            <div
+              class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
+            >
+              <span v-if="!loading" class="inline-flex items-center gap-1.5">
+                <Icon :icon="iconPlay" width="12" height="12" />
+                {{ songs.length }} 首歌曲
+              </span>
+              <span v-if="recommendDate">{{ recommendDate }} 推荐</span>
+            </div>
           </div>
         </template>
 

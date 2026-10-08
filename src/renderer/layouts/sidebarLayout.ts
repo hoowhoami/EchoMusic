@@ -198,13 +198,17 @@ export function setSidebarRailSectionVisible(
   };
 }
 
-export const REQUIRED_SHORTCUT_KEYS = ['home', 'explore'];
-export const DEFAULT_SHORTCUT_KEYS = [...REQUIRED_SHORTCUT_KEYS];
+// Keep the persisted section key while expanding its visibility to the whole playlist area.
+export const SIDEBAR_PLAYLIST_SECTION_ID = 'created-playlist-defaults';
+export const isSidebarPlaylistVisible = (layout?: SidebarLayout) =>
+  layout?.hiddenSections?.[SIDEBAR_PLAYLIST_SECTION_ID] !== true;
+
+export const DEFAULT_SHORTCUT_KEYS = ['home', 'explore'];
 export function normalizeShortcutKeys(keys?: readonly string[]): string[] {
-  const unique = [...new Set(keys ?? DEFAULT_SHORTCUT_KEYS)].filter(
-    (key) => typeof key === 'string',
+  const unique = [...new Set(Array.isArray(keys) ? keys : DEFAULT_SHORTCUT_KEYS)].filter(
+    (key) => typeof key === 'string' && key.trim().length > 0,
   );
-  return [...REQUIRED_SHORTCUT_KEYS.filter((key) => !unique.includes(key)), ...unique];
+  return unique.length ? unique : ['home'];
 }
 export function reorderShortcutKeys(
   saved: readonly string[] | undefined,

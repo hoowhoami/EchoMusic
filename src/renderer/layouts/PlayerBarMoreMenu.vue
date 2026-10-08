@@ -6,15 +6,13 @@ import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
 import { getPlayerBarBadgeTone } from './playerBarActions';
 import Popover from '@/components/ui/Popover.vue';
-import MvIcon from '@/components/ui/MvIcon.vue';
-import BarrageIcon from '@/components/ui/BarrageIcon.vue';
 import CastPopover from '@/components/player/CastPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
 import SleepTimerPopover from '@/components/player/SleepTimerPopover.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
-import PluginIcon from '@/plugins/PluginIcon.vue';
+import PlayerBarActionIcon from './PlayerBarActionIcon.vue';
 import { iconChevronLeft, iconDots, iconSlidersHorizontal } from '@/icons';
 import { useSettingStore } from '@/stores/setting';
 import {
@@ -299,7 +297,7 @@ onBeforeUnmount(() => {
 
 <template>
   <Popover
-    trigger="hover"
+    :trigger="editMode ? 'click' : 'hover'"
     side="top"
     align="end"
     :side-offset="10"
@@ -317,7 +315,7 @@ onBeforeUnmount(() => {
           variant="unstyled"
           size="none"
           type="button"
-          class="playerbar-more-trigger"
+          class="playback-action playerbar-more-trigger hover:scale-110 active:scale-90"
           aria-label="更多"
         >
           <Icon :icon="iconDots" width="20" height="20" />
@@ -359,10 +357,11 @@ onBeforeUnmount(() => {
               :aria-label="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
               @click="activate(item, $event)"
             >
-              <span class="playerbar-use-icon">
-                <MvIcon v-if="item.key === 'mv'" class="w-[19px] h-[19px]" />
-                <BarrageIcon v-else-if="item.component === 'barrage'" width="19" height="19" />
-                <PluginIcon v-else :icon="item.icon" :width="19" :height="19" />
+              <span
+                class="playerbar-use-icon"
+                :class="{ 'is-favorite': item.key === 'favorite' && item.active }"
+              >
+                <PlayerBarActionIcon :item="item" :width="19" :height="19" />
               </span>
               <span class="playerbar-use-title">{{ item.title }}</span>
               <Badge
@@ -459,14 +458,11 @@ onBeforeUnmount(() => {
                       :aria-label="item.title"
                       @keydown="reorderByKeyboard($event, item, zone.value, index)"
                     >
-                      <span class="playerbar-chip-icon">
-                        <MvIcon v-if="item.key === 'mv'" class="w-[18px] h-[18px]" />
-                        <BarrageIcon
-                          v-else-if="item.component === 'barrage'"
-                          width="18"
-                          height="18"
-                        />
-                        <PluginIcon v-else :icon="item.icon" :width="18" :height="18" />
+                      <span
+                        class="playerbar-chip-icon"
+                        :class="{ 'is-favorite': item.key === 'favorite' && item.active }"
+                      >
+                        <PlayerBarActionIcon :item="item" :width="18" :height="18" />
                       </span>
                       <span class="playerbar-chip-title">{{ item.title }}</span>
                       <Tooltip
@@ -524,14 +520,11 @@ onBeforeUnmount(() => {
                     :aria-label="item.title"
                     @keydown="reorderByKeyboard($event, item, 'more', index)"
                   >
-                    <span class="playerbar-chip-icon">
-                      <MvIcon v-if="item.key === 'mv'" class="w-[18px] h-[18px]" />
-                      <BarrageIcon
-                        v-else-if="item.component === 'barrage'"
-                        width="18"
-                        height="18"
-                      />
-                      <PluginIcon v-else :icon="item.icon" :width="18" :height="18" />
+                    <span
+                      class="playerbar-chip-icon"
+                      :class="{ 'is-favorite': item.key === 'favorite' && item.active }"
+                    >
+                      <PlayerBarActionIcon :item="item" :width="18" :height="18" />
                     </span>
                     <span class="playerbar-chip-title">{{ item.title }}</span>
                     <Tooltip
@@ -635,7 +628,7 @@ onBeforeUnmount(() => {
   color: var(--icon-main);
   transition:
     color var(--motion-duration-fast) var(--motion-ease-standard),
-    background-color var(--motion-duration-fast) var(--motion-ease-standard);
+    scale var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .playerbar-more-anchor {
@@ -645,7 +638,6 @@ onBeforeUnmount(() => {
 .playerbar-more-trigger:hover,
 .playerbar-more-trigger[aria-expanded='true'] {
   color: var(--color-primary-text);
-  background: var(--control-hover-bg);
 }
 </style>
 
@@ -768,6 +760,11 @@ onBeforeUnmount(() => {
 
 .playerbar-use-item.disabled {
   opacity: 0.56;
+}
+
+.playerbar-use-icon.is-favorite,
+.playerbar-chip-icon.is-favorite {
+  color: var(--state-danger);
 }
 
 .playerbar-use-icon {

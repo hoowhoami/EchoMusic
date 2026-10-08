@@ -722,9 +722,17 @@ export const mapRankMeta = (json: unknown): RankMeta => {
     '',
   );
   const updateFrequency = readString(
-    pickValue(record.updatefrequency, record.updateFrequency, record.update, ''),
+    pickValue(
+      record.update_frequency,
+      record.updatefrequency,
+      record.updateFrequency,
+      record.update,
+      '',
+    ),
     '',
   );
+  const description = readString(pickValue(record.intro, record.description, ''), '').trim();
+  const publishTime = readString(record.rank_id_publish_date, '').trim();
 
   return {
     id,
@@ -740,6 +748,8 @@ export const mapRankMeta = (json: unknown): RankMeta => {
     typeName: rankTypeName || undefined,
     updateFrequency: updateFrequency || undefined,
     updatefrequency: updateFrequency || undefined,
+    description: description || undefined,
+    publishTime: publishTime || undefined,
   };
 };
 

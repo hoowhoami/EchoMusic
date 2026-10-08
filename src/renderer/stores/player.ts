@@ -34,6 +34,7 @@ import { createListeningTimeManager } from './player/listeningTime';
 import { createDeviceManager } from './player/device';
 import { createSpatialAudioSupport } from './player/spatialAudioSupport';
 import { shouldShowPlaybackBuffering } from './player/progressStatus';
+import { watchPlaybackNoticeToasts } from './player/noticeToast';
 import {
   createPlayerEventBus,
   type PlayerEventName,
@@ -75,6 +76,7 @@ export const usePlayerStore = defineStore(
     const settingStore = useSettingStore();
     const lyricStore = useLyricStore();
     const toastStore = useToastStore();
+    watchPlaybackNoticeToasts(state, toastStore);
     let disposeRuntimeSessionSync: (() => void) | null = null;
     onScopeDispose(() => disposeRuntimeSessionSync?.());
     let resolveInitialization!: () => void;
@@ -262,6 +264,10 @@ export const usePlayerStore = defineStore(
         playbackManager.clearGaplessPreparedSource();
         state.audioEffectError = '';
         const isEffectChange = state.audioEffect !== state.currentResolvedAudioEffect;
+        const sourceSwitchNoticePrefix =
+          state.currentCloudSourceOverrideTrackId === refreshTrackId
+            ? 'audio-source'
+            : 'audio-quality';
         state.pendingSettingRefresh = false;
         const wasPlaying = getPlaybackIsPlaying(state);
         const seamless = options?.seamless === true && wasPlaying && !!state.currentAudioUrl;
@@ -283,11 +289,14 @@ export const usePlayerStore = defineStore(
             reuseRelateGoods: true,
           });
         } catch (error) {
-          if (requestSeq !== state.playbackRequestSeq) return;
+          if (!isRefreshCurrent()) return;
           if (seamless) {
             showPlaybackNotice(
-              isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
+              isEffectChange
+                ? 'audio-effect-apply-failed'
+                : `${sourceSwitchNoticePrefix}-unavailable`,
               track,
+              error,
             );
             logger.error(
               'PlayerStore',
@@ -303,6 +312,7 @@ export const usePlayerStore = defineStore(
           showPlaybackNotice(
             isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
             track,
+            error,
           );
           logger.error('PlayerStore', 'Refresh track source resolution failed:', error);
           return;
@@ -314,11 +324,26 @@ export const usePlayerStore = defineStore(
           resolvedQuality: resolved.quality,
           elapsedMs: Date.now() - refreshStartedAt,
         });
+        if (
+          seamless &&
+          !isEffectChange &&
+          sourceSwitchNoticePrefix === 'audio-quality' &&
+          resolved.quality !== requestedQuality &&
+          resolved.qualityFailureReason
+        ) {
+          // Resolving a lower quality does not mean the requested switch succeeded.
+          // Keep the audible source instead of reopening the fallback and losing the cause.
+          showPlaybackNotice('audio-quality-unavailable', track, resolved.qualityFailureReason);
+          return;
+        }
         if (!resolved.url) {
           if (seamless) {
             showPlaybackNotice(
-              isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
+              isEffectChange
+                ? 'audio-effect-apply-failed'
+                : `${sourceSwitchNoticePrefix}-unavailable`,
               track,
+              resolved.failureReason,
             );
             return;
           }
@@ -329,6 +354,7 @@ export const usePlayerStore = defineStore(
           showPlaybackNotice(
             isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
             track,
+            resolved.failureReason,
           );
           return;
         }
@@ -386,11 +412,14 @@ export const usePlayerStore = defineStore(
             if (!switched) throw lastError ?? new Error('No playable source candidate');
           } else await engine.setSource(playbackSource, { force: true });
         } catch (error) {
-          if (requestSeq === state.playbackRequestSeq) {
+          if (isRefreshCurrent()) {
             if (seamless) {
               showPlaybackNotice(
-                isEffectChange ? 'audio-effect-apply-failed' : 'playback-failed',
+                isEffectChange
+                  ? 'audio-effect-apply-failed'
+                  : `${sourceSwitchNoticePrefix}-switch-failed`,
                 track,
+                error,
               );
             } else {
               abortNativeTrackLoad(state);
@@ -400,6 +429,7 @@ export const usePlayerStore = defineStore(
               showPlaybackNotice(
                 isEffectChange ? 'audio-effect-apply-failed' : 'playback-failed',
                 track,
+                error,
               );
             }
           }
@@ -584,7 +614,7 @@ export const usePlayerStore = defineStore(
         impulseResponseMix: file ? settingStore.getImpulseResponseMix(file.id) : undefined,
       });
     };
-    const showPlaybackNotice = (code: string, track?: Song | null) => {
+    const showPlaybackNotice = (code: string, track?: Song | null, error?: unknown) => {
       const userStore = useUserStore();
       const vipInfo = (userStore.info?.extendsInfo?.vip as any) || {};
       const busiVip: any[] = vipInfo?.busi_vip || [];
@@ -598,11 +628,25 @@ export const usePlayerStore = defineStore(
         autoNextEnabled: settingStore.autoNext,
         autoNextDelaySeconds: settingStore.autoNextDelaySeconds,
         isUserNovip,
+        error,
       });
       if (code.startsWith('audio-effect-')) {
-        // Effect feedback is not a playback error: keep the player/lyric error badge clear.
+        // Effect feedback stays inline and does not trigger a playback-error toast.
         if (state.playbackNotice?.code.startsWith('audio-effect-')) state.playbackNotice = null;
         state.audioEffectError = notice.reason;
+        return;
+      }
+      if (code.startsWith('audio-quality-') || code.startsWith('audio-source-')) {
+        // The previous source is still playing: report the failed operation without
+        // putting the song into the fatal playback-error/recovery state.
+        const trackName = String(track?.name ?? '').trim();
+        toastStore.standard(
+          [notice.reason, notice.detail].filter(Boolean).join('\n'),
+          'warning',
+          6000,
+          undefined,
+          trackName ? `${notice.title} · ${trackName}` : notice.title,
+        );
         return;
       }
       state.playbackNotice = notice;
@@ -1421,7 +1465,7 @@ export const usePlayerStore = defineStore(
 
             state.lastError = (event as any)?.type ?? 'playback-error';
             setEnginePlaybackStatus(state, 'error');
-            showPlaybackNotice('playback-failed', state.currentTrackSnapshot);
+            showPlaybackNotice('playback-failed', state.currentTrackSnapshot, detail);
             playbackManager.applyFailedPlaybackState({ keepResolvedSource: true });
             settingStore.syncPreventSleep(false);
             if (!state.autoNextSuppressed && settingStore.autoNext && state.currentPlaylist?.length)

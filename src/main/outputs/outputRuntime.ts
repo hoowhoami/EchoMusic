@@ -335,7 +335,7 @@ function scheduleDlnaDescriptionLoad(device: SsdpDeviceEntry): void {
 
 function pushDlnaDevices(): void {
   const host = getOutputHost();
-  if (!host || !discovery) return;
+  if (!host?.wantsScan || !discovery) return;
   // 描述失败的设备不会进入投放列表。把它单列上报，否则 UI 只能显示
   // 「没有找到设备」，把描述解析问题伪装成发现失败。
   const failures: DlnaDescriptionFailure[] = [];
@@ -388,7 +388,7 @@ function pushDlnaDevices(): void {
 
 function handleDlnaDeviceChange(device: SsdpDeviceEntry): void {
   const host = getOutputHost();
-  if (!host || !discovery) return;
+  if (!host?.wantsScan || !discovery) return;
   if (!device.location) {
     dlnaDescriptionCache.delete(device.usn);
     host.removeDlnaDevice(device.usn);

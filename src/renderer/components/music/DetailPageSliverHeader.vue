@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 import { ref, computed, onMounted, onUnmounted, onActivated, watch } from 'vue';
+import { useResizeObserver } from '@vueuse/core';
 import Cover from '@/components/ui/Cover.vue';
+import Button from '@/components/ui/Button.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
 
 interface Props {
   typeLabel: string;
   title: string;
   coverUrl: string;
+  description?: string;
   hasDetails?: boolean;
+  distributeDetails?: boolean;
   expandedHeight?: number;
   collapsedHeight?: number;
   contentPaddingX?: number;
@@ -21,6 +25,8 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   hasDetails: false,
+  distributeDetails: false,
+  description: '',
   expandedHeight: 230,
   collapsedHeight: 56,
   contentPaddingX: 24,
@@ -31,10 +37,36 @@ const props = withDefaults(defineProps<Props>(), {
   detailsMarginTop: 8,
 });
 
+const emit = defineEmits<{ (e: 'description-click'): void }>();
+const descriptionText = ref<HTMLElement | null>(null);
+const descriptionOverflow = ref(false);
+const updateDescriptionOverflow = () => {
+  const text = descriptionText.value;
+  const availableWidth = text?.parentElement?.parentElement?.clientWidth ?? 0;
+  if (!text) {
+    descriptionOverflow.value = false;
+  } else if (availableWidth > 0) {
+    // Compare against the full row, independent of the optional button's width.
+    // Otherwise showing the button can itself create overflow and keep it visible.
+    descriptionOverflow.value = text.scrollWidth > availableWidth;
+  }
+};
+watch([() => props.description, descriptionText], updateDescriptionOverflow, { flush: 'post' });
+useResizeObserver(descriptionText, updateDescriptionOverflow);
+useResizeObserver(
+  () => descriptionText.value?.parentElement?.parentElement,
+  updateDescriptionOverflow,
+);
+// Intro previews belong to this header's flow and collapse with it, rather than
+// creating a second scroll gap before the tabs.
+const descriptionHeight = 28;
+const expandedHeight = computed(
+  () => props.expandedHeight + (props.description.trim() ? descriptionHeight : 0),
+);
 const scrollY = ref(0);
-const scrollThreshold = computed(() => props.expandedHeight - props.collapsedHeight);
+const scrollThreshold = computed(() => expandedHeight.value - props.collapsedHeight);
 const currentHeight = computed(() =>
-  Math.max(props.collapsedHeight, props.expandedHeight - scrollY.value),
+  Math.max(props.collapsedHeight, expandedHeight.value - scrollY.value),
 );
 const backgroundTranslateY = computed(() =>
   Math.min(scrollY.value, Math.max(0, scrollThreshold.value)),
@@ -45,16 +77,18 @@ const progress = computed(() => {
   return Math.min(1, Math.max(0, scrollY.value / (scrollThreshold.value || 1)));
 });
 
-// 封面变换逻辑 (150px -> 32px)
-const coverSize = props.coverBaseSize;
+// 带简介时封面和右侧信息使用同一高度，操作行与封面底部对齐。
+const coverSize = computed(
+  () => props.coverBaseSize + (props.description.trim() ? descriptionHeight : 0),
+);
 const targetCoverSize = 32;
-const coverScale = computed(() => 1 - progress.value * (1 - targetCoverSize / coverSize));
+const coverScale = computed(() => 1 - progress.value * (1 - targetCoverSize / coverSize.value));
 // Keep the visible media radius constant while the artwork shrinks.
 const coverRadius = computed(() => `calc(var(--radius-media, 6px) / ${coverScale.value})`);
 
 // 动态占位宽度
 const currentCoverWidth = computed(() => {
-  return coverSize - (coverSize - targetCoverSize) * progress.value;
+  return coverSize.value - (coverSize.value - targetCoverSize) * progress.value;
 });
 
 // 标题缩放 (24px -> 17.5px)
@@ -71,10 +105,7 @@ const contentPaddingTop = computed(
   () => expandedPaddingTop + (collapsedPaddingTop - expandedPaddingTop) * progress.value,
 );
 
-// 右侧内容区高度：展开时与封面等高以实现上下对齐
-const rightColumnHeight = computed(() => {
-  return coverSize * coverScale.value;
-});
+const rightColumnHeight = computed(() => coverSize.value * coverScale.value);
 
 defineExpose({ currentHeight });
 
@@ -156,7 +187,7 @@ onUnmounted(() => {
       <div
         class="sliver-header-background absolute inset-0 z-0 pointer-events-none bg-bg-main origin-top"
         :style="{
-          height: `${props.expandedHeight}px`,
+          height: `${expandedHeight}px`,
           transform: `translateY(${-backgroundTranslateY}px)`,
         }"
       ></div>
@@ -216,18 +247,45 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 详情插槽：flex-1 占据中间剩余空间，上下 padding 让内容居中 -->
+          <!-- 详情页逐行均匀分布元信息，操作行保持在封面底部。 -->
           <div
-            class="flex flex-col flex-1 min-h-0 justify-center"
+            class="sliver-header-details flex flex-col flex-1 min-h-0"
             :style="{
+              justifyContent: props.distributeDetails ? 'space-evenly' : 'center',
+              gap: props.distributeDetails ? '0' : '8px',
               opacity: detailsOpacity,
               transform: `translateY(${detailsTranslateY}px)`,
               pointerEvents: progress > 0.4 ? 'none' : 'auto',
-              paddingTop: `${props.detailsMarginTop}px`,
-              paddingBottom: `${props.detailsMarginTop}px`,
+              paddingTop: props.distributeDetails ? '0' : `${props.detailsMarginTop}px`,
+              paddingBottom: props.distributeDetails ? '0' : `${props.detailsMarginTop}px`,
             }"
           >
             <slot name="details" />
+
+            <div
+              v-if="props.description.trim()"
+              class="sliver-header-description flex shrink-0 min-w-0 items-center gap-2"
+              :inert="progress > 0.4 || undefined"
+              :style="{ width: 'fit-content', maxWidth: '100%' }"
+            >
+              <p
+                ref="descriptionText"
+                class="min-w-0 truncate text-[12px] leading-5 text-text-secondary"
+              >
+                {{ props.description }}
+              </p>
+              <Button
+                v-if="descriptionOverflow"
+                variant="unstyled"
+                size="none"
+                type="button"
+                class="shrink-0 text-[11px] font-semibold text-primary-text"
+                aria-label="查看完整简介"
+                @click="emit('description-click')"
+              >
+                查看详情
+              </Button>
+            </div>
           </div>
 
           <!-- 操作按钮行：贴底 -->
@@ -260,7 +318,7 @@ onUnmounted(() => {
 
   <div
     class="sliver-header-spacer relative w-full"
-    :style="{ height: `${props.expandedHeight - props.collapsedHeight}px` }"
+    :style="{ height: `${expandedHeight - props.collapsedHeight}px` }"
   ></div>
 </template>
 

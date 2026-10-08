@@ -331,6 +331,7 @@ test('real player-store init restores the transient queue before publishing meta
     './player/device': { createDeviceManager: () => manager },
     './player/spatialAudioSupport': { createSpatialAudioSupport: () => manager },
     './player/progressStatus': { shouldShowPlaybackBuffering: () => false },
+    './player/noticeToast': compile('../src/renderer/stores/player/noticeToast.ts'),
     './player/events': { createPlayerEventBus: () => manager },
     './player/utils': {
       normalizeEffect: () => 'none',

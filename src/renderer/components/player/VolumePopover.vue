@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Popover from '@/components/ui/Popover.vue';
 import Button from '@/components/ui/Button.vue';
-import { iconVolume2, iconVolume1, iconVolume3 } from '@/icons';
+import VolumeIcon from './VolumeIcon.vue';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 
 const { player, handleVolumeChange, toggleMute } = usePlayerControls();
@@ -82,9 +82,7 @@ const handleWheel = (e: WheelEvent) => {
           @click.stop="toggleMute"
           :aria-label="player.volume === 0 ? '取消静音' : '静音'"
         >
-          <Icon v-if="player.volume === 0" :icon="iconVolume3" width="22" height="22" />
-          <Icon v-else-if="player.volume <= 50" :icon="iconVolume1" width="22" height="22" />
-          <Icon v-else :icon="iconVolume2" width="22" height="22" />
+          <VolumeIcon />
         </Button>
       </template>
       <div class="vol-body">

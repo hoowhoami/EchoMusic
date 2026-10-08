@@ -429,6 +429,7 @@ export class OutputHost {
   private airplayScanFlight: Promise<void> | null = null;
   private airplayConnecting = false;
   private airplayScanToken = 0;
+  private airplayRescanRequested = false;
   private loggedAirplayDiscoveryBackend = '';
   private loggedLocalAirplayIds = new Set<string>();
   private lastDlnaPollLogAt = 0;
@@ -456,7 +457,7 @@ export class OutputHost {
   }
 
   get wantsScan(): boolean {
-    return !this.shuttingDown && (this.enabled || this.browsing || this.mode !== 'local');
+    return !this.shuttingDown && this.enabled;
   }
 
   /**
@@ -467,7 +468,7 @@ export class OutputHost {
    * 扫描早已结束后继续转圈。
    */
   get searching(): boolean {
-    return !this.shuttingDown && (this.airplayScanFlight !== null || this.dlnaScanning);
+    return this.wantsScan && (this.airplayScanFlight !== null || this.dlnaScanning);
   }
 
   get diagnosticMessage(): string {
@@ -477,8 +478,12 @@ export class OutputHost {
   setEnabled(enabled: boolean): void {
     if (this.shuttingDown) return;
     this.enabled = enabled;
-    if (!enabled && !this.browsing && this.mode === 'local') {
+    if (!enabled) {
+      this.airplayScanToken += 1;
+      this.airplayRescanRequested = false;
       this.diagnostics = '网络播放未开启';
+    } else if (this.browsing && this.airplayScanFlight) {
+      this.airplayRescanRequested = true;
     }
     this.publish();
   }
@@ -710,7 +715,7 @@ export class OutputHost {
   }
 
   private startAirplayScan(): void {
-    if (this.shuttingDown) return;
+    if (!this.wantsScan) return;
     if (this.airplayConnecting) return;
     if (this.airplayScanFlight || !this.deps.airplay?.available) return;
     this.diagnostics = '正在搜索投放设备...';
@@ -725,11 +730,15 @@ export class OutputHost {
       // 那次 payload 里 `searching` 仍是 true。renderer 只认 publish 出来的值，
       // 不看 getter，所以必须在这里补一次，否则刷新按钮会永远转圈。
       this.publish();
+      if (this.airplayRescanRequested) {
+        this.airplayRescanRequested = false;
+        if (this.wantsScan && this.browsing) this.startAirplayScan();
+      }
     });
   }
 
   private isCurrentAirplayScan(token: number): boolean {
-    return !this.shuttingDown && this.airplayScanToken === token && !this.airplayConnecting;
+    return this.wantsScan && this.airplayScanToken === token && !this.airplayConnecting;
   }
 
   private async scanAirplayDevices(token: number): Promise<void> {

@@ -21,6 +21,8 @@ import SidebarAccountPopover from './SidebarAccountPopover.vue';
 import SidebarTools from './SidebarTools.vue';
 import {
   resolveSidebarLayout,
+  SIDEBAR_PLAYLIST_SECTION_ID,
+  isSidebarPlaylistVisible,
   type SidebarLayoutItem,
   type SidebarLayoutSection,
 } from './sidebarLayout';
@@ -233,7 +235,8 @@ const builtinSidebarSections = [
   },
 ] satisfies SidebarSection[];
 
-const DEFAULT_PLAYLIST_SECTION_ID = 'created-playlist-defaults';
+const DEFAULT_PLAYLIST_SECTION_ID = SIDEBAR_PLAYLIST_SECTION_ID;
+const playlistAreaVisible = computed(() => isSidebarPlaylistVisible(settingStore.sidebarLayout));
 const DEFAULT_PLAYLIST_KEY = 'playlist:created:default';
 const LIKED_PLAYLIST_KEY = 'playlist:created:liked';
 
@@ -472,7 +475,7 @@ const visibleCreatedPinnedPlaylists = computed(() =>
   createdPlaylists.value.pinned.filter((playlist) => !isDefaultPlaylistHidden(playlist)),
 );
 
-const defaultPlaylistEditSection = computed<SidebarSection | null>(() => {
+const playlistEditSection = computed<SidebarSection>(() => {
   const items = createdPlaylists.value.pinned
     .map((playlist, index): SidebarMenuItem | null => {
       const key = getDefaultPlaylistLayoutKey(playlist);
@@ -487,10 +490,9 @@ const defaultPlaylistEditSection = computed<SidebarSection | null>(() => {
       };
     })
     .filter((item): item is SidebarMenuItem => Boolean(item));
-  if (!items.length) return null;
   return {
     id: DEFAULT_PLAYLIST_SECTION_ID,
-    title: '固定歌单',
+    title: '歌单',
     order: 1000,
     lockedOrder: true,
     collapsible: false,
@@ -505,8 +507,7 @@ const editableMenuGroups = computed(() => {
     ...section,
     title: section.id === 'library' ? '音乐菜单' : section.title,
   }));
-  const playlistSection = defaultPlaylistEditSection.value;
-  if (!playlistSection) return sections;
+  const playlistSection = playlistEditSection.value;
   return [
     ...sections,
     ...resolveSidebarLayout([playlistSection], settingStore.sidebarLayout, {
@@ -694,7 +695,7 @@ const handleRemovePlaylist = async () => {
 
     if (shouldNavigateAway) {
       try {
-        await router.push('/main/home');
+        await router.push('/main');
       } catch {
         toastStore.navigateFailed();
       }
@@ -887,7 +888,7 @@ watch(
               </Tooltip>
             </template>
           </div>
-          <div class="sidebar-rail-playlists">
+          <div v-if="playlistAreaVisible" class="sidebar-rail-playlists">
             <div
               class="sidebar-rail-tabs"
               :class="activePlaylistTab === 1 ? 'is-favorited' : 'is-created'"
@@ -1097,7 +1098,10 @@ watch(
               </nav>
             </div>
           </div>
-          <div class="sidebar-playlist-header pl-7.5 pr-3 mb-2 flex items-center gap-1.5">
+          <div
+            v-if="playlistAreaVisible"
+            class="sidebar-playlist-header pl-7.5 pr-3 mb-2 flex items-center gap-1.5"
+          >
             <div class="min-w-0 flex flex-1 items-center gap-1">
               <Button
                 variant="unstyled"
@@ -1217,7 +1221,7 @@ watch(
             </div>
           </div>
 
-          <nav v-if="isLoggedIn" class="sidebar-scroll-inner space-y-0.5">
+          <nav v-if="playlistAreaVisible && isLoggedIn" class="sidebar-scroll-inner space-y-0.5">
             <template v-if="activePlaylistTab === 0">
               <!-- 置顶歌单（默认收藏 + 我喜欢） -->
               <div
@@ -1363,7 +1367,7 @@ watch(
             </template>
           </nav>
 
-          <div v-else class="sidebar-scroll-empty px-3.5 py-8 text-center">
+          <div v-else-if="playlistAreaVisible" class="sidebar-scroll-empty px-3.5 py-8 text-center">
             <span class="text-[12px] font-normal text-text-secondary italic">登录同步云端歌单</span>
           </div>
         </Scrollbar>
@@ -1458,7 +1462,7 @@ watch(
 
 <style scoped>
 .user-info-card {
-  border: 1px solid var(--border-subtle);
+  border: none;
   min-height: 56px;
   border-radius: var(--radius-card);
   background: var(--control-muted-bg);

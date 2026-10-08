@@ -4,7 +4,7 @@
  * 复刻 PlayerBar 三栏布局：左侧歌曲信息+操作、中间播放控制+进度条、右侧功能按钮
  * 沉浸在页面底部，不浮动
  */
-import { computed, ref, useSlots } from 'vue';
+import { markRaw, computed, ref, useSlots } from 'vue';
 import { useElementSize, useResizeObserver } from '@vueuse/core';
 import type { IconifyIcon } from '@iconify/types';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
@@ -18,9 +18,11 @@ import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import Badge from '@/components/ui/Badge.vue';
 import { getPlayerBarBadgeTone } from '@/layouts/playerBarActions';
-import Popover from '@/components/ui/Popover.vue';
 import MvIcon from '@/components/ui/MvIcon.vue';
-import PluginIcon from '@/plugins/PluginIcon.vue';
+import BarrageIcon from '@/components/ui/BarrageIcon.vue';
+import PlayerBarActionIcon from '@/layouts/PlayerBarActionIcon.vue';
+import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
+import VolumeIcon from '@/components/player/VolumeIcon.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import SleepTimerPopover from '@/components/player/SleepTimerPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
@@ -41,7 +43,6 @@ import { playerbarItems } from '@/plugins/playerbar';
 import { useOutputStore } from '@/stores/output';
 import { kugouVerificationState } from '@/utils/kugouVerification';
 import {
-  iconMusic,
   iconPause,
   iconPlay,
   iconSkipBack,
@@ -52,7 +53,6 @@ import {
   iconPlaylistAdd,
   iconTypography,
   iconMessageCircle,
-  iconTriangleAlert,
   iconRepeat,
   iconRepeatOff,
   iconShuffle,
@@ -60,9 +60,7 @@ import {
   iconShare,
   iconShirt,
   iconMoon,
-  iconVolume2,
   iconSpeedometer,
-  iconPulse,
   iconSlidersHorizontal,
   iconCast,
 } from '@/icons';
@@ -285,7 +283,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'volume',
     title: '音量',
-    icon: iconVolume2 as IconifyIcon,
+    iconComponent: markRaw(VolumeIcon),
     component: 'volume',
     trigger: 'hover',
     defaultPlacement: 'center',
@@ -303,6 +301,20 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
     order: 7,
     visible: true,
     onClick: () => {},
+  },
+  {
+    id: 'favorite',
+    title: '收藏',
+    icon: (isFavorite.value ? iconHeartFilled : iconHeart) as IconifyIcon,
+    tooltip: isFavorite.value ? '取消收藏' : '收藏',
+    defaultPlacement: 'left',
+    order: 8,
+    visible: true,
+    disabled: !currentTrack.value,
+    active: isFavorite.value,
+    onClick: async () => {
+      await toggleFavorite();
+    },
   },
   {
     id: 'add-to-playlist',
@@ -327,7 +339,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'mv',
     title: '播放 MV',
-    icon: iconMusic as IconifyIcon,
+    iconComponent: markRaw(MvIcon),
     defaultPlacement: 'left',
     order: 30,
     visible: hasCurrentTrackMv.value,
@@ -337,7 +349,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'barrage',
     title: '弹幕',
-    icon: iconMessageCircle as IconifyIcon,
+    iconComponent: markRaw(BarrageIcon),
     component: 'barrage',
     trigger: 'click',
     defaultPlacement: 'left',
@@ -372,7 +384,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'quality',
     title: '音质',
-    icon: iconPulse as IconifyIcon,
+    iconComponent: markRaw(AudioWaveIcon),
     component: 'quality',
     trigger: 'hover',
     defaultPlacement: 'right',
@@ -473,7 +485,7 @@ const updateActionCapacity = () => {
   const fallbackRightWidth = Math.max(0, barWidth - leftWidth - centerWidth - 56);
   const rightWidth = Math.max(measuredRightWidth, fallbackRightWidth);
   actionCapacity.value = {
-    left: countPlayerBarActionSlots(leftWidth, slots.barrage ? 40 : 64, 28),
+    left: countPlayerBarActionSlots(leftWidth, slots.barrage ? 12 : 36, 28),
     center: countPlayerBarActionSlots(centerWidth, 0, 36),
     right: countPlayerBarActionSlots(rightWidth, 112, 36),
   };
@@ -563,16 +575,6 @@ useResizeObserver(
             ref="leftActionsRef"
             class="bar-song-actions player-bar-action-strip bar-song-action-strip"
           >
-            <Button
-              variant="unstyled"
-              size="none"
-              @click="toggleFavorite"
-              class="playback-action bar-action-btn"
-              :class="{ 'is-favorite': isFavorite }"
-              tooltip="收藏"
-            >
-              <Icon :icon="isFavorite ? iconHeartFilled : iconHeart" width="20" height="20" />
-            </Button>
             <template v-for="item in leftPlayerBarActions" :key="item.key">
               <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
               <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
@@ -589,46 +591,27 @@ useResizeObserver(
                 <Button
                   variant="unstyled"
                   size="none"
-                  class="playback-action bar-action-btn"
-                  :class="{ 'is-active': item.active }"
+                  class="playback-action relative bar-action-btn"
+                  :class="{
+                    'is-active': item.active,
+                    'is-favorite': item.key === 'favorite' && item.active,
+                  }"
                   :disabled="item.disabled"
                   :tooltip="item.tooltip || item.title"
                   @click="activatePlayerBarAction(item)"
                 >
-                  <MvIcon v-if="item.key === 'mv'" class="w-5 h-5" />
-                  <PluginIcon v-else :icon="item.icon" :width="20" :height="20" />
+                  <PlayerBarActionIcon :item="item" :width="20" :height="20" />
+                  <Badge
+                    v-if="item.visibleBadge"
+                    :count="item.visibleBadge"
+                    :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+                    placement="floating"
+                    class="playerbar-action-badge"
+                  />
                 </Button>
-                <Badge
-                  v-if="item.visibleBadge"
-                  :count="item.visibleBadge"
-                  :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
-                  placement="floating"
-                  class="playerbar-action-badge"
-                />
               </div>
             </template>
             <slot name="song-actions" />
-            <Popover
-              v-if="playerStore.playbackNotice"
-              trigger="hover"
-              side="top"
-              align="center"
-              :side-offset="8"
-              :show-arrow="true"
-              content-class="player-error-popover"
-            >
-              <template #trigger>
-                <div class="bar-error-indicator">
-                  <Icon :icon="iconTriangleAlert" width="20" height="20" />
-                </div>
-              </template>
-
-              <div class="player-error-content">
-                <div class="player-error-title">{{ playerStore.playbackNotice.title }}</div>
-                <div class="player-error-reason">{{ playerStore.playbackNotice.reason }}</div>
-                <div class="player-error-detail">{{ playerStore.playbackNotice.detail }}</div>
-              </div>
-            </Popover>
           </div>
         </div>
       </div>
@@ -654,10 +637,11 @@ useResizeObserver(
                 variant="unstyled"
                 size="none"
                 :class="[
-                  'playback-action',
+                  'playback-action relative',
                   item.id === 'play-toggle' ? 'bar-play-btn' : 'bar-ctrl-btn',
                   {
                     'is-active': item.active,
+                    'is-favorite': item.key === 'favorite' && item.active,
                     'is-busy': isPlaybackLoading && ['previous', 'next'].includes(item.id),
                     'is-loading': isPlaybackLoading && item.id === 'play-toggle',
                   },
@@ -672,24 +656,23 @@ useResizeObserver(
                   class="bar-play-spinner"
                   aria-hidden="true"
                 ></span>
-                <MvIcon v-else-if="item.key === 'mv'" class="w-5 h-5" />
-                <PluginIcon
+                <PlayerBarActionIcon
                   v-else
-                  :icon="item.icon"
-                  :width="item.id === 'play-toggle' && !playerStore.isPlaying ? 16 : 20"
+                  :item="item"
+                  :width="20"
                   :height="20"
                   :class="
                     item.id === 'play-toggle' && !playerStore.isPlaying ? 'ml-0.5' : undefined
                   "
                 />
+                <Badge
+                  v-if="item.visibleBadge"
+                  :count="item.visibleBadge"
+                  :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+                  placement="floating"
+                  class="playerbar-action-badge"
+                />
               </Button>
-              <Badge
-                v-if="item.visibleBadge"
-                :count="item.visibleBadge"
-                :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
-                placement="floating"
-                class="playerbar-action-badge"
-              />
             </div>
           </template>
         </div>
@@ -713,22 +696,24 @@ useResizeObserver(
             <Button
               variant="unstyled"
               size="none"
-              class="playback-action bar-func-btn"
-              :class="{ 'is-active': item.active }"
+              class="playback-action relative bar-func-btn"
+              :class="{
+                'is-active': item.active,
+                'is-favorite': item.key === 'favorite' && item.active,
+              }"
               :disabled="item.disabled"
               :tooltip="item.tooltip || item.title"
               @click="activatePlayerBarAction(item)"
             >
-              <MvIcon v-if="item.key === 'mv'" class="w-5 h-5" />
-              <PluginIcon v-else :icon="item.icon" :width="20" :height="20" />
+              <PlayerBarActionIcon :item="item" :width="20" :height="20" />
+              <Badge
+                v-if="item.visibleBadge"
+                :count="item.visibleBadge"
+                :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+                placement="floating"
+                class="playerbar-action-badge"
+              />
             </Button>
-            <Badge
-              v-if="item.visibleBadge"
-              :count="item.visibleBadge"
-              :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
-              placement="floating"
-              class="playerbar-action-badge"
-            />
           </div>
         </template>
         <PlayerBarMoreMenu
@@ -903,16 +888,6 @@ useResizeObserver(
 
 :deep(.bar-action-btn:active) {
   transform: scale(0.9);
-}
-
-.bar-error-indicator {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-  color: var(--state-danger);
-  opacity: 0.92;
-  cursor: help;
 }
 
 /* 2. 中间 */

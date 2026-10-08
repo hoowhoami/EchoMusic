@@ -875,13 +875,16 @@ watch(
           ref="sliverHeaderRef"
           typeLabel="PLAYLIST"
           :title="playlist.name"
+          :description="playlist.intro"
+          @description-click="showIntroDialog = true"
           :coverUrl="playlistCoverUrl"
           :hasDetails="true"
+          distribute-details
           :expandedHeight="176"
           :collapsedHeight="56"
         >
           <template #details>
-            <div class="flex flex-col gap-2">
+            <div class="contents">
               <div class="flex items-center gap-3">
                 <div class="flex items-center gap-2">
                   <Avatar :src="playlist.userPic" :size="20" class="rounded-full overflow-hidden" />
@@ -1004,22 +1007,6 @@ watch(
           :songs="songs"
           :source-id="playlist?.listid || playlist?.id"
         />
-
-        <div v-if="playlist.intro" class="px-6 pt-1.5 pb-1.5">
-          <div class="text-[15px] font-semibold text-text-main">歌单介绍</div>
-          <div class="mt-1.5 text-[12px] leading-relaxed text-text-secondary line-clamp-1">
-            {{ playlist.intro }}
-          </div>
-          <Button
-            variant="unstyled"
-            size="none"
-            type="button"
-            class="mt-0.5 text-[11px] font-semibold text-primary-text"
-            @click="showIntroDialog = true"
-          >
-            查看详情
-          </Button>
-        </div>
 
         <!-- 2. Sticky Tabs + 表头 -->
         <Tabs

@@ -66,7 +66,7 @@ const ensureDeviceReady = async () => {
 const navigateToHome = () => {
   if (isNavigating) return;
   isNavigating = true;
-  router.push('/main/home');
+  router.push('/main');
 };
 
 const completeStartup = async () => {

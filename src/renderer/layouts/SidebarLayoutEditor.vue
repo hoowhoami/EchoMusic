@@ -5,12 +5,13 @@ import Sortable from 'sortablejs';
 import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Popover from '@/components/ui/Popover.vue';
-import { iconEye, iconEyeOff, iconSlidersHorizontal } from '@/icons';
+import { iconEye, iconEyeOff, iconSlidersHorizontal, iconPlaylistAdd } from '@/icons';
 import PluginIcon from '@/plugins/PluginIcon.vue';
 import type { PluginIcon as PluginIconValue } from '@/plugins/registry';
 import { useSettingStore } from '@/stores/setting';
 import {
   resetSidebarMenus,
+  SIDEBAR_PLAYLIST_SECTION_ID,
   reorderSidebarItems,
   reorderSidebarSections,
   setSidebarItemHidden,
@@ -72,7 +73,9 @@ const readItemKeys = (sectionId: string) => {
 };
 
 const sectionVisualItem = (section: ResolvedSidebarLayoutSection<SidebarEditorItem>) =>
-  section.items.find((item) => item.layoutCover || item.layoutIcon) ?? section.items[0];
+  section.items.find((item) => item.layoutCover || item.layoutIcon) ??
+  section.items[0] ??
+  (section.id === SIDEBAR_PLAYLIST_SECTION_ID ? { layoutIcon: iconPlaylistAdd } : undefined);
 
 const saveItemOrder = (section: ResolvedSidebarLayoutSection<SidebarEditorItem>) => {
   settings.sidebarLayout = reorderSidebarItems(
@@ -248,19 +251,37 @@ onBeforeUnmount(destroySortables);
             </Tooltip>
             <div class="sidebar-layout-section-copy">
               <span>{{ section.title }}</span>
-              <small v-if="section.lockedOrder">位于自建歌单顶部</small>
+              <small v-if="section.id === SIDEBAR_PLAYLIST_SECTION_ID">自建与收藏歌单</small>
               <small v-else>
                 {{ section.items.filter((item) => !item.isHidden).length }} /
                 {{ section.items.length }} 项
               </small>
             </div>
-            <Tooltip :content="section.isHidden ? '显示分组' : '隐藏分组'">
+            <Tooltip
+              :content="
+                section.id === SIDEBAR_PLAYLIST_SECTION_ID
+                  ? section.isHidden
+                    ? '显示整个歌单区域'
+                    : '隐藏整个歌单区域'
+                  : section.isHidden
+                    ? '显示分组'
+                    : '隐藏分组'
+              "
+            >
               <template #trigger>
                 <button
                   type="button"
                   class="action-icon sidebar-layout-icon-button app-focus-ring-soft"
                   :aria-pressed="!section.isHidden"
-                  :aria-label="section.isHidden ? '显示分组' : '隐藏分组'"
+                  :aria-label="
+                    section.id === SIDEBAR_PLAYLIST_SECTION_ID
+                      ? section.isHidden
+                        ? '显示整个歌单区域'
+                        : '隐藏整个歌单区域'
+                      : section.isHidden
+                        ? '显示分组'
+                        : '隐藏分组'
+                  "
                   @click="toggleSection(section)"
                 >
                   <Icon :icon="section.isHidden ? iconEyeOff : iconEye" width="15" height="15" />

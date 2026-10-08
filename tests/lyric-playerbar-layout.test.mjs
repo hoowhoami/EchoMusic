@@ -19,7 +19,11 @@ const { descriptor } = parse(
   readFileSync('src/renderer/views/lyric/LyricPlayerControls.vue', 'utf8'),
 );
 const source = compileScript(descriptor, { id: 'lyric-playerbar-layout' }).content;
-function fixture(t, hasBarrage = true) {
+const { descriptor: mainDescriptor } = parse(
+  readFileSync('src/renderer/layouts/PlayerBar.vue', 'utf8'),
+);
+const mainSource = compileScript(mainDescriptor, { id: 'main-playerbar-layout' }).content;
+function fixture(t, hasBarrage = true, surface = 'lyric') {
   const scope = vue.effectScope();
   t.after(() => scope.stop());
   const settings = vue.reactive({
@@ -31,6 +35,10 @@ function fixture(t, hasBarrage = true) {
   const slots = hasBarrage ? { barrage: () => null } : {};
   const controls = {
     player: vue.reactive({ playMode: 'sequential' }),
+    isFavorite: vue.ref(false),
+    toggleFavorite: () => {
+      controls.isFavorite.value = !controls.isFavorite.value;
+    },
     currentTrack: track,
     queueCount: vue.ref(1),
     canAddToPlaylist: vue.ref(true),
@@ -38,8 +46,14 @@ function fixture(t, hasBarrage = true) {
     canShareCurrentTrack: vue.ref(true),
     playModeLabel: vue.ref('顺序播放'),
   };
-  const component = evaluate(source, {
-    vue: { ...vue, useSlots: () => slots },
+  controls.settingStore = settings;
+  controls.desktopLyricStore = { settings: { enabled: false } };
+  const component = evaluate(surface === 'main' ? mainSource : source, {
+    vue: { ...vue, useSlots: () => slots, onMounted() {}, onUnmounted() {} },
+    'vue-router': { useRouter: () => ({}) },
+    '@/icons': { iconHeart: { body: 'heart' }, iconHeartFilled: { body: 'filled-heart' } },
+    '@/composables/useLyricPagePreload': { useLyricPagePreload: () => () => {} },
+    './playerBarActions': actions,
     '@vueuse/core': { useElementSize: () => ({ width: vue.ref(0) }), useResizeObserver() {} },
     '@/stores/setting': { useSettingStore: () => settings },
     '@/desktopLyric/store': { useDesktopLyricStore: () => ({ settings: { enabled: false } }) },
@@ -54,7 +68,7 @@ function fixture(t, hasBarrage = true) {
   }).default;
   const view = scope.run(() => component.setup({}, { emit() {}, expose() {} }));
   view.actionCapacity.value = { left: 20, center: 20, right: 20 };
-  return { settings, verification, track, view };
+  return { settings, verification, track, view, controls };
 }
 
 test('lyric barrage joins layout management only when its rendering slot is available', (t) => {
@@ -70,8 +84,8 @@ test('lyric barrage joins layout management only when its rendering slot is avai
     f.view.leftActionsRef.value = { parentElement: { clientWidth: 180 } };
     f.view.updateActionCapacity();
   }
-  assert.equal(managed.view.actionCapacity.value.left, 5);
-  assert.equal(without.view.actionCapacity.value.left, 4);
+  assert.equal(managed.view.actionCapacity.value.left, 6);
+  assert.equal(without.view.actionCapacity.value.left, 5);
 });
 
 test('saved lyric barrage placement and order apply to every zone exactly once', (t) => {
@@ -126,3 +140,34 @@ test('lyric barrage disabled and active states follow track, verification and di
   assert.equal(get().active, true);
   assert.match(get().tooltip, /已开启/);
 });
+
+for (const surface of ['main', 'lyric']) {
+  test(`favorite placement and saved order apply once in all ${surface} bar zones`, async (t) => {
+    const f = fixture(t, true, surface);
+    for (const placement of ['left', 'center', 'right', 'more']) {
+      f.settings.playerBarLayout = {
+        placements: { favorite: placement },
+        order: ['favorite', 'comments'],
+        badges: {},
+      };
+      const groups = f.view.renderedPlayerBarActions.value;
+      const chosen = groups[placement === 'more' ? 'overflow' : placement];
+      assert.equal(chosen[0].key, 'favorite');
+      assert.equal(
+        Object.values(groups)
+          .flat()
+          .filter((item) => item.key === 'favorite').length,
+        1,
+      );
+      await chosen[0].onClick();
+      const updated = f.view.resolvedPlayerBarActions.value.find((item) => item.key === 'favorite');
+      assert.equal(updated.active, f.controls.isFavorite.value);
+      assert.equal(updated.icon.body, updated.active ? 'filled-heart' : 'heart');
+      assert.equal(updated.tooltip, updated.active ? '取消收藏' : '收藏');
+    }
+    f.track.value = null;
+    const favorite = f.view.resolvedPlayerBarActions.value.find((item) => item.key === 'favorite');
+    assert.equal(favorite.disabled, true);
+    assert.equal(favorite.placement, 'more');
+  });
+}

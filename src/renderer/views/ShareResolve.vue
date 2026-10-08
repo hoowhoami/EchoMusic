@@ -407,7 +407,7 @@ const handleRetry = () => {
 };
 
 const handleGoHome = () => {
-  router.replace('/main/home');
+  router.replace('/main');
 };
 
 const handleGoBack = () => {

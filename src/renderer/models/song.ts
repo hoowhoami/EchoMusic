@@ -2,6 +2,13 @@ export interface SongRelateGood {
   hash?: string;
   quality?: string;
   level?: number;
+  /** 音质对应的权限记录；status 为权限位，不是播放地址接口的 status。 */
+  status?: number;
+  privilege?: number;
+  payType?: number;
+  failProcess?: number;
+  goodsType?: string;
+  allQualityFree?: number;
 }
 
 export type CloudAudioQualityValue = '128' | '320' | 'flac' | 'high';

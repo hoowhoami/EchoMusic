@@ -1357,7 +1357,7 @@ const confirmLogout = () => {
   showLogoutConfirm.value = false;
   loginDeviceStore.reset();
   userStore.logout();
-  router.push('/main/home');
+  router.push('/main');
 };
 
 const openDeviceManager = async () => {

@@ -470,11 +470,12 @@ onActivated(() => {
           title="私人 FM"
           :coverUrl="personalFmCoverUrl"
           :hasDetails="true"
+          distribute-details
           :expandedHeight="176"
           :collapsedHeight="56"
         >
           <template #details>
-            <div class="flex flex-col gap-2">
+            <div class="contents">
               <div class="text-[13px] font-semibold text-text-secondary">
                 实时推送契合口味的音乐，随反馈动态更新专属歌单。
               </div>

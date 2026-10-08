@@ -11,6 +11,7 @@ export interface ToastAction {
 
 export interface ToastItem {
   id: number;
+  title?: string;
   message: string;
   tone: ToastTone;
   duration: number;
@@ -52,7 +53,12 @@ const isDuplicateToast = (
   message: string,
   tone: ToastTone,
   action?: ToastAction,
-) => item.message === message && item.tone === tone && item.action?.label === action?.label;
+  title?: string,
+) =>
+  item.message === message &&
+  item.tone === tone &&
+  item.action?.label === action?.label &&
+  item.title === title;
 
 export const useToastStore = defineStore('toast', {
   state: () => ({
@@ -65,16 +71,22 @@ export const useToastStore = defineStore('toast', {
       duration = 2600,
       action?: ToastAction,
       presentation: ToastPresentation = 'auto',
+      title?: string,
     ) {
       const normalized = String(message ?? '').trim();
       if (!normalized) return 0;
+      const normalizedTitle = title?.trim() || undefined;
 
-      const duplicate = this.items.find((item) => isDuplicateToast(item, normalized, tone, action));
+      const duplicate = this.items.find((item) =>
+        isDuplicateToast(item, normalized, tone, action, normalizedTitle),
+      );
       if (duplicate) {
         duplicate.count += 1;
         duplicate.duration = duration;
         duplicate.action = action;
-        duplicate.variant = resolveToastVariant(normalized, action, presentation);
+        duplicate.variant = normalizedTitle
+          ? 'standard'
+          : resolveToastVariant(normalized, action, presentation);
         if (this.items[0]?.id === duplicate.id) this.scheduleVisibleRemoval(duration);
         return duplicate.id;
       }
@@ -83,10 +95,13 @@ export const useToastStore = defineStore('toast', {
       const wasEmpty = this.items.length === 0;
       this.items.push({
         id,
+        title: normalizedTitle,
         message: normalized,
         tone,
         duration,
-        variant: resolveToastVariant(normalized, action, presentation),
+        variant: normalizedTitle
+          ? 'standard'
+          : resolveToastVariant(normalized, action, presentation),
         count: 1,
         action,
       });
@@ -105,8 +120,14 @@ export const useToastStore = defineStore('toast', {
     mini(message: string, tone: ToastTone = 'info', duration = 2600) {
       return this.show(message, tone, duration, undefined, 'mini');
     },
-    standard(message: string, tone: ToastTone = 'info', duration = 4200, action?: ToastAction) {
-      return this.show(message, tone, duration, action, 'standard');
+    standard(
+      message: string,
+      tone: ToastTone = 'info',
+      duration = 4200,
+      action?: ToastAction,
+      title?: string,
+    ) {
+      return this.show(message, tone, duration, action, 'standard', title);
     },
     scheduleVisibleRemoval(duration?: number) {
       clearActiveToastTimer();

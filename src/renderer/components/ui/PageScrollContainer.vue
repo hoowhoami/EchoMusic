@@ -35,7 +35,6 @@ const scrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
 const scrollContainerEl = ref<HTMLElement | null>(null);
 const {
   target: stickyLayer,
-  topInset,
   update: updateStickyLayers,
   invalidate: invalidateStickyLayers,
   onWheel,
@@ -126,7 +125,6 @@ defineExpose({
       ref="scrollbarRef"
       class="page-scroll-area"
       :hide-scrollbar="hideScrollbar"
-      :scrollbar-top-inset="topInset"
       :content-props="contentProps"
       @vue:mounted="onScrollbarMounted"
       @scroll="handleScroll"
@@ -158,6 +156,11 @@ defineExpose({
   flex: 1;
   min-height: 0;
   min-width: 0;
+}
+
+/* Only list content is occluded by sticky headers. The scrollbar keeps a
+   viewport-sized track so pinning or resizing a header cannot move its thumb. */
+.page-scroll-area :deep(.scrollbar-wrap) {
   clip-path: inset(var(--page-sticky-inset, 0px) 0 0 0);
 }
 

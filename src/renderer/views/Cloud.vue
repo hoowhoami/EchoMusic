@@ -98,10 +98,9 @@ const isLoggedIn = computed(() => userStore.isLoggedIn);
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 const displaySongCount = computed(() => totalSongCount.value || songs.value.length);
 const usedCapacity = computed(() => Math.max(0, cloudCapacity.value - cloudAvailable.value));
-const usageRatio = computed(() => {
-  if (cloudCapacity.value <= 0) return 0;
-  return Math.min(1, usedCapacity.value / cloudCapacity.value);
-});
+const usageRatio = computed(() =>
+  cloudCapacity.value > 0 ? Math.min(1, usedCapacity.value / cloudCapacity.value) : 0,
+);
 
 const cloudCoverUrl = computed(() => createThemedIconCoverUrl(themeStore.sourceColor, iconCloud));
 
@@ -577,24 +576,34 @@ onBeforeUnmount(() => {
           title="音乐云盘"
           :coverUrl="cloudCoverUrl"
           :hasDetails="true"
+          distribute-details
           :expandedHeight="176"
           :collapsedHeight="56"
         >
           <template #details>
-            <div class="flex flex-col gap-2">
-              <div class="text-[13px] font-semibold text-text-secondary">
-                支持云端音乐浏览、播放与容量查看，随时畅听个人珍藏。
+            <div class="contents text-[12px] font-medium text-text-secondary">
+              <div class="inline-flex items-center gap-1.5">
+                <Icon :icon="iconPlay" width="12" height="12" />
+                <span>{{ displaySongCount }} 首歌曲</span>
               </div>
-              <div
-                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
-              >
-                <div class="inline-flex items-center gap-1.5">
-                  <Icon :icon="iconPlay" width="12" height="12" />
-                  <span>{{ displaySongCount }}</span>
-                </div>
-                <div class="inline-flex items-center gap-1.5">
-                  <Icon :icon="iconCloud" width="12" height="12" />
+              <div class="cloud-capacity" :title="`可用 ${formatBytes(cloudAvailable)}`">
+                <div class="flex items-center justify-between gap-3 text-[11px] leading-4">
+                  <span>已用 {{ formatBytes(usedCapacity) }}</span>
                   <span>{{ formatBytes(cloudCapacity) }}</span>
+                </div>
+                <div
+                  class="cloud-capacity-track"
+                  role="progressbar"
+                  aria-label="云盘容量使用率"
+                  :aria-valuenow="Math.round(usageRatio * 100)"
+                  :aria-valuemin="0"
+                  :aria-valuemax="100"
+                  :aria-valuetext="`已用 ${formatBytes(usedCapacity)}，总容量 ${formatBytes(cloudCapacity)}，可用 ${formatBytes(cloudAvailable)}`"
+                >
+                  <div
+                    class="cloud-capacity-value"
+                    :style="{ width: `${usageRatio * 100}%` }"
+                  ></div>
                 </div>
               </div>
             </div>
@@ -638,26 +647,6 @@ onBeforeUnmount(() => {
         />
 
         <CloudUploadDialog v-model:open="showUploadDialog" />
-
-        <div class="px-6 pt-2.5 pb-1">
-          <div class="cloud-info-card">
-            <div class="flex items-center justify-between">
-              <div class="text-[13px] font-semibold text-text-main">云盘容量</div>
-              <div class="text-[11px] font-semibold text-primary-text">
-                {{ (usageRatio * 100).toFixed(1) }}%
-              </div>
-            </div>
-            <div class="cloud-progress-track">
-              <div class="cloud-progress-value" :style="{ width: `${usageRatio * 100}%` }"></div>
-            </div>
-            <div
-              class="flex items-center justify-between text-[11px] font-medium text-text-secondary"
-            >
-              <span>{{ formatBytes(usedCapacity) }} / {{ formatBytes(cloudCapacity) }}</span>
-              <span>可用 {{ formatBytes(cloudAvailable) }}</span>
-            </div>
-          </div>
-        </div>
 
         <Tabs model-value="songs" class="w-full" :style="{ minHeight: tabsMinHeight }">
           <PageStickyHeader
@@ -802,25 +791,22 @@ onBeforeUnmount(() => {
   min-height: 320px;
 }
 
-.cloud-info-card {
-  padding: 14px;
-  border-radius: var(--radius-card);
-  background: var(--control-muted-bg);
-  border: 1px solid var(--border-subtle);
+.cloud-capacity {
+  width: 232px;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
-.cloud-progress-track {
-  width: 100%;
-  height: 8px;
-  border-radius: 999px;
+.cloud-capacity-track {
+  height: 4px;
   overflow: hidden;
+  border-radius: 999px;
   background: var(--control-track-bg);
 }
 
-.cloud-progress-value {
+.cloud-capacity-value {
   height: 100%;
   border-radius: inherit;
   background: var(--color-primary);

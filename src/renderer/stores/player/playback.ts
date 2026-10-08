@@ -105,7 +105,7 @@ export const createPlaybackManager = (
   lyricStore: any,
   resolver: any,
   historyManager: any,
-  showPlaybackNotice: (code: string, track?: Song | null) => void,
+  showPlaybackNotice: (code: string, track?: Song | null, error?: unknown) => void,
   clearPlaybackNotice: (trackId?: string | number | null) => void,
   handleOutputDeviceError?: (error: unknown) => Promise<boolean>,
   onGaplessTrackEnded?: () => void,
@@ -1392,7 +1392,7 @@ export const createPlaybackManager = (
       logger.error('PlayerPlayback', 'Resolve track source failed:', error);
       if (requestSeq !== state.playbackRequestSeq) return;
       state.lastError = 'audio-url-unavailable';
-      showPlaybackNotice('audio-url-unavailable', track);
+      showPlaybackNotice('audio-url-unavailable', track, error);
       applyFailedPlaybackState();
       if (settingStore.autoNext && sourceList.length > 0) {
         state.autoNextSourceTrackId = resolvedId;
@@ -1434,7 +1434,7 @@ export const createPlaybackManager = (
       state.currentTrackSnapshot = toRawSong(track);
       state.currentTrackId = resolvedId;
       state.currentPlaylist = sourceList;
-      showPlaybackNotice('audio-url-unavailable', track);
+      showPlaybackNotice('audio-url-unavailable', track, resolved.failureReason);
       applyFailedPlaybackState();
       if (settingStore.autoNext && sourceList.length > 0) {
         state.autoNextSourceTrackId = resolvedId;
@@ -1522,7 +1522,7 @@ export const createPlaybackManager = (
       }
       if (requestSeq !== state.playbackRequestSeq) return;
       state.lastError = 'playback-failed';
-      showPlaybackNotice('playback-failed', track);
+      showPlaybackNotice('playback-failed', track, error);
       applyFailedPlaybackState({ keepResolvedSource: true });
       if (settingStore.autoNext && sourceList.length > 0) {
         state.autoNextSourceTrackId = resolvedId;

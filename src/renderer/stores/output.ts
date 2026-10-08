@@ -67,11 +67,14 @@ export const useOutputStore = defineStore('output', () => {
   const switchingLocal = ref(false);
   const browsing = ref(false);
   // 主进程按真实扫描生命周期上报，诊断文案在描述失败等场景下不是搜索态。
-  const searching = computed(() => refreshing.value || remoteSearching.value);
+  const searching = computed(
+    () => settingStore.networkPlaybackEnabled && (refreshing.value || remoteSearching.value),
+  );
   const visibleTargets = computed(() => targets.value);
   let started = false;
   let browsingRequests = 0;
   let refreshFlight: Promise<void> | null = null;
+  let discoveryRevision = 0;
 
   function apply(view: OutputView | null | undefined): void {
     if (!view) return;
@@ -99,28 +102,46 @@ export const useOutputStore = defineStore('output', () => {
     watch(
       () => settingStore.networkPlaybackEnabled,
       (enabled) => {
+        const revision = ++discoveryRevision;
+        remoteSearching.value = false;
         void api
           .setEnabled(Boolean(enabled))
-          .then(apply)
+          .then((view) => {
+            if (revision !== discoveryRevision) return;
+            apply(view);
+            if (enabled && browsing.value) {
+              void (async () => {
+                await refreshFlight;
+                if (revision === discoveryRevision) await refresh();
+              })();
+            }
+          })
           .catch((caught: unknown) => {
+            if (revision !== discoveryRevision) return;
             diagnostics.value = caught instanceof Error ? caught.message : '网络播放开关未能同步';
           });
       },
-      { immediate: true },
+      { immediate: true, flush: 'sync' },
     );
   }
 
   async function refresh(): Promise<void> {
+    if (!settingStore.networkPlaybackEnabled) return;
     if (refreshFlight) return refreshFlight;
     const api = outputApi();
     if (!api) return;
     refreshing.value = true;
     error.value = '';
+    const revision = discoveryRevision;
     refreshFlight = (async () => {
       try {
-        targets.value = await api.refresh();
-        apply(await api.getSession());
+        const nextTargets = await api.refresh();
+        if (revision !== discoveryRevision) return;
+        targets.value = nextTargets;
+        const view = await api.getSession();
+        if (revision === discoveryRevision) apply(view);
       } catch (caught) {
+        if (revision !== discoveryRevision) return;
         error.value = caught instanceof Error ? caught.message : '刷新设备失败';
       } finally {
         refreshing.value = false;

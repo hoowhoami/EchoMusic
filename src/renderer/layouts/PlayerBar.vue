@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
-import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { markRaw, computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useResizeObserver } from '@vueuse/core';
 import type { SongArtist } from '@/models/song';
 import type { IconifyIcon } from '@iconify/types';
@@ -21,9 +21,10 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 import { useDeferredSeek } from '@/composables/useDeferredSeek';
 import { useLyricPagePreload } from '@/composables/useLyricPagePreload';
 import { usePlaybackProgressStatus } from '@/composables/usePlaybackProgressStatus';
-import Popover from '@/components/ui/Popover.vue';
 import MvIcon from '@/components/ui/MvIcon.vue';
-import PluginIcon from '@/plugins/PluginIcon.vue';
+import PlayerBarActionIcon from './PlayerBarActionIcon.vue';
+import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
+import VolumeIcon from '@/components/player/VolumeIcon.vue';
 import PlayerQueueDrawer from '@/components/music/PlayerQueueDrawer.vue';
 import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import {
@@ -31,7 +32,6 @@ import {
   iconHeart,
   iconHeartFilled,
   iconCloud,
-  iconTriangleAlert,
   iconMessageCircle,
   iconRepeat,
   iconShuffle,
@@ -46,9 +46,7 @@ import {
   iconTypography,
   iconShare,
   iconMoon,
-  iconVolume2,
   iconSpeedometer,
-  iconPulse,
   iconSlidersHorizontal,
   iconCast,
 } from '@/icons';
@@ -96,7 +94,6 @@ const {
   handleShareCurrentTrack,
 } = usePlayerControls();
 
-const playbackNotice = computed(() => player.playbackNotice);
 const isPlaybackLoading = computed(() => player.playbackIsLoading);
 const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } = usePlaybackProgressStatus(
   () => player.playbackProgressBusyReason,
@@ -180,11 +177,6 @@ const {
   getCurrentTime: () => player.currentTime,
   seek: (time) => player.seek(time),
 });
-
-const toggleFavoritePB = (e: Event) => {
-  e.stopPropagation();
-  toggleFavorite();
-};
 
 const queueBadge = computed(() => {
   return queueCount.value > 99 ? '99+' : String(queueCount.value);
@@ -299,7 +291,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'volume',
     title: '音量',
-    icon: iconVolume2 as IconifyIcon,
+    iconComponent: markRaw(VolumeIcon),
     component: 'volume',
     trigger: 'hover',
     defaultPlacement: 'center',
@@ -317,6 +309,20 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
     order: 7,
     visible: true,
     onClick: () => {},
+  },
+  {
+    id: 'favorite',
+    title: '收藏',
+    icon: (isFavorite.value ? iconHeartFilled : iconHeart) as IconifyIcon,
+    tooltip: isFavorite.value ? '取消收藏' : '收藏',
+    defaultPlacement: 'left',
+    order: 8,
+    visible: true,
+    disabled: !currentTrack.value,
+    active: isFavorite.value,
+    onClick: async () => {
+      await toggleFavorite();
+    },
   },
   {
     id: 'add-to-playlist',
@@ -341,7 +347,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'mv',
     title: '播放 MV',
-    icon: iconMusic as IconifyIcon,
+    iconComponent: markRaw(MvIcon),
     defaultPlacement: 'left',
     order: 30,
     visible: hasCurrentTrackMv.value,
@@ -361,7 +367,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'quality',
     title: '音质',
-    icon: iconPulse as IconifyIcon,
+    iconComponent: markRaw(AudioWaveIcon),
     component: 'quality',
     trigger: 'hover',
     defaultPlacement: 'right',
@@ -462,7 +468,7 @@ const updateActionCapacity = () => {
   const fallbackRightWidth = Math.max(0, barWidth - leftWidth - centerWidth - 64);
   const rightWidth = Math.max(measuredRightWidth, fallbackRightWidth);
   actionCapacity.value = {
-    left: countPlayerBarActionSlots(leftWidth, 72, 28),
+    left: countPlayerBarActionSlots(leftWidth, 44, 28),
     center: countPlayerBarActionSlots(centerWidth, 0, 36),
     right: countPlayerBarActionSlots(rightWidth, 112, 36),
   };
@@ -642,19 +648,8 @@ onUnmounted(() => {
 
           <div
             ref="leftActionsRef"
-            class="player-bar-left-actions flex items-center gap-1.5 mt-1 h-7"
+            class="player-bar-left-actions player-bar-action-strip flex items-center gap-1.5 mt-1 h-7"
           >
-            <Button
-              variant="unstyled"
-              size="none"
-              @click="toggleFavoritePB"
-              class="playback-action p-0.5 transition-all hover:scale-110 active:scale-90"
-              :class="{ 'is-favorite': isFavorite }"
-              tooltip="收藏"
-            >
-              <Icon :icon="isFavorite ? iconHeartFilled : iconHeart" width="20" height="20" />
-            </Button>
-
             <template v-for="item in leftPlayerBarActions" :key="item.key">
               <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
               <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
@@ -669,22 +664,24 @@ onUnmounted(() => {
                 <Button
                   variant="unstyled"
                   size="none"
-                  class="playback-action p-0.5 transition-all hover:scale-110 active:scale-90"
-                  :class="{ 'is-active': item.active }"
+                  class="playback-action relative p-0.5 transition-all hover:scale-110 active:scale-90"
+                  :class="{
+                    'is-active': item.active,
+                    'is-favorite': item.key === 'favorite' && item.active,
+                  }"
                   :disabled="item.disabled"
                   :tooltip="item.tooltip || item.title"
                   @click="activatePlayerBarAction(item)"
                 >
-                  <MvIcon v-if="item.key === 'mv'" class="w-5 h-5" />
-                  <PluginIcon v-else :icon="item.icon" :width="20" :height="20" />
+                  <PlayerBarActionIcon :item="item" :width="20" :height="20" />
+                  <Badge
+                    v-if="item.visibleBadge"
+                    :count="item.visibleBadge"
+                    :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+                    placement="floating"
+                    class="playerbar-action-badge"
+                  />
                 </Button>
-                <Badge
-                  v-if="item.visibleBadge"
-                  :count="item.visibleBadge"
-                  :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
-                  placement="floating"
-                  class="playerbar-action-badge"
-                />
               </div>
             </template>
 
@@ -695,28 +692,6 @@ onUnmounted(() => {
                 </div>
               </template>
             </Tooltip>
-
-            <Popover
-              v-if="playbackNotice"
-              trigger="hover"
-              side="top"
-              align="center"
-              :side-offset="8"
-              :show-arrow="true"
-              content-class="player-error-popover"
-            >
-              <template #trigger>
-                <div class="player-error-indicator">
-                  <Icon :icon="iconTriangleAlert" width="20" height="20" />
-                </div>
-              </template>
-
-              <div class="player-error-content">
-                <div class="player-error-title">{{ playbackNotice.title }}</div>
-                <div class="player-error-reason">{{ playbackNotice.reason }}</div>
-                <div class="player-error-detail">{{ playbackNotice.detail }}</div>
-              </div>
-            </Popover>
           </div>
         </div>
       </div>
@@ -743,9 +718,12 @@ onUnmounted(() => {
                 size="none"
                 :class="[
                   item.id === 'play-toggle'
-                    ? 'playback-action player-toggle w-9.5 h-9.5 rounded-full flex items-center justify-center hover:scale-110 hover:text-primary-text active:scale-95 transition-all border'
-                    : 'playback-action p-2 transition-all hover:scale-110 active:scale-90',
-                  { 'is-active': item.active },
+                    ? 'playback-action relative player-toggle w-9.5 h-9.5 rounded-full flex items-center justify-center hover:scale-110 hover:text-primary-text active:scale-95 transition-all border'
+                    : 'playback-action relative p-2 transition-all hover:scale-110 active:scale-90',
+                  {
+                    'is-active': item.active,
+                    'is-favorite': item.key === 'favorite' && item.active,
+                  },
                   {
                     'player-step-busy': isPlaybackLoading && ['previous', 'next'].includes(item.id),
                     'is-loading': isPlaybackLoading && item.id === 'play-toggle',
@@ -761,22 +739,21 @@ onUnmounted(() => {
                   class="player-toggle-spinner"
                   aria-hidden="true"
                 ></span>
-                <MvIcon v-else-if="item.key === 'mv'" class="w-5 h-5" />
-                <PluginIcon
+                <PlayerBarActionIcon
                   v-else
-                  :icon="item.icon"
-                  :width="item.id === 'play-toggle' && !player.isPlaying ? 16 : 20"
+                  :item="item"
+                  :width="20"
                   :height="20"
                   :class="item.id === 'play-toggle' && !player.isPlaying ? 'ml-0.5' : undefined"
                 />
+                <Badge
+                  v-if="item.visibleBadge"
+                  :count="item.visibleBadge"
+                  :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+                  placement="floating"
+                  class="playerbar-action-badge"
+                />
               </Button>
-              <Badge
-                v-if="item.visibleBadge"
-                :count="item.visibleBadge"
-                :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
-                placement="floating"
-                class="playerbar-action-badge"
-              />
             </div>
           </template>
         </div>
@@ -862,22 +839,24 @@ onUnmounted(() => {
             <Button
               variant="unstyled"
               size="none"
-              class="playback-action p-2 transition-all hover:scale-110 active:scale-90"
-              :class="{ 'is-active': item.active }"
+              class="playback-action relative p-2 transition-all hover:scale-110 active:scale-90"
+              :class="{
+                'is-active': item.active,
+                'is-favorite': item.key === 'favorite' && item.active,
+              }"
               :disabled="item.disabled"
               :tooltip="item.tooltip || item.title"
               @click="activatePlayerBarAction(item)"
             >
-              <MvIcon v-if="item.key === 'mv'" class="w-5 h-5" />
-              <PluginIcon v-else :icon="item.icon" :width="20" :height="20" />
+              <PlayerBarActionIcon :item="item" :width="20" :height="20" />
+              <Badge
+                v-if="item.visibleBadge"
+                :count="item.visibleBadge"
+                :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+                placement="floating"
+                class="playerbar-action-badge"
+              />
             </Button>
-            <Badge
-              v-if="item.visibleBadge"
-              :count="item.visibleBadge"
-              :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
-              placement="floating"
-              class="playerbar-action-badge"
-            />
           </div>
         </template>
         <PlayerBarMoreMenu
@@ -1021,34 +1000,6 @@ onUnmounted(() => {
   flex-basis: 38px;
 }
 
-.player-error-indicator {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  color: var(--state-danger);
-  opacity: 0.92;
-  cursor: help;
-  animation: player-error-pulse 1.8s ease-in-out 2;
-}
-
-:global(.dark) .player-error-indicator {
-  color: #f87171;
-}
-
-@keyframes player-error-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 0.88;
-  }
-  50% {
-    transform: scale(1.08);
-    opacity: 1;
-  }
-}
-
 .player-toggle {
   background-color: var(--control-muted-bg);
   border-color: transparent;
@@ -1077,43 +1028,5 @@ onUnmounted(() => {
   background-color: var(--control-hover-bg);
   border-color: transparent;
   box-shadow: none;
-}
-</style>
-
-<style>
-.player-error-popover.echo-popover-content {
-  width: 220px;
-  padding: 12px 14px;
-  border-color: var(--border-subtle);
-}
-
-.player-error-content {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.player-error-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--state-danger);
-}
-
-.dark .player-error-title {
-  color: #f87171;
-}
-
-.player-error-reason {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-main);
-  line-height: 1.5;
-}
-
-.player-error-detail {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  line-height: 1.45;
 }
 </style>

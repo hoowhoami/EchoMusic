@@ -76,7 +76,7 @@ const retry = () => {
 };
 
 const goHome = () => {
-  void router.replace('/main/home');
+  void router.replace('/main');
 };
 </script>
 

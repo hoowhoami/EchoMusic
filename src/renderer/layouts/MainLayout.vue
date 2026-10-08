@@ -128,6 +128,7 @@ onUnmounted(() => {
 });
 
 const excludeFromCache = [
+  'sidebar-home-page',
   'login-page',
   'loading-page',
   'error-page',

@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import Button from '@/components/ui/Button.vue';
-import { iconCheck, iconInfo, iconTriangleAlert, iconX } from '@/icons';
+import { iconCheck, iconCircleAlert, iconCircleX, iconInfo, iconX } from '@/icons';
 import { useToastStore, type ToastTone } from '@/stores/toast';
 
 const props = withDefaults(
@@ -17,6 +17,10 @@ const props = withDefaults(
 const route = useRoute();
 const toastStore = useToastStore();
 const visibleToast = computed(() => toastStore.items[0] ?? null);
+const titledMessage = computed(() => {
+  const [reason, ...detail] = (visibleToast.value?.message ?? '').split('\n');
+  return { reason, detail: detail.join('\n') };
+});
 
 const toneClassMap = {
   info: 'is-info',
@@ -28,8 +32,8 @@ const toneClassMap = {
 const toneIconMap = {
   info: iconInfo,
   success: iconCheck,
-  warning: iconTriangleAlert,
-  danger: iconTriangleAlert,
+  warning: iconCircleAlert,
+  danger: iconCircleX,
 } as const;
 
 const DEFAULT_BOTTOM = 24;
@@ -191,11 +195,11 @@ onUnmounted(() => {
         :class="[
           toneClassMap[visibleToast.tone],
           `is-${visibleToast.variant}`,
-          { 'has-action': visibleToast.action },
+          { 'has-action': visibleToast.action, 'has-title': visibleToast.title },
         ]"
         class="toast-card"
         role="status"
-        :aria-label="`${getToneLabel(visibleToast.tone)}：${visibleToast.message}`"
+        :aria-label="`${visibleToast.title || getToneLabel(visibleToast.tone)}：${visibleToast.message}`"
         @mouseenter="pauseToast"
         @mouseleave="resumeToast"
       >
@@ -203,7 +207,16 @@ onUnmounted(() => {
           <Icon :icon="toneIconMap[visibleToast.tone]" width="16" height="16" />
         </span>
 
-        <div class="toast-message">{{ visibleToast.message }}</div>
+        <div class="toast-copy">
+          <div v-if="visibleToast.title" class="toast-title">{{ visibleToast.title }}</div>
+          <div class="toast-message">
+            <template v-if="visibleToast.title">
+              <div class="toast-reason">{{ titledMessage.reason }}</div>
+              <div v-if="titledMessage.detail" class="toast-detail">{{ titledMessage.detail }}</div>
+            </template>
+            <template v-else>{{ visibleToast.message }}</template>
+          </div>
+        </div>
 
         <Button
           v-if="visibleToast.action"
@@ -294,6 +307,17 @@ onUnmounted(() => {
   border-color: color-mix(in srgb, var(--state-danger) 58%, var(--border-subtle));
 }
 
+.toast-card.has-title {
+  align-items: flex-start;
+  gap: 10px;
+  min-width: min(320px, 100%);
+  padding: 10px 14px;
+}
+
+.has-title .toast-close {
+  margin-top: -2px;
+}
+
 .toast-icon {
   @apply flex h-5 w-5 shrink-0 items-center justify-center;
   border-radius: var(--radius-control);
@@ -303,17 +327,33 @@ onUnmounted(() => {
 
 .is-success .toast-icon {
   color: var(--state-success);
-  background: var(--state-success-bg-soft);
+  background: transparent;
 }
 
 .is-warning .toast-icon {
   color: var(--state-warning);
-  background: var(--state-warning-bg-soft);
+  background: transparent;
 }
 
 .is-danger .toast-icon {
   color: var(--state-danger);
-  background: var(--state-danger-bg-soft);
+  background: transparent;
+}
+
+.toast-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.toast-title {
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--text-main);
 }
 
 .toast-message {
@@ -332,6 +372,18 @@ onUnmounted(() => {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.has-title .toast-message {
+  display: block;
+  white-space: pre-line;
+  color: var(--text-secondary);
+}
+
+.toast-detail {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-secondary);
 }
 
 .toast-close {

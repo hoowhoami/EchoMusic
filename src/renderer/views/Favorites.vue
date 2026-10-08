@@ -547,11 +547,12 @@ watch(
           title="我最喜爱"
           :coverUrl="favoriteCoverUrl"
           :hasDetails="true"
+          distribute-details
           :expandedHeight="176"
           :collapsedHeight="56"
         >
           <template #details>
-            <div class="flex flex-col gap-2">
+            <div class="contents">
               <div class="text-[13px] font-semibold text-text-secondary">
                 集中管理收藏的歌曲、歌手、用户、专辑与视频。
               </div>

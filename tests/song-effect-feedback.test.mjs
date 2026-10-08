@@ -94,8 +94,10 @@ const finalize = new Function(
   'audioEffect',
   'track',
   'options',
+  'audioQuality',
+  'qualityFailureReason',
   `${finalizeCode}; return finalizeResolvedSource;`,
-)(async (_track, result) => result, 'vocal', {}, {});
+)(async (_track, result) => result, 'vocal', {}, {}, '128', undefined);
 test('ordinary fallback reports an unavailable effect, successful effects and existing notices are retained', async () => {
   assert.equal(
     (await finalize({ effect: 'none', url: 'ordinary' }, 'catalog')).noticeCode,
@@ -165,6 +167,7 @@ const playerSource = readFileSync(
 function refreshHarness(
   switchSource,
   resolveAudioUrl = async () => ({ url: 'new', effect: 'vocal' }),
+  overrides = {},
 ) {
   const state = {
     currentTrackId: '1',
@@ -187,6 +190,7 @@ function refreshHarness(
   ).code;
   const preloads = [];
   const notices = [];
+  const noticeDetails = [];
   const settings = { defaultAudioQuality: '128' };
   const dependencies = {
     state,
@@ -206,16 +210,18 @@ function refreshHarness(
     engine: { switchSource, applyTrackLoudness() {}, setPlaybackRate() {}, setVolume() {} },
     getResolvedPlaybackSources: () => [{ url: 'new' }, { url: 'backup' }],
     clearPlaybackNotice() {},
-    showPlaybackNotice(code) {
+    showPlaybackNotice(code, _track, error) {
       notices.push(code);
+      noticeDetails.push({ code, error });
     },
     logger: { info() {}, warn() {}, error() {} },
+    ...overrides,
   };
   const refresh = new Function(
     ...Object.keys(dependencies),
     `${code}; return refreshCurrentTrack;`,
   )(...Object.values(dependencies));
-  return { state, refresh, settings, preloads, notices };
+  return { state, refresh, settings, preloads, notices, noticeDetails };
 }
 
 test('EOF defers the selected effect without retries, false success, or an error notice', async () => {
@@ -412,6 +418,137 @@ test('quality URL failures release the loading indicator and keep the audible so
   assert.equal(state.audioSourceRefreshRequestSeq, null);
   assert.equal(state.currentAudioUrl, 'old');
   assert.equal(state.nativeTrackSeq, 10);
+});
+
+test('quality resolution and decoder failures report only a failed switch while retaining playback', async () => {
+  for (const [resolve, switchSource, expected] of [
+    [
+      async () => {
+        throw new Error('offline');
+      },
+      async () => 10,
+      'audio-quality-unavailable',
+    ],
+    [async () => ({ url: '' }), async () => 10, 'audio-quality-unavailable'],
+    [
+      async () => ({ url: 'new' }),
+      async () => {
+        throw new Error('decode failed');
+      },
+      'audio-quality-switch-failed',
+    ],
+  ]) {
+    const { state, refresh, notices } = refreshHarness(switchSource, resolve);
+    state.audioEffect = state.currentResolvedAudioEffect = 'none';
+    state.enginePlayback = { status: 'playing' };
+    state.playbackIntent = { shouldPlay: true };
+    state.playbackNotice = null;
+    state.lastError = null;
+    state.autoNextTimer = null;
+    await refresh({ seamless: true });
+    assert.deepEqual(notices, [expected]);
+    assert.equal(state.currentAudioUrl, 'old');
+    assert.equal(state.currentResolvedAudioQuality, '128');
+    assert.equal(state.nativeTrackSeq, 10);
+    assert.equal(state.currentTime, 20);
+    assert.equal(state.enginePlayback.status, 'playing');
+    assert.equal(state.playbackIntent.shouldPlay, true);
+    assert.equal(state.playbackNotice, null);
+    assert.equal(state.lastError, null);
+    assert.equal(state.autoNextTimer, null);
+    assert.equal(state.audioSourceRefreshRequestSeq, null);
+  }
+});
+
+test('cloud-source switch failures describe the source instead of a quality or playback failure', async () => {
+  const { state, refresh, notices } = refreshHarness(
+    async () => 10,
+    async () => ({ url: '' }),
+  );
+  state.audioEffect = state.currentResolvedAudioEffect = 'none';
+  state.currentCloudSourceOverrideTrackId = '1';
+  await refresh({ seamless: true });
+  assert.deepEqual(notices, ['audio-source-unavailable']);
+  assert.equal(state.currentAudioUrl, 'old');
+});
+
+test('rejected VIP quality with an available standard fallback keeps the old source and original cause', async () => {
+  let switches = 0;
+  const { state, refresh, notices, noticeDetails, settings } = refreshHarness(
+    async () => {
+      switches++;
+      return 10;
+    },
+    async () => ({
+      url: 'standard-fallback',
+      quality: '128',
+      effect: 'none',
+      qualityFailureReason: '所选音质需要 VIP 权限',
+    }),
+  );
+  state.audioEffect = state.currentResolvedAudioEffect = 'none';
+  settings.defaultAudioQuality = 'flac';
+  await refresh({ seamless: true });
+  assert.equal(switches, 0, 'a rejected quality must not reopen the fallback source');
+  assert.deepEqual(notices, ['audio-quality-unavailable']);
+  assert.equal(noticeDetails[0].error, '所选音质需要 VIP 权限');
+  assert.equal(state.currentAudioUrl, 'old');
+  assert.equal(state.currentResolvedAudioQuality, '128');
+  assert.equal(state.currentTime, 20);
+  assert.equal(state.audioSourceRefreshRequestSeq, null);
+  assert.equal(settings.defaultAudioQuality, 'flac', 'the selection remains available for retry');
+});
+
+test('native source-switch failures pass the player cause through to the toast', async () => {
+  const failure = new Error(
+    'source switch cancelled: insufficient prepared audio at hand-off; old source kept',
+  );
+  const { state, refresh, noticeDetails } = refreshHarness(async () => {
+    throw failure;
+  });
+  state.audioEffect = state.currentResolvedAudioEffect = 'none';
+  await refresh({ seamless: true });
+  assert.equal(noticeDetails[0].error, failure);
+});
+
+test('a rejected quality lookup for the previous song does not notify the current song', async () => {
+  let reject;
+  const { state, refresh, notices } = refreshHarness(
+    async () => 10,
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  state.audioEffect = state.currentResolvedAudioEffect = 'none';
+  const pending = refresh({ seamless: true });
+  state.currentTrackId = '2';
+  state.currentAudioUrl = 'next-song';
+  reject(new Error('old song unavailable'));
+  await pending;
+  assert.deepEqual(notices, []);
+  assert.equal(state.currentAudioUrl, 'next-song');
+});
+
+test('a source reload that cannot retain playback still sets a fatal playback failure', async () => {
+  const { state, refresh, notices } = refreshHarness(
+    async () => 10,
+    async () => ({ url: '' }),
+    {
+      beginPlaybackIntent() {},
+      beginNativeTrackLoad() {},
+      abortNativeTrackLoad() {},
+      completePlaybackIntent() {},
+      setEnginePlaybackStatus(state, status) {
+        state.enginePlayback = { status };
+      },
+    },
+  );
+  state.audioEffect = state.currentResolvedAudioEffect = 'none';
+  await refresh({ seamless: false });
+  assert.deepEqual(notices, ['audio-url-unavailable']);
+  assert.equal(state.lastError, 'audio-url-unavailable');
+  assert.equal(state.enginePlayback.status, 'error');
 });
 
 test('quality selection stays locked until completion and a failed selection can be retried', () => {

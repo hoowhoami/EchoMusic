@@ -882,18 +882,24 @@ onUnmounted(() => {
           ref="sliverHeaderRef"
           typeLabel="ARTIST"
           :title="artist.name"
+          :description="artist.intro"
+          @description-click="showIntroDialog = true"
           :coverUrl="artist.pic"
           :hasDetails="true"
+          distribute-details
           :expandedHeight="196"
         >
           <template #details>
-            <div class="flex flex-col gap-1.5 text-text-secondary">
+            <div class="contents text-text-secondary">
               <div class="text-[13px] font-semibold text-primary-text">
                 {{ artist.songCount || songs.length }} 歌曲 •
                 {{ artist.albumCount || albums.length }} 专辑
                 <template v-if="artist.mvCount"> • {{ artist.mvCount }} MV </template>
               </div>
-              <div class="flex items-center gap-3 text-[12px] text-text-secondary">
+              <div
+                v-if="artist.fansCount || artist.birthday"
+                class="flex items-center gap-3 text-[12px] text-text-secondary"
+              >
                 <span v-if="artist.fansCount" class="flex items-center gap-1">
                   <span class="font-semibold text-text-main">{{
                     formatFansCount(artist.fansCount)
@@ -967,22 +973,6 @@ onUnmounted(() => {
         </SliverHeader>
 
         <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" />
-
-        <div v-if="artist.intro" class="px-6 pt-1.5 pb-1.5">
-          <div class="text-[15px] font-semibold text-text-main">歌手介绍</div>
-          <div class="mt-1.5 text-[12px] leading-relaxed text-text-secondary line-clamp-1">
-            {{ artist.intro }}
-          </div>
-          <Button
-            variant="unstyled"
-            size="none"
-            type="button"
-            class="mt-0.5 text-[11px] font-semibold text-primary-text"
-            @click="showIntroDialog = true"
-          >
-            查看详情
-          </Button>
-        </div>
 
         <Tabs v-model="activeTab" class="w-full" :style="{ minHeight: tabsMinHeight }">
           <PageStickyHeader

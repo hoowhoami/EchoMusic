@@ -33,6 +33,7 @@ import Badge from '@/components/ui/Badge.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
+import { extractObject } from '@/utils/extractors';
 
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
@@ -45,8 +46,11 @@ const loadingSongs = ref(false);
 const ranks = ref<RankMeta[]>([]);
 const selectedRankId = ref<number | null>(null);
 const songs = ref<Song[]>([]);
+const rankSongTotal = ref<number | null>(null);
+let rankSongsRequest = 0;
 const showBatchDrawer = ref(false);
 const showSelectorDialog = ref(false);
+const showRankIntro = ref(false);
 const searchQuery = ref('');
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
 const sliverHeaderRef = ref<{ currentHeight?: number } | null>(null);
@@ -57,6 +61,13 @@ const sortOrder = ref<SortOrder>(null);
 
 const selectedRank = computed(
   () => ranks.value.find((item) => item.id === selectedRankId.value) ?? ranks.value[0],
+);
+const rankDescription = computed(() =>
+  (selectedRank.value?.description || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^更新频率\s*[:：]/.test(line))
+    .join(' · '),
 );
 
 const groupedRanks = computed(() => {
@@ -168,15 +179,31 @@ const resolveRankList = (payload: unknown): unknown[] => {
 const loadRanks = async () => {
   loadingRanks.value = true;
   try {
-    const res = await getRankTop();
-    const list = resolveRankList(res);
-    const mapped = list.map((item) => mapRankMeta(item)).filter((item) => item.id !== 0);
-    if (mapped.length === 0) {
-      const fallback = await getRanks();
-      const fallbackList = resolveRankList(fallback);
-      ranks.value = fallbackList.map((item) => mapRankMeta(item)).filter((item) => item.id !== 0);
-    } else {
-      ranks.value = mapped;
+    const [topResult, catalogResult] = await Promise.allSettled([getRankTop(), getRanks()]);
+    const mapList = (result: PromiseSettledResult<unknown>) =>
+      (result.status === 'fulfilled' ? resolveRankList(result.value) : [])
+        .map(mapRankMeta)
+        .filter((item) => item.id !== 0);
+    const recommended = mapList(topResult);
+    const catalog = mapList(catalogResult);
+    const catalogById = new Map(catalog.map((rank) => [rank.id, rank]));
+    ranks.value = recommended.length
+      ? recommended.map((rank) => {
+          const detail = catalogById.get(rank.id);
+          return {
+            ...rank,
+            updateFrequency: rank.updateFrequency || detail?.updateFrequency,
+            description: rank.description || detail?.description,
+            publishTime: detail?.publishTime || rank.publishTime,
+          };
+        })
+      : catalog;
+    if (
+      !ranks.value.length &&
+      topResult.status === 'rejected' &&
+      catalogResult.status === 'rejected'
+    ) {
+      toastStore.loadFailed('排行榜');
     }
     if (ranks.value.length > 0) {
       selectedRankId.value = ranks.value[0].id;
@@ -195,19 +222,25 @@ const loadRanks = async () => {
 };
 
 const loadRankSongs = async (rankId: number) => {
+  const requestId = ++rankSongsRequest;
   loadingSongs.value = true;
   selectedRankId.value = rankId;
   songs.value = [];
+  rankSongTotal.value = null;
   try {
     const res = await getRankSongs(rankId, 1, 100);
+    if (requestId !== rankSongsRequest) return;
     const payload = res?.data?.list || res?.data?.info || res?.data?.songlist || res?.data || res;
     const list = Array.isArray(payload) ? payload : [];
     songs.value = list.map((item) => mapRankSong(item));
+    const total = Number(extractObject(res)?.total);
+    rankSongTotal.value = Number.isFinite(total) && total >= list.length ? total : list.length;
   } catch {
+    if (requestId !== rankSongsRequest) return;
     songs.value = [];
     toastStore.loadFailed('排行榜歌曲');
   } finally {
-    loadingSongs.value = false;
+    if (requestId === rankSongsRequest) loadingSongs.value = false;
   }
 };
 
@@ -262,12 +295,32 @@ watch(
           title="排行榜"
           :coverUrl="todayRankCover"
           :hasDetails="true"
+          distribute-details
+          :description="rankDescription"
+          @description-click="showRankIntro = true"
           :expandedHeight="176"
           :collapsedHeight="56"
         >
           <template #details>
-            <div class="flex flex-col gap-2">
-              <div class="text-[13px] font-semibold text-text-secondary">实时热门趋势榜单</div>
+            <div class="contents">
+              <div class="text-[13px] font-semibold text-text-secondary">
+                {{ selectedRank?.name || '精选音乐榜单' }}
+              </div>
+              <div
+                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
+              >
+                <span v-if="rankSongTotal !== null" class="inline-flex items-center gap-1.5">
+                  <Icon :icon="iconPlay" width="12" height="12" />
+                  {{ rankSongTotal }} 首歌曲
+                </span>
+                <span v-if="rankSongTotal !== null && rankSongTotal > songs.length">
+                  已加载 {{ songs.length }} 首
+                </span>
+                <span v-if="selectedRank?.updateFrequency">
+                  更新频率：{{ selectedRank.updateFrequency }}
+                </span>
+                <span v-if="selectedRank?.publishTime">{{ selectedRank.publishTime }} 更新</span>
+              </div>
             </div>
           </template>
 
@@ -309,6 +362,15 @@ watch(
             </Button>
           </template>
         </SliverHeader>
+
+        <Dialog
+          v-model:open="showRankIntro"
+          :title="selectedRank?.name || '榜单介绍'"
+          :description="selectedRank?.description"
+          contentClass="detail-intro-dialog"
+          descriptionClass="text-[13px]"
+          showClose
+        />
 
         <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="rank" />
 

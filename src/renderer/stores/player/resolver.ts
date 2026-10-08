@@ -20,6 +20,7 @@ import {
   normalizeQuality,
   resolveTrackLoudness,
   resolveUrlsFromResponse,
+  resolveAudioFailureReason,
   summarizeSong,
 } from './utils';
 import type { ClimaxMark, PlaybackSource, ResolvedAudioSource } from './types';
@@ -150,6 +151,22 @@ export const parseRelateGoodsFromPrivilege = (payload: unknown): SongRelateGood[
       hash: typeof item.hash === 'string' ? item.hash : undefined,
       quality: typeof item.quality === 'string' ? item.quality : undefined,
       level: typeof item.level === 'number' ? item.level : undefined,
+      ...(readMetadataNumber(item.status) !== undefined
+        ? { status: readMetadataNumber(item.status) }
+        : {}),
+      ...(readMetadataNumber(item.privilege) !== undefined
+        ? { privilege: readMetadataNumber(item.privilege) }
+        : {}),
+      ...(readMetadataNumber(item.pay_type ?? item.payType) !== undefined
+        ? { payType: readMetadataNumber(item.pay_type ?? item.payType) }
+        : {}),
+      ...(readMetadataNumber(item.fail_process ?? item.failProcess) !== undefined
+        ? { failProcess: readMetadataNumber(item.fail_process ?? item.failProcess) }
+        : {}),
+      ...(typeof item.type === 'string' ? { goodsType: item.type } : {}),
+      ...(readMetadataNumber(getRecord(item.trans_param).all_quality_free) !== undefined
+        ? { allQualityFree: readMetadataNumber(getRecord(item.trans_param).all_quality_free) }
+        : {}),
     }));
 };
 
@@ -370,6 +387,7 @@ export const createResolver = (
 
     const audioQuality = getEffectiveAudioQuality(track);
     const audioEffect = normalizeEffect(state.audioEffect);
+    let qualityFailureReason: string | undefined;
     const compatibilityMode = settingStore.compatibilityMode ?? true;
     const pluginAudioSourceContext = createPluginAudioSourceContext(
       track,
@@ -379,7 +397,11 @@ export const createResolver = (
       source: ResolvedAudioSource,
       stage: Parameters<typeof transformPluginAudioSource>[2],
     ) => {
-      const resolved = await transformAudioSource(track, source, stage, options);
+      const transformed = await transformAudioSource(track, source, stage, options);
+      const resolved =
+        transformed && transformed.quality !== audioQuality && qualityFailureReason
+          ? { ...transformed, qualityFailureReason }
+          : transformed;
       return resolved && audioEffect !== 'none' && resolved.effect !== audioEffect
         ? { ...resolved, noticeCode: resolved.noticeCode ?? 'audio-effect-unavailable' }
         : resolved;
@@ -634,6 +656,11 @@ export const createResolver = (
         const res = await getSongUrl(matched.hash, quality, undefined, getCatalogUrlOptions());
         const loudness = rememberCatalogTrackLoudness(res);
         const urls = resolveUrlsFromResponse(res);
+        if (!urls.length && quality === audioQuality) {
+          qualityFailureReason =
+            resolveAudioFailureReason(res, catalogTrack, true, matched) ??
+            '暂时无法获取所选音质音源';
+        }
         if (urls.length > 0) {
           const transformed = await finalizeResolvedSource(
             {
@@ -648,6 +675,11 @@ export const createResolver = (
           if (transformed) return transformed;
         }
       } catch (error) {
+        if (quality === audioQuality) {
+          qualityFailureReason =
+            resolveAudioFailureReason(error, catalogTrack, true, matched) ??
+            '暂时无法获取所选音质音源';
+        }
         logger.warn('PlayerResolver', 'Fetch quality url failed:', error);
       }
     }
@@ -725,7 +757,13 @@ export const createResolver = (
       },
     );
 
-    return { url: '', quality: null, effect: 'none', loudness: null };
+    return {
+      url: '',
+      quality: null,
+      effect: 'none',
+      loudness: null,
+      failureReason: qualityFailureReason,
+    };
   };
 
   const fetchClimaxMarks = async (track: Song) => {

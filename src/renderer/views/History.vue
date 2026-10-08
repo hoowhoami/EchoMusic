@@ -641,11 +641,12 @@ onUnmounted(() => {
         title="最近播放"
         :coverUrl="historyCoverUrl"
         :hasDetails="true"
+        distribute-details
         :expandedHeight="176"
         :collapsedHeight="56"
       >
         <template #details>
-          <div class="flex flex-col gap-2">
+          <div class="contents">
             <div class="text-[13px] font-semibold text-text-secondary">
               记录过往播放轨迹，快速回溯曾听过的歌曲与内容。
             </div>
@@ -654,7 +655,7 @@ onUnmounted(() => {
             >
               <div class="inline-flex items-center gap-1.5">
                 <Icon :icon="iconPlay" width="12" height="12" />
-                <span>{{ displayedCountLabel }}</span>
+                <span>{{ displayedCountLabel }} 首歌曲</span>
               </div>
             </div>
           </div>

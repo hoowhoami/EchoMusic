@@ -3,22 +3,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router';
 import Sortable from 'sortablejs';
 import { Icon } from '@iconify/vue';
-import {
-  iconSparkles,
-  iconCompass,
-  iconVinyl,
-  iconRadio,
-  iconCalendar,
-  iconShoppingBag,
-  iconHeadphones,
-  iconPlus,
-  iconMinus,
-  iconX,
-  iconLock,
-  iconArrowsSort,
-} from '@/icons';
+import { iconPlus, iconMinus, iconX } from '@/icons';
 import PluginIcon from '@/plugins/PluginIcon.vue';
-import { pluginShortcuts, pluginPages, type PluginIcon as IconValue } from '@/plugins/registry';
+import {
+  getSidebarFunctionEntries,
+  resolveSidebarShortcutEntries,
+  type SidebarShortcutEntry,
+} from './sidebarShortcutEntries';
 import Dialog from '@/components/ui/Dialog.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Cover from '@/components/ui/Cover.vue';
@@ -41,12 +32,7 @@ import {
   selectedShortcutResources,
   type SidebarShortcutResource,
 } from './sidebarShortcutResources';
-import {
-  DEFAULT_SHORTCUT_KEYS,
-  REQUIRED_SHORTCUT_KEYS,
-  normalizeShortcutKeys,
-  reorderShortcutKeys,
-} from './sidebarLayout';
+import { DEFAULT_SHORTCUT_KEYS, normalizeShortcutKeys, reorderShortcutKeys } from './sidebarLayout';
 const props = defineProps<{ collapsed?: boolean }>();
 const SHORTCUT_ICON_SIZE = 20;
 const settings = useSettingStore(),
@@ -74,54 +60,8 @@ function positionPicker() {
     width: `${Math.max(0, Math.min(520, window.innerWidth - left - 12))}px`,
   };
 }
-interface Entry {
-  key: string;
-  title: string;
-  icon?: IconValue;
-  path?: string;
-  onClick?: () => void | Promise<void>;
-  source?: string;
-  disabled?: boolean;
-  resource?: SidebarShortcutResource;
-}
-const builtin: Entry[] = [
-  { key: 'home', title: '为您推荐', icon: iconSparkles, path: '/main/home' },
-  { key: 'explore', title: '探索发现', icon: iconCompass, path: '/main/explore' },
-  { key: 'discover-flow', title: '刷歌', icon: iconVinyl, path: '/main/discover-flow' },
-  { key: 'personal-fm', title: '私人 FM', icon: iconRadio, path: '/main/personal-fm' },
-  { key: 'recommend', title: '每日推荐', icon: iconCalendar, path: '/main/recommend' },
-  { key: 'ranking', title: '排行榜', icon: iconArrowsSort, path: '/main/ranking' },
-  { key: 'purchased', title: '已购音乐', icon: iconShoppingBag, path: '/main/purchased' },
-  { key: 'listen-together', title: '一起听', icon: iconHeadphones, path: '/main/listen-together' },
-];
-const flag = (value: boolean | (() => boolean) | undefined, fallback: boolean) => {
-  try {
-    return typeof value === 'function' ? value() : (value ?? fallback);
-  } catch {
-    return fallback;
-  }
-};
-const functions = computed<Entry[]>(() => [
-  ...builtin,
-  ...pluginShortcuts.value
-    .filter(
-      (e) =>
-        flag(e.visible, true) &&
-        (!e.pageId ||
-          pluginPages.value.some((page) => page.pluginId === e.pluginId && page.id === e.pageId)),
-    )
-    .map((e) => ({
-      key: e.key,
-      title: e.title,
-      icon: e.icon,
-      source: e.pluginId,
-      path: e.pageId
-        ? `/main/plugin/${encodeURIComponent(e.pluginId)}/${encodeURIComponent(e.pageId)}`
-        : undefined,
-      onClick: e.onClick,
-      disabled: flag(e.disabled, false),
-    })),
-]);
+type Entry = SidebarShortcutEntry;
+const functions = computed(getSidebarFunctionEntries);
 const artistPortraits = ref<Record<string, string>>({});
 const portraitRequests = new Set<string>();
 const resourceEntry = (snapshot: SidebarShortcutResource): Entry => {
@@ -150,12 +90,8 @@ const catalogue = computed(() => [
   ...playlistCandidates.value,
 ]);
 const keys = computed(() => normalizeShortcutKeys(settings.sidebarLayout.shortcutKeys));
-const visible = computed(() =>
-  keys.value.flatMap((key) => {
-    const entry = catalogue.value.find((e) => e.key === key);
-    return entry ? [entry] : [];
-  }),
-);
+const visible = computed(() => resolveSidebarShortcutEntries(keys.value, catalogue.value));
+const canRemove = (entry: Entry) => visible.value.length > 1 && keys.value.includes(entry.key);
 const busy = ref<string | null>(null);
 let sortable: Sortable | null = null,
   skipClick = false;
@@ -202,7 +138,7 @@ const save = (value: string[], added?: SidebarShortcutResource) => {
   };
 };
 const remove = (entry: Entry, focusAfter = true) => {
-  if (REQUIRED_SHORTCUT_KEYS.includes(entry.key)) return;
+  if (!canRemove(entry)) return;
   const index = visible.value.findIndex((item) => item.key === entry.key);
   save(keys.value.filter((key) => key !== entry.key));
   if (!focusAfter) return;
@@ -214,11 +150,7 @@ const remove = (entry: Entry, focusAfter = true) => {
   });
 };
 const toggle = (entry: Entry) => {
-  if (
-    REQUIRED_SHORTCUT_KEYS.includes(entry.key) ||
-    (entry.disabled && !keys.value.includes(entry.key))
-  )
-    return;
+  if (entry.disabled && !keys.value.includes(entry.key)) return;
   if (keys.value.includes(entry.key)) remove(entry, false);
   else save([...keys.value, entry.key], entry.resource);
 };
@@ -322,9 +254,9 @@ onBeforeUnmount(() => {
   <div class="sidebar-shortcuts" :class="{ 'is-collapsed': collapsed }">
     <div ref="container" class="shortcut-grid" aria-label="常用功能">
       <Tooltip
-        v-for="entry in visible"
+        v-for="(entry, index) in visible"
         :key="entry.key"
-        :content="entry.title"
+        :content="index === 0 ? `${entry.title}（首页）` : entry.title"
         side="right"
         :disabled="!collapsed"
       >
@@ -333,7 +265,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="shortcut-activate"
-              :aria-label="entry.title"
+              :aria-label="index === 0 ? `${entry.title}（首页）` : entry.title"
               :aria-current="route.path === entry.path ? 'page' : undefined"
               :disabled="entry.disabled || busy === entry.key"
               @click="activate(entry)"
@@ -369,7 +301,7 @@ onBeforeUnmount(() => {
               /><span class="shortcut-label">{{ entry.title }}</span>
             </button>
             <Tooltip
-              v-if="!collapsed && !REQUIRED_SHORTCUT_KEYS.includes(entry.key)"
+              v-if="!collapsed && canRemove(entry)"
               :content="`移除${entry.title}`"
               side="right"
             >
@@ -408,6 +340,7 @@ onBeforeUnmount(() => {
         content-class="shortcut-picker"
         :content-style="pickerPosition"
       >
+        <p class="shortcut-picker-hint">拖动卡片调整顺序，第一张就是首页；至少保留一张卡片。</p>
         <div class="shortcut-functions-heading">
           <h3>常用功能</h3>
           <button
@@ -424,10 +357,10 @@ onBeforeUnmount(() => {
             :key="entry.key"
             type="button"
             :disabled="
-              REQUIRED_SHORTCUT_KEYS.includes(entry.key) ||
+              (keys.includes(entry.key) && !canRemove(entry)) ||
               (entry.disabled && !keys.includes(entry.key))
             "
-            :aria-label="`${REQUIRED_SHORTCUT_KEYS.includes(entry.key) ? '必留' : keys.includes(entry.key) ? '移除' : '添加'}${entry.title}`"
+            :aria-label="`${keys.includes(entry.key) && !canRemove(entry) ? '至少保留一张卡片：' : keys.includes(entry.key) ? '移除' : '添加'}${entry.title}`"
             :aria-pressed="keys.includes(entry.key)"
             @click="toggle(entry)"
           >
@@ -436,13 +369,7 @@ onBeforeUnmount(() => {
               >{{ entry.title }}<small v-if="entry.source">{{ entry.source }}</small></span
             >
             <Icon
-              :icon="
-                REQUIRED_SHORTCUT_KEYS.includes(entry.key)
-                  ? iconLock
-                  : keys.includes(entry.key)
-                    ? iconMinus
-                    : iconPlus
-              "
+              :icon="keys.includes(entry.key) ? iconMinus : iconPlus"
               :width="18"
               :height="18"
             />
@@ -455,6 +382,7 @@ onBeforeUnmount(() => {
               v-for="entry in artistCandidates"
               :key="entry.key"
               type="button"
+              :disabled="keys.includes(entry.key) && !canRemove(entry)"
               :aria-label="`${keys.includes(entry.key) ? '移除' : '添加'}艺人${entry.title}`"
               :aria-pressed="keys.includes(entry.key)"
               @click="toggle(entry)"
@@ -493,6 +421,7 @@ onBeforeUnmount(() => {
               v-for="entry in playlistCandidates"
               :key="entry.key"
               type="button"
+              :disabled="keys.includes(entry.key) && !canRemove(entry)"
               :aria-label="`${keys.includes(entry.key) ? '移除' : '添加'}歌单${entry.title}`"
               :aria-pressed="keys.includes(entry.key)"
               @click="toggle(entry)"
@@ -519,6 +448,12 @@ onBeforeUnmount(() => {
   </div>
 </template>
 <style scoped>
+.shortcut-picker-hint {
+  margin: 0 0 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
 .sidebar-shortcuts {
   padding: 0 18px;
   flex-shrink: 0;

@@ -125,6 +125,11 @@ export const pluginRuntimeState = reactive({
 });
 
 const activePlugins = new Map<string, ActivePlugin>();
+let completeFirstPluginRefresh: () => void;
+const firstPluginRefresh = new Promise<void>((resolve) => {
+  completeFirstPluginRefresh = resolve;
+});
+export const waitForPluginRuntimeReady = () => firstPluginRefresh;
 let hostRef: PluginRuntimeHost | null = null;
 let runtimeErrorHandlersInstalled = false;
 
@@ -554,6 +559,7 @@ export const refreshPlugins = async (
     }
   } finally {
     pluginRuntimeState.loading = false;
+    completeFirstPluginRefresh();
 
     // 插件刷新完成后，重新同步当前播放状态，避免歌曲、歌词、封面不同步
     if (!options.miniPlayer && !options.desktopLyric) {

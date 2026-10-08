@@ -82,7 +82,7 @@ const logout = () => {
   confirmLogout.value = false;
   devices.reset();
   user.logout();
-  void router.push('/main/home');
+  void router.push('/main');
 };
 </script>
 

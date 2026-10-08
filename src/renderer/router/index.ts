@@ -30,6 +30,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/layouts/MainLayout.vue'),
     children: [
       {
+        path: '',
+        name: 'sidebar-home',
+        component: () => import('@/views/SidebarHome.vue'),
+        meta: { title: '首页' },
+      },
+      {
         path: 'themes',
         name: 'themes',
         component: () => import('@/theme/ThemeCenter.vue'),
@@ -194,7 +200,12 @@ const shouldSkipHistory = (route: RouteLocationNormalized): boolean => {
   return route.matched.some((record) => record.meta?.skipHistory === true);
 };
 
-router.beforeEach((to, from) => {
+router.beforeEach(async (to, from) => {
+  if (to.path === '/main') {
+    const { getSidebarHomeEntry } = await import('@/utils/sidebarHome');
+    const entry = await getSidebarHomeEntry();
+    if (entry.path && !entry.disabled) return { path: entry.path, replace: true };
+  }
   if (to.name === 'settings') {
     openSettingsDialog();
     return from.matched.length ? false : { path: '/main', replace: true };

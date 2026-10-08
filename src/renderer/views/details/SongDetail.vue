@@ -1309,6 +1309,7 @@ watch(total, (value) => {
         :title="headerTitle"
         :coverUrl="resourceCover"
         :hasDetails="true"
+        distribute-details
         :expandedHeight="196"
         :collapsedHeight="56"
       >
@@ -1772,10 +1773,7 @@ watch(total, (value) => {
 }
 
 .song-detail-header {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
+  display: contents;
 }
 
 .song-detail-artist {

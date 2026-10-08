@@ -1,3 +1,4 @@
+import type { Component } from 'vue';
 import type { PluginIcon } from '@/plugins/registry';
 
 export function getPlayerBarBadgeTone(key: string, value: string | null) {
@@ -27,7 +28,8 @@ export interface PlayerBarAction {
   key?: string;
   id: string;
   title: string;
-  icon: PluginIcon;
+  icon?: PluginIcon;
+  iconComponent?: Component;
   component?: 'sleep-timer' | 'volume' | 'speed' | 'quality' | 'effect' | 'cast' | 'barrage';
   trigger?: PlayerBarInteractionTrigger;
   tooltip?: string;

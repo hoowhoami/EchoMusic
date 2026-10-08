@@ -1178,3 +1178,77 @@ test('the last published searching value is false once an AirPlay scan ends', as
     'and the renderer was told so — otherwise the refresh button spins forever',
   );
 });
+
+test('opening the cast panel cannot scan while network playback is disabled', async () => {
+  let discoveries = 0;
+  const box = harness({
+    airplay: {
+      discover: async () => {
+        discoveries += 1;
+        return [];
+      },
+    },
+  });
+  box.host.setBrowsing(true);
+  await box.host.refresh();
+  assert.equal(box.host.wantsScan, false);
+  assert.equal(box.host.searching, false);
+  assert.equal(discoveries, 0);
+});
+
+test('disabling casting with the panel open revokes scans and ignores late AirPlay results', async () => {
+  const gate = deferred();
+  let progress;
+  const box = harness({
+    airplay: {
+      discoverEach: (_timeout, callback) => {
+        progress = callback;
+        return gate.promise;
+      },
+    },
+  });
+  box.host.setBrowsing(true);
+  box.host.setEnabled(true);
+  box.host.noteDlnaScanning(true);
+  await box.host.refresh();
+  assert.equal(box.host.searching, true);
+  box.host.setEnabled(false);
+  assert.equal(box.host.wantsScan, false);
+  assert.equal(box.host.sessionView().searching, false);
+  const late = { id: 'late-disabled', name: 'Late', needsPin: false };
+  progress(late);
+  gate.resolve([late]);
+  await tick();
+  await tick();
+  assert.ok(!box.host.targets().some((target) => target.targetId === late.id));
+  assert.equal(box.host.diagnosticMessage, '网络播放未开启');
+  assert.equal(box.host.sessionView().searching, false);
+});
+
+test('re-enabling casting during an old AirPlay scan starts one new scan after it drains', async () => {
+  const gate = deferred();
+  let discoveries = 0;
+  const fresh = { id: 'fresh-enabled', name: 'Fresh', needsPin: false };
+  const box = harness({
+    airplay: {
+      discover: () => {
+        discoveries += 1;
+        return discoveries === 1 ? gate.promise : Promise.resolve([fresh]);
+      },
+    },
+  });
+  box.host.setBrowsing(true);
+  box.host.setEnabled(true);
+  await box.host.refresh();
+  box.host.setEnabled(false);
+  box.host.setEnabled(true);
+  await box.host.refresh();
+  assert.equal(discoveries, 1);
+  gate.resolve([{ id: 'stale', name: 'Stale', needsPin: false }]);
+  await tick();
+  await tick();
+  assert.equal(discoveries, 2);
+  assert.ok(box.host.targets().some((target) => target.targetId === fresh.id));
+  assert.ok(!box.host.targets().some((target) => target.targetId === 'stale'));
+  assert.equal(box.host.searching, false);
+});

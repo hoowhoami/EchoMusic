@@ -8,7 +8,7 @@ const readSingleQueryValue = (value: unknown): string => {
 
 export const resolveCloseTarget = (
   route: Pick<RouteLocationNormalizedLoaded, 'query'>,
-  fallback = '/main/home',
+  fallback = '/main',
 ): string => {
   const from = readSingleQueryValue(route.query.from);
   return from || fallback;
@@ -17,7 +17,7 @@ export const resolveCloseTarget = (
 export const closeTransientView = async (
   router: Router,
   route: Pick<RouteLocationNormalizedLoaded, 'query'>,
-  fallback = '/main/home',
+  fallback = '/main',
 ): Promise<void> => {
   const toastStore = useToastStore();
   try {
