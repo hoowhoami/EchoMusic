@@ -460,7 +460,8 @@ onUnmounted(() => {
 .cast-device-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* 设备名优先拿到空间：meta 列可收缩并省略，名字只在名字本身过长时才截断。 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   min-height: 32px;
   align-items: center;
   gap: 8px;
@@ -514,7 +515,7 @@ onUnmounted(() => {
 
 .cast-device-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -525,6 +526,14 @@ onUnmounted(() => {
   overflow: hidden;
   font-size: 12px;
   font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cast-device-meta {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

@@ -137,12 +137,21 @@ pub async fn load_device(description_url: String) -> Result<UpnpDeviceSnapshot> 
         if services.len() >= MAX_SERVICES_IN_SNAPSHOT {
             break;
         }
+        // A single service with an unusable endpoint must not hide the others:
+        // AVTransport is what playback needs, the rest are optional.
+        let (Ok(control_url), Ok(event_sub_url), Ok(scpd_url)) = (
+            service.control_url(&base),
+            service.event_sub_url(&base),
+            service.scpd_url(&base),
+        ) else {
+            continue;
+        };
         services.push(UpnpServiceEndpoint {
             service_id: service.service_id().to_string(),
             service_type: service.service_type().to_string(),
-            control_url: service.control_url(&base).to_string(),
-            event_sub_url: service.event_sub_url(&base).to_string(),
-            scpd_url: service.scpd_url(&base).to_string(),
+            control_url: control_url.to_string(),
+            event_sub_url: event_sub_url.to_string(),
+            scpd_url: scpd_url.to_string(),
         });
     }
 

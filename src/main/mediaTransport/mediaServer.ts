@@ -72,35 +72,58 @@ const MIME_BY_EXT: Record<string, string> = {
   '.mkv': 'video/x-matroska',
 };
 
-function listIpv4Addresses(provider?: () => string[]): string[] {
+interface Ipv4Candidate {
+  address: string;
+  /** 网卡名。注入 provider 时为空，表示调用方已自行选定。 */
+  name: string;
+}
+
+/**
+ * 虚拟网卡名特征。Hyper-V / WSL / VMware / VirtualBox / Docker 的适配器常带私网段
+ * 地址且在 `os.networkInterfaces()` 中排在物理网卡之前，选中它们会让中转地址对
+ * 局域网内的设备不可达。仅按名字排除，不靠顺序或地址段猜测。
+ */
+const VIRTUAL_IFACE_PATTERNS =
+  /vEthernet|hyper-v|hyperv|vmware|virtualbox|vbox|^loopback|^ws-?l|wsl|docker|virbr|zerotier|tailscale|^tap-|^tun\d|tunnel/i;
+
+function listIpv4Addresses(provider?: () => string[]): Ipv4Candidate[] {
   if (provider) {
     try {
-      return provider().filter((addr) => /\d+\.\d+\.\d+\.\d+/.test(addr));
+      return provider()
+        .filter((addr) => /\d+\.\d+\.\d+\.\d+/.test(addr))
+        .map((address) => ({ address, name: '' }));
     } catch {
       return [];
     }
   }
-  const addrs: string[] = [];
-  for (const ifaces of Object.values(os.networkInterfaces() ?? {})) {
+  const addrs: Ipv4Candidate[] = [];
+  for (const [name, ifaces] of Object.entries(os.networkInterfaces() ?? {})) {
     for (const iface of ifaces ?? []) {
-      if (iface.family === 'IPv4') addrs.push(iface.address);
+      if (iface.family === 'IPv4') addrs.push({ address: iface.address, name });
     }
   }
   return addrs;
 }
 
+function isPrivateIpv4(addr: string): boolean {
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(addr);
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  if (addr.startsWith('127.')) return false;
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+/**
+ * 选定用于媒体中转与 GENA 回调的局域网地址。
+ *
+ * 排序策略：物理网卡优先于虚拟网卡；同类候选中取私网段地址。物理网卡一个都没有
+ * 时才退回虚拟网卡，避免多网卡机器（如 Hyper-V 默认交换机 172.26.x.x 抢在 WLAN
+ * 192.168.x.x 之前）产出局域网设备无法访问的中转地址。
+ */
 export function pickLanIpv4(provider?: () => string[]): string {
-  const candidates = listIpv4Addresses(provider);
-  const privateV4 = candidates.find((addr) => {
-    const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(addr);
-    if (!m) return false;
-    const [a, b] = [Number(m[1]), Number(m[2])];
-    return (
-      (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) &&
-      !addr.startsWith('127.')
-    );
-  });
-  return privateV4 ?? '127.0.0.1';
+  const candidates = listIpv4Addresses(provider).filter((c) => isPrivateIpv4(c.address));
+  const physical = candidates.find((c) => !VIRTUAL_IFACE_PATTERNS.test(c.name));
+  return (physical ?? candidates[0])?.address ?? '127.0.0.1';
 }
 
 export interface RangeRequest {

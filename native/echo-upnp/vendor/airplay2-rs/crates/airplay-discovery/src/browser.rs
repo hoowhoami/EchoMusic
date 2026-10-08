@@ -223,6 +223,18 @@ impl Discovery for ServiceBrowser {
                         yield browse_event;
                     }
                 }
+
+                // EchoMusic patch: hand control back to the consumer.
+                //
+                // Every await above is either a blocking `recv_timeout` or gated on an
+                // event actually arriving, so on a network with no AirPlay devices this
+                // generator never returns Pending: it spins inside a single `poll_next`.
+                // A consumer using `tokio::select!` against a deadline (see
+                // `echo-airplay`'s `browse_devices`) then never regains control, its
+                // timeout sleep is never polled, and discovery hangs forever instead of
+                // honouring the requested timeout. Yielding once per iteration keeps the
+                // stream cooperative so the caller's deadline can fire.
+                tokio::task::yield_now().await;
             }
         };
 

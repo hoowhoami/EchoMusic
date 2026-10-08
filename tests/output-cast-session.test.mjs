@@ -3,10 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const bundleDir = mkdtempSync(join(tmpdir(), 'echo-output-bundle-'));
 const outfile = join(bundleDir, 'bundle.mjs');
 await build({
@@ -398,9 +398,12 @@ test('DLNA targets expose a stable note for same-name devices', async () => {
     const first = host.targets().find((target) => target.targetId === 'uuid:gateway-a');
     const second = host.targets().find((target) => target.targetId === 'uuid:gateway-b');
     assert.equal(first?.displayName, '天翼网关');
-    assert.match(first?.note ?? '', /CT · Gateway · A · SN-001 · 192\.168\.1\.1:52869/);
+    // 副标题只显示主机名：端口对识别设备没有帮助，还会在窄面板里挤掉设备名。
+    assert.match(first?.note ?? '', /CT · Gateway · A · SN-001 · 192\.168\.1\.1$/);
+    assert.doesNotMatch(first?.note ?? '', /52869/);
     assert.equal(second?.displayName, '天翼网关');
-    assert.match(second?.note ?? '', /192\.168\.1\.100:52869/);
+    assert.match(second?.note ?? '', /192\.168\.1\.100$/);
+    assert.doesNotMatch(second?.note ?? '', /52869/);
   } finally {
     await media.stop();
   }
@@ -1115,5 +1118,27 @@ test('AirPlay discovery publishes devices while the scan is still running', asyn
     );
   } finally {
     await box.media.stop();
+  }
+});
+
+test('a device note never repeats the same value twice', () => {
+  // 设备常把型号同时填进 modelName 和 modelNumber。副标题去重前会显示成
+  // `S12 · S12`，在窄面板里既占地方又没有信息量。
+  const { host, media } = harness();
+  try {
+    host.noteDlnaDevices([
+      {
+        usn: 'uuid:speaker',
+        location: 'http://192.168.6.184:9999/desc.xml',
+        manufacturer: 'Mi, Inc.',
+        modelName: 'S12',
+        modelNumber: 'S12',
+      },
+    ]);
+    const note = host.targets().find((t) => t.targetId === 'uuid:speaker')?.note ?? '';
+    assert.match(note, /Mi, Inc\. · S12 · 192\.168\.6\.184$/);
+    assert.doesNotMatch(note, /S12 · S12/);
+  } finally {
+    void media;
   }
 });

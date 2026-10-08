@@ -1186,6 +1186,18 @@ async fn browse_devices(
     use tokio_stream::StreamExt;
 
     let browser = ServiceBrowser::new().map_err(|err| err.to_string())?;
+
+    // 没有 progress 订阅者时走 `scan()`：它按 wall clock 判断超时
+    // (`start.elapsed() < timeout`)，不依赖 `browse()` 那个流是否协作。
+    // 只有需要边搜边回调的 `discover_each` 才必须消费流。
+    if progress.is_none() {
+        let devices = browser.scan(timeout).await.map_err(|err| err.to_string())?;
+        for device in &devices {
+            upsert_device_cache(&cache, device.clone());
+        }
+        return Ok(devices);
+    }
+
     let mut stream = browser.browse().await.map_err(|err| err.to_string())?;
     let deadline = tokio::time::sleep(timeout);
     tokio::pin!(deadline);

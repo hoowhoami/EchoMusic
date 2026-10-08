@@ -19,7 +19,7 @@ use tokio::{
     net::TcpListener,
 };
 
-use http::{uri::PathAndQuery, Request, Uri};
+use http::{Request, Uri};
 use roxmltree::{Document, Node};
 use ssdp_client::URN;
 
@@ -33,9 +33,13 @@ use utils::HyperBodyExt;
 pub struct Service {
     service_type: URN,
     service_id: String,
-    scpd_endpoint: PathAndQuery,
-    control_endpoint: PathAndQuery,
-    event_sub_endpoint: PathAndQuery,
+    // EchoMusic patch: kept as raw text instead of `PathAndQuery`. Devices in
+    // the wild ship `<SCPDURL>AVTransport1.xml</SCPDURL>` without a leading slash,
+    // which `PathAndQuery` rejects outright ("path does not start with slash").
+    // Parsing them eagerly made one sloppy service sink the whole device load.
+    scpd_endpoint: String,
+    control_endpoint: String,
+    event_sub_endpoint: String,
 }
 
 impl Service {
@@ -47,9 +51,9 @@ impl Service {
         Ok(Self {
             service_type: utils::parse_node_text(service_type)?,
             service_id: utils::parse_node_text(service_id)?,
-            scpd_endpoint: utils::parse_node_text(scpd_endpoint)?,
-            control_endpoint: utils::parse_node_text(control_endpoint)?,
-            event_sub_endpoint: utils::parse_node_text(event_sub_endpoint)?,
+            scpd_endpoint: node_endpoint_text(scpd_endpoint),
+            control_endpoint: node_endpoint_text(control_endpoint),
+            event_sub_endpoint: node_endpoint_text(event_sub_endpoint),
         })
     }
 
@@ -65,19 +69,19 @@ impl Service {
 
     /// URL for this service's control endpoint, resolved against the device URL.
     /// (EchoMusic patch: made `pub` so wrapper addons can expose absolute URLs.)
-    pub fn control_url(&self, url: &Uri) -> Uri {
-        replace_url_path(url, &self.control_endpoint)
+    pub fn control_url(&self, url: &Uri) -> Result<Uri> {
+        resolve_endpoint(url, &self.control_endpoint)
     }
-    pub fn scpd_url(&self, url: &Uri) -> Uri {
-        replace_url_path(url, &self.scpd_endpoint)
+    pub fn scpd_url(&self, url: &Uri) -> Result<Uri> {
+        resolve_endpoint(url, &self.scpd_endpoint)
     }
-    pub fn event_sub_url(&self, url: &Uri) -> Uri {
-        replace_url_path(url, &self.event_sub_endpoint)
+    pub fn event_sub_url(&self, url: &Uri) -> Result<Uri> {
+        resolve_endpoint(url, &self.event_sub_endpoint)
     }
 
     /// Fetches the [`SCPD`](scpd/struct.SCPD.html) of this service.
     pub async fn scpd(&self, url: &Uri) -> Result<SCPD> {
-        SCPD::from_url(&self.scpd_url(url), self.service_type().clone()).await
+        SCPD::from_url(&self.scpd_url(url)?, self.service_type().clone()).await
     }
 
     /// Execute some UPnP Action on this service.
@@ -133,7 +137,7 @@ impl Service {
 
         let soap_action = format!("\"{}#{}\"", &self.service_type, action);
 
-        let request = Request::post(self.control_url(url))
+        let request = Request::post(self.control_url(url)?)
             .header("CONTENT-TYPE", "text/xml; charset=\"utf-8\"")
             .header("SOAPAction", soap_action)
             .body(body)
@@ -182,7 +186,7 @@ impl Service {
         use http_body_util::Empty;
 
         let req = Request::builder()
-            .uri(self.event_sub_url(url))
+            .uri(self.event_sub_url(url)?)
             .method("SUBSCRIBE")
             .header("CALLBACK", format!("<{callback}>"))
             .header("NT", "upnp:event")
@@ -255,7 +259,7 @@ impl Service {
     /// When the sid is invalid, the control point will respond with a `412 Preconditition failed`.
     pub async fn renew_subscription(&self, url: &Uri, sid: &str, timeout_secs: u32) -> Result<()> {
         let req = Request::builder()
-            .uri(self.event_sub_url(url))
+            .uri(self.event_sub_url(url)?)
             .method("SUBSCRIBE")
             .header("SID", sid)
             .header("TIMEOUT", format!("Second-{timeout_secs}"))
@@ -277,7 +281,7 @@ impl Service {
     /// When the sid is invalid, the control point will respond with a `412 Preconditition failed`.
     pub async fn unsubscribe(&self, url: &Uri, sid: &str) -> Result<()> {
         let req = Request::builder()
-            .uri(self.event_sub_url(url))
+            .uri(self.event_sub_url(url)?)
             .method("UNSUBSCRIBE")
             .header("SID", sid)
             .body(Empty::<Bytes>::new())
@@ -353,8 +357,184 @@ async fn subscribe_stream(listener: TcpListener, co: Co<Result<HashMap<String, S
     }
 }
 
-fn replace_url_path(url: &Uri, path: &PathAndQuery) -> Uri {
-    let mut parts = url.clone().into_parts();
-    parts.path_and_query = Some(path.clone());
-    Uri::from_parts(parts).expect("infallible")
+/// EchoMusic patch: read a service endpoint element as trimmed text.
+///
+/// Devices commonly ship relative endpoints without a leading slash
+/// (`<SCPDURL>AVTransport1.xml</SCPDURL>`) or with stray whitespace from
+/// pretty-printed XML. Keeping the raw text defers all URL handling to
+/// [`resolve_endpoint`], so a malformed endpoint can no longer fail the whole
+/// device description parse.
+fn node_endpoint_text(node: Node<'_, '_>) -> String {
+    node.text().unwrap_or_default().trim().to_string()
+}
+
+/// EchoMusic patch: resolve a service endpoint against the device description URL.
+///
+/// Per UPnP Device Architecture the endpoints may be absolute, root-relative or
+/// relative to the description document. The previous `PathAndQuery` parse only
+/// accepted root-relative paths and rejected the rest, which is what made devices
+/// such as the Xiaomi speaker (relative `<SCPDURL>AVTransport1.xml</SCPDURL>`)
+/// unloadable. `http::Uri` has no RFC 3986 `join`, so resolve by hand.
+fn resolve_endpoint(base: &Uri, endpoint: &str) -> Result<Uri> {
+    let endpoint = endpoint.trim();
+    if endpoint.is_empty() {
+        return Err(Error::XmlMissingElement(
+            "service".to_string(),
+            "endpoint URL is empty".to_string(),
+        ));
+    }
+
+    // Already absolute: keep scheme/authority, but reject a host that disagrees
+    // with the description URL so a device cannot redirect control traffic off-host.
+    if let Ok(absolute) = endpoint.parse::<Uri>() {
+        if absolute.scheme().is_some() && absolute.authority().is_some() {
+            let base_authority = base.authority().map(|a| a.as_str());
+            let same_host = absolute.authority().map(|a| a.as_str()) == base_authority;
+            if !same_host {
+                return Err(invalid_endpoint(format!(
+                    "service endpoint host {:?} does not match the device description host {:?}",
+                    absolute.authority().map(|a| a.as_str()),
+                    base_authority
+                )));
+            }
+            return Ok(absolute);
+        }
+    }
+
+    let parts = base.clone().into_parts();
+    let path = match endpoint.strip_prefix('/') {
+        // Root-relative: replaces the whole base path.
+        Some(rest) => rest,
+        // Document-relative: replace the last path segment of the description URL.
+        None => {
+            let base_path = base.path();
+            let directory = match base_path.rfind('/') {
+                Some(index) => &base_path[..index + 1],
+                None => "/",
+            };
+            return resolve_parts(parts, &format!("{directory}{endpoint}"));
+        }
+    };
+    resolve_parts(parts, path)
+}
+
+fn resolve_parts(mut parts: http::uri::Parts, path: &str) -> Result<Uri> {
+    // A relative endpoint may still carry a query (`control?x=1`); split it off
+    // so `PathAndQuery` gets a valid reference.
+    let (path, query) = match path.find('?') {
+        Some(index) => (&path[..index], Some(&path[index + 1..])),
+        None => (path, None),
+    };
+    let mut reference = path.to_string();
+    if !reference.starts_with('/') {
+        reference.insert(0, '/');
+    }
+    if let Some(query) = query {
+        reference.push('?');
+        reference.push_str(query);
+    }
+    parts.path_and_query = Some(
+        reference
+            .parse::<http::uri::PathAndQuery>()
+            .map_err(|e| invalid_endpoint(format!("invalid service endpoint {reference:?}: {e}")))?,
+    );
+    Uri::from_parts(parts)
+        .map_err(|_| invalid_endpoint(format!("service endpoint {reference:?} is not a valid URI")))
+}
+
+/// EchoMusic patch: a plain message carrier for endpoint rejections.
+///
+/// `http::uri::InvalidUri` cannot be constructed directly in http 1.x, so these
+/// rejections need their own `std::error::Error` to travel through
+/// [`Error::InvalidResponse`] without losing their explanation.
+#[derive(Debug)]
+struct InvalidEndpoint(String);
+
+impl std::fmt::Display for InvalidEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for InvalidEndpoint {}
+
+/// EchoMusic patch: build an [`Error::InvalidResponse`] from a formatted message.
+fn invalid_endpoint(message: String) -> Error {
+    Error::InvalidResponse(Box::new(InvalidEndpoint(message)))
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use super::resolve_endpoint;
+
+    fn uri(raw: &str) -> http::Uri {
+        raw.parse().unwrap()
+    }
+
+    #[test]
+    fn resolves_absolute_endpoint_on_same_host() {
+        let base = uri("http://192.168.6.184:9999/6abf92a9.xml");
+        let resolved = resolve_endpoint(&base, "http://192.168.6.184:9999/AVTransport/control").unwrap();
+        assert_eq!(resolved, uri("http://192.168.6.184:9999/AVTransport/control"));
+    }
+
+    #[test]
+    fn rejects_endpoint_on_other_host() {
+        let base = uri("http://192.168.6.184:9999/6abf92a9.xml");
+        assert!(resolve_endpoint(&base, "http://evil.test/control").is_err());
+    }
+
+    #[test]
+    fn resolves_root_relative_endpoint() {
+        let base = uri("http://192.168.6.184:9999/6abf92a9.xml");
+        let resolved = resolve_endpoint(&base, "/AVTransport/control").unwrap();
+        assert_eq!(resolved, uri("http://192.168.6.184:9999/AVTransport/control"));
+    }
+
+    // The Xiaomi speaker ships every endpoint document-relative with no slash.
+    #[test]
+    fn resolves_document_relative_endpoint_without_leading_slash() {
+        let base = uri("http://192.168.6.184:9999/6abf92a9.xml");
+        assert_eq!(
+            resolve_endpoint(&base, "AVTransport1.xml").unwrap(),
+            uri("http://192.168.6.184:9999/AVTransport1.xml")
+        );
+        assert_eq!(
+            resolve_endpoint(&base, "Queue1/control").unwrap(),
+            uri("http://192.168.6.184:9999/Queue1/control")
+        );
+    }
+
+    #[test]
+    fn resolves_document_relative_endpoint_from_nested_description_url() {
+        let base = uri("http://192.168.6.184:9999/dev/6abf92a9.xml");
+        assert_eq!(
+            resolve_endpoint(&base, "Queue1/control").unwrap(),
+            uri("http://192.168.6.184:9999/dev/Queue1/control")
+        );
+    }
+
+    #[test]
+    fn keeps_query_string() {
+        let base = uri("http://192.168.6.184:9999/6abf92a9.xml");
+        assert_eq!(
+            resolve_endpoint(&base, "control?device=0").unwrap(),
+            uri("http://192.168.6.184:9999/control?device=0")
+        );
+    }
+
+    #[test]
+    fn rejects_empty_endpoint() {
+        let base = uri("http://192.168.6.184:9999/6abf92a9.xml");
+        assert!(resolve_endpoint(&base, "   ").is_err());
+    }
+
+    #[test]
+    fn resolves_against_description_url_without_path() {
+        let base = uri("http://192.168.6.184:9999");
+        assert_eq!(
+            resolve_endpoint(&base, "AVTransport1.xml").unwrap(),
+            uri("http://192.168.6.184:9999/AVTransport1.xml")
+        );
+    }
 }
