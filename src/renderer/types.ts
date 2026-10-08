@@ -3,7 +3,8 @@ import type { PlayMode } from '../shared/playback';
 
 export type { PlayMode };
 
-export type AudioQualityValue = '128' | '320' | 'flac' | 'high' | 'viper_tape';
+export type AudioQualityValue =
+  '128' | '320' | 'flac' | 'high' | 'viper_clear' | 'viper_tape' | 'viper_atmos';
 
 export type AudioEffectValue =
   | 'none'

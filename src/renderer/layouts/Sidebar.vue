@@ -46,6 +46,7 @@ import type { PlaylistMeta } from '@/models/playlist';
 import { usePlaylistStore } from '@/stores/playlist';
 import { orderByPlaylistPosition } from '@/utils/playlistOrder';
 import { useUserStore } from '@/stores/user';
+import { getAccountVipStatus, getPrimaryVipBadge } from '@/utils/accountVip';
 import { usePlaylistCoversStore } from '@/stores/playlistCovers';
 import { useToastStore } from '@/stores/toast';
 import { useSettingStore } from '@/stores/setting';
@@ -74,29 +75,9 @@ const importTaskStore = useImportTaskStore();
 const isLoggedIn = computed(() => userStore.isLoggedIn);
 const userInfo = computed(() => userStore.info);
 
-interface VipLevelInfo {
-  product_type?: string;
-  is_vip?: number;
-  vip_begin_time?: string | number;
-  vip_end_time?: string | number;
-}
-
-interface VipInfoState {
-  busi_vip?: VipLevelInfo[];
-  [key: string]: unknown;
-}
-
-const vipInfo = computed<VipInfoState>(
-  () => (userInfo.value?.extendsInfo?.vip as VipInfoState | undefined) || {},
+const vipBadge = computed(() =>
+  getPrimaryVipBadge(getAccountVipStatus(userInfo.value?.extendsInfo?.vip)),
 );
-const busiVip = computed<VipLevelInfo[]>(() => vipInfo.value?.busi_vip || []);
-const svip = computed(() => busiVip.value.find((v) => v.product_type === 'svip' && v.is_vip === 1));
-const tvip = computed(() => busiVip.value.find((v) => v.product_type === 'tvip' && v.is_vip === 1));
-const vipBadge = computed(() => {
-  if (svip.value) return 'svip';
-  if (tvip.value) return 'tvip';
-  return 'novip';
-});
 
 const activePlaylistTab = ref(0);
 const showCreateDialog = ref(false);
@@ -994,11 +975,11 @@ watch(
                     <span class="sidebar-profile-meta">
                       <template v-if="isLoggedIn">
                         <span class="sidebar-profile-level">Lv.{{ userInfo?.p_grade || 0 }}</span>
-                        <span v-if="vipBadge === 'svip'" class="sidebar-member-badge is-svip"
-                          >SVIP</span
-                        >
-                        <span v-else-if="vipBadge === 'tvip'" class="sidebar-member-badge is-tvip"
-                          >TVIP</span
+                        <span
+                          v-if="vipBadge"
+                          class="sidebar-member-badge"
+                          :class="`is-${vipBadge.kind}`"
+                          >{{ vipBadge.label }}</span
                         >
                         <span v-else class="sidebar-member-badge">NOVIP</span>
                       </template>

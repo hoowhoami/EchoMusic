@@ -36,36 +36,31 @@ const samples = [
   [
     '王忻辰、苏星婕 - 清空.mp3',
     { bits: '8fffc0db411ffffff3fe475', attr0: 2134893685, attr1: 1747189759 },
-    '母带',
     'Hi-Res',
   ],
   [
     'Maroon 5 - Animals.mp3',
     { bits: '800000db4100000773fc035', attr0: 2000666677, attr1: 1746927616 },
-    '母带',
     'SQ',
   ],
   ['梦里啥都有 - 泡沫 (Beyonce版).mp3', { bits: '7e80000004', attr0: 4, attr1: 253 }, '', ''],
   [
     '宝宝巴士 - 小燕子.mp3',
     { bits: '800000db41000003330c014', attr0: 858832916, attr1: 1746927616 },
-    '母带',
     'HQ',
   ],
   [
     '儿歌多多 - 数鸭子 (幼儿园早教儿歌).mp3',
     { bits: '2001e007e80000034', attr0: 52, attr1: 3932413 },
     'SQ',
-    'SQ',
   ],
   [
     'Ocean Media - ไต่ปุยจิ่ว (大悲咒).mp3',
     { bits: '800000c0000000040004074', attr0: 1073758324, attr1: 0 },
     'Hi-Res',
-    'Hi-Res',
   ],
 ];
-for (const [name, qualitymap, enabled, disabled] of samples) {
+for (const [name, qualitymap, expected] of samples) {
   test(`playlist and favorite mapping restores quality labels from the actual response: ${name}`, () => {
     const row = {
       name,
@@ -78,8 +73,7 @@ for (const [name, qualitymap, enabled, disabled] of samples) {
       trans_param: { qualitymap },
     };
     const song = mapPlaylistSong(row);
-    assert.equal(getSongDerivedState(song, true).qualityTag, enabled);
-    assert.equal(getSongDerivedState(song, false).qualityTag, disabled);
+    assert.equal(getSongDerivedState(song).qualityTag, expected);
     assert.equal(song.hash, row.hash);
     assert.equal(song.fileId, row.fileid);
     assert.equal(song.playlistSort, row.sort);

@@ -43,6 +43,8 @@ test('add-to-playlist and add-to-queue keep the song selected when the panel ope
     '@/stores/toast': {
       useToastStore: () => ({ actionCompleted() {}, warning() {}, actionFailed() {} }),
     },
+    '@/stores/songQualityAccess': { useSongQualityAccessStore: () => ({}) },
+    '@/utils/songQualityAccess': {},
     '@/utils/song': {},
     '@/utils/share': {},
     '@/services/cloudAudioIndex': {},

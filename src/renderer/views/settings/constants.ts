@@ -86,6 +86,8 @@ export const audioQualityOptions: { label: string; value: AudioQualityValue }[] 
   { label: 'SQ 无损品质', value: 'flac' },
   { label: 'Hi-Res 品质', value: 'high' },
   { label: '蝰蛇母带', value: 'viper_tape' },
+  { label: '蝰蛇超清', value: 'viper_clear' },
+  { label: '蝰蛇全景声', value: 'viper_atmos' },
 ];
 
 export const closeBehaviorOptions: { label: string; value: CloseBehavior }[] = [

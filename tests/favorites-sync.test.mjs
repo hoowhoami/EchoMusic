@@ -115,6 +115,9 @@ function setup(
 
 function setupResolver(store, state, albumAudioId = '900') {
   const { createResolver } = compile('../src/renderer/stores/player/resolver.ts', {
+    '@/utils/songQualityAccess': compile('../src/renderer/utils/songQualityAccess.ts', {
+      './accountVip': compile('../src/renderer/utils/accountVip.ts'),
+    }),
     '@/api/music': {
       getSongPrivilegeLite: async () => ({ data: [{ album_audio_id: albumAudioId }] }),
     },
@@ -125,7 +128,16 @@ function setupResolver(store, state, albumAudioId = '900') {
     '@/services/cloudAudioIndex': {},
     './utils': { summarizeSong: (song) => ({ id: song.id }) },
   });
-  return createResolver(state, store, {});
+  return createResolver(
+    state,
+    store,
+    {},
+    {
+      ensure: async () => ({ data: [{ album_audio_id: albumAudioId }] }),
+      membership: { concept: true, superVip: true },
+      captureAccessRequest: () => () => true,
+    },
+  );
 }
 
 test('favorites publish completed page metadata without changing playlist identity', async () => {

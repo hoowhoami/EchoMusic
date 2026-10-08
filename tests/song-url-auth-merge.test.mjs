@@ -178,6 +178,9 @@ const setupResolver = (api) => {
   });
   const { createResolver } = compile('../src/renderer/stores/player/resolver.ts', {
     '@/api/music': api.music,
+    '@/utils/songQualityAccess': compile('../src/renderer/utils/songQualityAccess.ts', {
+      './accountVip': compile('../src/renderer/utils/accountVip.ts'),
+    }),
     '@/utils/logger': { debug() {}, info() {}, warn() {} },
     '@/utils/cover': cover,
     '@/utils/song': song,
@@ -192,7 +195,11 @@ const setupResolver = (api) => {
   const settings = { defaultAudioQuality: '320', compatibilityMode: true };
   return {
     state,
-    resolver: createResolver(state, { refreshFavoriteSongIdentity() {} }, settings),
+    resolver: createResolver(state, { refreshFavoriteSongIdentity() {} }, settings, {
+      ensure: api.music.getSongPrivilegeLite,
+      membership: { concept: true, superVip: true },
+      captureAccessRequest: () => () => true,
+    }),
   };
 };
 
@@ -230,3 +237,39 @@ test('player forwards fresh privilege album IDs through quality, effect and defa
     assert.equal(mergeCalls.at(-1).params.ppage_id, 356753938);
   }
 });
+
+for (const quality of ['viper_clear', 'viper_tape', 'viper_atmos']) {
+  test(`player requests the ${quality} hash and quality through authenticated merge`, async () => {
+    const api = setup(async (url) => {
+      if (url === '/user/verify') return verified;
+      if (url === '/privilege/lite')
+        return {
+          data: [
+            {
+              album_id: '42',
+              album_audio_id: '81',
+              relate_goods: [
+                { hash: 'atmos-hash', quality: 'viper_atmos', level: 0 },
+                { hash: 'clear-hash', quality: 'viper_clear', level: 0 },
+                { hash: 'tape-hash', quality: 'viper_tape', level: 0 },
+              ],
+            },
+          ],
+        };
+      if (url === '/song/url/auth/merge') return { status: 1, url: ['source-url'] };
+      throw new Error(url);
+    });
+    const { resolver, state } = setupResolver(api);
+    state.currentAudioQualityOverride = quality;
+    const resolved = await resolver.resolveAudioUrl({
+      id: 'song',
+      hash: 'original-hash',
+      audioUrl: '',
+    });
+    assert.equal(resolved.quality, quality);
+    const merge = api.calls.filter((call) => call.url === '/song/url/auth/merge');
+    assert.equal(merge.length, 1);
+    assert.equal(merge[0].params.quality, quality);
+    assert.equal(merge[0].params.hash, `${quality.slice(6)}-hash`);
+  });
+}

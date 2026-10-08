@@ -22,6 +22,15 @@ new Function(
     { loader: 'ts', format: 'cjs' },
   ).code,
 )(sessionModule, sessionModule.exports);
+const vipModule = { exports: {} };
+new Function(
+  'module',
+  'exports',
+  transformSync(
+    readFileSync(new URL('../src/renderer/utils/accountVip.ts', import.meta.url), 'utf8'),
+    { loader: 'ts', format: 'cjs' },
+  ).code,
+)(vipModule, vipModule.exports);
 const deferred = () => {
   let resolve, reject;
   const promise = new Promise((a, b) => {
@@ -90,6 +99,7 @@ function fixture(t) {
     vue: { ...vue, onMounted() {}, onUnmounted: (fn) => unmounts.push(fn) },
     'vue-router': { useRouter: () => ({ push() {} }) },
     '@/utils/userSession': sessionModule.exports,
+    '@/utils/accountVip': vipModule.exports,
     '@/stores/user': { useUserStore: () => user },
     '@/stores/loginDevices': { useLoginDeviceStore: () => devices },
     '@/stores/toast': {
@@ -173,6 +183,33 @@ function fixture(t) {
     finishRead,
   };
 }
+
+test('membership badges distinguish deluxe from super and react to refreshed VIP data', (t) => {
+  const f = fixture(t);
+  f.user.info.extendsInfo.vip = {
+    vip_type: 6,
+    user_type: 13,
+    svip_level: 4,
+    vip_end_time: '2026-12-31T12:00:00',
+    busi_vip: [{ product_type: 'svip', is_vip: 1 }],
+  };
+  assert.equal(f.view.superVip.value, false);
+  assert.equal(f.view.deluxeVip.value, true);
+  assert.equal(f.view.deluxeVipMembership.value.vip_end_time, '2026-12-31T12:00:00');
+  f.user.info.extendsInfo.vip = {
+    vip_type: 6,
+    user_type: 29,
+    su_vip_end_time: '2026-11-30T12:00:00',
+  };
+  assert.equal(f.view.superVip.value, true);
+  assert.equal(f.view.superVipMembership.value.vip_end_time, '2026-11-30T12:00:00');
+  assert.equal(f.view.svip.value, undefined);
+  f.user.info.extendsInfo.vip = { vip_type: 0, user_type: 0, busi_vip: [] };
+  assert.equal(f.view.superVip.value, false);
+  assert.equal(f.view.deluxeVip.value, false);
+  assert.equal(f.view.superVipMembership.value, undefined);
+  assert.equal(f.view.deluxeVipMembership.value, undefined);
+});
 
 for (const signature of ['签'.repeat(100), '']) {
   test(`profile saves ${signature ? 'a 100-character signature' : 'an empty signature'}`, async (t) => {

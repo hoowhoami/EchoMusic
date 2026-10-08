@@ -105,11 +105,11 @@ test('explicit close cancels delayed hover opening; explicit open cancels delaye
 
 test('hovering a portalled descendant cancels parent closing, leaving the whole region closes it', () => {
   const s = fixture();
-  const tooltip = {};
-  s.api.registerPopoverBranch((target) => target === tooltip);
+  const nestedPanel = {};
+  s.api.registerPopoverBranch((target) => target === nestedPanel);
   s.exposed.open();
   s.api.handleContentLeave();
-  s.api.handleDocumentPointerMove({ target: tooltip });
+  s.api.handleDocumentPointerMove({ target: nestedPanel });
   s.tick();
   assert.equal(s.api.isOpen.value, true);
   s.api.handleDocumentPointerMove({ target: {} });
@@ -118,39 +118,39 @@ test('hovering a portalled descendant cancels parent closing, leaving the whole 
   s.dispose();
 });
 
-test('direct movement from parent content into an owned tooltip does not schedule closing', () => {
+test('direct movement from parent content into a nested popover does not schedule closing', () => {
   const s = fixture();
-  const tooltip = {};
-  s.api.registerPopoverBranch((target) => target === tooltip);
+  const nestedPanel = {};
+  s.api.registerPopoverBranch((target) => target === nestedPanel);
   s.exposed.open();
-  s.api.handleContentLeave({ relatedTarget: tooltip });
+  s.api.handleContentLeave({ relatedTarget: nestedPanel });
   assert.equal(s.timers.size, 0);
   assert.equal(s.api.isOpen.value, true);
   s.dispose();
 });
 
-test('unrelated or unregistered tooltip branches cannot keep a hover panel open', () => {
+test('unrelated or unregistered popover branches cannot keep a hover panel open', () => {
   const s = fixture();
-  const tooltip = {};
-  const unregister = s.api.registerPopoverBranch((target) => target === tooltip);
+  const nestedPanel = {};
+  const unregister = s.api.registerPopoverBranch((target) => target === nestedPanel);
   s.exposed.open();
   s.api.handleDocumentPointerMove({ target: {} });
   s.tick();
   assert.equal(s.api.isOpen.value, false);
   s.exposed.open();
   unregister();
-  s.api.handleDocumentPointerMove({ target: tooltip });
+  s.api.handleDocumentPointerMove({ target: nestedPanel });
   s.tick();
   assert.equal(s.api.isOpen.value, false);
   s.dispose();
 });
 
-test('clicking an owned tooltip keeps its click panel open, outside clicks still close it', () => {
+test('clicking a nested popover keeps its click panel open, outside clicks still close it', () => {
   const s = fixture({ trigger: 'click' });
-  const tooltip = {};
-  s.api.registerPopoverBranch((target) => target === tooltip);
+  const nestedPanel = {};
+  s.api.registerPopoverBranch((target) => target === nestedPanel);
   s.exposed.open();
-  s.api.handleDocumentMousedown({ target: tooltip });
+  s.api.handleDocumentMousedown({ target: nestedPanel });
   assert.equal(s.api.isOpen.value, true);
   s.api.handleDocumentMousedown({ target: {} });
   assert.equal(s.api.isOpen.value, false);
@@ -319,5 +319,33 @@ test('held-open and exiting popovers still consume Escape without closing a lowe
   s.api.handleEscapeKeyDown(event);
   assert.equal(s.events.length, count);
   assert.equal(prevented, 2);
+  s.dispose();
+});
+
+test('click panels ignore hover events, preserve nested popovers, and close on another click', () => {
+  const s = fixture({ trigger: 'click' });
+  const nestedPanel = {};
+  s.api.registerPopoverBranch((target) => target === nestedPanel);
+  s.api.handleTriggerEnter();
+  s.tick();
+  assert.equal(s.api.isOpen.value, false);
+  s.api.handleTriggerClick();
+  assert.equal(s.api.isOpen.value, true);
+  s.api.handleContentLeave({ relatedTarget: {} });
+  s.api.handleTriggerLeave();
+  s.api.handleDocumentPointerMove({ target: {} });
+  s.tick();
+  assert.equal(s.api.isOpen.value, true);
+  s.api.handleDocumentMousedown({ target: nestedPanel });
+  assert.equal(s.api.isOpen.value, true);
+  s.api.handleTriggerClick();
+  assert.equal(s.api.isOpen.value, false);
+  s.exposed.open();
+  s.api.handleDocumentMousedown({ target: {} });
+  assert.equal(
+    s.api.isOpen.value,
+    false,
+    'nested popover does not prevent explicit outside dismissal',
+  );
   s.dispose();
 });

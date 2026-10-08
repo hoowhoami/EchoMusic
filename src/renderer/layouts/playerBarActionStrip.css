@@ -1,0 +1,54 @@
+.player-bar-action-strip {
+  --player-bar-action-size: 36px;
+  --player-bar-action-icon-size: 20px;
+  --player-bar-action-padding: 0px;
+}
+
+.player-bar-action-strip > *,
+.player-bar-action-strip .echo-popover-trigger {
+  flex-shrink: 0;
+}
+
+.player-bar-action-strip button.playback-action {
+  position: relative;
+  display: inline-flex;
+  box-sizing: border-box;
+  width: var(--player-bar-action-size);
+  height: var(--player-bar-action-size);
+  padding: var(--player-bar-action-padding);
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 var(--player-bar-action-size);
+  border-radius: var(--radius-control);
+  line-height: 1;
+}
+
+.player-bar-action-strip button.playback-action:hover:not(:disabled) {
+  transform: none;
+  scale: 1.1;
+}
+
+.player-bar-action-strip button.playback-action:active:not(:disabled) {
+  transform: none;
+  scale: 0.9;
+}
+
+.player-bar-action-strip button.playback-action svg,
+.player-bar-action-strip button.playback-action .plugin-icon {
+  display: block;
+  width: var(--player-bar-action-icon-size);
+  height: var(--player-bar-action-icon-size);
+  flex-shrink: 0;
+}
+
+.player-bar-action-strip button.playback-action > span.relative > svg[style] {
+  transform: none !important;
+}
+
+.player-bar-action-strip button.playback-action:is(.player-toggle, .bar-play-btn) {
+  border-radius: 50%;
+}
+
+.player-bar-action-strip button.playback-action:is(.player-toggle, .bar-play-btn):active {
+  scale: 0.95;
+}

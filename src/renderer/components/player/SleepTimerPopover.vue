@@ -14,13 +14,11 @@ const player = usePlayerStore();
 interface Props {
   open?: boolean;
   side?: 'top' | 'bottom';
-  showArrow?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   open: undefined,
   side: 'top',
-  showArrow: true,
 });
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
 const internalOpen = ref(false);
@@ -103,12 +101,11 @@ const selectAction = (action: SleepTimerAction) => {
 
 <template>
   <Popover
-    :trigger="props.open === undefined ? 'hover' : 'click'"
+    trigger="click"
     :open="open"
     align="center"
     :side="props.side"
     :side-offset="8"
-    :show-arrow="props.showArrow"
     content-class="sleep-timer-popover"
     @update:open="syncSelection"
   >
@@ -119,6 +116,7 @@ const selectAction = (action: SleepTimerAction) => {
         type="button"
         class="playback-action sleep-timer-trigger relative p-2 transition-all hover:scale-110 active:scale-90"
         :class="{ 'is-active': active }"
+        :tooltip="triggerLabel"
         :aria-label="triggerLabel"
         :aria-expanded="open"
         aria-haspopup="dialog"

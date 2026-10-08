@@ -25,14 +25,15 @@ export interface ResolvedThemeColors {
   floatingTone: string;
 }
 
-/** All theme providers enter through this resolver; no theme IDs or CSS selectors here. */
+/** Custom artwork can fix surface polarity independently of its chosen text color. */
 export function resolveThemeColors(
   appearance: AppThemeAppearance,
   requestedDark: boolean,
+  surfaceDark?: boolean,
 ): ResolvedThemeColors {
   const input = appearance.tokens;
   const text = input.text ?? neutralTokens(requestedDark).text;
-  const dark = usesLightForeground(text);
+  const dark = surfaceDark ?? usesLightForeground(text);
   const neutral = neutralTokens(dark);
   const tone = dark ? '#ffffff' : '#000000';
   const shell = appearance.background?.color ?? input.shell ?? neutral.shell;

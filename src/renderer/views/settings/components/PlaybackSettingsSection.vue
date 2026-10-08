@@ -6,6 +6,7 @@ import { storeToRefs } from 'pinia';
 import { useSettingStore } from '@/stores/setting';
 import { usePlayerStore } from '@/stores/player';
 import { useToastStore } from '@/stores/toast';
+import { clampPreferredAudioQuality, isViperAudioQuality } from '@/utils/song';
 import type { AudioQualityValue } from '@/types';
 import Switch from '@/components/ui/Switch.vue';
 import Slider from '@/components/ui/Slider.vue';
@@ -43,6 +44,15 @@ const playbackQueueModeOptions = [
   { label: '仅当前歌曲', value: 'single' },
 ];
 
+const availableAudioQualityOptions = computed(() =>
+  audioQualityOptions.filter(
+    (option) => settingStore.viperQualityEnabled !== false || !isViperAudioQuality(option.value),
+  ),
+);
+const defaultAudioQuality = computed(() =>
+  clampPreferredAudioQuality(settingStore.defaultAudioQuality, settingStore.viperQualityEnabled),
+);
+
 const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseResponse());
 const isCommunityAudioEffect = (file: SpatialAudioEffectEntry) =>
   file.kind === 'community-ir' ||
@@ -79,19 +89,6 @@ const autoNextMaxAttemptsInput = computed({
       : Math.max(1, Math.min(parsed, 999));
   },
 });
-
-const visibleAudioQualityOptions = computed(() =>
-  settingStore.viperTapeQualityEnabled
-    ? audioQualityOptions
-    : audioQualityOptions.filter((option) => option.value !== 'viper_tape'),
-);
-
-const handleViperTapeQualityEnabledChange = (enabled: boolean) => {
-  settingStore.viperTapeQualityEnabled = enabled;
-  if (!enabled && settingStore.defaultAudioQuality === 'viper_tape') {
-    settingStore.defaultAudioQuality = 'high';
-  }
-};
 
 const handleVolumeNormalizationChange = (enabled: boolean) => {
   settingStore.volumeNormalization = enabled;
@@ -239,28 +236,25 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">蝰蛇母带</h3>
-        <p class="text-sm text-text-secondary">
-          开启后可选择母带音质；需转码，文件较大、起播较慢，仅部分歌曲支持。
-        </p>
-      </div>
-      <Switch
-        :model-value="settingStore.viperTapeQualityEnabled"
-        @update:model-value="handleViperTapeQualityEnabledChange"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
         <h3 class="font-semibold">默认音质</h3>
         <p class="text-sm text-text-secondary">新歌曲使用此音质，当前歌曲可在播放器中调整</p>
       </div>
       <Select
         class="w-45 shrink-0"
-        :model-value="settingStore.defaultAudioQuality"
-        :options="visibleAudioQualityOptions"
+        :model-value="defaultAudioQuality"
+        :options="availableAudioQualityOptions"
         @update:model-value="settingStore.defaultAudioQuality = $event as AudioQualityValue"
       />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">开启蝰蛇音质</h3>
+        <p class="text-sm text-text-secondary">
+          显示蝰蛇母带、超清和全景声，仍需歌曲支持及对应权益
+        </p>
+      </div>
+      <Switch v-model="settingStore.viperQualityEnabled" />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">

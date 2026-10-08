@@ -324,6 +324,7 @@ test('real player-store init restores the transient queue before publishing meta
     './player/playback': { createPlaybackManager: () => manager },
     './player/audio': { createAudioManager: () => manager },
     './player/resolver': { createResolver: () => manager },
+    './songQualityAccess': { useSongQualityAccessStore: () => ({}) },
     './player/history': { createHistoryManager: () => manager },
     './player/listeningTime': {
       createListeningTimeManager: () => ({ flush: async () => {}, resetPosition: noop }),

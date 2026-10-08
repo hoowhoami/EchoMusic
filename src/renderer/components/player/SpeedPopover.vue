@@ -19,14 +19,12 @@ interface Props {
   variant?: 'lyric' | 'bar';
   side?: 'top' | 'bottom';
   open?: boolean;
-  showArrow?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   variant: 'bar',
   side: 'top',
   open: undefined,
-  showArrow: true,
 });
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
 const internalOpen = ref(false);
@@ -41,12 +39,11 @@ const popoverOpen = computed({
 
 <template>
   <Popover
-    :trigger="props.open === undefined ? 'hover' : 'click'"
+    trigger="click"
     :open="popoverOpen"
     :side="props.side"
     align="center"
     :side-offset="8"
-    :show-arrow="props.showArrow"
     content-class="speed-popover"
     @update:open="popoverOpen = $event"
   >
@@ -57,6 +54,7 @@ const popoverOpen = computed({
         type="button"
         class="playback-action p-2 transition-all hover:scale-110 active:scale-90"
         :class="{ 'is-active': player.playbackRate !== 1 }"
+        :tooltip="`倍速播放 · ${playbackRateDisplay}`"
         aria-label="倍速播放"
       >
         <Icon :icon="iconSpeedometer" width="20" height="20" />

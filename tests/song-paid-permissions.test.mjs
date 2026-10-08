@@ -77,6 +77,9 @@ const setupResolver = (payload = rights, url = '', options = {}) => {
       '@/utils/logger': { debug() {}, info() {}, warn() {} },
       '@/utils/cover': cover,
       '@/utils/song': song,
+      '@/utils/songQualityAccess': compile('../src/renderer/utils/songQualityAccess.ts', {
+        './accountVip': compile('../src/renderer/utils/accountVip.ts'),
+      }),
       '@/plugins/audioSource': {
         resolvePluginAudioSource: async () => null,
         transformPluginAudioSource: async (_context, source) => source,
@@ -89,6 +92,11 @@ const setupResolver = (payload = rights, url = '', options = {}) => {
     { audioEffect: 'none', currentTrackId: String(favorite.mixsongid) },
     { refreshFavoriteSongIdentity: (track) => refreshed.push(track) },
     { defaultAudioQuality: options.quality ?? '128', compatibilityMode: true },
+    {
+      ensure: async () => ({ status: 1, data: [payload] }),
+      membership: { concept: true, superVip: true },
+      captureAccessRequest: () => () => true,
+    },
   );
   return { resolver, refreshed, parseTrackMetadataFromPrivilege };
 };

@@ -45,7 +45,8 @@ function fixture(t, slots = {}) {
     hooks = {},
     timers = [],
     instances = [],
-    writes = [];
+    writes = [],
+    documentListeners = [];
   const zones = Object.fromEntries(
     ['center', 'left', 'right', 'more'].map((zone) => [zone, list(zone)]),
   );
@@ -128,7 +129,10 @@ function fixture(t, slots = {}) {
     },
     {
       Element: class {},
-      document: { addEventListener() {}, removeEventListener() {} },
+      document: {
+        addEventListener: (type) => documentListeners.push(type),
+        removeEventListener() {},
+      },
       window: { setTimeout: (fn) => timers.push(fn) },
     },
   ).default;
@@ -154,6 +158,8 @@ function fixture(t, slots = {}) {
     writes,
     settings,
     timers,
+    documentListeners,
+    mount: () => hooks.mount?.(),
     begin(key) {
       const chip = chips.get(key),
         from = chip.parentNode;
@@ -247,24 +253,26 @@ test('custom floating panels own dismissal while their verification UI is open',
     {},
   );
   assert.equal(f.view.floatingAction.value.component, 'barrage');
-  f.view.handleDocumentMousedown({ target: {} });
-  assert.equal(f.view.floatingAction.value.component, 'barrage');
   f.view.closeFloatingPanels();
   assert.equal(f.view.floatingAction.value, null);
 });
 
-test('builtin floating panels keep their existing outside-dismiss behavior', (t) => {
-  const f = fixture(t, { 'floating-action': () => null });
-  f.view.activate(
-    {
-      component: 'speed',
-      onClick() {
-        assert.fail('must open the panel');
+for (const component of ['speed', 'play-mode']) {
+  test(`builtin ${component} panel delegates dismissal to its own popover`, (t) => {
+    const f = fixture(t);
+    f.mount();
+    assert.deepEqual(f.documentListeners, []);
+    f.view.activate(
+      {
+        component,
+        onClick() {
+          assert.fail('must open the panel');
+        },
       },
-    },
-    {},
-  );
-  assert.equal(f.view.floatingAction.value.component, 'speed');
-  f.view.handleDocumentMousedown({ target: {} });
-  assert.equal(f.view.floatingAction.value, null);
-});
+      {},
+    );
+    assert.equal(f.view.floatingAction.value.component, component);
+    f.view.closeFloatingPanels();
+    assert.equal(f.view.floatingAction.value, null);
+  });
+}

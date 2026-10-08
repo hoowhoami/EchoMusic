@@ -13,14 +13,12 @@ interface Props {
   variant?: 'lyric' | 'bar';
   side?: 'top' | 'bottom';
   open?: boolean;
-  showArrow?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   variant: 'bar',
   side: 'top',
   open: undefined,
-  showArrow: true,
 });
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
 
@@ -34,9 +32,6 @@ const popoverOpen = computed({
   },
 });
 
-// 滚轮保持弹出层不消失的定时器
-let wheelKeepAliveTimer: ReturnType<typeof setTimeout> | null = null;
-
 const handleWheel = (e: WheelEvent) => {
   // 弹出层未打开时不拦截，让 Sidebar 正常滚动
   if (!popoverOpen.value) return;
@@ -47,13 +42,6 @@ const handleWheel = (e: WheelEvent) => {
   const step = (normalized / 120) * 5;
   const direction = isMac ? 1 : -1;
   player.adjustVolume(step * direction);
-
-  // 滚轮操作时保持弹出层打开
-  if (wheelKeepAliveTimer) clearTimeout(wheelKeepAliveTimer);
-  popoverOpen.value = true;
-  wheelKeepAliveTimer = setTimeout(() => {
-    wheelKeepAliveTimer = null;
-  }, 300);
 };
 </script>
 
@@ -61,11 +49,10 @@ const handleWheel = (e: WheelEvent) => {
   <div class="flex items-center" @wheel="handleWheel">
     <Popover
       v-model:open="popoverOpen"
-      :trigger="props.open === undefined ? 'hover' : 'click'"
+      trigger="click"
       :side="side"
       align="center"
       :side-offset="0"
-      :show-arrow="props.showArrow"
       content-class="vol-popover"
       @open-auto-focus="$event.preventDefault()"
     >
@@ -80,8 +67,8 @@ const handleWheel = (e: WheelEvent) => {
               ? 'flex h-10 w-10 items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90'
               : 'flex h-9 w-9 items-center justify-center hover:scale-110 active:scale-90',
           ]"
-          @click.stop="toggleMute"
-          :aria-label="player.volume === 0 ? '取消静音' : '静音'"
+          :tooltip="`音量 · ${Math.round(player.volume)}%`"
+          aria-label="音量"
         >
           <VolumeIcon />
         </Button>
@@ -105,6 +92,17 @@ const handleWheel = (e: WheelEvent) => {
         </SliderRoot>
         <span class="vol-value">{{ Math.round(player.volume) }}</span>
       </div>
+      <Button
+        variant="unstyled"
+        size="none"
+        type="button"
+        class="vol-mute-button flex h-6 w-full items-center justify-center"
+        :aria-label="player.volume === 0 ? '取消静音' : '静音'"
+        :aria-pressed="player.volume === 0"
+        @click="toggleMute"
+      >
+        <VolumeIcon :width="16" :height="16" />
+      </Button>
     </Popover>
   </div>
 </template>
@@ -134,6 +132,11 @@ const handleWheel = (e: WheelEvent) => {
   cursor: pointer;
   width: 24px;
   flex: 1;
+}
+
+.vol-mute-button {
+  margin-top: 6px;
+  color: var(--color-text-secondary);
 }
 
 .vol-value {

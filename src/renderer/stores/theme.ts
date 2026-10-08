@@ -5,7 +5,6 @@ import {
   resolveThemeColors,
   themeColorVariables,
   themeContentSurfaces,
-  usesLightForeground,
   type ResolvedThemeColors,
 } from '@/theme/colors';
 import {
@@ -80,7 +79,11 @@ export const useThemeStore = defineStore('appearance', {
       );
     },
     resolvedColors(): ResolvedThemeColors {
-      return resolveThemeColors(this.themeDefinition, this.variantIsDark);
+      return resolveThemeColors(
+        this.themeDefinition,
+        this.variantIsDark,
+        this.effectiveThemeKey === CUSTOM_THEME_KEY ? this.variantIsDark : undefined,
+      );
     },
     isDark(): boolean {
       return this.resolvedColors.dark;
@@ -98,10 +101,8 @@ export const useThemeStore = defineStore('appearance', {
     },
     themeDefinition(): AppThemeAppearance {
       const entry = this.currentTheme;
-      const paletteDark =
-        entry.key === CUSTOM_THEME_KEY
-          ? usesLightForeground(this.override.background.textColor)
-          : this.variantIsDark;
+      // A custom foreground must not regenerate the artwork tint or panel palette.
+      const paletteDark = this.variantIsDark;
       let base = entry.variants[paletteDark ? 'dark' : 'light'];
       try {
         const result = entry.settings?.validate?.(this.themeSettings);

@@ -40,6 +40,7 @@ const bundle = (path) => {
   new Function('require', 'module', 'exports', source)(require, mod, mod.exports);
   return mod.exports;
 };
+const accountVip = evaluate(read('utils/accountVip.ts'));
 const layout = evaluate(read('layouts/sidebarLayout.ts'));
 const resources = bundle('layouts/sidebarShortcutResources.ts');
 const order = bundle('utils/playlistOrder.ts');
@@ -187,6 +188,69 @@ function component(path, deps, hookVue = vue, inlineTemplate = true) {
     ),
   ).default;
 }
+
+test('sidebar renders one VIP badge in super, deluxe, concept, music order as info changes', async () => {
+  const user = vue.reactive({
+    isLoggedIn: true,
+    accountRevision: 1,
+    info: { userid: 1, extendsInfo: { vip: {} } },
+  });
+  const comp = component(
+    'layouts/Sidebar.vue',
+    {
+      '@/stores/setting': {
+        useSettingStore: () => ({
+          sidebarLayout: layout.emptySidebarLayout(),
+          sidebarSectionCollapsed: {},
+        }),
+      },
+      '@/stores/user': { useUserStore: () => user },
+      '@/stores/playlist': { usePlaylistStore: () => ({ userPlaylists: [] }) },
+      '@/stores/playlistCovers': { usePlaylistCoversStore: () => ({ hydrate() {} }) },
+      '@/stores/toast': { useToastStore: () => ({}) },
+      '@/stores/importTask': { useImportTaskStore: () => ({}) },
+      '@/plugins/registry': registry,
+      './sidebarLayout': layout,
+      '@/utils/playlistOrder': order,
+      '@/utils/accountVip': accountVip,
+    },
+    { ...vue, onMounted() {} },
+  );
+  const renderBadges = async () => {
+    const html = await renderToString(vue.createSSRApp(comp).component('Icon', passthrough));
+    return [...html.matchAll(/class="sidebar-member-badge[^"]*"[^>]*>(.*?)<\/span>/g)].map(
+      (match) => match[1],
+    );
+  };
+  for (let mask = 15; mask >= 0; mask--) {
+    user.info.extendsInfo.vip = {
+      user_type: mask & 8 ? '29' : -1,
+      vip_type: mask & 4 ? '6' : 0,
+      svip_level: 4,
+      busi_vip: [
+        { product_type: 'svip', is_vip: mask & 2 ? '1' : 0 },
+        { product_type: 'tvip', is_vip: mask & 1 ? 1 : 0 },
+      ],
+    };
+    assert.deepEqual(await renderBadges(), [
+      mask & 8
+        ? '超级VIP'
+        : mask & 4
+          ? '豪华VIP'
+          : mask & 2
+            ? '概念VIP'
+            : mask & 1
+              ? '畅听VIP'
+              : 'NOVIP',
+    ]);
+  }
+  user.info.extendsInfo.vip = { vip_type: 6 };
+  assert.deepEqual(await renderBadges(), ['豪华VIP'], 'missing super field never promotes deluxe');
+  user.info.extendsInfo.vip = {};
+  assert.deepEqual(await renderBadges(), ['NOVIP']);
+  user.isLoggedIn = false;
+  assert.deepEqual(await renderBadges(), []);
+});
 
 test('removing either default card leaves one and last visible card cannot be removed through picker or grid', async () => {
   const settings = vue.reactive({ sidebarLayout: baseLayout(['home', 'explore']) });
@@ -343,6 +407,7 @@ for (const collapsed of [false, true])
         '@/plugins/registry': registry,
         './sidebarLayout': layout,
         '@/utils/playlistOrder': order,
+        '@/utils/accountVip': accountVip,
       },
       { ...vue, onMounted() {} },
     );

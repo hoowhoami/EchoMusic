@@ -169,7 +169,6 @@ function setupFixture(t) {
     lyricsPageProvider: 'host',
     effectiveWindowBackground: {},
     lyricOffsetStep: 0.5,
-    viperTapeQualityEnabled: true,
   });
   fixture.lyric = reactive({
     lines: [],
@@ -230,6 +229,8 @@ function setupFixture(t) {
     isFavorite: ref(false),
     toggleFavorite: () => calls.push(['favorite']),
     isAudioQualityDisabled: (value) => value === 'high',
+    isAudioQualityHidden: (value) =>
+      fixture.settings.viperQualityEnabled === false && value.startsWith('viper_'),
     effectiveAudioQuality: ref('flac'),
     isAudioEffectPresetSelectionDisabled: ref(false),
     isAudioSourceSwitching: ref(false),
@@ -508,12 +509,27 @@ test('page controls share reactive playback and validate seek, volume, queues, a
     page.state.value.qualityOptions.some((option) => option.value === 'viper_tape'),
     true,
   );
-  fixture.settings.viperTapeQualityEnabled = false;
-  assert.equal(
-    page.state.value.qualityOptions.some((option) => option.value === 'viper_tape'),
-    false,
+  for (const quality of ['viper_clear', 'viper_tape', 'viper_atmos']) {
+    assert.equal(
+      page.state.value.qualityOptions.some((option) => option.value === quality),
+      true,
+    );
+    page.audio.setQuality(quality);
+    assert.deepEqual(calls.at(-1), ['quality', quality]);
+    assert.equal(page.state.value.audioEffectOptions.includes(quality), false);
+  }
+  fixture.settings.viperQualityEnabled = false;
+  assert.deepEqual(
+    page.state.value.qualityOptions.map((option) => option.value),
+    ['128', '320', 'flac', 'high'],
   );
-  assert.throws(() => page.audio.setQuality('viper_tape'), /不可用/);
+  const selectionCount = calls.length;
+  for (const quality of ['viper_clear', 'viper_tape', 'viper_atmos']) {
+    assert.throws(() => page.audio.setQuality(quality), /不可用/);
+  }
+  assert.equal(calls.length, selectionCount);
+  fixture.settings.viperQualityEnabled = true;
+  assert.equal(page.state.value.qualityOptions.length, 7);
   page.lyrics.adjustOffset(500);
   assert.equal(page.state.value.lyrics.timeOffset, 500);
   page.lyrics.resetOffset();

@@ -287,9 +287,6 @@ onMounted(async () => {
     void userStore.fetchUserInfoOnce();
   }
   settings.defaultAudioQuality = normalizeQuality(settings.defaultAudioQuality);
-  if (!settings.viperTapeQualityEnabled && settings.defaultAudioQuality === 'viper_tape') {
-    settings.defaultAudioQuality = 'high';
-  }
   settings.ensureShortcutDefaults();
   await settings.hydrateLogSettings();
   await Promise.all([

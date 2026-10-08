@@ -111,6 +111,7 @@ export const useUserStore = defineStore('user', {
     followedArtistIds: new Set<string>(),
     hasFetchedFollowedArtists: false,
     accountRevision: 0,
+    userInfoRevision: 0,
   }),
   actions: {
     setUserInfo(info: UserInfo) {
@@ -218,6 +219,10 @@ export const useUserStore = defineStore('user', {
           );
         }
 
+        // 同一账号刷新成功也通知依赖账号权益的缓存；登录会话编号保持独立。
+        if (detailPayload?.status === 1 || vipPayload?.status === 1) {
+          this.userInfoRevision += 1;
+        }
         return detailPayload?.status === 1;
       } catch (e) {
         logger.error('UserStore', 'Fetch user info error:', e);
@@ -387,6 +392,7 @@ export const useUserStore = defineStore('user', {
       'followedArtistIds',
       'hasFetchedFollowedArtists',
       'accountRevision',
+      'userInfoRevision',
     ],
   },
 });

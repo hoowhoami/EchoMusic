@@ -57,7 +57,9 @@ export const normalizeQuality = (value: string | undefined): AudioQualityValue =
     value === '320' ||
     value === 'flac' ||
     value === 'high' ||
-    value === 'viper_tape'
+    value === 'viper_tape' ||
+    value === 'viper_clear' ||
+    value === 'viper_atmos'
   )
     return value;
   return 'high';

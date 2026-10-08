@@ -173,6 +173,7 @@ export const useSettingStore = defineStore('setting', {
     autoNextMaxAttempts: 10,
     preventSleep: true,
     defaultAudioQuality: 'high' as AudioQualityValue,
+    viperQualityEnabled: false,
     compatibilityMode: true,
     globalShortcutsEnabled: false,
     shortcutConflictPromptEnabled: true,
@@ -266,7 +267,6 @@ export const useSettingStore = defineStore('setting', {
     playbackStallTimeout: 8,
     // 同一首歌连续卡死的最大自动恢复次数，超过则回退到失败提示/自动下一首
     playbackStallMaxAttempts: 3,
-    viperTapeQualityEnabled: false,
     // 快进 / 快退步长（秒）
     seekForwardOffset: 5,
     seekBackwardOffset: 5,

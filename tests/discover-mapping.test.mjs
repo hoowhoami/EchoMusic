@@ -131,18 +131,17 @@ test('joins complete quality records by hash and retains distinct qualities shar
     '320',
     'flac',
     'high',
+    'viper_clear',
     'viper_tape',
+    'viper_atmos',
   ]);
   assert.deepEqual(songQualities.getSongQualityTags(enriched.song.relateGoods), [
     'HQ',
     'SQ',
     'Hi-Res',
+    '全景声',
     '母带',
-  ]);
-  assert.deepEqual(songQualities.getSongQualityTags(enriched.song.relateGoods, false), [
-    'HQ',
-    'SQ',
-    'Hi-Res',
+    '超清',
   ]);
   assert.equal(songQualities.resolveEffectiveSongQuality(enriched.song, 'high'), 'high');
   assert.equal(

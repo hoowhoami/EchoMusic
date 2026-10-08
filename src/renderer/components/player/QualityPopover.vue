@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Popover from '@/components/ui/Popover.vue';
 import Tag from '@/components/ui/Tag.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -18,9 +18,15 @@ const {
   isResolvedCloudSource,
   hasCloudAudioSourceOption,
   hasCatalogAudioSourceOption,
-  isCatalogQualityLoading,
-  hasCatalogQualityError,
   isAudioQualityDisabled,
+  isAudioQualityHidden,
+  audioQualityAccessLookupKey,
+  isAudioQualityAccessLoading,
+  hasAudioQualityAccessError,
+  hasAudioQualityAccessData,
+  getAudioQualityAccessReason,
+  getAudioQualitySizeText,
+  retryCurrentTrackQualityAccess,
   audioQualityButtonBadge,
   getAudioQualityTagColor,
   ensureCurrentTrackCatalogQualities,
@@ -34,37 +40,47 @@ interface Props {
   open?: boolean;
   /** Popover 弹出方向 */
   side?: 'top' | 'bottom';
-  showArrow?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   open: undefined,
   variant: 'bar',
   side: 'top',
-  showArrow: true,
 });
 
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
+const isPanelOpen = ref(props.open ?? false);
 watch(
   () => props.open,
   (open) => {
+    if (open !== undefined) isPanelOpen.value = open;
+  },
+  { immediate: true },
+);
+watch(
+  [isPanelOpen, audioQualityAccessLookupKey],
+  ([open]) => {
     if (open) void ensureCurrentTrackCatalogQualities();
   },
   { immediate: true },
 );
-
-const allQualityOptions = [
-  { value: '128', label: '标准', badge: 'SD' },
-  { value: '320', label: '高品质', badge: 'HQ' },
-  { value: 'flac', label: '无损', badge: 'SQ' },
-  { value: 'high', label: 'Hi-Res', badge: 'HR' },
-  { value: 'viper_tape', label: '蝰蛇母带', badge: 'VPT' },
-] as const;
+const handleOpenChange = (open: boolean) => {
+  isPanelOpen.value = open;
+  emit('update:open', open);
+};
 
 const qualityOptions = computed(() =>
-  settingStore.viperTapeQualityEnabled
-    ? allQualityOptions
-    : allQualityOptions.filter((option) => option.value !== 'viper_tape'),
+  (
+    [
+      { value: '128', label: '标准', badge: 'SD' },
+      { value: '320', label: '高品质', badge: 'HQ' },
+      { value: 'flac', label: '无损', badge: 'SQ' },
+      { value: 'high', label: 'Hi-Res', badge: 'HR' },
+      { value: 'viper_tape', label: '蝰蛇母带', badge: 'VPT' },
+      { value: 'viper_clear', label: '蝰蛇超清', badge: 'VPC' },
+      { value: 'viper_atmos', label: '蝰蛇全景声', badge: 'VPA' },
+    ] as const
+  ).filter((option) => !isAudioQualityHidden(option.value)),
 );
 
 const isSwitchingToCloud = computed(
@@ -84,18 +100,53 @@ const isPendingQuality = (quality: string) =>
   !isSwitchingToCloud.value &&
   requestedAudioQuality.value === quality;
 
+const selectedQuality = computed(() =>
+  !currentTrack.value
+    ? requestedAudioQuality.value
+    : isResolvedCloudSource.value
+      ? null
+      : effectiveAudioQuality.value,
+);
+
+const qualityDetail = (quality: Parameters<typeof getAudioQualityAccessReason>[0]) =>
+  isAudioQualityAccessLoading.value && !hasAudioQualityAccessData.value
+    ? ''
+    : getAudioQualityAccessReason(quality) || getAudioQualitySizeText(quality);
+const isUnavailableQuality = (quality: Parameters<typeof isAudioQualityDisabled>[0]) =>
+  isAudioQualityAccessLoading.value
+    ? hasAudioQualityAccessData.value && !!getAudioQualityAccessReason(quality)
+    : isAudioQualityDisabled(quality);
+
+const panelStatus = computed(() => {
+  if (!currentTrack.value) return '暂无歌曲';
+  if (isAudioSourceSwitching.value) return `正在切换至${switchingLabel.value}…`;
+  if (isAudioQualityAccessLoading.value) return '正在查询音质…';
+  if (hasAudioQualityAccessError.value) return '权限查询失败';
+  if (isResolvedCloudSource.value) return '当前使用云盘文件播放';
+  if (hasCloudAudioSourceOption.value && !hasCatalogAudioSourceOption.value)
+    return '暂无可切换的曲库音质';
+  return '播放音质';
+});
+
+const triggerLabel = computed(() =>
+  isAudioSourceSwitching.value
+    ? `正在切换至${switchingLabel.value}`
+    : isResolvedCloudSource.value
+      ? '当前使用云盘文件'
+      : '音质',
+);
+
 const buttonClass = 'playback-action hover:scale-110 active:scale-90';
 </script>
 
 <template>
   <Popover
-    :trigger="props.open === undefined ? 'hover' : 'click'"
+    trigger="click"
     :open="props.open"
-    @update:open="emit('update:open', $event)"
+    @update:open="handleOpenChange"
     :side="props.side"
     align="center"
     :side-offset="8"
-    :show-arrow="props.showArrow"
     content-class="quality-popover"
     @open-auto-focus="$event.preventDefault()"
   >
@@ -106,13 +157,8 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
         type="button"
         class="action-icon relative p-2 transition-all"
         :class="buttonClass"
-        :aria-label="
-          isAudioSourceSwitching
-            ? `正在切换至${switchingLabel}`
-            : isResolvedCloudSource
-              ? '当前使用云盘文件'
-              : '音质'
-        "
+        :tooltip="triggerLabel"
+        :aria-label="triggerLabel"
         :aria-busy="isAudioSourceSwitching"
         @mouseenter="ensureCurrentTrackCatalogQualities"
         @focus="ensureCurrentTrackCatalogQualities"
@@ -134,20 +180,16 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
       <div class="pm-header">
         <div class="pm-title">音质选择</div>
         <div class="pm-status" role="status" aria-live="polite">
-          {{ isAudioSourceSwitching ? `正在切换至${switchingLabel}…` : '播放音质' }}
+          <span>{{ panelStatus }}</span>
+          <button
+            v-if="hasAudioQualityAccessError && !isAudioQualityAccessLoading"
+            type="button"
+            class="pm-retry"
+            @click="retryCurrentTrackQualityAccess"
+          >
+            重试
+          </button>
         </div>
-      </div>
-      <div v-if="isResolvedCloudSource && !isAudioSourceSwitching" class="pm-hint">
-        当前使用云盘文件播放
-      </div>
-      <div v-if="hasCloudAudioSourceOption && isCatalogQualityLoading" class="pm-hint">
-        正在获取曲库音质
-      </div>
-      <div v-else-if="hasCloudAudioSourceOption && hasCatalogQualityError" class="pm-hint">
-        曲库音质获取失败
-      </div>
-      <div v-else-if="hasCloudAudioSourceOption && !hasCatalogAudioSourceOption" class="pm-hint">
-        暂无可切换的曲库音质
       </div>
       <button
         v-if="hasCloudAudioSourceOption"
@@ -180,24 +222,33 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
         type="button"
         class="pm-item"
         :class="{
-          'is-active': !isResolvedCloudSource && effectiveAudioQuality === q.value,
-          'is-disabled': !isAudioSourceSwitching && isAudioQualityDisabled(q.value),
+          'is-active': selectedQuality === q.value,
+          'is-disabled': !isAudioSourceSwitching && isUnavailableQuality(q.value),
+          'is-loading': isAudioQualityAccessLoading,
           'is-locked': isAudioSourceSwitching,
           'is-pending': isPendingQuality(q.value),
         }"
         :disabled="isAudioQualityDisabled(q.value)"
-        :aria-busy="isPendingQuality(q.value)"
-        :aria-pressed="!isResolvedCloudSource && effectiveAudioQuality === q.value"
+        :title="
+          !isAudioQualityAccessLoading || hasAudioQualityAccessData
+            ? getAudioQualityAccessReason(q.value) || undefined
+            : undefined
+        "
+        :aria-busy="isPendingQuality(q.value) || isAudioQualityAccessLoading"
+        :aria-pressed="selectedQuality === q.value"
         @click="setAudioQuality(q.value)"
       >
-        <span class="pm-label">{{ q.label }}</span>
+        <span class="pm-label">
+          <span>{{ q.label }}</span>
+          <span class="pm-detail" :aria-hidden="!qualityDetail(q.value) || undefined">
+            {{ qualityDetail(q.value) || '\u00a0' }}
+          </span>
+        </span>
         <Tag class="pm-tag" :color="getAudioQualityTagColor(q.value)">{{ q.badge }}</Tag>
         <span
           class="pm-check"
           :class="{
-            'is-visible':
-              (!isResolvedCloudSource && effectiveAudioQuality === q.value) ||
-              isPendingQuality(q.value),
+            'is-visible': selectedQuality === q.value || isPendingQuality(q.value),
           }"
         >
           <span v-if="isPendingQuality(q.value)" class="pm-spinner" aria-hidden="true"></span>
@@ -234,24 +285,35 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
 }
 
 .pm-status {
+  display: flex;
+  align-items: center;
   margin-top: 4px;
+  min-height: 17px;
   font-size: 11px;
   line-height: 1.5;
   color: var(--color-text-secondary);
-}
-
-.pm-hint {
-  padding: 0 10px 6px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.4;
-  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 
 .pm-divider {
   height: 1px;
   margin: 4px 6px;
   background: var(--border-subtle);
+}
+
+.pm-retry {
+  margin-left: 6px;
+  color: var(--color-primary-text);
+  cursor: pointer;
+}
+
+.pm-detail {
+  display: block;
+  min-height: 16px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+  color: var(--color-text-secondary);
 }
 
 .pm-item {
@@ -319,6 +381,10 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
 .pm-item.is-locked {
   cursor: wait;
   opacity: 0.5;
+}
+
+.pm-item.is-loading {
+  cursor: wait;
 }
 
 .pm-item.is-pending {

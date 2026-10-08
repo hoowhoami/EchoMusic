@@ -943,12 +943,12 @@ test('custom foreground defaults to white, previews reversibly and preserves gen
   s.updateGeneralPreferences({ mode: 'light' });
   s.setCustomBackground('landscape.png');
   assert.equal(s.override.background.textColor, '#ffffff');
-  assert.equal(s.isDark, true);
+  assert.equal(s.isDark, false);
   s.beginPreview();
   s.updateOverride({ background: { ...s.override.background, textColor: '#000000' } });
   assert.equal(s.isDark, false);
   s.cancelPreview();
-  assert.equal(s.isDark, true);
+  assert.equal(s.isDark, false);
   s.beginPreview();
   s.updateOverride({ background: { ...s.override.background, textColor: '#000000' } });
   s.applyPreview();
@@ -958,6 +958,44 @@ test('custom foreground defaults to white, previews reversibly and preserves gen
   assert.equal(s.preferences.mode, 'light');
   s.selectTheme(api.CUSTOM_THEME_KEY);
   assert.equal(s.override.background.textColor, '#000000');
+});
+
+test('custom text edits preserve panel tints, controls and floating surfaces across display modes', () => {
+  const s = store();
+  s.setCustomBackground('landscape.png');
+  s.setCustomBackgroundSample('landscape.png', '#8b9879');
+  for (const mode of ['light', 'dark', 'system']) {
+    s.updateGeneralPreferences({ mode });
+    for (const systemDark of [false, true]) {
+      s.systemDark = systemDark;
+      const surfaceColors = () =>
+        Object.fromEntries(
+          Object.entries(s.cssTokens).filter(
+            ([key]) => !['--text-main', '--text-secondary'].includes(key),
+          ),
+        );
+      const before = surfaceColors();
+      const surfaces = { ...s.appearance.tokens };
+      delete surfaces.text;
+      delete surfaces.secondary;
+      for (const color of ['#ffffff', '#672dd2', '#000000', '#ffe3a3', '#ff0000']) {
+        s.beginPreview();
+        s.updateOverride({ background: { ...s.override.background, textColor: color } });
+        assert.equal(s.cssTokens['--text-main'], color);
+        assert.equal(s.isDark, mode === 'dark' || (mode === 'system' && systemDark));
+        assert.deepEqual(surfaceColors(), before);
+        for (const [key, value] of Object.entries(surfaces))
+          assert.equal(s.appearance.tokens[key], value);
+        s.applyPreview();
+        assert.deepEqual(surfaceColors(), before);
+        s.beginPreview();
+        s.updateOverride({ background: { ...s.override.background, textColor: '#447799' } });
+        s.cancelPreview();
+        assert.equal(s.cssTokens['--text-main'], color);
+        assert.deepEqual(surfaceColors(), before);
+      }
+    }
+  }
 });
 
 test('arbitrary custom text colors remain exact while floating surfaces keep independent readable text', () => {

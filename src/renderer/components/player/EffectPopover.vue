@@ -57,14 +57,14 @@ import {
 interface Props {
   variant?: 'lyric' | 'bar';
   side?: 'top' | 'bottom';
+  align?: 'start' | 'center' | 'end';
   open?: boolean;
-  showArrow?: boolean;
 }
 const props = withDefaults(defineProps<Props>(), {
   variant: 'bar',
   side: 'top',
+  align: 'end',
   open: undefined,
-  showArrow: true,
 });
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
 
@@ -794,11 +794,11 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 <template>
   <Popover
     v-model:open="effectPopoverOpen"
-    :trigger="props.open !== undefined || providerSettingsOpen ? 'click' : 'hover'"
+    trigger="click"
     :side="side"
-    align="end"
+    :align="props.align"
+    :align-offset="props.align === 'end' ? -24 : 0"
     :side-offset="8"
-    :show-arrow="props.showArrow"
     content-class="effect-popover"
   >
     <template #trigger>
@@ -807,6 +807,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
         size="none"
         type="button"
         class="playback-action relative p-2 transition-all hover:scale-110 active:scale-90"
+        tooltip="音效与均衡器"
         aria-label="音效与均衡器"
       >
         <span class="inline-flex w-5 h-5 items-center justify-center">
@@ -1572,7 +1573,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 }
 .effect-popover.echo-popover-content {
   width: min(540px, calc(100vw - 24px));
-  height: min(460px, calc(100vh - 100px));
+  height: min(460px, calc(100dvh - 24px), var(--reka-popover-content-available-height, 460px));
   padding: 0;
   overflow: visible;
   border-color: var(--border-subtle);

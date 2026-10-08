@@ -25,6 +25,15 @@ new Function(
     { loader: 'ts', format: 'cjs' },
   ).code,
 )(sessionModule, sessionModule.exports);
+const vipModule = { exports: {} };
+new Function(
+  'module',
+  'exports',
+  transformSync(
+    readFileSync(new URL('../src/renderer/utils/accountVip.ts', import.meta.url), 'utf8'),
+    { loader: 'ts', format: 'cjs' },
+  ).code,
+)(vipModule, vipModule.exports);
 const deferred = () => {
   let resolve;
   const promise = new Promise((done) => {
@@ -76,6 +85,7 @@ function fixture() {
   const deps = {
     vue: { ...vue, onMounted() {}, onUnmounted() {} },
     '@/utils/userSession': sessionModule.exports,
+    '@/utils/accountVip': vipModule.exports,
     'vue-router': { useRouter: () => ({}) },
     '@/stores/user': { useUserStore: () => user },
     '@/stores/loginDevices': { useLoginDeviceStore: () => ({}) },

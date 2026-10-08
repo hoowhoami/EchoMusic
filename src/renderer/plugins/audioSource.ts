@@ -79,7 +79,9 @@ const normalizeAudioQuality = (value: unknown): AudioQualityValue | null =>
   value === '320' ||
   value === 'flac' ||
   value === 'high' ||
-  value === 'viper_tape'
+  value === 'viper_tape' ||
+  value === 'viper_clear' ||
+  value === 'viper_atmos'
     ? value
     : null;
 

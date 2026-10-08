@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, useSlots, watch } from 'vue';
 import Sortable from 'sortablejs';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
 import { getPlayerBarBadgeTone } from './playerBarActions';
 import Popover from '@/components/ui/Popover.vue';
+import PlayModePopover from '@/components/player/PlayModePopover.vue';
 import CastPopover from '@/components/player/CastPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
@@ -50,7 +51,6 @@ const editMode = ref(false);
 const isSorting = ref(false);
 const floatingAction = ref<ResolvedPlayerBarAction | null>(null);
 const floatingActionStyle = ref<Record<string, string>>({});
-const floatingActionRef = ref<HTMLElement | null>(null);
 const moreTriggerRef = ref<HTMLElement | null>(null);
 const boardRef = ref<HTMLElement | null>(null);
 const editMenuRef = ref<HTMLElement | null>(null);
@@ -70,7 +70,15 @@ const closeFloatingPanels = () => {
   floatingAction.value = null;
 };
 
-const popoverComponents = new Set(['sleep-timer', 'volume', 'speed', 'quality', 'effect', 'cast']);
+const popoverComponents = new Set([
+  'play-mode',
+  'sleep-timer',
+  'volume',
+  'speed',
+  'quality',
+  'effect',
+  'cast',
+]);
 
 const openFloatingAction = (item: ResolvedPlayerBarAction, event: MouseEvent) => {
   const target = event.currentTarget as HTMLElement | null;
@@ -105,16 +113,6 @@ const updateOpen = (value: boolean) => {
     editMode.value = false;
     lockedEditMenuHeight.value = null;
   }
-};
-
-const handleDocumentMousedown = (event: MouseEvent) => {
-  if (!floatingAction.value) return;
-  // Slot panels own dismissal, including temporary closure during verification.
-  if (!popoverComponents.has(floatingAction.value.component ?? '')) return;
-  const target = event.target as Node;
-  if (floatingActionRef.value?.contains(target)) return;
-  if (target instanceof Element && target.closest('.echo-popover-content')) return;
-  closeFloatingPanels();
 };
 
 const layoutZones: { value: PlayerBarPlacement; ariaLabel: string; label: string }[] = [
@@ -173,7 +171,7 @@ const restoreDraggedItem = () => {
   if (!dragOrigin) return;
   const { item, parent, nextSibling } = dragOrigin;
   dragOrigin = null;
-  // Restore Tooltip's fragment ownership before Vue removes or reorders it.
+  // Restore DOM ownership before Vue removes or reorders the dragged item.
   parent.insertBefore(item, nextSibling?.parentNode === parent ? nextSibling : null);
 };
 
@@ -284,25 +282,19 @@ watch(
   { flush: 'post' },
 );
 
-onMounted(() => {
-  document.addEventListener('mousedown', handleDocumentMousedown);
-});
-
 onBeforeUnmount(() => {
   destroySortables();
-  document.removeEventListener('mousedown', handleDocumentMousedown);
 });
 </script>
 
 <template>
   <Popover
-    :trigger="editMode ? 'click' : 'hover'"
+    trigger="click"
     side="top"
     align="end"
     :side-offset="10"
     :delay="80"
     :duration="160"
-    :show-arrow="true"
     :content-class="popoverClass"
     :open="open"
     @update:open="updateOpen"
@@ -315,13 +307,13 @@ onBeforeUnmount(() => {
           size="none"
           type="button"
           class="playback-action playerbar-more-trigger hover:scale-110 active:scale-90"
+          :tooltip="editMode ? '编辑播放栏布局' : '更多功能'"
           aria-label="更多"
         >
           <Icon :icon="iconDots" width="20" height="20" />
         </Button>
       </span>
     </template>
-
     <div v-if="!editMode" class="playerbar-more-menu" aria-label="播放栏更多功能">
       <div class="playerbar-more-heading">
         <span>更多功能</span>
@@ -340,12 +332,11 @@ onBeforeUnmount(() => {
           </Tooltip>
         </div>
       </div>
-
       <div v-if="visibleMenuItems.length" class="playerbar-use-grid">
         <Tooltip
+          :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : undefined"
           v-for="item in visibleMenuItems"
           :key="item.key"
-          :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : undefined"
         >
           <template #trigger>
             <button
@@ -367,17 +358,14 @@ onBeforeUnmount(() => {
                 v-if="item.visibleBadge"
                 :count="item.visibleBadge"
                 :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
-                :title="item.visibleBadge"
                 class="playerbar-more-badge"
               />
             </button>
           </template>
         </Tooltip>
       </div>
-
       <p v-else class="playerbar-more-empty">暂无收纳功能</p>
     </div>
-
     <div
       v-else
       ref="editMenuRef"
@@ -409,30 +397,28 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-
       <p class="playerbar-layout-hint">拖动按钮调整位置，上方复选框控制徽标显示。</p>
-
       <div ref="boardRef" class="playerbar-layout-board" aria-label="播放栏按钮布局">
         <div class="playerbar-layout-preview">
           <div class="playerbar-skeleton-left" aria-hidden="true">
-            <span class="playerbar-skeleton-cover"></span>
+            <span class="playerbar-skeleton-cover"> </span>
             <span class="playerbar-skeleton-lines">
-              <span></span>
-              <span></span>
+              <span> </span>
+              <span> </span>
             </span>
           </div>
           <div class="playerbar-skeleton-center" aria-hidden="true">
             <span class="playerbar-skeleton-controls">
-              <span></span>
-              <span></span>
-              <span></span>
+              <span> </span>
+              <span> </span>
+              <span> </span>
             </span>
-            <span class="playerbar-skeleton-progress"></span>
+            <span class="playerbar-skeleton-progress"> </span>
           </div>
           <div class="playerbar-skeleton-right" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
+            <span> </span>
+            <span> </span>
+            <span> </span>
           </div>
           <template v-for="zone in previewLayoutZones" :key="zone.value">
             <div class="playerbar-layout-zone" :class="`zone-${zone.value}`">
@@ -443,9 +429,9 @@ onBeforeUnmount(() => {
                 :aria-label="zone.ariaLabel"
               >
                 <Tooltip
+                  :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
                   v-for="(item, index) in groupedItems[zone.value]"
                   :key="item.key"
-                  :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
                 >
                   <template #trigger>
                     <div
@@ -465,8 +451,8 @@ onBeforeUnmount(() => {
                       </span>
                       <span class="playerbar-chip-title">{{ item.title }}</span>
                       <Tooltip
-                        v-if="badgeControlForItem(item)"
                         :content="badgeControlLabel(badgeControlForItem(item)!)"
+                        v-if="badgeControlForItem(item)"
                       >
                         <template #trigger>
                           <button
@@ -479,7 +465,7 @@ onBeforeUnmount(() => {
                             @mousedown.stop
                             @click.stop="badgeControlForItem(item)?.toggle()"
                           >
-                            <span class="playerbar-chip-check-box" aria-hidden="true"></span>
+                            <span class="playerbar-chip-check-box" aria-hidden="true"> </span>
                             <span class="playerbar-chip-badge-label">徽标</span>
                           </button>
                         </template>
@@ -491,7 +477,8 @@ onBeforeUnmount(() => {
                   v-if="!groupedItems[zone.value].length"
                   class="playerbar-layout-empty"
                   aria-hidden="true"
-                ></span>
+                >
+                </span>
               </div>
             </div>
           </template>
@@ -505,9 +492,9 @@ onBeforeUnmount(() => {
               aria-label="更多菜单按钮"
             >
               <Tooltip
+                :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
                 v-for="(item, index) in groupedItems.more"
                 :key="item.key"
-                :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
               >
                 <template #trigger>
                   <div
@@ -527,8 +514,8 @@ onBeforeUnmount(() => {
                     </span>
                     <span class="playerbar-chip-title">{{ item.title }}</span>
                     <Tooltip
-                      v-if="badgeControlForItem(item)"
                       :content="badgeControlLabel(badgeControlForItem(item)!)"
+                      v-if="badgeControlForItem(item)"
                     >
                       <template #trigger>
                         <button
@@ -541,7 +528,7 @@ onBeforeUnmount(() => {
                           @mousedown.stop
                           @click.stop="badgeControlForItem(item)?.toggle()"
                         >
-                          <span class="playerbar-chip-check-box" aria-hidden="true"></span>
+                          <span class="playerbar-chip-check-box" aria-hidden="true"> </span>
                           <span class="playerbar-chip-badge-label">徽标</span>
                         </button>
                       </template>
@@ -553,60 +540,56 @@ onBeforeUnmount(() => {
                 v-if="!groupedItems.more.length"
                 class="playerbar-layout-empty"
                 aria-hidden="true"
-              ></span>
+              >
+              </span>
             </div>
           </div>
         </div>
       </div>
-
       <p v-if="!visibleItems.length" class="playerbar-more-empty">暂无可用操作</p>
     </div>
   </Popover>
-
   <Teleport to="body">
     <Transition name="popover-fade">
       <div
         v-if="floatingAction"
-        ref="floatingActionRef"
         class="playerbar-action-popover-proxy"
         :style="floatingActionStyle"
         @mousedown.stop
       >
-        <CastPopover
-          v-if="floatingAction.component === 'cast'"
+        <PlayModePopover
+          v-if="floatingAction.component === 'play-mode'"
           :open="true"
-          :show-arrow="true"
-          hover-close
+          @update:open="!$event && closeFloatingPanels()"
+        />
+        <CastPopover
+          v-else-if="floatingAction.component === 'cast'"
+          :open="true"
           @update:open="!$event && closeFloatingPanels()"
         />
         <SleepTimerPopover
           v-else-if="floatingAction.component === 'sleep-timer'"
           :open="true"
-          :show-arrow="true"
           @update:open="!$event && closeFloatingPanels()"
         />
         <VolumePopover
           v-else-if="floatingAction.component === 'volume'"
           :open="true"
-          :show-arrow="true"
           @update:open="!$event && closeFloatingPanels()"
         />
         <SpeedPopover
           v-else-if="floatingAction.component === 'speed'"
           :open="true"
-          :show-arrow="true"
           @update:open="!$event && closeFloatingPanels()"
         />
         <QualityPopover
           v-else-if="floatingAction.component === 'quality'"
           :open="true"
-          :show-arrow="true"
           @update:open="!$event && closeFloatingPanels()"
         />
         <EffectPopover
           v-else-if="floatingAction.component === 'effect'"
           :open="true"
-          :show-arrow="true"
           @update:open="!$event && closeFloatingPanels()"
         />
         <slot v-else name="floating-action" :item="floatingAction" :close="closeFloatingPanels" />

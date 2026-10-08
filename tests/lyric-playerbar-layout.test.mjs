@@ -45,6 +45,7 @@ function fixture(t, hasBarrage = true, surface = 'lyric') {
     hasCurrentTrackMv: vue.ref(false),
     canShareCurrentTrack: vue.ref(true),
     playModeLabel: vue.ref('顺序播放'),
+    playModeIcon: vue.ref({ body: 'mode' }),
   };
   controls.settingStore = settings;
   controls.desktopLyricStore = { settings: { enabled: false } };
@@ -70,6 +71,26 @@ function fixture(t, hasBarrage = true, surface = 'lyric') {
   view.actionCapacity.value = { left: 20, center: 20, right: 20 };
   return { settings, verification, track, view, controls };
 }
+
+test('play mode is a click chooser in every position on both player bars', (t) => {
+  for (const surface of ['main', 'lyric']) {
+    const f = fixture(t, true, surface);
+    for (const placement of ['left', 'center', 'right', 'more']) {
+      f.settings.playerBarLayout = {
+        placements: { 'play-mode': placement },
+        order: [],
+        badges: {},
+      };
+      const groups = f.view.renderedPlayerBarActions.value;
+      const chosen = groups[placement === 'more' ? 'overflow' : placement];
+      const action = chosen.find((item) => item.key === 'play-mode');
+      assert.equal(action.component, 'play-mode');
+      assert.equal(action.trigger, 'click');
+      action.onClick();
+      assert.equal(f.controls.player.playMode, 'sequential');
+    }
+  }
+});
 
 test('lyric barrage joins layout management only when its rendering slot is available', (t) => {
   const managed = fixture(t),

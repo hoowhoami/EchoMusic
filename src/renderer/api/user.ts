@@ -242,6 +242,11 @@ export function getUserVipDetail() {
   return request.get('/user/vip/detail');
 }
 
+/** 概念版音质权益；vip_type=6 为豪华VIP，user_type & 16 表示超级VIP。 */
+export function getYouthUnionVip() {
+  return request.get('/youth/union/vip');
+}
+
 /**
  * 批量查询评论作者概念/畅听等产品（Young `/v2/batch_union_vipinfo`）
  */

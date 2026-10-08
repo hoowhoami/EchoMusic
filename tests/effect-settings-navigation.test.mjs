@@ -7,6 +7,7 @@ import { compileScript, parse } from 'vue/compiler-sfc';
 import * as settings from '../src/shared/dspProviderSettings.ts';
 import * as audio from '../src/shared/audio.ts';
 import * as audioSupport from '../src/shared/audioEffectSupport.ts';
+import * as songQuality from '../src/renderer/utils/song.ts';
 
 // Exercise the actual SFC setup/watchers without Electron, DOM, or audio playback.
 function setupComponent(t, file, props, imports = {}) {
@@ -47,6 +48,49 @@ function setupComponent(t, file, props, imports = {}) {
   );
   return { api, events, descriptor };
 }
+
+test('playback settings hide viper choices while preserving their saved preference', (t) => {
+  const constants = { exports: {} };
+  const source = readFileSync(
+    new URL('../src/renderer/views/settings/constants.ts', import.meta.url),
+    'utf8',
+  );
+  new Function(
+    'require',
+    'module',
+    'exports',
+    transformSync(source, { loader: 'ts', format: 'cjs' }).code,
+  )(() => ({}), constants, constants.exports);
+  const settingStore = vue.reactive({
+    defaultAudioQuality: 'viper_tape',
+    viperQualityEnabled: true,
+    impulseResponseFiles: [],
+  });
+  const { api } = setupComponent(
+    t,
+    '../src/renderer/views/settings/components/PlaybackSettingsSection.vue',
+    {},
+    {
+      pinia: { storeToRefs: () => ({}) },
+      '@/stores/setting': { useSettingStore: () => settingStore },
+      '@/stores/player': { usePlayerStore: () => ({}) },
+      '@/stores/toast': { useToastStore: () => ({}) },
+      '@/utils/song': songQuality,
+      '../constants': constants.exports,
+    },
+  );
+  assert.equal(api.availableAudioQualityOptions.value.length, 7);
+  settingStore.viperQualityEnabled = false;
+  assert.deepEqual(
+    api.availableAudioQualityOptions.value.map((option) => option.value),
+    ['128', '320', 'flac', 'high'],
+  );
+  assert.equal(api.defaultAudioQuality.value, 'high');
+  assert.equal(settingStore.defaultAudioQuality, 'viper_tape');
+  settingStore.viperQualityEnabled = true;
+  assert.equal(api.defaultAudioQuality.value, 'viper_tape');
+  assert.equal(api.availableAudioQualityOptions.value.length, 7);
+});
 
 test('provider presets stay selectable after playback format is known', () => {
   const source = readFileSync(
@@ -657,7 +701,7 @@ test('settings remain inside the effect popover; back does not close or reapply 
   }
   assert.ok(ancestorsOfPanel(descriptor.template.ast).includes('Popover'));
   assert.match(descriptor.template.content, /preset\.recommendedDevice === 'headphone'/);
-  assert.match(descriptor.template.content, />耳机<\/small/);
+  assert.match(descriptor.template.content, />\s*耳机<\/Tag/);
 
   let focusCount = 0;
   const event = { currentTarget: { focus: () => focusCount++ } };

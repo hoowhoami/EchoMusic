@@ -101,7 +101,6 @@ watch(
       trigger="click"
       :side="variant === 'lyric' ? 'top' : 'bottom'"
       align="end"
-      :show-arrow="false"
       content-class="barrage-send-popover"
       @update:open="updateOpen"
     >
@@ -109,7 +108,7 @@ watch(
         <Button
           variant="unstyled"
           size="none"
-          class="barrage-trigger"
+          class="playback-action barrage-trigger"
           :class="{ 'is-active': enabled }"
           :disabled="!resource.hash || kugouVerificationState.open"
           :tooltip="enabled ? '弹幕已开启 · 设置与发送' : '弹幕已关闭 · 设置与发送'"
@@ -232,7 +231,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2px;
+  padding: var(--player-bar-action-padding, 2px);
   color: var(--text-secondary);
   transition: all 0.2s ease;
 }
@@ -250,26 +249,26 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px;
+  padding: var(--player-bar-action-padding, 2px);
   transition:
     color 0.2s ease,
-    transform 0.2s ease;
-  color: rgba(255, 255, 255, 0.4);
+    scale 0.2s ease;
+  transform: none;
+  color: var(--icon-main);
   border-radius: var(--radius-control);
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
 }
 .barrage-toolbar.is-lyric :deep(.barrage-trigger svg) {
   color: inherit;
 }
 .barrage-toolbar.is-lyric :deep(.barrage-trigger:hover:not(:disabled)) {
-  color: rgba(255, 255, 255, 0.9);
-  transform: scale(1.1);
+  color: var(--color-primary-text);
+  scale: 1.1;
 }
 .barrage-toolbar.is-lyric :deep(.barrage-trigger:active:not(:disabled)) {
-  transform: scale(0.9);
+  scale: 0.9;
 }
 .barrage-toolbar.is-lyric :deep(.barrage-trigger.is-active) {
-  color: #fff;
+  color: var(--color-primary-text);
 }
 .barrage-toolbar.is-video :deep(.barrage-trigger) {
   display: inline-flex;
@@ -335,6 +334,13 @@ watch(
 }
 .barrage-panel {
   width: min(600px, calc(100vw - 64px));
+  max-height: min(
+    calc(100dvh - 64px),
+    calc(var(--reka-popover-content-available-height, 100dvh - 32px) - 32px)
+  );
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   color: var(--text-main);
 }
 .barrage-panel-heading {
@@ -379,13 +385,7 @@ watch(
 :global(.echo-popover-content.barrage-send-popover) {
   padding: 16px;
   box-sizing: border-box;
-  max-height: min(
-    calc(100dvh - 32px),
-    var(--reka-popover-content-available-height, calc(100dvh - 32px))
-  );
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
+  overflow: visible;
 }
 @media (max-width: 620px) {
   .barrage-panel-body {

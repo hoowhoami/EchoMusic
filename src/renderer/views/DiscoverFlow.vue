@@ -24,7 +24,6 @@ import {
   type SetPlaybackQueueOptions,
 } from '@/stores/playlist';
 import { useToastStore } from '@/stores/toast';
-import { useSettingStore } from '@/stores/setting';
 import type { DiscoverItem } from '@/utils/mappers/discover';
 import { resolvePlayableQueue } from '@/utils/playback';
 import { getSongQualityTags, isPlayableSong } from '@/utils/song';
@@ -32,7 +31,6 @@ import { getSongQualityTags, isPlayableSong } from '@/utils/song';
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const toastStore = useToastStore();
-const settingStore = useSettingStore();
 
 const items = ref<DiscoverItem[]>([]);
 const activeIndex = ref(0);
@@ -74,7 +72,7 @@ const progressLabel = computed(() =>
 );
 const qualityTags = computed(() => {
   const song = currentSong.value;
-  return song ? getSongQualityTags(song.relateGoods, settingStore.viperTapeQualityEnabled) : [];
+  return song ? getSongQualityTags(song.relateGoods) : [];
 });
 
 const discoverQueueOptions = computed<SetPlaybackQueueOptions>(() => ({

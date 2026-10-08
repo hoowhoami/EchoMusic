@@ -3,10 +3,17 @@ import type { CloudAudioSource, Song, SongRelateGood } from '@/models/song';
 import logger from '@/utils/logger';
 import { normalizeCoverUrl } from '@/utils/cover';
 import {
+  clampPreferredAudioQuality,
   doesRelateGoodMatchQuality,
   getSongQualityCandidates,
+  isViperAudioQuality,
   resolveEffectiveSongQuality,
 } from '@/utils/song';
+import {
+  getPlaybackQualityAccessReason,
+  parseSongQualityAccess,
+  type SongQualityAccess,
+} from '@/utils/songQualityAccess';
 import {
   resolvePluginAudioSource,
   transformPluginAudioSource,
@@ -26,8 +33,7 @@ import {
 import type { ClimaxMark, PlaybackSource, ResolvedAudioSource } from './types';
 import type { usePlaylistStore } from '../playlist';
 import type { useSettingStore } from '../setting';
-
-const privilegeLiteRequests = new Map<string, Promise<SongRelateGood[]>>();
+import type { useSongQualityAccessStore } from '../songQualityAccess';
 
 const getPrivilegeTrackRecord = (payload: unknown): Record<string, unknown> | null => {
   if (!payload || typeof payload !== 'object') return null;
@@ -174,17 +180,18 @@ export const createResolver = (
   state: PlayerState,
   playlistStore: ReturnType<typeof usePlaylistStore>,
   settingStore: ReturnType<typeof useSettingStore>,
+  qualityAccessStore: Pick<
+    ReturnType<typeof useSongQualityAccessStore>,
+    'ensure' | 'membership' | 'captureAccessRequest'
+  >,
 ) => {
-  const isViperTapeQualityEnabled = () => settingStore.viperTapeQualityEnabled ?? false;
-
   const getEffectiveAudioQuality = (track?: Pick<Song, 'id'>): AudioQualityValue => {
     const isCurrentTrack = !track || String(track.id) === String(state.currentTrackId);
     const quality = normalizeQuality(
       (isCurrentTrack ? state.currentAudioQualityOverride : null) ??
         settingStore.defaultAudioQuality,
     );
-    if (!isViperTapeQualityEnabled() && quality === 'viper_tape') return 'high';
-    return quality;
+    return clampPreferredAudioQuality(quality, settingStore.viperQualityEnabled);
   };
 
   const getResolvedAudioQuality = (track: Pick<Song, 'id' | 'relateGoods'>): AudioQualityValue => {
@@ -192,7 +199,7 @@ export const createResolver = (
       track,
       getEffectiveAudioQuality(track),
       settingStore.compatibilityMode ?? true,
-      isViperTapeQualityEnabled(),
+      settingStore.viperQualityEnabled,
     );
   };
 
@@ -222,16 +229,17 @@ export const createResolver = (
 
   const ensureTrackRelateGoods = async (
     track: Song,
-    options?: { forceRefresh?: boolean; throwOnError?: boolean },
+    options?: {
+      forceRefresh?: boolean;
+      throwOnError?: boolean;
+      onPrivilege?: (payload: unknown) => void;
+    },
   ): Promise<SongRelateGood[]> => {
     const existing = track.relateGoods ?? [];
-    if (existing.length > 0 && !options?.forceRefresh) return existing;
+    if (existing.length > 0 && !options?.forceRefresh && !options?.onPrivilege) return existing;
     if (!track.hash || track.source === 'cloud') return existing;
 
-    const requestKey = `${track.hash}:${track.albumId ?? ''}`;
-    const shouldShareRequest = !options?.throwOnError;
-    const pending = shouldShareRequest ? privilegeLiteRequests.get(requestKey) : undefined;
-    if (pending) return pending;
+    const isCurrent = qualityAccessStore.captureAccessRequest();
 
     logger.debug(
       'PlayerResolver',
@@ -242,7 +250,11 @@ export const createResolver = (
     );
     const request = (async () => {
       try {
-        const privilegeRes = await getSongPrivilegeLite(track.hash, track.albumId);
+        const privilegeRes = options?.throwOnError
+          ? await getSongPrivilegeLite(track.hash, track.albumId)
+          : await qualityAccessStore.ensure(track.hash, track.albumId, options?.forceRefresh);
+        if (!isCurrent() || !privilegeRes) return existing;
+        options?.onPrivilege?.(privilegeRes);
         const relateGoods = parseRelateGoodsFromPrivilege(privilegeRes);
         const metadata = parseTrackMetadataFromPrivilege(privilegeRes);
         Object.assign(track, metadata, { relateGoods });
@@ -272,16 +284,8 @@ export const createResolver = (
         );
         if (options?.throwOnError) throw error;
         return existing;
-      } finally {
-        if (shouldShareRequest) {
-          privilegeLiteRequests.delete(requestKey);
-        }
       }
     })();
-
-    if (shouldShareRequest) {
-      privilegeLiteRequests.set(requestKey, request);
-    }
     return request;
   };
 
@@ -590,18 +594,33 @@ export const createResolver = (
     }
 
     let relateGoods: SongRelateGood[] = [];
+    let qualityAccess: SongQualityAccess[] | null = null;
+    const isCurrentQualityAccess = qualityAccessStore.captureAccessRequest();
     try {
       relateGoods = await ensureTrackRelateGoods(catalogTrack, {
         forceRefresh: catalogTrack === track && !options?.reuseRelateGoods,
+        onPrivilege: (payload) => {
+          qualityAccess = parseSongQualityAccess(payload, catalogTrack.hash!);
+        },
       });
     } catch (error) {
       logger.warn('PlayerResolver', 'Resolve privilege lite failed, continue playback:', error, {
         track: summarizeSong(catalogTrack),
       });
     }
+    if (!isCurrentQualityAccess()) {
+      return { url: '', quality: null, effect: 'none', loudness: null };
+    }
     if (catalogTrack !== track) syncTrackRelateGoods(relateGoods);
 
-    if (audioEffect !== 'none') {
+    const accessReason = (quality: AudioQualityValue) =>
+      settingStore.viperQualityEnabled === false && isViperAudioQuality(quality)
+        ? '蝰蛇音质未开启'
+        : getPlaybackQualityAccessReason(quality, qualityAccess, qualityAccessStore.membership);
+    if (
+      audioEffect !== 'none' &&
+      (!isViperAudioQuality(audioEffect) || !accessReason(audioEffect))
+    ) {
       const isVocalEffect = audioEffect === 'vocal' || audioEffect === 'accompaniment';
       const apiEffect = isVocalEffect ? 'acappella' : audioEffect;
 
@@ -642,12 +661,21 @@ export const createResolver = (
       }
     }
 
+    qualityFailureReason = accessReason(audioQuality) || undefined;
     const candidates = getSongQualityCandidates(
       audioQuality,
       compatibilityMode,
-      isViperTapeQualityEnabled(),
-    );
+      settingStore.viperQualityEnabled,
+    ).filter((quality) => !accessReason(quality));
+    const fallbackQuality =
+      candidates.find((quality) =>
+        relateGoods.some((item) => doesRelateGoodMatchQuality(item, quality) && item.hash),
+      ) ?? null;
     for (const quality of candidates) {
+      if (!isCurrentQualityAccess()) {
+        return { url: '', quality: null, effect: 'none', loudness: null };
+      }
+      if (accessReason(quality)) continue;
       const matched = relateGoods.find(
         (item) => doesRelateGoodMatchQuality(item, quality) && item.hash,
       );
@@ -684,7 +712,7 @@ export const createResolver = (
       }
     }
 
-    if (compatibilityMode) {
+    if (compatibilityMode && candidates.length > 0 && isCurrentQualityAccess()) {
       try {
         const res = await getSongUrl(catalogTrack.hash, '', undefined, getCatalogUrlOptions());
         const loudness = rememberCatalogTrackLoudness(res);
@@ -694,7 +722,7 @@ export const createResolver = (
             {
               url: urls[0],
               urls,
-              quality: getResolvedAudioQuality(catalogTrack),
+              quality: fallbackQuality,
               effect: 'none',
               loudness,
             },
@@ -707,25 +735,27 @@ export const createResolver = (
       }
     }
 
-    try {
-      const res = await getSongUrl(catalogTrack.hash, '', 356753938, getCatalogUrlOptions());
-      const loudness = rememberCatalogTrackLoudness(res);
-      const urls = resolveUrlsFromResponse(res);
-      if (urls.length > 0) {
-        const transformed = await finalizeResolvedSource(
-          {
-            url: urls[0],
-            urls,
-            quality: getResolvedAudioQuality(catalogTrack),
-            effect: 'none',
-            loudness,
-          },
-          'catalog',
-        );
-        if (transformed) return transformed;
+    if (candidates.length > 0 && isCurrentQualityAccess()) {
+      try {
+        const res = await getSongUrl(catalogTrack.hash, '', 356753938, getCatalogUrlOptions());
+        const loudness = rememberCatalogTrackLoudness(res);
+        const urls = resolveUrlsFromResponse(res);
+        if (urls.length > 0) {
+          const transformed = await finalizeResolvedSource(
+            {
+              url: urls[0],
+              urls,
+              quality: fallbackQuality,
+              effect: 'none',
+              loudness,
+            },
+            'catalog',
+          );
+          if (transformed) return transformed;
+        }
+      } catch (error) {
+        logger.warn('PlayerResolver', 'Fetch fallback with ppage_id failed:', error);
       }
-    } catch (error) {
-      logger.warn('PlayerResolver', 'Fetch fallback with ppage_id failed:', error);
     }
 
     const afterCatalogPlugin = await resolvePluginAt('after-catalog');

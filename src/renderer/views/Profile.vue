@@ -55,24 +55,17 @@ import {
   iconX,
 } from '@/icons';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
+import {
+  getAccountVipStatus,
+  type AccountVipInfo as VipInfoState,
+  type VipProduct as VipLevelInfo,
+} from '@/utils/accountVip';
 import { formatBirthdayForInput } from '../../shared/birthday';
 import {
   formatAccountAge,
   formatListeningDuration,
   getGradeProgress,
 } from '../../shared/profileStats';
-
-interface VipLevelInfo {
-  product_type?: string;
-  is_vip?: number;
-  vip_begin_time?: string | number;
-  vip_end_time?: string | number;
-}
-
-interface VipInfoState {
-  busi_vip?: VipLevelInfo[];
-  [key: string]: unknown;
-}
 
 interface DetailState {
   gender?: number;
@@ -180,7 +173,7 @@ const detail = computed<DetailState>(
 const vipInfo = computed<VipInfoState>(
   () => (userInfo.value?.extendsInfo?.vip as VipInfoState | undefined) || {},
 );
-const busiVip = computed<VipLevelInfo[]>(() => vipInfo.value?.busi_vip || []);
+const vipStatus = computed(() => getAccountVipStatus(vipInfo.value));
 const visitorCount = computed(() => {
   const value = detail.value.hvisitors ?? 0;
   const count = Number(value);
@@ -341,8 +334,26 @@ const resetProfileState = () => {
   });
 };
 
-const tvip = computed(() => busiVip.value.find((v) => v.product_type === 'tvip' && v.is_vip === 1));
-const svip = computed(() => busiVip.value.find((v) => v.product_type === 'svip' && v.is_vip === 1));
+const tvip = computed(() => vipStatus.value.musicVip);
+const svip = computed(() => vipStatus.value.conceptVip);
+const superVip = computed(() => vipStatus.value.superVip);
+const deluxeVip = computed(() => vipStatus.value.deluxeVip);
+const superVipMembership = computed<VipLevelInfo | undefined>(() =>
+  superVip.value
+    ? {
+        vip_begin_time: vipInfo.value.su_vip_begin_time,
+        vip_end_time: vipInfo.value.su_vip_end_time,
+      }
+    : undefined,
+);
+const deluxeVipMembership = computed<VipLevelInfo | undefined>(() =>
+  deluxeVip.value
+    ? {
+        vip_begin_time: vipInfo.value.vip_begin_time,
+        vip_end_time: vipInfo.value.vip_end_time,
+      }
+    : undefined,
+);
 
 const gender = computed(() => {
   const g = detail.value?.gender;
@@ -1503,8 +1514,10 @@ onUnmounted(() => {
                     <div class="profile-name-line">
                       <h2>{{ userInfo.nickname }}</h2>
 
-                      <span v-if="tvip" class="profile-member-badge is-music">畅听</span>
-                      <span v-if="svip" class="profile-member-badge is-concept">概念</span>
+                      <span v-if="superVip" class="profile-member-badge is-super">超级VIP</span>
+                      <span v-if="deluxeVip" class="profile-member-badge is-deluxe">豪华VIP</span>
+                      <span v-if="svip" class="profile-member-badge is-concept">概念VIP</span>
+                      <span v-if="tvip" class="profile-member-badge is-music">畅听VIP</span>
                     </div>
                     <p v-if="detail.descri" class="profile-signature">{{ detail.descri }}</p>
                   </div>
@@ -1591,8 +1604,15 @@ onUnmounted(() => {
               <section class="profile-memberships" aria-label="会员状态">
                 <article
                   v-for="membership in [
-                    { label: '畅听会员', vip: tvip, icon: iconHeadphones, kind: 'music' },
+                    { label: '超级VIP', vip: superVipMembership, icon: iconDiamond, kind: 'super' },
+                    {
+                      label: '豪华VIP',
+                      vip: deluxeVipMembership,
+                      icon: iconDiamond,
+                      kind: 'deluxe',
+                    },
                     { label: '概念会员', vip: svip, icon: iconDiamond, kind: 'concept' },
+                    { label: '畅听会员', vip: tvip, icon: iconDiamond, kind: 'music' },
                   ]"
                   :key="membership.kind"
                   class="profile-membership"
@@ -1604,7 +1624,7 @@ onUnmounted(() => {
                   <div class="profile-membership-copy">
                     <h4>{{ membership.label }}</h4>
                     <div v-if="membership.vip" class="profile-expiry">
-                      <span>{{ getVipExpireText(membership.vip) }}</span>
+                      <span>{{ getVipExpireText(membership.vip) || '已开通' }}</span>
                       <Popover
                         trigger="hover"
                         side="top"
@@ -2325,7 +2345,7 @@ onUnmounted(() => {
 .profile-memberships {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
   padding-left: 32px;
   border-left: 1px solid var(--border-subtle);
 }
@@ -2347,11 +2367,17 @@ onUnmounted(() => {
   height: 32px;
   color: var(--icon-main);
 }
-.profile-membership.is-active .is-music {
+.profile-membership-icon.is-music {
   color: color-mix(in srgb, var(--state-success) 68%, var(--color-text-main));
 }
-.profile-membership.is-active .is-concept {
-  color: color-mix(in srgb, var(--state-warning) 68%, var(--color-text-main));
+.profile-membership-icon.is-concept {
+  color: color-mix(in srgb, #8b5cf6 68%, var(--color-text-main));
+}
+.profile-membership-icon.is-super {
+  color: color-mix(in srgb, #f97316 68%, var(--color-text-main));
+}
+.profile-membership-icon.is-deluxe {
+  color: color-mix(in srgb, #e8a317 68%, var(--color-text-main));
 }
 .profile-membership-copy {
   min-width: 0;
@@ -2417,6 +2443,13 @@ onUnmounted(() => {
     border-top: 0;
     border-left: 1px solid var(--border-subtle);
     padding-left: 20px;
+  }
+  .profile-membership:nth-child(odd) {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .profile-membership:nth-child(n + 3) {
+    border-top: 1px solid var(--border-subtle);
   }
 }
 @media (max-width: 600px) {

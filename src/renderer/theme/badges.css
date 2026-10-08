@@ -84,10 +84,14 @@
 .comment-badge-biz,
 .comment-badge-tme-star,
 .comment-badge-auth,
-.sidebar-member-badge.is-svip,
-.sidebar-member-badge.is-tvip,
+.sidebar-member-badge.is-super,
+.sidebar-member-badge.is-deluxe,
+.sidebar-member-badge.is-concept,
+.sidebar-member-badge.is-music,
 .profile-member-badge.is-music,
 .profile-member-badge.is-concept,
+.profile-member-badge.is-super,
+.profile-member-badge.is-deluxe,
 .plugin-status-badge.is-error,
 .plugin-status-badge.is-safe,
 .plugin-status-badge.is-warning,
@@ -100,10 +104,13 @@
 
 .comment-badge-svip,
 .comment-badge-svip-year,
-.comment-badge-concept,
-.comment-badge-concept-year,
-.sidebar-member-badge.is-svip {
+.sidebar-member-badge.is-super,
+.profile-member-badge.is-super {
   --badge-tone: #f97316;
+}
+.profile-member-badge.is-deluxe,
+.sidebar-member-badge.is-deluxe {
+  --badge-tone: #e8a317;
 }
 .comment-badge-vip,
 .comment-badge-vip-year {
@@ -120,7 +127,7 @@
 .comment-badge-biz,
 .comment-badge-tme-star,
 .comment-badge-auth,
-.sidebar-member-badge.is-tvip {
+.sidebar-member-badge.is-music {
   --badge-tone: #07c160;
 }
 .comment-badge-talent {
@@ -133,6 +140,11 @@
   --badge-tone: var(--state-success);
 }
 .profile-member-badge.is-concept,
+.sidebar-member-badge.is-concept,
+.comment-badge-concept,
+.comment-badge-concept-year {
+  --badge-tone: #8b5cf6;
+}
 .plugin-status-badge.is-safe,
 .plugin-status-badge.is-warning,
 .marketplace-version-pill.is-update {

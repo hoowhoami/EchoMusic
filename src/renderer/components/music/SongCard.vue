@@ -85,9 +85,7 @@ const songAlbumAudioId = computed(
 );
 const songIsOriginal = computed(() => Boolean(songPayload.value.isOriginal));
 
-const derivedState = computed(() =>
-  getSongDerivedState(songPayload.value, settingStore.viperTapeQualityEnabled),
-);
+const derivedState = computed(() => getSongDerivedState(songPayload.value));
 // const isVip = computed(() => derivedState.value.isVip);
 // const isPaid = computed(() => derivedState.value.isPaid);
 // const isNoCopyright = computed(() => derivedState.value.isNoCopyright);

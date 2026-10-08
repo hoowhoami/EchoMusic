@@ -143,7 +143,7 @@ test('an already-open tooltip closes on cache entry and accepts fresh focus afte
   assert.equal(s.open.value, true);
 });
 
-function wrapperFixture(registerBranch = null) {
+function wrapperFixture() {
   const hooks = {};
   const trigger = vue.ref({
     closest: () => null,
@@ -157,7 +157,6 @@ function wrapperFixture(registerBranch = null) {
     vue: {
       ...vue,
       useSlots: () => ({}),
-      inject: () => registerBranch,
       onActivated: (fn) => (hooks.activate = fn),
       onDeactivated: (fn) => (hooks.deactivate = fn),
       onBeforeUnmount: (fn) => (hooks.unmount = fn),
@@ -194,38 +193,6 @@ test('hidden and disposed wrappers reject delayed open events; fresh activation 
   s.activate();
   s.api.updateOpen(true);
   assert.equal(s.api.open.value, false);
-});
-
-test('only visible owned tooltip content is inside its parent branch, including the arrow', () => {
-  let contains;
-  let removed = 0;
-  const s = wrapperFixture((branch) => {
-    contains = branch;
-    return () => removed++;
-  });
-  const body = {},
-    arrow = {},
-    unrelated = {};
-  s.api.contentWrapRef.value = {
-    parentElement: { contains: (target) => target === body || target === arrow },
-  };
-  assert.equal(contains(body), false);
-  s.api.updateOpen(true);
-  assert.equal(contains(body), true);
-  assert.equal(contains(arrow), true);
-  assert.equal(contains(unrelated), false);
-  s.api.updateOpen(false);
-  assert.equal(contains(body), false);
-  s.api.updateOpen(true);
-  s.deactivate();
-  assert.equal(contains(body), false);
-  assert.equal(removed, 0);
-  s.activate();
-  s.api.updateOpen(true);
-  assert.equal(contains(body), true);
-  s.dispose();
-  assert.equal(contains(body), false);
-  assert.equal(removed, 1);
 });
 
 test('disabled, overflow-only and expanded-popover suppression remain intact', async () => {

@@ -3,87 +3,107 @@ import { test } from 'node:test';
 import type { Song } from '../src/renderer/models/song.ts';
 import {
   clampPreferredAudioQuality,
+  doesRelateGoodMatchQuality,
   getAvailableSongQualities,
-  getSongDerivedState,
+  getSongEffectTags,
   getSongQualityCandidates,
   getSongQualityTag,
   getSongQualityTags,
   resolveEffectiveSongQuality,
 } from '../src/renderer/utils/song.ts';
 
-const tapeSong: Pick<Song, 'relateGoods'> = {
+const song: Pick<Song, 'relateGoods'> = {
   relateGoods: [
-    { quality: 'viper_tape', level: 101, hash: 'tape' },
-    { quality: 'high', level: 6, hash: 'high' },
-    { quality: 'flac', level: 5, hash: 'flac' },
+    { quality: '128', level: 2, hash: 'standard' },
     { quality: '320', level: 4, hash: 'hq' },
+    { quality: 'flac', level: 5, hash: 'flac' },
+    { quality: 'high', level: 6, hash: 'high' },
+    { quality: 'viper_clear', level: 0, hash: 'clear' },
+    { quality: 'viper_tape', level: 101, hash: 'tape' },
+    { quality: 'viper_atmos', level: 0, hash: 'atmos' },
   ],
 };
 
-const createSong = (patch: Partial<Song> = {}): Song => ({
-  id: '1',
-  title: '测试歌曲',
-  name: '测试歌曲',
-  artist: '测试歌手',
-  duration: 0,
-  coverUrl: '',
-  audioUrl: '',
-  hash: 'playable-hash',
-  mixSongId: '1',
-  relateGoods: tapeSong.relateGoods,
-  ...patch,
-});
-
-test('quality candidates omit viper tape when the gate is off', () => {
-  assert.deepEqual(getSongQualityCandidates('viper_tape', true, false), [
-    'high',
-    'flac',
-    '320',
+test('all seven qualities are available when viper qualities are enabled', () => {
+  assert.deepEqual(getAvailableSongQualities(song), [
     '128',
-  ]);
-  assert.deepEqual(getSongQualityCandidates('viper_tape', false, false), ['high']);
-  assert.deepEqual(getSongQualityCandidates('viper_tape', true, true), [
+    '320',
+    'flac',
+    'high',
+    'viper_clear',
     'viper_tape',
-    'high',
-    'flac',
-    '320',
-    '128',
+    'viper_atmos',
   ]);
+  for (const quality of ['viper_clear', 'viper_tape', 'viper_atmos'] as const) {
+    assert.equal(clampPreferredAudioQuality(quality), quality);
+    assert.equal(resolveEffectiveSongQuality(song, quality), quality);
+    assert.deepEqual(getSongQualityCandidates(quality, false), [quality]);
+  }
 });
 
-test('preferred viper tape clamps to high when the gate is off', () => {
-  assert.equal(clampPreferredAudioQuality('viper_tape', false), 'high');
-  assert.equal(clampPreferredAudioQuality('viper_tape', true), 'viper_tape');
-  assert.equal(clampPreferredAudioQuality('flac', false), 'flac');
+test('one feature switch removes all viper candidates without affecting resource tags', () => {
+  assert.deepEqual(getAvailableSongQualities(song, false), ['128', '320', 'flac', 'high']);
+  for (const quality of ['viper_clear', 'viper_tape', 'viper_atmos'] as const) {
+    assert.equal(clampPreferredAudioQuality(quality, false), 'high');
+    assert.equal(resolveEffectiveSongQuality(song, quality, true, false), 'high');
+    assert.deepEqual(getSongQualityCandidates(quality, true, false), [
+      'high',
+      'flac',
+      '320',
+      '128',
+    ]);
+    assert.deepEqual(getSongQualityCandidates(quality, false, false), ['high']);
+  }
+  assert.ok(getSongQualityTags(song.relateGoods).includes('母带'));
 });
 
-test('available qualities and tags hide 母带 when the gate is off', () => {
-  assert.deepEqual(getAvailableSongQualities(tapeSong, false), ['128', '320', 'flac', 'high']);
-  assert.deepEqual(getAvailableSongQualities(tapeSong, true), [
-    '128',
-    '320',
-    'flac',
-    'high',
+test('compatibility fallback follows the supported quality order', () => {
+  assert.deepEqual(getSongQualityCandidates('viper_atmos'), [
+    'viper_atmos',
     'viper_tape',
+    'viper_clear',
+    'high',
+    'flac',
+    '320',
+    '128',
   ]);
-  assert.equal(getSongQualityTag(tapeSong, false), 'Hi-Res');
-  assert.equal(getSongQualityTag(tapeSong, true), '母带');
-  assert.equal(getSongQualityTags(tapeSong.relateGoods, false).includes('母带'), false);
-  assert.equal(getSongQualityTags(tapeSong.relateGoods, true)[0], '母带');
-  assert.equal(getSongDerivedState(createSong(), false).qualityTag, 'Hi-Res');
-  assert.equal(getSongDerivedState(createSong(), true).qualityTag, '母带');
-});
-
-test('effective quality does not resolve to viper tape when the gate is off', () => {
-  assert.equal(resolveEffectiveSongQuality(tapeSong, 'viper_tape', true, false), 'high');
-  assert.equal(resolveEffectiveSongQuality(tapeSong, 'viper_tape', true, true), 'viper_tape');
+  assert.deepEqual(getSongQualityCandidates('viper_clear'), [
+    'viper_clear',
+    'high',
+    'flac',
+    '320',
+    '128',
+  ]);
   assert.equal(
     resolveEffectiveSongQuality(
-      { relateGoods: [{ quality: 'viper_tape', level: 101, hash: 'tape' }] },
-      'viper_tape',
-      true,
-      false,
+      { relateGoods: song.relateGoods?.filter((item) => item.quality !== 'viper_atmos') },
+      'viper_atmos',
     ),
-    '128',
+    'viper_tape',
   );
+});
+
+test('special qualities with level zero or a shared hash are matched by quality', () => {
+  const clear = { quality: 'viper_clear', level: 0, hash: 'shared' };
+  const atmos = { quality: 'viper_atmos', level: 0, hash: 'shared' };
+  assert.equal(doesRelateGoodMatchQuality(clear, 'viper_clear'), true);
+  assert.equal(doesRelateGoodMatchQuality(clear, 'viper_atmos'), false);
+  assert.equal(doesRelateGoodMatchQuality(atmos, 'viper_tape'), false);
+  assert.equal(doesRelateGoodMatchQuality(atmos, '128'), false);
+  assert.equal(doesRelateGoodMatchQuality({ level: 1 }, '128'), true);
+});
+
+test('song card badge omits master tape while detail quality tags retain it', () => {
+  assert.deepEqual(getSongQualityTags(song.relateGoods), [
+    'HQ',
+    'SQ',
+    'Hi-Res',
+    '超清',
+    '母带',
+    '全景声',
+  ]);
+  assert.deepEqual(getSongEffectTags(song.relateGoods), []);
+  assert.equal(getSongQualityTag(song), '全景声');
+  assert.equal(getSongQualityTag({ relateGoods: [{ quality: 'viper_clear', level: 0 }] }), '超清');
+  assert.equal(getSongQualityTag({ qualityMap: 1 << 24 }), '');
 });

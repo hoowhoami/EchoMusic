@@ -13,8 +13,6 @@ interface Props {
   showBadge?: boolean;
   open?: boolean;
   side?: 'top' | 'bottom';
-  showArrow?: boolean;
-  hoverClose?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -22,8 +20,6 @@ const props = withDefaults(defineProps<Props>(), {
   showBadge: true,
   open: undefined,
   side: 'top',
-  showArrow: true,
-  hoverClose: false,
 });
 
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
@@ -31,9 +27,6 @@ const output = useOutputStore();
 const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
 const remoteActive = computed(() => output.snapshot && output.snapshot.protocol !== 'local');
-const triggerMode = computed(() =>
-  props.hoverClose || props.open === undefined ? 'hover' : 'click',
-);
 const buttonClass = computed(() => ({ 'is-active': remoteActive.value }));
 
 function closePopover(): void {
@@ -45,12 +38,11 @@ function closePopover(): void {
 <template>
   <Popover
     ref="popoverRef"
-    :trigger="triggerMode"
+    trigger="click"
     :open="props.open"
     :side="props.side"
     align="end"
     :side-offset="8"
-    :show-arrow="props.showArrow"
     :hold-open="Boolean(output.connectingTargetId)"
     content-class="cast-popover"
     @update:open="emit('update:open', $event)"
@@ -62,6 +54,7 @@ function closePopover(): void {
         type="button"
         class="playback-action relative inline-flex items-center justify-center p-2 leading-none transition-all hover:scale-110 active:scale-90"
         :class="buttonClass"
+        :tooltip="remoteActive ? `正在投放到${output.snapshot?.displayName}` : '投放'"
         :aria-label="remoteActive ? `正在投放到${output.snapshot?.displayName}` : '投放'"
       >
         <span class="inline-flex w-5 h-5 items-center justify-center">

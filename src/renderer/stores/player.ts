@@ -29,6 +29,7 @@ import { createSleepTimer } from './player/sleepTimer';
 import { createPlaybackManager } from './player/playback';
 import { createAudioManager } from './player/audio';
 import { createResolver } from './player/resolver';
+import { useSongQualityAccessStore } from './songQualityAccess';
 import { createHistoryManager } from './player/history';
 import { createListeningTimeManager } from './player/listeningTime';
 import { createDeviceManager } from './player/device';
@@ -84,7 +85,12 @@ export const usePlayerStore = defineStore(
       resolveInitialization = resolve;
     });
 
-    const resolver = createResolver(state, playlistStore, settingStore);
+    const resolver = createResolver(
+      state,
+      playlistStore,
+      settingStore,
+      useSongQualityAccessStore(),
+    );
     const historyManager = createHistoryManager(state);
     const listeningTimeManager = createListeningTimeManager(state);
 
@@ -821,7 +827,7 @@ export const usePlayerStore = defineStore(
       let snapshot = {
         defaultAudioQuality: settingStore.defaultAudioQuality,
         compatibilityMode: settingStore.compatibilityMode,
-        viperTapeQualityEnabled: settingStore.viperTapeQualityEnabled,
+        viperQualityEnabled: settingStore.viperQualityEnabled,
         volumeFade: settingStore.volumeFade,
         volumeFadeTime: settingStore.volumeFadeTime,
         trackTransitionMode: settingStore.effectiveTrackTransitionMode,
@@ -884,9 +890,9 @@ export const usePlayerStore = defineStore(
       // 保存取消函数，以便在需要时清理订阅
       const unsubscribeSettings = settingStore.$subscribe(() => {
         const compatibilityChanged = settingStore.compatibilityMode !== snapshot.compatibilityMode;
-        const viperTapeChanged =
-          settingStore.viperTapeQualityEnabled !== snapshot.viperTapeQualityEnabled;
-        const qualityPolicyChanged = compatibilityChanged || viperTapeChanged;
+        const viperQualityChanged =
+          settingStore.viperQualityEnabled !== snapshot.viperQualityEnabled;
+        const qualityPolicyChanged = compatibilityChanged || viperQualityChanged;
         const shouldRefresh =
           (state.currentAudioQualityOverride === null &&
             settingStore.defaultAudioQuality !== snapshot.defaultAudioQuality) ||
@@ -910,7 +916,7 @@ export const usePlayerStore = defineStore(
         snapshot = {
           defaultAudioQuality: settingStore.defaultAudioQuality,
           compatibilityMode: settingStore.compatibilityMode,
-          viperTapeQualityEnabled: settingStore.viperTapeQualityEnabled,
+          viperQualityEnabled: settingStore.viperQualityEnabled,
           volumeFade: settingStore.volumeFade,
           volumeFadeTime: settingStore.volumeFadeTime,
           trackTransitionMode: settingStore.effectiveTrackTransitionMode,

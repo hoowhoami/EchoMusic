@@ -10,6 +10,7 @@ import {
   inject,
   provide,
 } from 'vue';
+import FloatingSurface from './FloatingSurface.vue';
 import { PopoverRoot, PopoverTrigger, PopoverPortal, PopoverContent, PopoverArrow } from 'reka-ui';
 
 type TriggerMode = 'hover' | 'click' | 'focus' | 'manual';
@@ -20,6 +21,7 @@ interface Props {
   trigger?: TriggerMode;
   side?: Placement;
   align?: Align;
+  alignOffset?: number;
   sideOffset?: number;
   showArrow?: boolean;
   delay?: number;
@@ -35,6 +37,7 @@ const props = withDefaults(defineProps<Props>(), {
   trigger: 'hover',
   side: 'top',
   align: 'center',
+  alignOffset: 0,
   sideOffset: 8,
   showArrow: true,
   delay: 100,
@@ -283,6 +286,7 @@ defineExpose({
       <PopoverContent
         :side="props.side"
         :align="props.align"
+        :align-offset="props.alignOffset"
         :side-offset="props.sideOffset"
         :collision-padding="12"
         avoid-collisions
@@ -301,6 +305,7 @@ defineExpose({
         <PopoverArrow v-if="props.showArrow" :width="14" :height="8" as-child>
           <span class="echo-popover-arrow floating-surface-arrow" />
         </PopoverArrow>
+        <FloatingSurface v-if="props.showArrow" />
       </PopoverContent>
     </PopoverPortal>
   </PopoverRoot>

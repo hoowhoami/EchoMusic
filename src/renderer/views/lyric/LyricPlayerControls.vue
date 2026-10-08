@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+import '@/layouts/playerBarActionStrip.css';
 /**
  * 歌词页底部播放控制栏
  * 复刻 PlayerBar 三栏布局：左侧歌曲信息+操作、中间播放控制+进度条、右侧功能按钮
@@ -16,7 +18,6 @@ import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { useToastStore } from '@/stores/toast';
 import Button from '@/components/ui/Button.vue';
-import Tooltip from '@/components/ui/Tooltip.vue';
 import Badge from '@/components/ui/Badge.vue';
 import { getPlayerBarBadgeTone } from '@/layouts/playerBarActions';
 import MvIcon from '@/components/ui/MvIcon.vue';
@@ -25,6 +26,7 @@ import PlayerBarActionIcon from '@/layouts/PlayerBarActionIcon.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import VolumeIcon from '@/components/player/VolumeIcon.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
+import PlayModePopover from '@/components/player/PlayModePopover.vue';
 import SleepTimerPopover from '@/components/player/SleepTimerPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
@@ -54,10 +56,6 @@ import {
   iconPlaylistAdd,
   iconTypography,
   iconMessageCircle,
-  iconRepeat,
-  iconRepeatOff,
-  iconShuffle,
-  iconListRestart,
   iconShare,
   iconShirt,
   iconMoon,
@@ -85,7 +83,7 @@ const {
   isFavorite,
   toggleFavorite,
   playModeLabel,
-  cyclePlayMode,
+  playModeIcon,
   toggleDesktopLyric,
   queueCount,
   canAddToPlaylist,
@@ -178,13 +176,6 @@ const isRemoteOutputActive = computed(
   () => outputStore.snapshot && outputStore.snapshot.protocol !== 'local',
 );
 
-const playModeIcon = computed(() => {
-  if (playerStore.playMode === 'sequential') return iconRepeatOff as IconifyIcon;
-  if (playerStore.playMode === 'list') return iconRepeat as IconifyIcon;
-  if (playerStore.playMode === 'random') return iconShuffle as IconifyIcon;
-  return iconListRestart as IconifyIcon;
-});
-
 const playerBarBadgeControls = computed(() => [
   {
     key: 'audio-quality',
@@ -231,7 +222,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
     title: '定时关闭',
     icon: iconMoon as IconifyIcon,
     component: 'sleep-timer',
-    trigger: 'hover',
+    trigger: 'click',
     defaultPlacement: 'center',
     order: 1,
     visible: true,
@@ -240,13 +231,14 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'play-mode',
     title: '播放模式',
+    component: 'play-mode',
     icon: playModeIcon.value,
     tooltip: playModeLabel.value,
     trigger: 'click',
     defaultPlacement: 'center',
     order: 2,
     visible: true,
-    onClick: cyclePlayMode,
+    onClick: () => {},
   },
   {
     id: 'previous',
@@ -286,7 +278,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
     title: '音量',
     iconComponent: markRaw(VolumeIcon),
     component: 'volume',
-    trigger: 'hover',
+    trigger: 'click',
     defaultPlacement: 'center',
     order: 6,
     visible: true,
@@ -297,7 +289,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
     title: '倍速',
     icon: iconSpeedometer as IconifyIcon,
     component: 'speed',
-    trigger: 'hover',
+    trigger: 'click',
     defaultPlacement: 'center',
     order: 7,
     visible: true,
@@ -387,7 +379,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
     title: '音质',
     iconComponent: markRaw(AudioWaveIcon),
     component: 'quality',
-    trigger: 'hover',
+    trigger: 'click',
     defaultPlacement: 'right',
     order: 42,
     visible: true,
@@ -398,7 +390,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
     title: '音效',
     icon: iconSlidersHorizontal as IconifyIcon,
     component: 'effect',
-    trigger: 'hover',
+    trigger: 'click',
     defaultPlacement: 'right',
     order: 44,
     visible: true,
@@ -429,7 +421,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
     title: '投放',
     icon: iconCast as IconifyIcon,
     component: 'cast',
-    trigger: 'hover',
+    trigger: 'click',
     defaultPlacement: 'more',
     order: 55,
     visible: true,
@@ -527,12 +519,14 @@ useResizeObserver(
               <span
                 class="bar-climax-tick"
                 :style="{ left: `calc(${(mark.start * 100).toFixed(3)}% - 1px)` }"
-              ></span>
+              >
+              </span>
               <span
                 v-if="mark.end > mark.start"
                 class="bar-climax-tick"
                 :style="{ left: `calc(${(mark.end * 100).toFixed(3)}% - 1px)` }"
-              ></span>
+              >
+              </span>
             </template>
           </div>
           <SliderRange class="echo-slider-range">
@@ -556,7 +550,6 @@ useResizeObserver(
         / {{ formatTime(playerStore.duration) }}
       </div>
     </div>
-
     <!-- 主控制区域 -->
     <div class="bar-main">
       <!-- 1. 左侧：歌曲信息 + 操作按钮 -->
@@ -577,11 +570,12 @@ useResizeObserver(
             class="bar-song-actions player-bar-action-strip bar-song-action-strip"
           >
             <template v-for="item in leftPlayerBarActions" :key="item.key">
-              <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
+              <PlayModePopover v-if="item.component === 'play-mode'" />
+              <SleepTimerPopover v-else-if="item.component === 'sleep-timer'" />
               <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
               <SpeedPopover v-else-if="item.component === 'speed'" />
               <QualityPopover v-else-if="item.component === 'quality'" />
-              <EffectPopover v-else-if="item.component === 'effect'" />
+              <EffectPopover v-else-if="item.component === 'effect'" align="start" />
               <CastPopover
                 v-else-if="item.component === 'cast'"
                 variant="lyric"
@@ -599,6 +593,7 @@ useResizeObserver(
                   }"
                   :disabled="item.disabled"
                   :tooltip="item.tooltip || item.title"
+                  :aria-label="item.tooltip || item.title"
                   @click="activatePlayerBarAction(item)"
                 >
                   <PlayerBarActionIcon :item="item" :width="20" :height="20" />
@@ -616,17 +611,17 @@ useResizeObserver(
           </div>
         </div>
       </div>
-
       <!-- 2. 中间：播放控制 -->
       <div ref="centerAreaRef" class="bar-center">
         <!-- 播放控制按钮 -->
         <div class="bar-controls player-bar-action-strip">
           <template v-for="item in centerPlayerBarActions" :key="item.key">
-            <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
+            <PlayModePopover v-if="item.component === 'play-mode'" />
+            <SleepTimerPopover v-else-if="item.component === 'sleep-timer'" />
             <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
             <SpeedPopover v-else-if="item.component === 'speed'" />
             <QualityPopover v-else-if="item.component === 'quality'" />
-            <EffectPopover v-else-if="item.component === 'effect'" />
+            <EffectPopover v-else-if="item.component === 'effect'" align="center" />
             <CastPopover
               v-else-if="item.component === 'cast'"
               variant="lyric"
@@ -649,6 +644,7 @@ useResizeObserver(
                 ]"
                 :disabled="item.disabled && item.id !== 'play-toggle'"
                 :tooltip="item.tooltip || item.title"
+                :aria-label="item.tooltip || item.title"
                 :aria-busy="item.id === 'play-toggle' ? isPlaybackLoading : undefined"
                 @click="activatePlayerBarAction(item)"
               >
@@ -656,7 +652,8 @@ useResizeObserver(
                   v-if="item.id === 'play-toggle' && isPlaybackLoading"
                   class="bar-play-spinner"
                   aria-hidden="true"
-                ></span>
+                >
+                </span>
                 <PlayerBarActionIcon
                   v-else
                   :item="item"
@@ -678,11 +675,11 @@ useResizeObserver(
           </template>
         </div>
       </div>
-
       <!-- 3. 右侧：功能选项 -->
       <div ref="rightActionsRef" class="bar-right player-bar-action-strip">
         <template v-for="item in rightPlayerBarActions" :key="item.key">
-          <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
+          <PlayModePopover v-if="item.component === 'play-mode'" />
+          <SleepTimerPopover v-else-if="item.component === 'sleep-timer'" />
           <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
           <SpeedPopover v-else-if="item.component === 'speed'" />
           <QualityPopover v-else-if="item.component === 'quality'" />
@@ -704,6 +701,7 @@ useResizeObserver(
               }"
               :disabled="item.disabled"
               :tooltip="item.tooltip || item.title"
+              :aria-label="item.tooltip || item.title"
               @click="activatePlayerBarAction(item)"
             >
               <PlayerBarActionIcon :item="item" :width="20" :height="20" />
@@ -878,19 +876,6 @@ useResizeObserver(
   gap: 4px;
 }
 
-:deep(.bar-action-btn) {
-  padding: 2px;
-  transition: all 0.2s ease;
-}
-
-:deep(.bar-action-btn:hover) {
-  transform: scale(1.1);
-}
-
-:deep(.bar-action-btn:active) {
-  transform: scale(0.9);
-}
-
 /* 2. 中间 */
 .bar-center {
   display: flex;
@@ -907,50 +892,14 @@ useResizeObserver(
   height: 40px;
 }
 
-.player-bar-action-strip {
-  --player-bar-action-size: 36px;
-}
-
 .bar-song-action-strip {
   --player-bar-action-size: 28px;
-}
-
-.player-bar-action-strip :deep(button) {
-  display: inline-flex;
-  width: var(--player-bar-action-size);
-  height: var(--player-bar-action-size);
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 var(--player-bar-action-size);
-  line-height: 1;
-}
-
-.player-bar-action-strip :deep(svg),
-.player-bar-action-strip :deep(.plugin-icon) {
-  display: block;
-}
-
-.player-bar-action-strip :deep(button > span.relative > svg[style]) {
-  transform: none !important;
 }
 
 .player-bar-action-strip :deep(.bar-play-btn) {
   width: 38px;
   height: 38px;
   flex-basis: 38px;
-}
-
-.bar-ctrl-btn {
-  padding: 8px;
-  transition: all 0.2s ease;
-}
-
-.bar-ctrl-btn:hover {
-  transform: scale(1.1);
-}
-
-.bar-ctrl-btn:active {
-  transform: scale(0.9);
 }
 
 .bar-ctrl-btn.is-busy {
@@ -1015,19 +964,6 @@ useResizeObserver(
   gap: 4px;
   min-width: 0;
   padding-right: 6px;
-}
-
-:deep(.bar-func-btn) {
-  padding: 8px;
-  transition: all 0.2s ease;
-}
-
-:deep(.bar-func-btn:hover) {
-  transform: scale(1.1);
-}
-
-:deep(.bar-func-btn:active) {
-  transform: scale(0.9);
 }
 </style>
 

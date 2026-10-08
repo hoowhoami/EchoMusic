@@ -24,7 +24,7 @@ export function useLyricsPageContext(
     send: (content: string) => void;
   },
 ) {
-  const { player, playlist, currentTrack, currentPlaybackQueue, settingStore } = controls;
+  const { player, playlist, currentTrack, currentPlaybackQueue } = controls;
   const lyric = useLyricStore();
   const timeline = createLyricTimeline();
   const favoriteBusy = ref(false);
@@ -32,12 +32,15 @@ export function useLyricsPageContext(
   onScopeDispose(() => {
     disposed = true;
   });
-  const allQualityValues: AudioQualityValue[] = ['128', '320', 'flac', 'high', 'viper_tape'];
-  const qualityValues = computed(() =>
-    settingStore.viperTapeQualityEnabled
-      ? allQualityValues
-      : allQualityValues.filter((value) => value !== 'viper_tape'),
-  );
+  const qualityValues: AudioQualityValue[] = [
+    '128',
+    '320',
+    'flac',
+    'high',
+    'viper_tape',
+    'viper_clear',
+    'viper_atmos',
+  ];
   const effectValues: AudioEffectValue[] = [
     'none',
     'piano',
@@ -47,8 +50,6 @@ export function useLyricsPageContext(
     'ancient',
     'surnay',
     'dj',
-    'viper_atmos',
-    'viper_clear',
   ];
   const state = readonly(
     computed(() => ({
@@ -68,10 +69,12 @@ export function useLyricsPageContext(
       canShare: controls.canShareCurrentTrack.value,
       queue: currentPlaybackQueue.value,
       audioQuality: controls.effectiveAudioQuality.value,
-      qualityOptions: qualityValues.value.map((value) => ({
-        value,
-        disabled: controls.isAudioQualityDisabled(value),
-      })),
+      qualityOptions: qualityValues
+        .filter((value) => !controls.isAudioQualityHidden(value))
+        .map((value) => ({
+          value,
+          disabled: controls.isAudioQualityDisabled(value),
+        })),
       audioEffect: player.audioEffect,
       audioEffectOptions: effectValues,
       audioEffectDisabled: controls.isAudioEffectPresetSelectionDisabled.value,
@@ -156,7 +159,11 @@ export function useLyricsPageContext(
     audio: {
       refreshQualities: action(controls.ensureCurrentTrackCatalogQualities),
       setQuality: action((quality: AudioQualityValue) => {
-        if (!qualityValues.value.includes(quality) || controls.isAudioQualityDisabled(quality))
+        if (
+          !qualityValues.includes(quality) ||
+          controls.isAudioQualityHidden(quality) ||
+          controls.isAudioQualityDisabled(quality)
+        )
           throw new Error('当前音质不可用');
         controls.setAudioQuality(quality);
       }),

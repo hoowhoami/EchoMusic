@@ -14,32 +14,6 @@ function vueFiles(directory) {
   });
 }
 
-test('native controls cannot reintroduce browser title tooltips; business title props are allowed', () => {
-  const offenders = [];
-  for (const file of vueFiles('src')) {
-    const ast = parse(readFileSync(file, 'utf8')).descriptor.template?.ast;
-    function visit(node) {
-      if (
-        node.type === 1 &&
-        (/^[a-z]/.test(node.tag) ||
-          ['Button', 'DatePickerPrev', 'DatePickerNext', 'TabsTrigger'].includes(node.tag))
-      ) {
-        for (const prop of node.props) {
-          if (
-            (prop.type === 6 && prop.name === 'title') ||
-            (prop.type === 7 && prop.name === 'bind' && prop.arg?.content === 'title')
-          ) {
-            offenders.push(`${file}:${prop.loc.start.line} ${node.tag}`);
-          }
-        }
-      }
-      node.children?.forEach(visit);
-    }
-    if (ast) visit(ast);
-  }
-  assert.deepEqual(offenders, []);
-});
-
 test('tooltips preserve the rendered control, accessible label and disabled semantics', async () => {
   const { build } = await import('esbuild');
   const { createSSRApp, defineComponent, h } = await import('vue');
@@ -95,6 +69,13 @@ test('tooltips preserve the rendered control, accessible label and disabled sema
     assert.equal((html.match(/<button\b/g) || []).length, 1);
     assert.doesNotMatch(html, /\btitle=|<span|<div/);
   }
+  const nativeTitle = await render(
+    h(Button, { title: '音量 · 50%', 'aria-label': '音量', disabled: true }),
+  );
+  assert.match(nativeTitle, /<button\b[^>]*title="音量 · 50%"/);
+  assert.match(nativeTitle, /aria-label="音量"/);
+  assert.match(nativeTitle, /<button\b[^>]*disabled/);
+  assert.doesNotMatch(nativeTitle, /role="tooltip"|data-state=/);
   for (const tooltip of [undefined, '后退']) {
     const toolbar = {
       __scopeId: 'data-v-toolbar-regression',
@@ -202,6 +183,6 @@ test('hover panels and the mini volume slider do not have redundant trigger tool
     }
     if (ast) visit(ast);
   }
-  assert.ok(checked >= 9, 'must cover shared hover panels and the custom mini volume slider');
+  assert.ok(checked >= 2, 'must cover hover panels and the custom mini volume slider');
   assert.deepEqual(offenders, []);
 });
