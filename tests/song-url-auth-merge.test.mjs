@@ -171,6 +171,7 @@ const setupResolver = (api) => {
   const song = compile('../src/renderer/utils/song.ts');
   const cover = { normalizeCoverUrl: (value) => value, resolveCoverDisplayUrl: (value) => value };
   const utils = compile('../src/renderer/stores/player/utils.ts', {
+    './noticeDetails': compile('../src/renderer/stores/player/noticeDetails.ts'),
     '@/utils/song': song,
     '@/utils/cover': cover,
     '../../../shared/loudness': compile('../src/shared/loudness.ts'),

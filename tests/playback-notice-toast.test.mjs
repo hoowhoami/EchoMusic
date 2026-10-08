@@ -18,7 +18,11 @@ function load(path, dependencies) {
   );
   return module.exports;
 }
-const { watchPlaybackNoticeToasts } = load('src/renderer/stores/player/noticeToast.ts', { vue });
+const noticeDetails = load('src/renderer/stores/player/noticeDetails.ts', {});
+const { watchPlaybackNoticeToasts } = load('src/renderer/stores/player/noticeToast.ts', {
+  vue,
+  './noticeDetails': noticeDetails,
+});
 function fixture(t) {
   const originalWindow = globalThis.window;
   let id = 0;
@@ -86,6 +90,27 @@ test('fatal playback errors use a titled six-second toast and only promise an ar
   f.state.autoNextTimer = 42;
   await vue.nextTick();
   assert.match(f.toast.items[0].message, /3 秒后尝试下一首/);
+});
+
+test('an unscheduled auto-next falls back to advice for the actual cause', async (t) => {
+  const f = fixture(t);
+  for (const [reason, message] of [
+    ['当前歌曲需要 VIP 权限', '当前歌曲需要 VIP 权限'],
+    ['需要购买歌曲或专辑后播放', '需要购买歌曲或专辑后播放'],
+    ['网络连接异常', '网络连接异常\n请检查网络后重试'],
+    ['音源加载超时', '音源加载超时\n请检查网络后重试'],
+  ]) {
+    f.state.playbackRequestSeq++;
+    f.fail({ reason });
+    await vue.nextTick();
+    assert.equal(f.toast.items[0].message, message);
+    f.toast.remove(f.toast.items[0].id);
+  }
+  f.state.playbackRequestSeq++;
+  f.state.autoNextTimer = 42;
+  f.fail({ reason: '当前歌曲需要 VIP 权限' });
+  await vue.nextTick();
+  assert.equal(f.toast.items[0].message, '当前歌曲需要 VIP 权限\n3 秒后尝试下一首');
 });
 
 test('duplicate engine events do not repeat an attempt but a new retry can notify again', async (t) => {

@@ -32,6 +32,7 @@ const { mapPlaylistSong } = compile('../src/renderer/utils/mappers/song.ts', {
 });
 const song = compile('../src/renderer/utils/song.ts');
 const utils = compile('../src/renderer/stores/player/utils.ts', {
+  './noticeDetails': compile('../src/renderer/stores/player/noticeDetails.ts'),
   '@/utils/song': song,
   '@/utils/cover': cover,
   '../../../shared/loudness': compile('../src/shared/loudness.ts'),
@@ -124,6 +125,42 @@ test('VIP and free favorites retain their distinct permission behavior', () => {
   const withoutMediaPrivilege = { ...favorite };
   delete withoutMediaPrivilege.media_privilege;
   assert.equal(mapPlaylistSong(withoutMediaPrivilege).privilege, 10);
+});
+
+test('fatal playback advice follows the actual reason and auto-next takes precedence', () => {
+  const track = mapPlaylistSong(favorite);
+  for (const [error, expectedReason, expectedDetail] of [
+    [{ status: 2 }, '需要购买歌曲或专辑后播放', ''],
+    ['当前歌曲需要 VIP 权限', '当前歌曲需要 VIP 权限', ''],
+    ['当前地区无版权', '当前地区无版权', ''],
+    [new Error('offline'), '网络连接异常', '请检查网络后重试'],
+    [new Error('request timed out'), '音源加载超时', '请检查网络后重试'],
+    [new Error('Failed to decode audio'), '音频解码失败', ''],
+    ['请检查输出设备后重试', '请检查输出设备后重试', ''],
+  ]) {
+    const params = { code: 'audio-url-unavailable', track, error };
+    const notice = utils.resolvePlaybackNotice(params);
+    assert.equal(notice.reason, expectedReason);
+    assert.equal(notice.detail, expectedDetail);
+    assert.equal(
+      utils.resolvePlaybackNotice({ ...params, autoNextEnabled: true, autoNextDelaySeconds: 3 })
+        .detail,
+      '3 秒后尝试下一首',
+    );
+  }
+  const free = mapPlaylistSong({ ...favorite, media_privilege: 1, media_pay_type: 0 });
+  assert.equal(
+    utils.resolvePlaybackNotice({ code: 'playback-failed', track: free }).detail,
+    '请稍后重试',
+    'unknown failures keep the generic retry advice',
+  );
+  for (const code of ['audio-quality-switch-failed', 'audio-source-switch-failed']) {
+    assert.equal(
+      utils.resolvePlaybackNotice({ code, track, error: { status: 2 }, autoNextEnabled: true })
+        .detail,
+      code.startsWith('audio-quality-') ? '已保留原音质，继续播放' : '已保留原音源，继续播放',
+    );
+  }
 });
 
 test('retained-source quality errors use warning toasts without setting fatal song state', () => {
@@ -297,7 +334,7 @@ test('specific upstream and player causes take precedence without guessing VIP f
       ),
       '新音源缓冲不足，未能完成切换',
     ],
-    [new Error('source switch preparation timed out'), '音源加载超时，请稍后重试'],
+    [new Error('source switch preparation timed out'), '音源加载超时'],
     [new Error('HTTP 403 Forbidden'), '音源访问被拒绝'],
     [{ errorCode: 'decode', message: 'Failed to decode audio source' }, '音频解码失败'],
     [

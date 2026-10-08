@@ -4,6 +4,7 @@ import type { usePlaylistStore } from '../playlist';
 import type { AudioEffectValue, AudioQualityValue } from '../../types';
 export { resolveTrackLoudness } from '../../../shared/loudness';
 import type { PlaybackNotice } from './types';
+import { resolvePlaybackFailureDetail } from './noticeDetails';
 
 import { resolveCoverDisplayUrl } from '@/utils/cover';
 import type { MediaSessionMeta, MediaSessionState } from '@/utils/player';
@@ -254,7 +255,7 @@ export const resolveAudioFailureReason = (
   if (!message) return undefined;
   if (/insufficient prepared audio|replacement ended before hand-off/i.test(message))
     return '新音源缓冲不足，未能完成切换';
-  if (/timed? out|timeout/i.test(message)) return '音源加载超时，请稍后重试';
+  if (/timed? out|timeout/i.test(message)) return '音源加载超时';
   if (/\b403\b|forbidden|unauthorized/i.test(message)) return '音源访问被拒绝';
   if (/decode|invalid data|unsupported.*(?:codec|format)/i.test(message)) return '音频解码失败';
   if (/network|offline|connection|fetch failed/i.test(message)) return '网络连接异常';
@@ -275,7 +276,7 @@ export const resolvePlaybackNotice = (params: {
   const autoNextDelay = Math.max(0, Math.floor(params.autoNextDelaySeconds ?? 0));
   const autoNextDetail = params.autoNextEnabled
     ? `${autoNextDelay > 0 ? `${autoNextDelay} 秒后` : '即将'}尝试下一首`
-    : '请稍后重试';
+    : '';
 
   const vipReason = requiresVip ? '当前歌曲需要 VIP 权限' : null;
   const errorReason = resolveAudioFailureReason(
@@ -283,6 +284,13 @@ export const resolvePlaybackNotice = (params: {
     params.track,
     params.code.startsWith('audio-quality-'),
   );
+  const failureNotice = (reason: string): PlaybackNotice => ({
+    code: params.code,
+    title: '播放失败',
+    reason,
+    detail: autoNextDetail || resolvePlaybackFailureDetail(reason),
+    trackId,
+  });
 
   if (
     params.code === 'audio-quality-unavailable' ||
@@ -314,26 +322,15 @@ export const resolvePlaybackNotice = (params: {
   }
 
   if (params.code === 'track-not-playable') {
-    return {
-      code: params.code,
-      title: '播放失败',
-      reason: errorReason || vipReason || '当前歌曲暂不可播放',
-      detail: autoNextDetail,
-      trackId,
-    };
+    return failureNotice(errorReason || vipReason || '当前歌曲暂不可播放');
   }
 
   if (params.code === 'audio-url-unavailable') {
-    return {
-      code: params.code,
-      title: '播放失败',
-      reason:
-        errorReason ||
+    return failureNotice(
+      errorReason ||
         vipReason ||
         (requiresPurchase ? '可能需要购买或账号权限' : '暂时无法获取可用音源'),
-      detail: autoNextDetail,
-      trackId,
-    };
+    );
   }
 
   if (params.code === 'audio-effect-unavailable' || params.code === 'audio-effect-apply-failed') {
@@ -359,14 +356,9 @@ export const resolvePlaybackNotice = (params: {
     };
   }
 
-  return {
-    code: params.code,
-    title: '播放失败',
-    reason:
-      errorReason ||
+  return failureNotice(
+    errorReason ||
       vipReason ||
       (requiresPurchase ? '可能需要购买或账号权限' : '音频加载或播放过程中出现异常'),
-    detail: autoNextDetail,
-    trackId,
-  };
+  );
 };

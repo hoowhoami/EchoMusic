@@ -1,6 +1,7 @@
 import { watch } from 'vue';
 import type { PlayerState } from './state';
 import type { useToastStore } from '../toast';
+import { resolvePlaybackFailureDetail } from './noticeDetails';
 
 type NoticeState = Pick<
   PlayerState,
@@ -39,7 +40,7 @@ export function watchPlaybackNoticeToasts(
       // 只有已安排自动切歌时才显示倒计时，保留设备错误等独立的处理建议。
       const detail =
         notice.detail.includes('尝试下一首') && state.autoNextTimer === null
-          ? '请稍后重试'
+          ? resolvePlaybackFailureDetail(notice.reason)
           : notice.detail;
       toast.standard(
         [notice.reason, detail].filter(Boolean).join('\n'),
