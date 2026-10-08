@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, type HTMLAttributes } from 'vue';
 import { Primitive, type PrimitiveProps } from 'reka-ui';
 
 interface Props extends PrimitiveProps {
@@ -7,7 +7,7 @@ interface Props extends PrimitiveProps {
   tone?: 'neutral' | 'accent' | 'muted';
   variant?: 'soft' | 'outline' | 'solid';
   size?: 'xs' | 'sm';
-  class?: string;
+  class?: HTMLAttributes['class'];
 }
 
 const props = withDefaults(defineProps<Props>(), {

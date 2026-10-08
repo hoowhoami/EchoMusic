@@ -10,7 +10,7 @@ import Input from '@/components/ui/Input.vue';
 import Select from '@/components/ui/Select.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
 import Switch from '@/components/ui/Switch.vue';
-import Scrollbar from '@/components/ui/Scrollbar.vue';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import InstalledPluginCard from '@/views/plugins/InstalledPluginCard.vue';
 import PluginLocalInstallOverlay from '@/views/plugins/PluginLocalInstallOverlay.vue';
 import MarketplacePluginCard from '@/views/plugins/MarketplacePluginCard.vue';
@@ -388,7 +388,7 @@ const getPluginAccentStyle = (pluginId: string) => {
     </header>
 
     <!-- 插件列表 -->
-    <Scrollbar class="flex-1 min-h-0">
+    <PageScrollContainer>
       <div class="plugin-content px-6 pb-6">
         <template v-if="activeView === 'installed'">
           <!-- 空状态 -->
@@ -499,19 +499,20 @@ const getPluginAccentStyle = (pluginId: string) => {
           <div v-if="isMarketplaceLoading" class="plugin-card-grid" aria-busy="true">
             <article v-for="item in 6" :key="item" class="plugin-card marketplace-card">
               <div class="plugin-card-main">
-                <Skeleton width="56px" height="56px" :radius="8" />
-                <div class="plugin-card-summary">
-                  <div class="plugin-card-header">
-                    <Skeleton variant="text" width="58%" height="15px" />
-                    <Skeleton variant="text" width="54px" height="20px" />
-                  </div>
-                  <Skeleton variant="text" width="38%" height="12px" />
+                <Skeleton
+                  class="plugin-card-skeleton-media"
+                  width="44px"
+                  height="44px"
+                  :radius="8"
+                />
+                <div class="plugin-card-header">
+                  <Skeleton variant="text" width="58%" height="15px" />
+                  <Skeleton variant="text" width="54px" height="20px" />
                 </div>
-              </div>
-
-              <div class="marketplace-version-row">
-                <Skeleton variant="text" width="86px" height="26px" />
-                <Skeleton variant="text" width="72px" height="26px" />
+                <div class="plugin-card-byline">
+                  <Skeleton variant="text" width="38%" height="12px" />
+                  <Skeleton variant="text" width="36px" height="12px" />
+                </div>
               </div>
 
               <div class="plugin-marketplace-skeleton-description">
@@ -523,18 +524,28 @@ const getPluginAccentStyle = (pluginId: string) => {
                 <Skeleton v-for="tag in 3" :key="tag" variant="text" width="68px" height="24px" />
               </div>
 
-              <Skeleton variant="text" width="78%" height="11px" />
-
-              <div class="marketplace-stats">
-                <Skeleton v-for="stat in 3" :key="stat" variant="text" width="100%" height="26px" />
+              <div class="plugin-card-details">
+                <div class="plugin-card-origin">
+                  <Skeleton variant="text" width="40%" height="16px" />
+                  <Skeleton variant="text" width="45%" height="16px" />
+                </div>
+                <div class="marketplace-stats">
+                  <Skeleton
+                    v-for="stat in 3"
+                    :key="stat"
+                    variant="text"
+                    width="70px"
+                    height="18px"
+                  />
+                </div>
               </div>
 
               <div class="plugin-card-actions">
                 <div class="plugin-card-primary-actions">
-                  <Skeleton variant="text" width="62px" height="28px" />
-                  <Skeleton variant="text" width="62px" height="28px" />
+                  <Skeleton variant="text" width="62px" height="32px" />
+                  <Skeleton variant="text" width="62px" height="32px" />
                 </div>
-                <Skeleton variant="text" width="78px" height="28px" />
+                <Skeleton variant="text" width="78px" height="32px" />
               </div>
             </article>
           </div>
@@ -569,7 +580,7 @@ const getPluginAccentStyle = (pluginId: string) => {
           </div>
         </template>
       </div>
-    </Scrollbar>
+    </PageScrollContainer>
 
     <PluginLocalInstallOverlay
       :dragging="isLocalInstallDragging"

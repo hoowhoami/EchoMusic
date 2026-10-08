@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import PluginSourceInfo from './PluginSourceInfo.vue';
+import { computed } from 'vue';
+import PluginCardOrigin from './PluginCardOrigin.vue';
 import { getInstalledPluginSourceName } from '../../../shared/pluginSource';
 import Tooltip from '@/components/ui/Tooltip.vue';
 
@@ -15,7 +16,7 @@ type FailureDetail = {
   isHistorical?: boolean;
 } | null;
 
-defineProps<{
+const props = defineProps<{
   record: PluginRuntimeRecord;
   busy: boolean;
   safeMode: boolean;
@@ -34,6 +35,10 @@ defineProps<{
   settingsAvailable: boolean;
   settingsTitle: string;
 }>();
+
+const displayTags = computed(() => [
+  ...new Set([...(props.record.descriptor.tags ?? []), ...props.featureTags]),
+]);
 
 const emit = defineEmits<{
   (e: 'toggle', pluginId: string, enabled: boolean): void;
@@ -70,42 +75,38 @@ const emit = defineEmits<{
         </span>
       </div>
 
-      <div class="plugin-card-summary">
-        <div class="plugin-card-header">
-          <Tooltip :content="record.descriptor.name" overflow-only>
-            <template #trigger>
-              <h3 class="plugin-card-name">
-                {{ record.descriptor.name }}
-              </h3>
-            </template>
-          </Tooltip>
-          <Tooltip :content="statusTitle">
-            <template #trigger>
-              <Tag
-                size="sm"
-                class="plugin-status-badge"
-                :class="{
-                  'is-active': record.status === 'active' && !hasCurrentFailure,
-                  'is-error': hasCurrentFailure && cardFailure?.reason !== 'incompatible',
-                  'is-safe': safeMode && record.descriptor.enabled && !hasCurrentFailure,
-                  'is-warning': cardFailure?.reason === 'incompatible',
-                }"
-              >
-                {{ statusLabel }}
-              </Tag>
-            </template>
-          </Tooltip>
-        </div>
+      <div class="plugin-card-header">
+        <Tooltip :content="record.descriptor.name" overflow-only>
+          <template #trigger>
+            <h3 class="plugin-card-name">
+              {{ record.descriptor.name }}
+            </h3>
+          </template>
+        </Tooltip>
+        <Tooltip :content="statusTitle">
+          <template #trigger>
+            <Tag
+              size="sm"
+              class="plugin-status-badge"
+              :class="{
+                'is-active': record.status === 'active' && !hasCurrentFailure,
+                'is-error': hasCurrentFailure && cardFailure?.reason !== 'incompatible',
+                'is-safe': safeMode && record.descriptor.enabled && !hasCurrentFailure,
+                'is-warning': cardFailure?.reason === 'incompatible',
+              }"
+            >
+              {{ statusLabel }}
+            </Tag>
+          </template>
+        </Tooltip>
+      </div>
 
+      <div class="plugin-card-byline">
         <div v-if="record.descriptor.manifest.author" class="plugin-card-meta">
           {{ record.descriptor.manifest.author }}
         </div>
+        <span class="plugin-card-version">v{{ record.descriptor.version }}</span>
       </div>
-    </div>
-
-    <div class="plugin-card-version-source">
-      <Tag size="sm" tone="muted" class="plugin-card-version">v{{ record.descriptor.version }}</Tag>
-      <PluginSourceInfo :name="getInstalledPluginSourceName(record.descriptor.installSource)" />
     </div>
 
     <Tooltip :content="record.descriptor.description || '暂无描述'" overflow-only>
@@ -116,27 +117,20 @@ const emit = defineEmits<{
       </template>
     </Tooltip>
 
-    <div v-if="record.descriptor.tags?.length" class="marketplace-tags">
-      <Tag v-for="tag in record.descriptor.tags" :key="tag" size="sm">{{ tag }}</Tag>
-    </div>
-
-    <div v-if="featureTags.length" class="plugin-feature-tags">
-      <Tag v-for="tag in featureTags" :key="tag" size="sm">
-        {{ tag }}
-      </Tag>
-    </div>
-
     <div v-if="compatibilityMessage" class="plugin-card-error is-warning">
       <Icon :icon="iconTriangleAlert" width="14" height="14" />
       <span>{{ compatibilityMessage }}</span>
     </div>
 
+    <div v-if="displayTags.length" class="plugin-feature-tags">
+      <Tag v-for="tag in displayTags" :key="tag" size="sm">{{ tag }}</Tag>
+    </div>
+
     <div class="plugin-card-details">
-      <Tooltip :content="record.descriptor.id" overflow-only>
-        <template #trigger>
-          <div class="plugin-card-id">ID: {{ record.descriptor.id }}</div>
-        </template>
-      </Tooltip>
+      <PluginCardOrigin
+        :id="record.descriptor.id"
+        :source-name="getInstalledPluginSourceName(record.descriptor.installSource)"
+      />
     </div>
 
     <div class="plugin-card-actions">

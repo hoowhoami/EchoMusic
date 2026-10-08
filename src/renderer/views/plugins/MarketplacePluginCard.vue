@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import PluginSourceInfo from './PluginSourceInfo.vue';
+import { computed } from 'vue';
+import PluginCardOrigin from './PluginCardOrigin.vue';
 import { getPluginSourceName } from '../../../shared/pluginSource';
 import Tooltip from '@/components/ui/Tooltip.vue';
 
@@ -17,7 +18,7 @@ import {
 } from '@/icons';
 import type { PluginMarketplacePlugin } from '../../../shared/plugins';
 
-defineProps<{
+const props = defineProps<{
   plugin: PluginMarketplacePlugin;
   pluginKey: string;
   highlighted: boolean;
@@ -32,6 +33,15 @@ defineProps<{
   canInstall: boolean;
   featureTags: string[];
 }>();
+
+const displayTags = computed(() => [...new Set([...props.plugin.tags, ...props.featureTags])]);
+
+const versionLabel = computed(() => {
+  const plugin = props.plugin;
+  if (!plugin.installed) return `v${plugin.version}`;
+  const installedVersion = plugin.installedVersion ? `v${plugin.installedVersion}` : '版本未知';
+  return plugin.updateAvailable ? `${installedVersion} → v${plugin.version}` : installedVersion;
+});
 
 const emit = defineEmits<{
   (e: 'share', plugin: PluginMarketplacePlugin): void;
@@ -49,10 +59,10 @@ const formatCount = (value: number) =>
   }).format(Math.max(0, Number(value) || 0));
 
 const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
-  if (!plugin.installed) return `最新版本 v${plugin.version}`;
-  if (plugin.updateAvailable)
-    return `已安装 v${plugin.installedVersion}，可更新至 v${plugin.version}`;
-  return `已安装 v${plugin.installedVersion}`;
+  if (!plugin.installed) return `可安装版本 v${plugin.version}`;
+  const installedVersion = plugin.installedVersion ? `v${plugin.installedVersion}` : '版本未知';
+  if (plugin.updateAvailable) return `已安装 ${installedVersion}，可更新至 v${plugin.version}`;
+  return `已安装 ${installedVersion}`;
 };
 </script>
 
@@ -79,47 +89,32 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
         </span>
       </div>
 
-      <div class="plugin-card-summary">
-        <div class="plugin-card-header">
-          <Tooltip :content="plugin.name" overflow-only>
-            <template #trigger>
-              <h3 class="plugin-card-name">{{ plugin.name }}</h3>
-            </template>
-          </Tooltip>
-          <Tooltip :content="statusTitle">
-            <template #trigger>
-              <Tag
-                size="sm"
-                class="plugin-status-badge"
-                :class="{
-                  'is-active': plugin.installed && !plugin.updateAvailable,
-                  'is-warning': plugin.updateAvailable || !plugin.compatibility.compatible,
-                }"
-              >
-                {{ statusLabel }}
-              </Tag>
-            </template>
-          </Tooltip>
-        </div>
-
-        <div v-if="plugin.author" class="plugin-card-meta">{{ plugin.author }}</div>
+      <div class="plugin-card-header">
+        <Tooltip :content="plugin.name" overflow-only>
+          <template #trigger>
+            <h3 class="plugin-card-name">{{ plugin.name }}</h3>
+          </template>
+        </Tooltip>
+        <Tooltip
+          v-if="plugin.updateAvailable || !plugin.compatibility.compatible"
+          :content="statusTitle"
+        >
+          <template #trigger>
+            <Tag size="sm" class="plugin-status-badge is-warning">
+              {{ statusLabel }}
+            </Tag>
+          </template>
+        </Tooltip>
       </div>
-    </div>
 
-    <div class="plugin-card-version-source">
-      <Tooltip :content="getVersionTitle(plugin)">
-        <template #trigger>
-          <Tag size="sm" tone="muted" class="plugin-card-version">v{{ plugin.version }}</Tag>
-        </template>
-      </Tooltip>
-      <PluginSourceInfo :name="getPluginSourceName(plugin.sourceName, plugin.sourceUrl)" />
-    </div>
-
-    <div v-if="plugin.installed && plugin.updateAvailable" class="marketplace-version-row">
-      <Tag size="sm" class="marketplace-version-pill is-update">
-        <span>已装</span>
-        <strong>v{{ plugin.installedVersion }}</strong>
-      </Tag>
+      <div class="plugin-card-byline">
+        <div v-if="plugin.author" class="plugin-card-meta">{{ plugin.author }}</div>
+        <Tooltip :content="getVersionTitle(plugin)">
+          <template #trigger>
+            <span class="plugin-card-version">{{ versionLabel }}</span>
+          </template>
+        </Tooltip>
+      </div>
     </div>
 
     <Tooltip :content="plugin.description || '暂无描述'" overflow-only>
@@ -135,55 +130,51 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       <span>{{ compatibilityMessage }}</span>
     </div>
 
-    <div v-if="plugin.tags.length" class="marketplace-tags">
-      <Tag v-for="tag in plugin.tags" :key="tag" size="sm">{{ tag }}</Tag>
-    </div>
-
-    <div v-if="featureTags.length" class="plugin-feature-tags">
-      <Tag v-for="tag in featureTags" :key="tag" size="sm">
-        {{ tag }}
-      </Tag>
+    <div v-if="displayTags.length" class="plugin-feature-tags">
+      <Tag v-for="tag in displayTags" :key="tag" size="sm">{{ tag }}</Tag>
     </div>
 
     <div class="plugin-card-details">
-      <Tooltip :content="plugin.id" overflow-only>
-        <template #trigger>
-          <div class="plugin-card-id">ID: {{ plugin.id }}</div>
-        </template>
-      </Tooltip>
-    </div>
-
-    <div class="marketplace-stats">
-      <Tooltip content="安装和更新总量">
-        <template #trigger>
-          <span class="marketplace-stat-item">
-            <Icon :icon="iconArrowBarToDown" width="13" height="13" />
-            {{ formatCount(plugin.stats.installCount + plugin.stats.updateCount) }}
-          </span>
-        </template>
-      </Tooltip>
-      <Tooltip content="更新量">
-        <template #trigger>
-          <span class="marketplace-stat-item">
-            <Icon :icon="iconRefreshCw" width="13" height="13" />
-            {{ formatCount(plugin.stats.updateCount) }}
-          </span>
-        </template>
-      </Tooltip>
-      <Tooltip content="热度">
-        <template #trigger>
-          <span class="marketplace-stat-item">
-            <Icon :icon="iconPulse" width="13" height="13" />
-            {{ formatCount(plugin.stats.score) }}
-          </span>
-        </template>
-      </Tooltip>
+      <PluginCardOrigin
+        :id="plugin.id"
+        :source-name="getPluginSourceName(plugin.sourceName, plugin.sourceUrl)"
+      />
+      <div class="marketplace-stats">
+        <Tooltip content="安装和更新总量">
+          <template #trigger>
+            <span class="marketplace-stat-item">
+              <Icon :icon="iconArrowBarToDown" width="13" height="13" />
+              <span class="marketplace-stat-value">{{
+                formatCount(plugin.stats.installCount + plugin.stats.updateCount)
+              }}</span>
+            </span>
+          </template>
+        </Tooltip>
+        <Tooltip content="更新量">
+          <template #trigger>
+            <span class="marketplace-stat-item">
+              <Icon :icon="iconRefreshCw" width="13" height="13" />
+              <span class="marketplace-stat-value">{{
+                formatCount(plugin.stats.updateCount)
+              }}</span>
+            </span>
+          </template>
+        </Tooltip>
+        <Tooltip content="热度">
+          <template #trigger>
+            <span class="marketplace-stat-item">
+              <Icon :icon="iconPulse" width="13" height="13" />
+              <span class="marketplace-stat-value">{{ formatCount(plugin.stats.score) }}</span>
+            </span>
+          </template>
+        </Tooltip>
+      </div>
     </div>
 
     <div class="plugin-card-actions">
       <div class="plugin-card-primary-actions">
         <Button
-          variant="soft-secondary"
+          variant="secondary"
           size="xs"
           class="plugin-share-btn"
           tooltip="复制插件分享链接"

@@ -620,7 +620,10 @@ onUnmounted(() => {
 
       <!-- 输入框保持紧凑，发现面板独立展开并传送到顶层。 -->
       <PopoverRoot :open="isSearchFocused" @update:open="!$event && collapseSearch()">
-        <PopoverAnchor as-child>
+        <PopoverAnchor
+          as-child
+          :reference="searchQuery.trim() ? undefined : titlebarRef || undefined"
+        >
           <div ref="searchContainerRef" class="tb-search">
             <div class="tb-search-input-wrap">
               <Icon :icon="iconSearch" width="15" height="15" class="tb-search-icon" />
@@ -666,6 +669,7 @@ onUnmounted(() => {
           <PopoverContent
             as-child
             align="start"
+            :align-offset="searchQuery.trim() ? 0 : 12"
             side="bottom"
             :side-offset="8"
             :collision-padding="12"
@@ -1061,7 +1065,7 @@ onUnmounted(() => {
 /* 搜索建议下拉 */
 .tb-search-panel {
   position: relative;
-  width: min(760px, calc(100vw - 24px));
+  width: min(calc(var(--reka-popover-trigger-width) - 24px), calc(100vw - 24px));
   max-width: var(--reka-popover-content-available-width);
   max-height: min(520px, var(--reka-popover-content-available-height));
   overflow-y: auto;
