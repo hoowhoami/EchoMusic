@@ -8,6 +8,14 @@ export interface AccentPreference {
   source: AccentSource;
   color: string;
 }
+export interface ThemeImageCrop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  sourceWidth: number;
+  sourceHeight: number;
+}
 export interface ThemeOverride {
   palette: { source: 'theme' | 'custom'; color: string };
   background: {
@@ -16,8 +24,11 @@ export interface ThemeOverride {
     positionX: number;
     positionY: number;
     fit: 'cover' | 'contain';
+    zoom: number;
+    crop: ThemeImageCrop | null;
     textColor: string;
     shade: number;
+    panelOpacity: number;
   };
   settings: Record<string, unknown>;
 }
@@ -96,8 +107,11 @@ export const defaultOverride = (): ThemeOverride => ({
     positionX: 50,
     positionY: 50,
     fit: 'cover',
+    zoom: 110,
+    crop: null,
     textColor: '#ffffff',
     shade: 0,
+    panelOpacity: PANEL_MATERIAL.opacity,
   },
   settings: {},
 });
@@ -167,6 +181,31 @@ export function paletteFromSeed(seed: string, dark: boolean): ThemeTokens {
   };
 }
 export const neutralTokens = (dark: boolean): ThemeTokens => neutralThemePalette(dark);
+export function normalizeImageCrop(
+  value: ThemeImageCrop | null | undefined,
+): ThemeImageCrop | null {
+  if (
+    !value ||
+    ![value.x, value.y, value.width, value.height, value.sourceWidth, value.sourceHeight].every(
+      Number.isFinite,
+    ) ||
+    value.sourceWidth < 1 ||
+    value.sourceHeight < 1 ||
+    value.width <= 0 ||
+    value.height <= 0
+  )
+    return null;
+  const x = clamp(value.x, 0, value.sourceWidth - 1);
+  const y = clamp(value.y, 0, value.sourceHeight - 1);
+  return {
+    x,
+    y,
+    width: clamp(value.width, 1, value.sourceWidth - x),
+    height: clamp(value.height, 1, value.sourceHeight - y),
+    sourceWidth: value.sourceWidth,
+    sourceHeight: value.sourceHeight,
+  };
+}
 export function normalizeOverride(value: ThemeOverride): ThemeOverride {
   const base = defaultOverride();
   if (!value || typeof value !== 'object') return base;
@@ -182,8 +221,12 @@ export function normalizeOverride(value: ThemeOverride): ThemeOverride {
       positionX: clamp(b.positionX, 0, 100),
       positionY: clamp(b.positionY, 0, 100),
       fit: b.fit === 'contain' ? 'contain' : 'cover',
+      zoom: b.zoom === undefined ? base.background.zoom : clamp(b.zoom, 100, 200),
+      crop: normalizeImageCrop(b.crop),
       textColor: validColor(b.textColor) ? b.textColor.toLowerCase() : '#ffffff',
       shade: clamp(b.shade, 0, 85),
+      panelOpacity:
+        b.panelOpacity === undefined ? PANEL_MATERIAL.opacity : clamp(b.panelOpacity, 0, 100),
     };
   }
   if (value.settings && typeof value.settings === 'object' && !Array.isArray(value.settings))

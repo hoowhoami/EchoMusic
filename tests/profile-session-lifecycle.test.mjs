@@ -366,6 +366,37 @@ const emptyFriendsResponse = {
   error_code: 0,
 };
 
+test('merged follow lists retain artist-only entries so counts match the profile total', async (t) => {
+  const f = fixture(t);
+  f.user.info.extendsInfo.detail.follows = 5;
+  const records = [
+    { userid: 905125506, nickname: '甜橙' },
+    { userid: 1435463709, singerid: 810483, nickname: '邓寓君(等什么君)' },
+    { userid: 710628649, singerid: 85143, nickname: '蒋雪儿Snow.J' },
+    { userid: 0, singerid: 3520, nickname: '周杰伦' },
+    { userid: 359594431, singerid: 720936, nickname: '买辣椒也用券' },
+  ];
+  f.api.getUserFollow = async () => ({ status: 1, data: { total: 5, lists: records } });
+  assert.equal(f.view.followCount.value, 5);
+  await f.view.loadSocialList('follow');
+  assert.equal(f.view.followCount.value, 5);
+  assert.equal(f.view.socialUsers.follow.length, 5);
+  const artist = f.view.socialUsers.follow.find((row) => row.nickname === '周杰伦');
+  assert.equal(artist.key, 'singer:3520');
+  assert.equal(artist.friendAction, '');
+  assert.equal(artist.canMessage, false);
+  assert.equal(artist.description, '歌手');
+  f.view.openSocialChat(artist);
+  await f.view.toggleSocialFollow(artist);
+  assert.equal(f.view.socialChatTarget.value, null);
+  assert.deepEqual(f.calls, []);
+  assert.equal(f.view.mapSocialUser({ userid: 0 }, 0, 'follow'), null);
+  const otherArtist = f.view.mapSocialUser({ userid: 0, singerid: 999 }, 0, 'follow');
+  assert.notEqual(otherArtist.key, artist.key);
+  assert.equal(f.view.mapSocialUser({ userid: 3520 }, 0, 'follow').canMessage, true);
+  assert.equal(f.view.mapSocialUser({ singerid: 3520 }, 0, 'follow').canMessage, false);
+});
+
 for (const hasCachedFriends of [false, true]) {
   test(`real empty friends response succeeds with cached friends=${hasCachedFriends}`, async (t) => {
     const f = fixture(t);

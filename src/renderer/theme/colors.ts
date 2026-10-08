@@ -75,9 +75,10 @@ export function resolveThemeColors(
 export function themeContentSurfaces(
   colors: ResolvedThemeColors,
   atmosphere?: { color: string; opacity: number },
+  panelOpacity: number = PANEL_MATERIAL.opacity,
 ): string[] {
   const { tokens, tone } = colors;
-  const panel = mixColor(tokens.shell, tokens.main, PANEL_MATERIAL.opacity / 100);
+  const panel = mixColor(tokens.shell, tokens.main, panelOpacity / 100);
   const bases = [panel, tokens.shell];
   if (atmosphere)
     bases.push(...bases.map((base) => mixColor(base, atmosphere.color, atmosphere.opacity)));

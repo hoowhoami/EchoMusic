@@ -19,6 +19,27 @@ export class OpeningLyricPlayer extends LyricPlayer {
   private showRomanization = true;
   private secondaryLayoutIndex: number | undefined;
 
+  protected override buildLyricGroups(): void {
+    super.buildLyricGroups();
+    for (const group of this.currentLyricGroups) {
+      const show = group.show.bind(group);
+      group.show = () => {
+        if (!group.element.parentElement) {
+          // Core inserts the group, then builds/measures its words before
+          // committing wrapper styles. Those reads flush the initial position
+          // (or a stale culled position), starting a CSS transition from there.
+          // Seed detached wrappers so their first layout is already aligned.
+          const style = group.element.style;
+          style.transform = `translateY(${group.posY.getCurrentPosition().toFixed(1)}px)`;
+          style.opacity = String(group.opacity);
+          const blur = Math.min(5, group.blur);
+          style.filter = blur > 0.01 ? `blur(${blur.toFixed(2)}px)` : 'none';
+        }
+        show();
+      };
+    }
+  }
+
   setSecondaryVisibility(translation: boolean, romanization: boolean) {
     if (translation === this.showTranslation && romanization === this.showRomanization) return;
     this.showTranslation = translation;

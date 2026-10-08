@@ -7,10 +7,14 @@ import Avatar from '@/components/ui/Avatar.vue';
 import RollingNumber from '@/components/ui/RollingNumber.vue';
 import Button from '@/components/ui/Button.vue';
 import LogoutConfirmDialog from '@/components/profile/LogoutConfirmDialog.vue';
+import AccountSwitcherDialog from '@/components/profile/AccountSwitcherDialog.vue';
 import Popover from '@/components/ui/Popover.vue';
 import { useUserStore } from '@/stores/user';
 import { useLoginDeviceStore } from '@/stores/loginDevices';
+import { getAccountVipStatus } from '@/utils/accountVip';
 import { formatListeningDuration, getGradeProgress } from '../../shared/profileStats';
+
+defineProps<{ compact?: boolean }>();
 
 const user = useUserStore();
 const devices = useLoginDeviceStore();
@@ -18,6 +22,7 @@ const router = useRouter();
 const route = useRoute();
 const open = ref(false);
 const confirmLogout = ref(false);
+const accountSwitcherOpen = ref(false);
 const detail = computed(() => user.info?.extendsInfo?.detail ?? {});
 const grade = computed(() => getGradeProgress(detail.value));
 const duration = computed(() => formatListeningDuration(detail.value.d_sec, detail.value.duration));
@@ -41,15 +46,29 @@ const stats = computed(() =>
     .map((item) => ({ label: item.label, value: Number(item.value).toLocaleString() })),
 );
 const memberships = computed(() => {
-  const entries = user.info?.extendsInfo?.vip?.busi_vip;
-  if (!Array.isArray(entries)) return [];
-  return entries
-    .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
-    .filter((entry) => entry.is_vip === 1 && ['tvip', 'svip'].includes(String(entry.product_type)))
+  const info = user.info?.extendsInfo?.vip ?? {};
+  const status = getAccountVipStatus(info);
+  return [
+    { type: 'suvip', label: '超级VIP', active: status.superVip, endTime: info.su_vip_end_time },
+    { type: 'dvip', label: '豪华VIP', active: status.deluxeVip, endTime: info.vip_end_time },
+    {
+      type: 'svip',
+      label: '概念会员',
+      active: !!status.conceptVip,
+      endTime: status.conceptVip?.vip_end_time,
+    },
+    {
+      type: 'tvip',
+      label: '畅听会员',
+      active: !!status.musicVip,
+      endTime: status.musicVip?.vip_end_time,
+    },
+  ]
+    .filter((entry) => entry.active)
     .map((entry) => ({
-      type: String(entry.product_type),
-      label: entry.product_type === 'svip' ? '概念会员' : '畅听会员',
-      expires: formatExpiry(entry.vip_end_time),
+      type: entry.type,
+      label: entry.label,
+      expires: formatExpiry(entry.endTime) || '已开通',
     }));
 });
 function formatExpiry(value: unknown) {
@@ -68,6 +87,7 @@ watch(
   () => {
     open.value = false;
     confirmLogout.value = false;
+    accountSwitcherOpen.value = false;
   },
 );
 const navigate = (path: string) => {
@@ -77,6 +97,10 @@ const navigate = (path: string) => {
 const requestLogout = () => {
   open.value = false;
   confirmLogout.value = true;
+};
+const requestAccountSwitch = () => {
+  open.value = false;
+  accountSwitcherOpen.value = true;
 };
 const logout = () => {
   confirmLogout.value = false;
@@ -100,7 +124,8 @@ const logout = () => {
       <button
         type="button"
         class="action-icon account-trigger"
-        aria-label="个人信息"
+        :class="{ 'account-trigger-compact': compact }"
+        aria-label="个人信息与账号切换"
         aria-haspopup="dialog"
         :aria-expanded="open"
       >
@@ -150,6 +175,13 @@ const logout = () => {
           >
             个人主页<Icon :icon="iconChevronRight" :width="14" />
           </Button>
+          <Button
+            variant="secondary"
+            size="none"
+            class="account-action"
+            @click="requestAccountSwitch"
+            >切换账号</Button
+          >
           <Button variant="secondary" size="none" class="account-action" @click="requestLogout"
             >退出登录</Button
           >
@@ -160,10 +192,14 @@ const logout = () => {
         <strong>登录 EchoMusic</strong>
         <span>查看个人资料，同步你的音乐收藏</span>
         <Button @click="navigate('/login')">登录账号</Button>
+        <Button v-if="user.savedAccounts.length" variant="ghost" @click="requestAccountSwitch"
+          >切换账号</Button
+        >
       </div>
     </section>
   </Popover>
   <LogoutConfirmDialog v-model:open="confirmLogout" @confirm="logout" />
+  <AccountSwitcherDialog v-model:open="accountSwitcherOpen" />
 </template>
 
 <style scoped>
@@ -178,6 +214,10 @@ const logout = () => {
 }
 .account-trigger:hover {
   color: var(--color-text-main);
+}
+.account-trigger-compact {
+  width: 18px;
+  height: 42px;
 }
 .account-trigger svg {
   transition: transform var(--motion-duration-fast) var(--motion-ease-standard);

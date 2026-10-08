@@ -14,6 +14,15 @@ const code = transformSync(compileScript(descriptor, { id: 'login-validation' })
   loader: 'ts',
   format: 'cjs',
 }).code;
+const sessionModule = { exports: {} };
+new Function(
+  'module',
+  'exports',
+  transformSync(
+    readFileSync(new URL('../src/renderer/utils/userSession.ts', import.meta.url), 'utf8'),
+    { loader: 'ts', format: 'cjs' },
+  ).code,
+)(sessionModule, sessionModule.exports);
 const deferred = () => {
   let resolve;
   const promise = new Promise((done) => {
@@ -21,9 +30,17 @@ const deferred = () => {
   });
   return { promise, resolve };
 };
-function fixture(api = {}) {
+function fixture(api = {}, loggedIn = false) {
   const calls = [];
   const successes = [];
+  const mounted = [],
+    unmounted = [];
+  const user = vue.reactive({
+    isLoggedIn: loggedIn,
+    accountRevision: 0,
+    info: loggedIn ? { userid: 1, token: 'original' } : null,
+    login: (data) => successes.push(data),
+  });
   const defaults = Object.fromEntries(
     ['loginBySms', 'loginByPassword', 'sendSmsCode'].map((name) => [
       name,
@@ -34,14 +51,12 @@ function fixture(api = {}) {
     ]),
   );
   const deps = {
-    vue: { ...vue, onMounted() {}, onUnmounted() {} },
+    vue: { ...vue, onMounted: (fn) => mounted.push(fn), onUnmounted: (fn) => unmounted.push(fn) },
     'vue-router': { useRouter: () => ({ currentRoute: vue.ref({ query: {} }) }) },
     '@/stores/user': {
-      useUserStore: () => ({
-        isLoggedIn: false,
-        handleLoginSuccess: (data) => successes.push(data),
-      }),
+      useUserStore: () => user,
     },
+    '@/utils/userSession': sessionModule.exports,
     '@/api/user': defaults,
     '@/utils/kugouVerification': {
       kugouVerificationState: {},
@@ -65,8 +80,52 @@ function fixture(api = {}) {
   );
   const scope = vue.effectScope();
   const view = scope.run(() => module.exports.default.setup({}, { expose() {} }));
-  return { view, calls, successes, stop: () => scope.stop() };
+  return { view, calls, successes, user, mounted, unmounted, stop: () => scope.stop() };
 }
+
+test('the same login page accepts another account while the current account remains logged in', async () => {
+  const data = { userid: 2, token: 'second' };
+  const f = fixture({ loginByPassword: async () => ({ status: 1, data }) }, true);
+  try {
+    Object.assign(f.view.accountData, { username: 'second', password: 'password' });
+    await f.view.handleAccountLogin();
+    assert.deepEqual(f.successes, [data]);
+  } finally {
+    f.stop();
+  }
+});
+
+for (const change of ['cancel', 'close', 'session', 'hydration']) {
+  test(`a delayed login after ${change} cannot replace the current account`, async () => {
+    const pending = deferred();
+    const f = fixture({ loginByPassword: () => pending.promise }, true);
+    try {
+      Object.assign(f.view.accountData, { username: 'second', password: 'password' });
+      const operation = f.view.handleAccountLogin();
+      if (change === 'cancel') f.unmounted.forEach((fn) => fn());
+      else if (change === 'close') await f.view.closeLoginPage();
+      else if (change === 'hydration') f.user.info = { userid: 3, token: 'third' };
+      else f.user.accountRevision++;
+      pending.resolve({ status: 1, data: { userid: 2, token: 'second' } });
+      await operation;
+      assert.deepEqual(f.successes, []);
+      assert.equal(f.user.info.token, change === 'hydration' ? 'third' : 'original');
+    } finally {
+      f.stop();
+    }
+  });
+}
+
+test('duplicate successful callbacks only activate the account once', () => {
+  const f = fixture({}, true);
+  try {
+    f.view.completeLogin({ userid: 2, token: 'second' });
+    f.view.completeLogin({ userid: 3, token: 'third' });
+    assert.deepEqual(f.successes, [{ userid: 2, token: 'second' }]);
+  } finally {
+    f.stop();
+  }
+});
 
 test('SMS submission reports the first missing or invalid field without sending a request', async () => {
   const f = fixture();

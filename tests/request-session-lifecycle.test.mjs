@@ -55,7 +55,7 @@ const bounded = async (promise) => {
 };
 const ok = (body = { status: 1 }) => ({ status: 200, body });
 const challenge = (event = 'event') => ok({ status: 0, error_code: 20028, ssaCode: event });
-const setup = (send) => {
+const setup = (send, device = {}) => {
   const user = vue.reactive({
     isLoggedIn: true,
     accountRevision: 0,
@@ -89,7 +89,7 @@ const setup = (send) => {
     {
       vue,
       '@/stores/user': { useUserStore: () => user },
-      '@/stores/device': { useDeviceStore: () => ({ info: {} }) },
+      '@/stores/device': { useDeviceStore: () => ({ info: device }) },
       '@/stores/auth': {
         useAuthStore: () => ({
           showSessionExpiredDialog: () => {
@@ -133,6 +133,42 @@ const setup = (send) => {
     },
   };
 };
+
+test('another account login retains device identity and excludes the active account credentials', async () => {
+  const api = setup(() => ok(), { dfid: 'dfid', mid: 'mid', uuid: 'uuid', guid: 'guid' });
+  api.user.info.t1 = 'first-t1';
+  await api.request.get('/login', { skipUserAuth: true });
+  const header = api.calls[0].headers.Authorization;
+  assert.equal(header, 'dfid=dfid;KUGOU_API_MID=mid;uuid=uuid;KUGOU_API_GUID=guid');
+  await api.request.get('/user/detail');
+  assert.equal(api.calls[1].headers.Authorization, `token=first;userid=7;t1=first-t1;${header}`);
+});
+
+test('a login error for another account does not expire the active account', async () => {
+  const api = setup(() => ({ status: 502, body: { error_code: 20018 } }));
+  await assert.rejects(api.request.get('/login', { skipUserAuth: true }), /API Error/);
+  assert.equal(api.notices, 0);
+  assert.equal(api.user.info.token, 'first');
+});
+
+test('another account login verification and retry keep the same device-only auth', async () => {
+  let logins = 0;
+  const api = setup(
+    ({ url }) => {
+      if (url === '/login') return ++logins === 1 ? challenge() : ok();
+      if (url === '/get/verify/info') return ok({ status: 1, data: { v_type: 23 } });
+      return ok();
+    },
+    { dfid: 'device' },
+  );
+  const operation = api.request.get('/login', { skipUserAuth: true });
+  await flush();
+  assert.equal(await api.verification.submitKugouVerification('captcha'), true);
+  await bounded(operation);
+  assert.equal(logins, 2);
+  assert.ok(api.calls.every((call) => call.headers.Authorization === 'dfid=device'));
+  assert.equal(api.user.info.token, 'first');
+});
 
 test('normal verification retries once with the same params/body/auth and all API stages succeed', async () => {
   let writes = 0;

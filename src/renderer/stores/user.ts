@@ -15,6 +15,13 @@ import logger from '@/utils/logger';
 
 export type UserInfo = User;
 
+export type SavedAccount = Pick<
+  User,
+  'userid' | 'token' | 't1' | 'nickname' | 'pic' | 'expires'
+> & {
+  lastUsedAt: number;
+};
+
 // 听歌等级字段白名单：合并进用户档案 detail 时仅取这些字段，
 // 避免覆盖档案原有字段（如 detail.duration 的语义/单位与 grade duration 不同）
 const GRADE_DETAIL_KEYS = [
@@ -112,14 +119,59 @@ export const useUserStore = defineStore('user', {
     hasFetchedFollowedArtists: false,
     accountRevision: 0,
     userInfoRevision: 0,
+    savedAccounts: [] as SavedAccount[],
   }),
   actions: {
-    setUserInfo(info: UserInfo) {
+    rememberAccount(info: UserInfo | null, used = false) {
+      if (!info || !Number.isSafeInteger(info.userid) || info.userid <= 0 || !info.token) return;
+      const existing = this.savedAccounts.find((account) => account.userid === info.userid);
+      const account: SavedAccount = {
+        userid: info.userid,
+        token: info.token,
+        t1: info.t1,
+        nickname: info.nickname,
+        pic: info.pic,
+        expires: info.expires,
+        lastUsedAt: used ? Date.now() : (existing?.lastUsedAt ?? Date.now()),
+      };
+      this.savedAccounts = [
+        account,
+        ...this.savedAccounts.filter((saved) => saved.userid !== account.userid),
+      ];
+    },
+    /** 登录与切换共用入口；仅恢复凭证，账号资料由正常初始化重新获取。 */
+    login(data: Record<string, unknown>) {
+      const mapped = mapUser(data);
+      if (
+        !mapped.userid ||
+        !Number.isSafeInteger(mapped.userid) ||
+        mapped.userid <= 0 ||
+        !mapped.token
+      ) {
+        throw new Error('登录信息不完整，请重新登录');
+      }
+      if (this.isLoggedIn) this.rememberAccount(this.info);
+      this.handleLoginSuccess(data, true);
+      this.rememberAccount(this.info, true);
+      useListenReportStore().reset();
+      void this.fetchUserInfoOnce();
+    },
+    switchAccount(userid: number) {
+      if (this.isLoggedIn && this.info?.userid === userid) return;
+      const account = this.savedAccounts.find((saved) => saved.userid === userid);
+      if (!account) throw new Error('账号已移除，请重新登录');
+      this.login({ ...account });
+    },
+    forgetAccount(userid: number) {
+      if (this.info?.userid === userid) this.logout();
+      this.savedAccounts = this.savedAccounts.filter((account) => account.userid !== userid);
+    },
+    setUserInfo(info: UserInfo, newSession = false) {
       const previousUserKey = String(this.info?.userid ?? this.info?.userId ?? '');
       const nextInfo = normalizeUserInfo(info);
       const nextUserKey = String(nextInfo.userid ?? nextInfo.userId ?? '');
       this.$patch((state) => {
-        if (previousUserKey !== nextUserKey || state.info?.token !== nextInfo.token) {
+        if (newSession || previousUserKey !== nextUserKey || state.info?.token !== nextInfo.token) {
           state.accountRevision += 1;
           state.hasFetchedUserInfo = false;
           state.isFetchingUserInfo = false;
@@ -134,12 +186,17 @@ export const useUserStore = defineStore('user', {
           state.hasFetchedFollowedArtists = false;
         }
       });
+      // 资料刷新只更新已保存的账号，不在启动恢复时迁移当前账号。
+      if (this.savedAccounts.some((account) => account.userid === nextInfo.userid)) {
+        this.rememberAccount(nextInfo);
+      }
     },
-    handleLoginSuccess(data: Record<string, unknown>) {
+    handleLoginSuccess(data: Record<string, unknown>, newSession = false) {
       this.hasFetchedUserInfo = false;
 
       const mapped = mapUser(data);
-      const current = mapped.userid && mapped.userid !== this.info?.userid ? null : this.info;
+      const current =
+        newSession || (mapped.userid && mapped.userid !== this.info?.userid) ? null : this.info;
       const detailPayload = isRecord(data.detail)
         ? data.detail
         : isRecord(data.extendsInfo) &&
@@ -174,7 +231,7 @@ export const useUserStore = defineStore('user', {
           : {}),
       });
 
-      this.setUserInfo(nextInfo);
+      this.setUserInfo(nextInfo, newSession);
     },
     async fetchUserInfo() {
       if (!this.isLoggedIn) return;
@@ -331,6 +388,10 @@ export const useUserStore = defineStore('user', {
     },
 
     logout() {
+      // 主动退出不能留下可直接恢复的当前账号凭证，其他账号继续保留。
+      this.savedAccounts = this.savedAccounts.filter(
+        (account) => account.userid !== this.info?.userid,
+      );
       this.accountRevision += 1;
       this.info = null;
       this.isLoggedIn = false;

@@ -799,7 +799,10 @@ const mapSocialUser = (item: unknown, index: number, tab: SocialTabKey): SocialU
       'author_id',
     ]),
   );
-  if (tab === 'follow' && userId === '0') return null;
+  const singerId = readSocialText(pickFromRecords(nested, ['singerid', 'singer_id']));
+  // 合并关注列表包含没有酷狗用户账号的歌手，仍是有效关注，不能丢弃。
+  const isArtistOnly = userId === '0' && /^[1-9]\d*$/.test(singerId);
+  if (tab === 'follow' && userId === '0' && !isArtistOnly) return null;
   const nickname =
     readSocialText(
       pickFromRecords(nested, [
@@ -870,15 +873,15 @@ const mapSocialUser = (item: unknown, index: number, tab: SocialTabKey): SocialU
       : tab === 'fans' && isFriend === '0'
         ? 'follow'
         : '';
-  const rawId = userId || `row-${tab}-${index}`;
+  const rawId = isArtistOnly ? `singer:${singerId}` : userId || `row-${tab}-${index}`;
 
   const mapped: SocialUser = {
     key: rawId,
     userId,
-    canMessage: Boolean(userId && String(userStore.info?.userid ?? '') !== userId),
+    canMessage: canFollow,
     nickname,
     avatar,
-    description,
+    description: description || (isArtistOnly ? '歌手' : ''),
     meta: relationText,
     friendAction,
     raw: item,

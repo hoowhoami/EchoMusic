@@ -519,7 +519,7 @@ test('applying and resetting theme parameters preserves palette and global appea
   assert.equal(s.preferences.accent.source, 'cover');
   assert.equal(s.preferences.mode, 'light');
 });
-test('panel material is fixed and has no persisted preference or setter', () => {
+test('standard themes retain fixed panel material without a global panel preference', () => {
   const s = store();
   assert.equal('surfaces' in s.preferences, false);
   assert.equal('setPanelEffect' in s, false);
@@ -527,6 +527,70 @@ test('panel material is fixed and has no persisted preference or setter', () => 
   assert.equal(s.surfaceVariables['--surface-player-opacity'], '50%');
   assert.equal(s.surfaceVariables['--surface-backdrop-filter'], 'none');
   assert.equal(s.floatingSurfaceFrosted, false);
+});
+test('custom panel opacity previews, saves and cancels independently of global transparency', () => {
+  const s = store();
+  s.setCustomBackground('landscape.png');
+  s.setCustomBackgroundSample('landscape.png', '#8b9879');
+  s.updateGeneralPreferences({ transparency: 40 });
+  assert.equal(s.panelOpacity, 50);
+  s.beginPreview();
+  s.updateOverride({ background: { ...s.override.background, panelOpacity: 0, zoom: 135 } });
+  assert.equal(s.surfaceVariables['--surface-main-opacity'], '0%');
+  assert.equal(s.surfaceVariables['--surface-player-opacity'], '0%');
+  assert.equal(s.surfaceVariables['--surface-sidebar-opacity'], '50%');
+  assert.equal(s.windowTransparency, 40);
+  assert.equal(s.override.background.zoom, 135);
+  s.cancelPreview();
+  assert.equal(s.panelOpacity, 50);
+  assert.equal(s.override.background.zoom, 110);
+  s.beginPreview();
+  s.updateOverride({ background: { ...s.override.background, panelOpacity: 85, zoom: 150 } });
+  s.applyPreview();
+  assert.equal(s.preferences.overrides[api.CUSTOM_THEME_KEY].background.panelOpacity, 85);
+  s.selectTheme('host:echo');
+  assert.equal(s.panelOpacity, 50);
+  s.selectTheme(api.CUSTOM_THEME_KEY);
+  assert.equal(s.panelOpacity, 85);
+  assert.equal(s.override.background.zoom, 150);
+  assert.equal(s.surfaceVariables['--surface-main-opacity'], '85%');
+  assert.equal(s.surfaceVariables['--surface-player-opacity'], '85%');
+  assert.equal(s.windowTransparency, 40);
+});
+
+test('old image preferences gain safe defaults and invalid zoom and panel opacity are bounded', () => {
+  const legacy = api.defaultOverride();
+  delete legacy.background.zoom;
+  delete legacy.background.panelOpacity;
+  assert.equal(api.normalizeOverride(legacy).background.zoom, 110);
+  assert.equal(api.normalizeOverride(legacy).background.panelOpacity, 50);
+  for (const [zoom, opacity, expectedZoom, expectedOpacity] of [
+    [70, -20, 100, 0],
+    [300, 140, 200, 100],
+  ]) {
+    const value = api.normalizeOverride({
+      ...legacy,
+      background: { ...legacy.background, zoom, panelOpacity: opacity },
+    });
+    assert.equal(value.background.zoom, expectedZoom);
+    assert.equal(value.background.panelOpacity, expectedOpacity);
+  }
+});
+
+test('custom panel opacity participates in contrast calculations without recoloring floating surfaces', () => {
+  const s = store();
+  s.setCustomBackground('landscape.png');
+  s.setCustomBackgroundSample('landscape.png', '#8b9879');
+  const floating = api.copyAppearance(s.appearance.floating);
+  for (const panelOpacity of [0, 50, 100]) {
+    s.updateOverride({ background: { ...s.override.background, panelOpacity } });
+    const surfaces = s.accentSurfaces;
+    assert.equal(
+      surfaces[0],
+      api.mixColor(s.appearance.tokens.shell, s.appearance.tokens.main, panelOpacity / 100),
+    );
+    assert.deepEqual(s.appearance.floating, floating);
+  }
 });
 test('window transparency survives theme switching and background cancellation and resets independently', () => {
   const plugin = register('global-material', { settings: { defaults: { texture: 20 } } });
@@ -627,6 +691,42 @@ test('custom image stays selected and starts sharp independently of global trans
   s.resetAppearanceAdjustments();
   assert.equal(s.activePreferences.windowFrosted, false);
   assert.equal(s.surfaceVariables['--surface-backdrop-filter'], 'none');
+});
+test('free image crops persist, preview reversibly and clear when replacing the source image', () => {
+  const s = store();
+  s.setCustomBackground('first-image.png');
+  const crop = { x: 100, y: 200, width: 600, height: 300, sourceWidth: 1600, sourceHeight: 900 };
+  s.updateOverride({ background: { ...s.override.background, crop } });
+  const saved = api.copyAppearance(s.preferences);
+  const restored = store();
+  restored.preferences = saved;
+  assert.deepEqual(restored.override.background.crop, crop);
+  s.beginPreview();
+  s.updateOverride({ background: { ...s.override.background, crop: { ...crop, width: 400 } } });
+  assert.equal(s.override.background.crop.width, 400);
+  assert.equal(s.preferences.overrides[api.CUSTOM_THEME_KEY].background.crop.width, 600);
+  s.cancelPreview();
+  assert.deepEqual(s.override.background.crop, crop);
+  s.beginPreview();
+  s.updateOverride({ background: { ...s.override.background, crop: { ...crop, height: 500 } } });
+  s.applyPreview();
+  assert.equal(s.preferences.overrides[api.CUSTOM_THEME_KEY].background.crop.height, 500);
+  s.beginPreview();
+  s.setCustomBackground('second-image.png');
+  assert.equal(s.override.background.crop, null);
+  s.cancelPreview();
+  assert.equal(s.backgroundImage, 'first-image.png');
+  assert.equal(s.override.background.crop.height, 500);
+  s.updateOverride({
+    background: {
+      ...s.override.background,
+      ...api.defaultOverride().background,
+      source: 'image',
+      image: s.backgroundImage,
+    },
+  });
+  assert.equal(s.override.background.crop, null);
+  assert.equal(s.backgroundImage, 'first-image.png');
 });
 test('floating frosting persists independently across window transparency changes, themes and cancelled image previews', () => {
   const s = store();

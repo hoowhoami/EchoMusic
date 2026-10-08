@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, useId, watch } from 'vue';
+import { useWindowSize } from '@vueuse/core';
 import { Icon } from '@iconify/vue';
-import { iconCheckMark, iconImage, iconSlidersHorizontal, iconX } from '@/icons';
+import { iconCheckMark, iconSlidersHorizontal, iconX } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import SelectionBadge from '@/components/ui/SelectionBadge.vue';
 import Drawer from '@/components/ui/Drawer.vue';
-import Select from '@/components/ui/Select.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
-import Slider from '@/components/ui/Slider.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import { useThemeStore } from '@/stores/theme';
 import { useWindowAppearance } from './useWindowAppearance';
@@ -34,10 +34,12 @@ import ThemeContent from './ThemeContent.vue';
 import ThemeBackgroundControls from './ThemeBackgroundControls.vue';
 import ThemeColorControls from './ThemeColorControls.vue';
 import ThemeThumbnail from './ThemeThumbnail.vue';
+import ThemeImageEditor from './ThemeImageEditor.vue';
 defineOptions({ name: 'theme-center' });
 let ownsPreview = false;
 const theme = useThemeStore(),
   toast = useToastStore();
+const { width: windowWidth, height: windowHeight } = useWindowSize();
 const showTextColor = ref(false);
 const showSkinColor = ref(false),
   isImporting = ref(false);
@@ -72,6 +74,12 @@ const customBackground = computed(
     normalizeOverride(theme.activePreferences.overrides[CUSTOM_THEME_KEY] ?? defaultOverride())
       .background,
 );
+const customBackgroundHasAdjustments = computed(() => {
+  const defaults = defaultOverride().background;
+  return (
+    ['positionX', 'positionY', 'fit', 'zoom', 'crop', 'textColor', 'shade', 'panelOpacity'] as const
+  ).some((key) => customBackground.value[key] !== defaults[key]);
+});
 const colours = [
   '#7da3ce',
   '#6eafb7',
@@ -148,9 +156,6 @@ const selectedColor = computed(() => {
   const palette = theme.activePreferences.overrides['host:solid']?.palette;
   return palette?.source === 'custom' ? palette.color : '#6b9bd1';
 });
-const customBackgroundApplied = computed(
-  () => theme.effectiveThemeKey === CUSTOM_THEME_KEY && !beforeBackground.value,
-);
 const solidSelected = (color: string) =>
   theme.desiredThemeKey === 'host:solid' &&
   selectedColor.value.toLowerCase() === color.toLowerCase();
@@ -171,6 +176,13 @@ const chooseTheme = (key: string) => {
 const updateBackground = (patch: Partial<ThemeOverride['background']>) => {
   beginBackground();
   theme.updateOverride({ background: { ...customBackground.value, ...patch } });
+};
+const resetBackgroundAdjustments = () => {
+  updateBackground({
+    ...defaultOverride().background,
+    source: customBackground.value.source,
+    image: customBackground.value.image,
+  });
 };
 const skinColor = (color: string) => {
   chooseTheme('host:solid');
@@ -231,6 +243,7 @@ async function importImage(file?: File) {
     }
     theme.setCustomBackground(result.id);
     imagePreview.value = result.url;
+    activeTab.value = 2;
   } catch (error) {
     if (current === importRevision)
       backgroundError.value = error instanceof Error ? error.message : '图片导入失败';
@@ -311,211 +324,118 @@ watch(
       aria-label="主题浏览"
       class="theme-browse-tabs"
     />
-    <div class="theme-workbench">
-      <div ref="gallery" class="theme-gallery">
-        <section
-          v-show="activeTab === 1"
-          :id="panelIds[1]"
-          :aria-labelledby="tabIds[1]"
-          role="tabpanel"
-          tabindex="0"
-          class="theme-palette-section"
-        >
-          <div class="theme-palette-heading">
-            <h2>选择颜色</h2>
-            <button class="theme-custom-color" @click="showSkinColor = true">
-              <i :style="{ background: selectedColor }" />自选颜色
-            </button>
-          </div>
-          <div class="theme-palette-grid">
-            <button
-              v-for="color in solidColours"
-              :key="color"
-              class="theme-color-swatch"
-              :style="{
-                background: color,
-                color: contrast('#ffffff', color) >= 3 ? '#ffffff' : '#1d1d1f',
-              }"
-              :aria-label="`皮肤颜色 ${color}`"
-              :aria-pressed="solidSelected(color)"
-              @click="skinColor(color)"
-            >
-              <Icon v-if="solidSelected(color)" :icon="iconCheckMark" :width="16" />
-            </button>
-          </div>
-        </section>
-        <div
-          v-show="activeTab === 0"
-          :id="panelIds[0]"
-          :aria-labelledby="tabIds[0]"
-          role="tabpanel"
-          tabindex="0"
-        >
-          <section v-for="group in themeGroups" :key="group.type" class="theme-type-section">
-            <h2 class="theme-catalog-heading">{{ group.label }}</h2>
-            <div class="theme-selection-grid">
+    <input
+      ref="imageInput"
+      type="file"
+      accept="image/jpeg,image/png,image/webp"
+      hidden
+      @change="importImage(($event.target as HTMLInputElement).files?.[0])"
+    />
+    <div v-show="activeTab !== 2" class="theme-workbench">
+      <Scrollbar
+        class="theme-gallery-scroll"
+        :content-props="{ ref: (element: HTMLElement | null) => (gallery = element) }"
+      >
+        <div class="theme-gallery">
+          <section
+            v-show="activeTab === 1"
+            :id="panelIds[1]"
+            :aria-labelledby="tabIds[1]"
+            role="tabpanel"
+            tabindex="0"
+            class="theme-palette-section"
+          >
+            <div class="theme-palette-heading">
+              <h2>选择颜色</h2>
+              <button class="theme-custom-color" @click="showSkinColor = true">
+                <i :style="{ background: selectedColor }" />自选颜色
+              </button>
+            </div>
+            <div class="theme-palette-grid">
               <button
-                v-for="entry in group.entries"
-                :key="entry.key"
-                class="theme-select-card card-hover card-hover-border"
-                :aria-pressed="theme.desiredThemeKey === entry.key"
-                @click="chooseTheme(entry.key)"
+                v-for="color in solidColours"
+                :key="color"
+                class="theme-color-swatch"
+                :style="{
+                  background: color,
+                  color: contrast('#ffffff', color) >= 3 ? '#ffffff' : '#1d1d1f',
+                }"
+                :aria-label="`皮肤颜色 ${color}`"
+                :aria-pressed="solidSelected(color)"
+                @click="skinColor(color)"
               >
-                <div class="theme-card-preview">
-                  <ThemeThumbnail
-                    :appearance="thumbnailVariant(entry)"
-                    :image="entry.preview"
-                    :dark="theme.isDark"
-                  />
-                  <SelectionBadge
-                    v-if="theme.desiredThemeKey === entry.key"
-                    class="theme-selected"
-                  />
-                </div>
-                <div class="theme-card-title">
-                  <strong>{{ entry.title }}</strong>
-                </div>
-                <p class="theme-card-description">{{ entry.description }}</p>
+                <Icon v-if="solidSelected(color)" :icon="iconCheckMark" :width="16" />
               </button>
             </div>
           </section>
-        </div>
-        <section
-          v-show="activeTab === 2"
-          :id="panelIds[2]"
-          :aria-labelledby="tabIds[2]"
-          role="tabpanel"
-          tabindex="0"
-          class="theme-custom-panel"
-        >
-          <input
-            ref="imageInput"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            hidden
-            @change="importImage(($event.target as HTMLInputElement).files?.[0])"
-          />
-          <header v-if="customBackground.image" class="theme-image-heading">
-            <h2>背景图片</h2>
-            <Button
-              :disabled="isImporting"
-              variant="secondary"
-              size="sm"
-              @click="imageInput?.click()"
-            >
-              <Icon :icon="iconImage" :width="16" />{{ isImporting ? '正在导入…' : '更换图片' }}
-            </Button>
-          </header>
-          <div class="theme-custom-workspace" :class="{ 'has-image': customBackground.image }">
-            <div
-              class="theme-image-drop"
-              :class="{ 'has-image': customBackground.image }"
-              @dragover.prevent
-              @drop.prevent="importImage($event.dataTransfer?.files[0])"
-            >
-              <div
-                v-if="imagePreview"
-                class="theme-custom-image"
-                role="img"
-                aria-label="自定义背景预览"
-                :style="{
-                  backgroundImage: `url(${JSON.stringify(imagePreview)})`,
-                  backgroundSize: customBackground.fit,
-                  backgroundPosition: `${customBackground.positionX}% ${customBackground.positionY}%`,
-                }"
-              />
-              <div
-                v-if="imagePreview"
-                class="theme-custom-shade"
-                :style="{
-                  background: theme.isDark ? '#10131a' : '#f7f8fa',
-                  opacity: customBackground.shade / 100,
-                }"
-              />
-              <div v-if="!customBackground.image" class="theme-image-actions">
-                <Icon :icon="iconImage" :width="32" class="theme-upload-icon" />
-                <h2>用喜欢的图片装点音乐</h2>
-                <Button
-                  :disabled="isImporting"
-                  variant="secondary"
-                  size="sm"
-                  @click="imageInput?.click()"
-                >
-                  {{ isImporting ? '正在导入…' : '选择本地图片' }}
-                </Button>
-                <p>或拖入 JPG、PNG、WebP 图片，不超过 20 MB</p>
-              </div>
-            </div>
-            <div v-if="customBackground.image" class="theme-image-controls">
-              <h2>图片调整</h2>
-              <div class="theme-control-row">
-                <label>文字颜色</label>
+          <div
+            v-show="activeTab === 0"
+            :id="panelIds[0]"
+            :aria-labelledby="tabIds[0]"
+            role="tabpanel"
+            tabindex="0"
+          >
+            <section v-for="group in themeGroups" :key="group.type" class="theme-type-section">
+              <h2 class="theme-catalog-heading">{{ group.label }}</h2>
+              <div class="theme-selection-grid">
                 <button
-                  type="button"
-                  class="theme-text-color"
-                  aria-label="选择背景文字颜色"
-                  @click="showTextColor = true"
+                  v-for="entry in group.entries"
+                  :key="entry.key"
+                  class="theme-select-card card-hover card-hover-border"
+                  :aria-pressed="theme.desiredThemeKey === entry.key"
+                  @click="chooseTheme(entry.key)"
                 >
-                  <i :style="{ background: customBackground.textColor }" />
-                  <span>{{ customBackground.textColor.toUpperCase() }}</span>
+                  <div class="theme-card-preview">
+                    <ThemeThumbnail
+                      :appearance="thumbnailVariant(entry)"
+                      :image="entry.preview"
+                      :dark="theme.isDark"
+                    />
+                    <SelectionBadge
+                      v-if="theme.desiredThemeKey === entry.key"
+                      class="theme-selected"
+                    />
+                  </div>
+                  <div class="theme-card-title">
+                    <strong>{{ entry.title }}</strong>
+                  </div>
+                  <p class="theme-card-description">{{ entry.description }}</p>
                 </button>
               </div>
-              <div class="theme-control-row">
-                <label>显示方式</label>
-                <Select
-                  :model-value="customBackground.fit"
-                  :options="[
-                    { label: '填充', value: 'cover' },
-                    { label: '适应', value: 'contain' },
-                  ]"
-                  aria-label="背景显示方式"
-                  @update:model-value="updateBackground({ fit: $event as 'cover' | 'contain' })"
-                />
-              </div>
-              <div
-                v-for="control in [
-                  { key: 'positionX', title: '水平位置', max: 100 },
-                  { key: 'positionY', title: '垂直位置', max: 100 },
-                  { key: 'shade', title: '背景遮罩', max: 85 },
-                ] as const"
-                :key="control.key"
-                class="theme-control-row"
-              >
-                <label class="theme-range-heading">
-                  {{ control.title }}
-                  <output>{{ customBackground[control.key] }}%</output>
-                </label>
-                <Slider
-                  :model-value="customBackground[control.key]"
-                  :min="0"
-                  :max="control.max"
-                  :aria-label="control.title"
-                  @update:model-value="updateBackground({ [control.key]: $event })"
-                />
-              </div>
-            </div>
+            </section>
           </div>
-          <p v-if="backgroundError" role="alert" class="theme-error">{{ backgroundError }}</p>
-        </section>
-      </div>
+        </div>
+      </Scrollbar>
     </div>
-    <footer
-      v-if="
-        activeTab === 2 &&
-        (beforeBackground || (customBackground.image && !customBackgroundApplied))
-      "
-      class="theme-custom-footer"
+    <section
+      v-show="activeTab === 2"
+      :id="panelIds[2]"
+      :aria-labelledby="tabIds[2]"
+      role="tabpanel"
+      tabindex="0"
+      class="theme-custom-panel"
     >
-      <Button v-if="beforeBackground" variant="secondary" size="sm" @click="cancelBackground"
-        >取消</Button
-      >
-      <Button
-        :disabled="isImporting || !customBackground.image || customBackgroundApplied"
-        size="sm"
-        @click="acceptBackground"
-        >{{ beforeBackground ? '保存背景' : '使用此背景' }}</Button
-      >
-    </footer>
+      <ThemeImageEditor
+        :image="imagePreview"
+        :has-image="!!customBackground.image"
+        :background="customBackground"
+        :viewport="{ width: windowWidth, height: windowHeight }"
+        :shell="theme.appearance.tokens.shell"
+        :importing="isImporting"
+        :can-reset="customBackgroundHasAdjustments"
+        :can-cancel="!!beforeBackground"
+        :can-apply="!!beforeBackground || theme.effectiveThemeKey !== CUSTOM_THEME_KEY"
+        :error="backgroundError"
+        @change="updateBackground"
+        @error="backgroundError = $event"
+        @choose-image="imageInput?.click()"
+        @select-image="importImage($event)"
+        @choose-text-color="showTextColor = true"
+        @reset="resetBackgroundAdjustments"
+        @cancel="cancelBackground"
+        @apply="acceptBackground"
+      />
+    </section>
   </section>
   <Drawer
     v-model:open="showAdjustments"
@@ -589,11 +509,13 @@ watch(
 </template>
 <style scoped>
 .theme-center {
+  box-sizing: border-box;
+  height: 100%;
   padding: 26px 32px 20px;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  flex: 1;
+  flex: 1 1 0;
   overflow: hidden;
   color: var(--text-main);
 }
@@ -629,17 +551,17 @@ watch(
   --theme-gallery-bleed: 14px;
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
   margin-inline: calc(-1 * var(--theme-gallery-bleed));
   overflow: hidden;
 }
-.theme-gallery {
-  flex: 1;
+.theme-gallery-scroll {
+  flex: 1 1 0;
   min-height: 0;
   min-width: 0;
-  overflow: auto;
-  scrollbar-gutter: stable;
+}
+.theme-gallery {
   /* Leave room for preview shadows and keyboard focus outside the cards. */
   padding: 2px calc(2px + var(--theme-gallery-bleed)) 12px;
   container-type: inline-size;
@@ -650,11 +572,16 @@ watch(
   flex-shrink: 0;
   margin: 0 0 26px;
 }
+.theme-custom-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 0;
+}
 .theme-palette-section {
   margin-bottom: 28px;
 }
 .theme-palette-heading h2,
-.theme-image-heading h2,
 .theme-catalog-heading {
   margin: 0;
   font-size: 14px;
@@ -795,26 +722,6 @@ watch(
   gap: 12px;
   margin-bottom: 18px;
 }
-.theme-text-color {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  cursor: pointer;
-  width: fit-content;
-  font-family: monospace;
-  font-size: 12px;
-}
-.theme-text-color i {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--border-light);
-}
-.theme-text-color:hover i {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
 .theme-custom-color {
   display: flex;
   gap: 7px;
@@ -865,110 +772,6 @@ watch(
   font-size: 12px;
   color: var(--text-secondary);
   margin-bottom: 16px;
-}
-.theme-custom-workspace {
-  display: grid;
-  gap: 24px;
-  max-width: 1080px;
-}
-.theme-image-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  max-width: 1080px;
-  margin-bottom: 16px;
-}
-.theme-custom-workspace.has-image {
-  grid-template-columns: minmax(0, 1fr) 240px;
-  align-items: start;
-}
-.theme-image-drop {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  border: 1px dashed var(--border-subtle);
-  border-radius: var(--radius-media);
-  min-height: 300px;
-  display: grid;
-  place-items: center;
-  background: var(--control-muted-bg);
-}
-.theme-image-drop.has-image {
-  border-style: solid;
-  min-height: 0;
-  height: clamp(220px, 34vh, 360px);
-}
-.theme-custom-image,
-.theme-custom-shade {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-repeat: no-repeat;
-}
-.theme-image-actions {
-  display: grid;
-  justify-items: center;
-  gap: 12px;
-  padding: 24px;
-  text-align: center;
-}
-.theme-image-actions h2 {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0 0 4px;
-}
-.theme-upload-icon {
-  color: var(--text-secondary);
-  margin-bottom: 4px;
-}
-.theme-image-actions p {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.theme-image-controls {
-  min-width: 0;
-}
-.theme-image-controls h2 {
-  font-size: 14px;
-  font-weight: 600;
-  margin: 0;
-}
-.theme-custom-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 16px 0 0;
-  border-top: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-@container (max-width: 650px) {
-  .theme-custom-workspace.has-image {
-    grid-template-columns: 1fr;
-  }
-}
-.theme-control-row {
-  display: grid;
-  gap: 2px;
-  padding: 6px 0 0;
-  font-size: 13px;
-}
-.theme-range-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-.theme-range-heading output {
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-}
-.theme-control-row :deep(.slider-wrapper) {
-  width: 100%;
-}
-.theme-control-row :deep(.echo-select-trigger) {
-  width: 100%;
 }
 @media (max-width: 700px) {
   .theme-center {

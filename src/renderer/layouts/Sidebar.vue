@@ -810,6 +810,7 @@ watch(
               </Button>
             </template>
           </Tooltip>
+          <SidebarAccountPopover compact />
         </div>
 
         <Scrollbar

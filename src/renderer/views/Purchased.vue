@@ -2,13 +2,14 @@
 import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'purchased' });
-import { computed, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, onUnmounted, ref, shallowRef, watch } from 'vue';
 import { getPurchasedSongs, getPurchasedAlbum } from '@/api/purchased';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
+import { captureUserSession } from '@/utils/userSession';
 import { useThemeStore } from '@/stores/theme';
 import { createThemedIconCoverUrl } from '@/utils/cover';
 import type { AlbumMeta } from '@/models/album';
@@ -70,6 +71,14 @@ const totalSongs = ref(0);
 const totalAlbums = ref(0);
 const songsLoadingMore = ref(false);
 const albumsLoadingMore = ref(false);
+let disposed = false;
+let songsRevision = 0;
+let albumsRevision = 0;
+const captureLoad = (kind: 'songs' | 'albums', revision: number) => {
+  const ownsSession = captureUserSession(userStore);
+  return () =>
+    !disposed && ownsSession() && revision === (kind === 'songs' ? songsRevision : albumsRevision);
+};
 
 const coverUrl = computed(() => createThemedIconCoverUrl(themeStore.sourceColor, iconShoppingBag));
 
@@ -160,30 +169,42 @@ const parsePurchasedAlbumList = (payload: unknown): { albums: AlbumMeta[]; total
 };
 
 const loadSongs = async () => {
-  if (!isLoggedIn.value) return;
+  if (disposed || !isLoggedIn.value) return;
+  const ownsLoad = captureLoad('songs', ++songsRevision);
   songsLoading.value = true;
   try {
     const res = await getPurchasedSongs(1, PAGE_SIZE);
+    if (!ownsLoad()) return;
     const { songs: parsed, total } = parsePurchasedSongList(res);
     songs.value = parsed;
     songsPage.value = 1;
     totalSongs.value = total;
     songsHasMore.value = songs.value.length < total;
   } catch {
+    if (!ownsLoad()) return;
     songs.value = [];
     totalSongs.value = 0;
     songsHasMore.value = false;
   } finally {
-    songsLoading.value = false;
+    if (ownsLoad()) songsLoading.value = false;
   }
 };
 
 const loadMoreSongs = async () => {
-  if (!isLoggedIn.value || songsLoadingMore.value || !songsHasMore.value) return;
+  if (
+    disposed ||
+    !isLoggedIn.value ||
+    songsLoading.value ||
+    songsLoadingMore.value ||
+    !songsHasMore.value
+  )
+    return;
+  const ownsLoad = captureLoad('songs', songsRevision);
   songsLoadingMore.value = true;
   try {
     const nextPage = songsPage.value + 1;
     const res = await getPurchasedSongs(nextPage, PAGE_SIZE);
+    if (!ownsLoad()) return;
     const { songs: parsed } = parsePurchasedSongList(res);
     if (parsed.length > 0) {
       songs.value = [...songs.value, ...parsed];
@@ -193,37 +214,50 @@ const loadMoreSongs = async () => {
       songsHasMore.value = false;
     }
   } catch {
+    if (!ownsLoad()) return;
     songsHasMore.value = false;
   } finally {
-    songsLoadingMore.value = false;
+    if (ownsLoad()) songsLoadingMore.value = false;
   }
 };
 
 const loadAlbums = async () => {
-  if (!isLoggedIn.value) return;
+  if (disposed || !isLoggedIn.value) return;
+  const ownsLoad = captureLoad('albums', ++albumsRevision);
   albumsLoading.value = true;
   try {
     const res = await getPurchasedAlbum(1, PAGE_SIZE);
+    if (!ownsLoad()) return;
     const { albums: parsed, total } = parsePurchasedAlbumList(res);
     albums.value = parsed;
     albumsPage.value = 1;
     totalAlbums.value = total;
     albumsHasMore.value = albums.value.length < total;
   } catch {
+    if (!ownsLoad()) return;
     albums.value = [];
     totalAlbums.value = 0;
     albumsHasMore.value = false;
   } finally {
-    albumsLoading.value = false;
+    if (ownsLoad()) albumsLoading.value = false;
   }
 };
 
 const loadMoreAlbums = async () => {
-  if (!isLoggedIn.value || albumsLoadingMore.value || !albumsHasMore.value) return;
+  if (
+    disposed ||
+    !isLoggedIn.value ||
+    albumsLoading.value ||
+    albumsLoadingMore.value ||
+    !albumsHasMore.value
+  )
+    return;
+  const ownsLoad = captureLoad('albums', albumsRevision);
   albumsLoadingMore.value = true;
   try {
     const nextPage = albumsPage.value + 1;
     const res = await getPurchasedAlbum(nextPage, PAGE_SIZE);
+    if (!ownsLoad()) return;
     const { albums: parsed } = parsePurchasedAlbumList(res);
     if (parsed.length > 0) {
       albums.value = [...albums.value, ...parsed];
@@ -233,9 +267,10 @@ const loadMoreAlbums = async () => {
       albumsHasMore.value = false;
     }
   } catch {
+    if (!ownsLoad()) return;
     albumsHasMore.value = false;
   } finally {
-    albumsLoadingMore.value = false;
+    if (ownsLoad()) albumsLoadingMore.value = false;
   }
 };
 
@@ -323,26 +358,33 @@ const openBatchDrawer = () => {
 const handleLocate = () => songListRef.value?.scrollToActive?.();
 
 watch(
-  () => isLoggedIn.value,
-  (loggedIn) => {
-    if (!loggedIn) {
-      songs.value = [];
-      albums.value = [];
-      totalSongs.value = 0;
-      totalAlbums.value = 0;
-      songsHasMore.value = false;
-      albumsHasMore.value = false;
-      songsPage.value = 1;
-      albumsPage.value = 1;
+  [() => userStore.accountRevision, () => userStore.isLoggedIn],
+  () => {
+    songsRevision++;
+    albumsRevision++;
+    songs.value = [];
+    albums.value = [];
+    totalSongs.value = 0;
+    totalAlbums.value = 0;
+    songsHasMore.value = false;
+    albumsHasMore.value = false;
+    songsPage.value = 1;
+    albumsPage.value = 1;
+    songsLoading.value = false;
+    albumsLoading.value = false;
+    songsLoadingMore.value = false;
+    albumsLoadingMore.value = false;
+    showBatchDrawer.value = false;
+    if (isLoggedIn.value) {
+      void loadSongs();
+      void loadAlbums();
     }
   },
+  { immediate: true },
 );
 
-onMounted(() => {
-  if (isLoggedIn.value) {
-    void loadSongs();
-    void loadAlbums();
-  }
+onUnmounted(() => {
+  disposed = true;
 });
 </script>
 

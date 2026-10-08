@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useThemeStore } from '@/stores/theme';
 import { useToastStore } from '@/stores/toast';
 import ThemeContent from './ThemeContent.vue';
+import ThemeImage from './ThemeImage.vue';
 import { CUSTOM_THEME_KEY } from './model';
 import { extractAverageColor } from '@/utils/color';
 const theme = useThemeStore(),
@@ -63,7 +64,13 @@ const style = computed(() => {
         backgroundColor: theme.appearance.background?.color ?? theme.appearance.tokens.shell,
       }"
     />
-    <div class="theme-background-image" :style="style" />
+    <ThemeImage
+      v-if="imageUrl && isCustom"
+      class="theme-background-image"
+      :image="imageUrl"
+      :background="theme.override.background"
+    />
+    <div v-else class="theme-background-image" :style="style" />
     <div
       v-if="imageUrl && isCustom && theme.override.background.shade"
       class="theme-background-shade"

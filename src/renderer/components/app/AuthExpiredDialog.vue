@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
@@ -10,6 +10,11 @@ const router = useRouter();
 const authStore = useAuthStore();
 const userStore = useUserStore();
 
+watch(
+  () => userStore.accountRevision,
+  () => authStore.hideSessionExpiredDialog(),
+);
+
 const open = computed({
   get: () => authStore.sessionExpiredDialogOpen,
   set: (value: boolean) => {
@@ -19,9 +24,8 @@ const open = computed({
 
 const handleLogin = async () => {
   authStore.hideSessionExpiredDialog();
-  userStore.logout();
   if (router.currentRoute.value.name !== 'login') {
-    await router.push({ name: 'login' });
+    await router.push({ name: 'login', query: { from: router.currentRoute.value.fullPath } });
   }
 };
 </script>

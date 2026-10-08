@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useThemeStore } from '@/stores/theme';
-import { PANEL_MATERIAL } from './model';
+import { CUSTOM_THEME_KEY } from './model';
+import ThemeImage from './ThemeImage.vue';
 defineProps<{ image?: string }>();
 const theme = useThemeStore();
 const tokens = computed(() => theme.appearance.tokens);
@@ -11,12 +12,19 @@ const style = computed(() => ({
   color: tokens.value.text,
 }));
 const surface = (color?: string) => ({
-  background: `color-mix(in srgb, ${color} ${PANEL_MATERIAL.opacity}%, transparent)`,
+  background: `color-mix(in srgb, ${color} ${theme.panelOpacity}%, transparent)`,
 });
 </script>
 <template>
   <div class="theme-window-preview" :style="style" aria-label="当前外观预览">
+    <ThemeImage
+      v-if="image && theme.effectiveThemeKey === CUSTOM_THEME_KEY"
+      class="preview-wallpaper"
+      :image="image"
+      :background="theme.override.background"
+    />
     <div
+      v-else
       class="preview-wallpaper"
       :style="{
         backgroundImage: image

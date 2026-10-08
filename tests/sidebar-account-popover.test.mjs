@@ -5,6 +5,7 @@ import { parse, compileScript } from '@vue/compiler-sfc';
 import { transformSync } from 'esbuild';
 import * as vue from 'vue';
 import * as profileStats from '../src/shared/profileStats.ts';
+import * as accountVip from '../src/renderer/utils/accountVip.ts';
 
 const { descriptor } = parse(
   readFileSync('src/renderer/layouts/SidebarAccountPopover.vue', 'utf8'),
@@ -35,6 +36,7 @@ function fixture(t, detail = {}, vip = {}) {
       useLoginDeviceStore: () => ({ reset: () => calls.push('reset-devices') }),
     },
     '../../shared/profileStats': profileStats,
+    '@/utils/accountVip': accountVip,
   };
   const mod = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => deps[name] ?? {}, mod, mod.exports);
@@ -71,6 +73,65 @@ test('account summary preserves zero counts, hides missing values and uses exist
   assert.deepEqual(api.memberships.value, [
     { type: 'svip', label: '概念会员', expires: '2026-12-31 到期' },
   ]);
+});
+
+test('membership expiry lists all active tiers in priority order using their own date fields', (t) => {
+  const { api } = fixture(
+    t,
+    {},
+    {
+      user_type: 29,
+      vip_type: 6,
+      su_vip_end_time: '2027-10-09T12:00:00',
+      vip_end_time: '2026-11-10T12:00:00',
+      busi_vip: [
+        { product_type: 'tvip', is_vip: 1, vip_end_time: '2026-12-12T12:00:00' },
+        { product_type: 'svip', is_vip: '1', vip_end_time: '2026-12-11T12:00:00' },
+      ],
+    },
+  );
+  assert.deepEqual(api.memberships.value, [
+    { type: 'suvip', label: '超级VIP', expires: '2027-10-09 到期' },
+    { type: 'dvip', label: '豪华VIP', expires: '2026-11-10 到期' },
+    { type: 'svip', label: '概念会员', expires: '2026-12-11 到期' },
+    { type: 'tvip', label: '畅听会员', expires: '2026-12-12 到期' },
+  ]);
+});
+
+test('deluxe alone never shows super expiry and unknown dates do not invent an expiry', (t) => {
+  const { api, user } = fixture(
+    t,
+    {},
+    {
+      user_type: 13,
+      vip_type: 6,
+      su_vip_end_time: '2027-10-09T12:00:00',
+      vip_end_time: 'invalid-date',
+    },
+  );
+  assert.deepEqual(api.memberships.value, [{ type: 'dvip', label: '豪华VIP', expires: '已开通' }]);
+  user.info.extendsInfo.vip = { user_type: 16 };
+  assert.deepEqual(api.memberships.value, [{ type: 'suvip', label: '超级VIP', expires: '已开通' }]);
+});
+
+test('membership display follows refreshed profile data and clears when the account is removed', (t) => {
+  const { api, user } = fixture(t, {}, { user_type: 16, vip_type: 6 });
+  assert.equal(api.memberships.value.length, 2);
+  user.info = {
+    userid: 2,
+    extendsInfo: {
+      vip: {
+        vip_type: 6,
+        user_type: 0,
+        vip_end_time: '2026-12-31T12:00:00',
+      },
+    },
+  };
+  assert.deepEqual(api.memberships.value, [
+    { type: 'dvip', label: '豪华VIP', expires: '2026-12-31 到期' },
+  ]);
+  user.info = null;
+  assert.deepEqual(api.memberships.value, []);
 });
 
 test('account or route changes close account surfaces; logged out opens do not fetch', async (t) => {

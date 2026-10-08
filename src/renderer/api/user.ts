@@ -15,7 +15,7 @@ export function registerDevice() {
  * 获取二维码 Key (酷狗扫码)
  */
 export function getLoginQrKey() {
-  return request.get('/login/qr/key');
+  return request.get('/login/qr/key', { skipUserAuth: true });
 }
 
 /**
@@ -23,6 +23,7 @@ export function getLoginQrKey() {
  */
 export function createLoginQr(key: string) {
   return request.get('/login/qr/create', {
+    skipUserAuth: true,
     params: { key, qrimg: 'true' },
   });
 }
@@ -32,6 +33,7 @@ export function createLoginQr(key: string) {
  */
 export function checkLoginQr(key: string) {
   return request.get('/login/qr/check', {
+    skipUserAuth: true,
     params: { key },
   });
 }
@@ -49,7 +51,7 @@ export interface QqLoginQrSession {
  * 创建 QQ 登录二维码及轮询会话
  */
 export function createQqLoginQr() {
-  return request.get('/login/qq/qr/create');
+  return request.get('/login/qq/qr/create', { skipUserAuth: true });
 }
 
 /**
@@ -57,6 +59,7 @@ export function createQqLoginQr() {
  */
 export function checkQqLoginQr(session: QqLoginQrSession) {
   return request.get('/login/qq/qr/check', {
+    skipUserAuth: true,
     params: {
       ...session,
       timestamp: Date.now(),
@@ -69,6 +72,7 @@ export function checkQqLoginQr(session: QqLoginQrSession) {
  */
 export function sendSmsCode(mobile: string) {
   return request.get('/captcha/sent', {
+    skipUserAuth: true,
     params: { mobile },
   });
 }
@@ -78,6 +82,7 @@ export function sendSmsCode(mobile: string) {
  */
 export function loginBySms(mobile: string, code: string, userid?: string | number) {
   return request.get('/login/cellphone', {
+    skipUserAuth: true,
     params: {
       mobile,
       code,
@@ -91,6 +96,7 @@ export function loginBySms(mobile: string, code: string, userid?: string | numbe
  */
 export function loginByPassword(username: string, password: string) {
   return request.get('/login', {
+    skipUserAuth: true,
     params: { username, password },
   });
 }
@@ -99,7 +105,7 @@ export function loginByPassword(username: string, password: string) {
  * 创建微信登录二维码
  */
 export function createWxLogin() {
-  return request.get('/login/wx/create');
+  return request.get('/login/wx/create', { skipUserAuth: true });
 }
 
 /**
@@ -107,6 +113,7 @@ export function createWxLogin() {
  */
 export function checkWxLogin(uuid: string, timestamp?: number) {
   return request.get('/login/wx/check', {
+    skipUserAuth: true,
     params: { uuid, timestamp },
   });
 }
@@ -116,6 +123,7 @@ export function checkWxLogin(uuid: string, timestamp?: number) {
  */
 export function loginByOpenPlat(code: string) {
   return request.get('/login/openplat', {
+    skipUserAuth: true,
     params: { code, plat: 2 },
   });
 }

@@ -38,6 +38,8 @@ interface RequestConfig {
   data?: any;
   headers?: Record<string, string>;
   skipKugouVerification?: boolean;
+  /** 登录另一账号时排除当前用户凭证，继续携带本机设备身份。 */
+  skipUserAuth?: boolean;
 }
 
 interface InternalRequestOptions {
@@ -83,7 +85,7 @@ const summarizeApiBody = (body: unknown): Record<string, unknown> => {
 /**
  * 构建 Authorization header（复现原请求拦截器逻辑）
  */
-export const buildAuthHeader = (skipAuth = false): string => {
+export const buildAuthHeader = (skipAuth = false, skipUserAuth = false): string => {
   if (skipAuth) return '';
 
   const authParts: string[] = [];
@@ -91,7 +93,7 @@ export const buildAuthHeader = (skipAuth = false): string => {
   const deviceStore = useDeviceStore();
 
   // 注入用户信息
-  if (userStore.info) {
+  if (!skipUserAuth && userStore.info) {
     if (userStore.info.token) authParts.push(`token=${userStore.info.token}`);
     if (userStore.info.userid) authParts.push(`userid=${userStore.info.userid}`);
     if (userStore.info.t1) authParts.push(`t1=${userStore.info.t1}`);
@@ -197,7 +199,7 @@ const ipcRequest = async (
   const skipKugouVerification = Boolean(config?.skipKugouVerification);
 
   // 请求拦截：注入 Authorization
-  const auth = buildAuthHeader(skipAuth);
+  const auth = buildAuthHeader(skipAuth, config?.skipUserAuth);
   if (auth) {
     headers['Authorization'] = auth;
   }
@@ -329,7 +331,7 @@ const ipcRequest = async (
   }
 
   // 响应拦截：auth 过期检测。Mock 短路响应不是真实上游结果，不能据此弹登录过期。
-  if (!response.mocked && isCurrentSession()) {
+  if (!config?.skipUserAuth && !response.mocked && isCurrentSession()) {
     handleAuthExpired(url, response.status, response.body);
   }
 
@@ -362,7 +364,11 @@ const ipcRequest = async (
             return ipcRequest(
               'GET',
               verifyUrl,
-              { params: verifyParams, skipKugouVerification: true },
+              {
+                params: verifyParams,
+                skipKugouVerification: true,
+                skipUserAuth: config?.skipUserAuth,
+              },
               { origin, isCurrentSession },
             );
           },

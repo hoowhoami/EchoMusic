@@ -194,6 +194,7 @@ export const useThemeStore = defineStore('appearance', {
               opacity: ((this.isDark ? 0.3 : 0.32) * clamp(atmosphere.strength, 20, 200)) / 100,
             }
           : undefined,
+        this.panelOpacity,
       );
     },
     onAccentColor(): string {
@@ -209,6 +210,11 @@ export const useThemeStore = defineStore('appearance', {
     floatingSurfaceFrosted(): boolean {
       return this.activePreferences.floatingSurfaceFrosted;
     },
+    panelOpacity(): number {
+      return this.effectiveThemeKey === CUSTOM_THEME_KEY
+        ? this.override.background.panelOpacity
+        : PANEL_MATERIAL.opacity;
+    },
     surfaceVariables(): Record<string, string> {
       const base: Record<string, string> = {};
       for (const surface of ['main', 'sidebar', 'player', 'card', 'elevated', 'dialog'])
@@ -216,6 +222,8 @@ export const useThemeStore = defineStore('appearance', {
       if (this.currentTheme.pluginId === 'host') Object.assign(base, legacySurfaceVariables.value);
       for (const surface of ['main', 'sidebar', 'player'])
         base[`--surface-${surface}-opacity`] = `${PANEL_MATERIAL.opacity}%`;
+      base['--surface-main-opacity'] = `${this.panelOpacity}%`;
+      base['--surface-player-opacity'] = `${this.panelOpacity}%`;
       base['--surface-backdrop-filter'] = 'none';
       base['--surface-player-backdrop-filter'] = base['--surface-backdrop-filter'];
       return base;
@@ -294,7 +302,9 @@ export const useThemeStore = defineStore('appearance', {
     setCustomBackground(image: string) {
       if (!image) throw new Error('请先选择图片');
       this.selectTheme(CUSTOM_THEME_KEY);
-      this.updateOverride({ background: { ...this.override.background, source: 'image', image } });
+      this.updateOverride({
+        background: { ...this.override.background, source: 'image', image, crop: null },
+      });
     },
     updateOverride(patch: Partial<ThemeOverride>) {
       if (patch.background && this.desiredThemeKey !== CUSTOM_THEME_KEY)

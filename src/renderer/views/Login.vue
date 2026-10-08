@@ -5,6 +5,7 @@ defineOptions({ name: 'login-page' });
 import { ref, onMounted, onUnmounted, reactive, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
+import { captureUserSession } from '@/utils/userSession';
 import {
   getLoginQrKey,
   createLoginQr,
@@ -71,14 +72,22 @@ const loginMethods = [
 }>;
 
 let qrSessionVersion = 0;
-let isLoginDone = userStore.isLoggedIn;
+let isLoginDone = false;
+let isLoginActive = true;
+const ownsLoginSession = captureUserSession(userStore);
 
 const invalidateQrSession = () => ++qrSessionVersion;
 const isQrSessionActive = (version: number, method: LoginMethod) =>
-  !isLoginDone && version === qrSessionVersion && activeMethod.value === method;
+  isLoginActive &&
+  !isLoginDone &&
+  ownsLoginSession() &&
+  version === qrSessionVersion &&
+  activeMethod.value === method;
 const waitForNextPoll = () => new Promise<void>((resolve) => window.setTimeout(resolve, 3000));
 
 const closeLoginPage = async () => {
+  isLoginActive = false;
+  invalidateQrSession();
   if (kugouVerificationState.status === 'awaiting-login') {
     cancelKugouVerification();
   }
@@ -107,9 +116,10 @@ const isLoadingQr = ref(false);
 const qrError = ref('');
 
 const completeLogin = (data: Record<string, unknown>) => {
+  if (!isLoginActive || isLoginDone || !ownsLoginSession()) return;
+  userStore.login(data);
   isLoginDone = true;
   invalidateQrSession();
-  userStore.handleLoginSuccess(data);
   completeKugouLoginVerification();
 
   void closeTransientView(router, { query: router.currentRoute.value.query });
@@ -627,18 +637,23 @@ const activateLoginMethod = (method: LoginMethod) => {
 
 watch(activeMethod, activateLoginMethod);
 watch(
-  () => userStore.isLoggedIn,
-  (loggedIn) => {
-    isLoginDone = loggedIn;
-    if (loggedIn) invalidateQrSession();
+  [
+    () => userStore.accountRevision,
+    () => userStore.isLoggedIn,
+    () => userStore.info?.userid,
+    () => userStore.info?.token,
+  ],
+  () => {
+    isLoginDone = true;
+    invalidateQrSession();
   },
 );
 
 onMounted(() => {
-  isLoginDone = userStore.isLoggedIn;
-  if (!isLoginDone) activateLoginMethod(activeMethod.value);
+  activateLoginMethod(activeMethod.value);
 });
 onUnmounted(() => {
+  isLoginActive = false;
   invalidateQrSession();
   if (smsTimer) clearInterval(smsTimer);
 });
@@ -662,6 +677,7 @@ onUnmounted(() => {
       <div class="absolute top-12 left-6 z-100">
         <Button
           @click="closeLoginPage"
+          aria-label="返回"
           variant="unstyled"
           size="none"
           class="action-icon no-drag h-10 w-10 min-w-0 p-0 flex items-center justify-center text-text-main bg-[var(--control-hover-bg)] hover:bg-[var(--control-hover-bg)]"
