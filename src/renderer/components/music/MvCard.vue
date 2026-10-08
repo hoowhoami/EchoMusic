@@ -82,7 +82,7 @@ const handleClick = () => {
 }
 
 .cover-wrapper {
-  @apply aspect-video rounded-media overflow-hidden shadow-sm relative;
+  @apply aspect-video rounded-media overflow-hidden relative;
 }
 
 .play-overlay {

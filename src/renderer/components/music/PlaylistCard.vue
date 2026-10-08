@@ -18,7 +18,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   layout: 'grid',
   coverSize: 360,
-  showShadow: true,
+  showShadow: false,
 });
 
 const router = useRouter();
@@ -29,7 +29,7 @@ const resolvedCoverRadius = computed(() => {
 
 const cardShadow = computed(() => (props.showShadow ? 'var(--playlist-card-shadow)' : 'none'));
 
-const coverShadowClass = computed(() => (props.showShadow ? 'shadow-sm' : ''));
+const coverShadowClass = computed(() => (props.showShadow ? 'playlist-cover-boundary' : ''));
 
 const subtitle = computed(() => {
   if (props.creator && props.songCount) {
@@ -99,6 +99,10 @@ const handleClick = () => {
   --playlist-card-shadow: var(--shadow-card);
   background: var(--content-panel-bg);
   border: 1px solid var(--content-panel-border);
+}
+
+.playlist-cover-boundary {
+  box-shadow: var(--shadow-cover);
 }
 
 .cover-wrapper {

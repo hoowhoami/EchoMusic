@@ -593,14 +593,11 @@ const handleRejectAgreement = () => {
   border-radius: var(--radius-card);
   background: var(--content-panel-bg);
   border: 1px solid var(--content-panel-border);
-  transition:
-    transform var(--motion-duration-fast) var(--motion-ease-standard),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .home-feature-card:hover {
   transform: translateY(-1px);
-  box-shadow: var(--shadow-card);
 }
 
 .feature-icon {
@@ -613,7 +610,6 @@ const handleRejectAgreement = () => {
   color: #fff;
   font-weight: 700;
   font-size: 14px;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
 }
 
 .gradient-primary {

@@ -459,9 +459,7 @@ onBeforeUnmount(destroySortables);
 .sidebar-layout-section {
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--color-bg-main) 64%, transparent);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--color-text-main) 7%, transparent),
-    0 1px 0 color-mix(in srgb, var(--color-text-main) 4%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-main) 7%, transparent);
   padding: 8px;
   transition:
     background-color 0.16s ease,

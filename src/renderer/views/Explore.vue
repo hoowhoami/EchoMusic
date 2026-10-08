@@ -658,7 +658,7 @@ const filteredArtistCards = computed(() => {
           keyField="id"
         >
           <template #default="{ item }">
-            <PlaylistCard v-bind="item" :showShadow="true" layout="grid" />
+            <PlaylistCard v-bind="item" layout="grid" />
           </template>
         </VirtualGrid>
       </div>

@@ -35,7 +35,6 @@
       var(--content-panel-bg) 58%
     ),
     var(--content-panel-bg);
-  box-shadow: 0 24px 65px color-mix(in srgb, var(--color-primary) 9%, transparent);
 }
 
 .listen-hero::after {
@@ -129,9 +128,6 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-primary) 11%, transparent);
   transform: translateY(-50%) rotate(-8deg);
-  box-shadow:
-    inset 0 0 40px color-mix(in srgb, var(--color-primary) 13%, transparent),
-    0 24px 55px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 .listen-hero-glow {
@@ -286,7 +282,6 @@
   color: var(--color-text-main);
   border-color: color-mix(in srgb, var(--color-primary) 44%, var(--border-subtle));
   background: color-mix(in srgb, var(--color-primary) 9%, var(--content-panel-bg));
-  box-shadow: 0 9px 24px color-mix(in srgb, var(--color-primary) 9%, transparent);
 }
 
 .listen-room-type-tabs strong {
@@ -329,7 +324,6 @@
   color: var(--color-on-primary);
   border-color: var(--color-primary);
   background: var(--color-primary);
-  box-shadow: 0 7px 18px color-mix(in srgb, var(--color-primary) 25%, transparent);
 }
 
 .listen-room-grid {
@@ -345,17 +339,13 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   background: var(--content-panel-bg);
-  box-shadow: var(--shadow-card);
   transition:
     transform 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
+    border-color 0.2s ease;
 }
 
 .listen-room-card:not(.is-skeleton):hover {
   transform: translateY(-4px);
-  border-color: color-mix(in srgb, var(--color-primary) 34%, var(--border-subtle));
-  box-shadow: 0 18px 42px color-mix(in srgb, #000 13%, transparent);
 }
 
 .listen-room-card.is-skeleton {
@@ -691,7 +681,7 @@
 }
 
 .listen-now-cover {
-  box-shadow: 0 20px 35px color-mix(in srgb, #000 28%, transparent);
+  box-shadow: var(--shadow-cover);
 }
 
 .listen-now-badge {
@@ -1896,13 +1886,11 @@
 .listen-room-type-tabs button.is-active .listen-room-type-icon {
   color: var(--color-on-primary);
   background: var(--color-primary);
-  box-shadow: 0 6px 15px color-mix(in srgb, var(--color-primary) 22%, transparent);
 }
 
 .listen-room-type-tabs button.is-active {
   border-color: color-mix(in srgb, var(--color-primary) 42%, var(--border-subtle));
   background: var(--control-active-bg);
-  box-shadow: none;
 }
 
 .listen-room-type-tabs strong {
@@ -2005,7 +1993,6 @@
   padding: 0;
   border-radius: var(--radius-card);
   background: var(--content-panel-bg);
-  box-shadow: none;
 }
 
 .listen-room-card::before {
@@ -2023,8 +2010,6 @@
 
 .listen-room-card:not(.is-skeleton):hover {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--border-subtle));
-  box-shadow: var(--shadow-card);
 }
 
 .listen-room-card:not(.is-skeleton):hover::before {
@@ -2510,7 +2495,6 @@
   min-height: 174px;
   padding: 25px 32px;
   border-radius: var(--radius-dialog);
-  box-shadow: 0 14px 38px color-mix(in srgb, var(--color-primary) 7%, transparent);
 }
 
 .listen-hero-content {
@@ -2546,7 +2530,6 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-popover);
   background: var(--content-panel-bg);
-  box-shadow: 0 8px 24px color-mix(in srgb, #000 4%, transparent);
 }
 
 .listen-browser-topbar {
@@ -2581,17 +2564,12 @@
 .listen-room-type-tabs button.is-active {
   border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
   background: color-mix(in srgb, var(--color-primary) 9%, var(--control-muted-bg));
-  box-shadow: none;
 }
 
 .listen-room-type-icon {
   width: 34px;
   height: 34px;
   border-radius: var(--radius-card);
-}
-
-.listen-room-type-tabs button.is-active .listen-room-type-icon {
-  box-shadow: 0 5px 13px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .listen-room-type-tabs strong {
@@ -2681,7 +2659,6 @@
   overflow: hidden;
   border-radius: var(--radius-card);
   background: var(--content-panel-bg);
-  box-shadow: 0 8px 24px color-mix(in srgb, #000 5%, transparent);
 }
 
 .listen-room-card::before {
@@ -2690,7 +2667,6 @@
 
 .listen-room-card:not(.is-skeleton):hover {
   transform: translateY(-2px);
-  box-shadow: 0 13px 32px color-mix(in srgb, #000 10%, transparent);
 }
 
 .listen-room-card.is-skeleton {

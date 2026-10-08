@@ -68,8 +68,8 @@
   --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
   --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.22);
   --shadow-card: none;
-  --shadow-card-hover: 0 12px 28px rgba(15, 23, 42, 0.12), 0 0 24px var(--color-primary-light);
-  --shadow-cover: 0 2px 8px rgba(15, 23, 42, 0.12);
+  --shadow-card-hover: none;
+  --shadow-cover: 0 1px 3px rgb(0 0 0 / 10%);
   --shadow-control: 0 2px 4px rgba(0, 0, 0, 0.1);
   --state-danger: #ef4444;
   --state-danger-bg-soft: color-mix(in srgb, var(--state-danger) 10%, transparent);
@@ -114,10 +114,8 @@
   --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.36), 0 2px 6px rgba(0, 0, 0, 0.18);
   --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.42);
   --shadow-card: none;
-  --shadow-card-hover:
-    0 14px 34px rgba(0, 0, 0, 0.42),
-    0 0 24px color-mix(in srgb, var(--color-primary) 18%, transparent);
-  --shadow-cover: 0 8px 18px rgba(0, 0, 0, 0.28);
+  --shadow-card-hover: none;
+  --shadow-cover: 0 1px 3px rgb(0 0 0 / 18%);
   --shadow-control: 0 2px 4px rgba(0, 0, 0, 0.18);
 }
 
@@ -920,9 +918,7 @@ html.app-background-frosted .lyric-page:not(.is-portrait) .lyric-blur-bg {
 /* 毛玻璃窗口下歌词页背景是半透明 scrim，若主界面等到入场动画结束才隐藏，
    收尾瞬间会从「遮罩 + 主界面」突变为纯毛玻璃。宿主挂载即隐藏主界面，
    让 scrim + 原生毛玻璃从第一帧起就是最终形态。 */
-html.app-background-frosted
-  body:has(.lyric-overlay-host:not([data-leaving]))
-  .main-layout {
+html.app-background-frosted body:has(.lyric-overlay-host:not([data-leaving])) .main-layout {
   visibility: hidden;
   pointer-events: none;
   opacity: 0 !important;

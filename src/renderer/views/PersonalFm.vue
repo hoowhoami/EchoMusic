@@ -775,10 +775,7 @@ onActivated(() => {
       color-mix(in srgb, var(--color-primary) 40%, #0b1620) 56%,
       #0b1620 100%
     );
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 18px 34px rgba(5, 12, 20, 0.18),
-    0 26px 50px rgba(8, 24, 38, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 /* FM 海报是独立的深色媒体表面；仍由 CustomTabBar 绘制控件。 */
@@ -904,9 +901,7 @@ onActivated(() => {
   justify-content: center;
   background: var(--color-primary);
   color: var(--color-on-primary);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 14px 30px rgba(var(--color-primary-rgb), 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .radio-play.is-loading {
@@ -970,19 +965,14 @@ onActivated(() => {
     );
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, #000 34%, transparent),
-    0 26px 40px rgba(5, 12, 20, 0.32);
+    0 8px 18px rgba(5, 12, 20, 0.18);
   z-index: 1;
   cursor: pointer;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+  transition: transform 0.2s ease;
 }
 
 .radio-vinyl:hover {
   transform: translateY(-2px);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, #000 34%, transparent),
-    0 30px 44px rgba(5, 12, 20, 0.38);
 }
 
 .radio-vinyl-skeleton {
@@ -992,9 +982,6 @@ onActivated(() => {
 
 .radio-vinyl-skeleton:hover {
   transform: none;
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, #000 34%, transparent),
-    0 26px 40px rgba(5, 12, 20, 0.32);
 }
 
 .radio-vinyl-skeleton :deep(.skeleton) {
@@ -1049,7 +1036,6 @@ onActivated(() => {
   background: var(--content-panel-bg);
   padding: 22px;
   margin-top: 28px;
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
   overflow: hidden;
 }
 
@@ -1080,13 +1066,13 @@ onActivated(() => {
   height: auto;
   aspect-ratio: 1 / 1;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
-  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
+  box-shadow: var(--shadow-cover);
 }
 
 .fm-now-cover-skeleton {
   aspect-ratio: 1 / 1;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
-  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--shadow-cover);
 }
 
 .fm-now-body {

@@ -491,7 +491,6 @@ const createStatsCaptureStage = (shareText: ReturnType<typeof buildHistoryStatsS
     padding: '16px',
     borderRadius: '12px',
     background: 'var(--color-bg-main)',
-    boxShadow: '0 24px 60px rgb(0 0 0 / 18%)',
     pointerEvents: 'none',
     transformOrigin: 'top left',
     visibility: 'hidden',

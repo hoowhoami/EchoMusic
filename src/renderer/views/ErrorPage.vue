@@ -186,7 +186,6 @@ const handleCopyError = async () => {
   justify-content: center;
   background: var(--color-bg-elevated);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 12px 28px color-mix(in srgb, var(--state-danger) 12%, transparent);
 }
 
 .error-icon {

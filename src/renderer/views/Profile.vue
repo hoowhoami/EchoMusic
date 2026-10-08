@@ -2724,7 +2724,6 @@ onUnmounted(() => {
   border: 1px solid var(--control-border);
   border-radius: var(--radius-card);
   background: var(--color-bg-elevated);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.045);
   transition:
     border-color 0.15s,
     box-shadow 0.15s;

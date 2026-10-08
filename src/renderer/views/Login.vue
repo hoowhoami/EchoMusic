@@ -674,7 +674,7 @@ onUnmounted(() => {
       <div class="w-full max-w-105 max-h-full flex flex-col items-center">
         <!-- 首次使用提示横幅 -->
         <div
-          class="tip-banner mb-4 max-w-full px-4 py-3 rounded-2xl bg-linear-to-r from-amber-500/15 via-amber-400/10 to-amber-500/5 dark:from-amber-400/15 dark:via-amber-400/10 dark:to-amber-300/5 border border-amber-500/25 dark:border-amber-400/25 backdrop-blur-xl inline-flex items-start gap-2.5 shadow-[0_6px_18px_rgba(251,191,36,0.08)]"
+          class="tip-banner mb-4 max-w-full px-4 py-3 rounded-2xl bg-linear-to-r from-amber-500/15 via-amber-400/10 to-amber-500/5 dark:from-amber-400/15 dark:via-amber-400/10 dark:to-amber-300/5 border border-amber-500/25 dark:border-amber-400/25 backdrop-blur-xl inline-flex items-start gap-2.5"
         >
           <div
             class="tip-banner-icon mt-0.5 shrink-0 relative w-5 h-5 flex items-center justify-center"
@@ -683,7 +683,7 @@ onUnmounted(() => {
               class="absolute inset-0 rounded-full bg-amber-500/25 dark:bg-amber-400/30 tip-banner-glow"
             ></span>
             <span
-              class="relative w-full h-full rounded-full bg-linear-to-br from-amber-400 to-amber-500 dark:from-amber-300 dark:to-amber-500 text-white flex items-center justify-center shadow-[0_3px_8px_rgba(251,191,36,0.35)]"
+              class="relative w-full h-full rounded-full bg-linear-to-br from-amber-400 to-amber-500 dark:from-amber-300 dark:to-amber-500 text-white flex items-center justify-center"
             >
               <Icon :icon="iconInfo" width="12" height="12" />
             </span>
@@ -708,7 +708,7 @@ onUnmounted(() => {
                   </p>
                 </div>
                 <div
-                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-dialog shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
+                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-dialog border border-black/2"
                 >
                   <Image :src="qrUrl" class="w-full h-full rounded-xl" />
                   <div
@@ -915,7 +915,7 @@ onUnmounted(() => {
                   </p>
                 </div>
                 <div
-                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-dialog shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
+                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-dialog border border-black/2"
                 >
                   <Image :src="qqQr.url" class="w-full h-full rounded-xl" />
                   <div
@@ -984,7 +984,7 @@ onUnmounted(() => {
                   </p>
                 </div>
                 <div
-                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-dialog shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
+                  class="login-qr-surface relative w-48 h-48 bg-white p-3.5 rounded-dialog border border-black/2"
                 >
                   <Image :src="wxQr.url" class="w-full h-full rounded-xl" />
                   <div
@@ -1102,7 +1102,6 @@ onUnmounted(() => {
   border-radius: var(--radius-popover);
   background: var(--color-bg-dialog);
   border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-dialog);
   -webkit-backdrop-filter: var(--surface-backdrop-filter);
   backdrop-filter: var(--surface-backdrop-filter);
   transition: all 0.5s ease;

@@ -410,9 +410,7 @@
 
 .marketplace-card.is-shared-target {
   border-color: color-mix(in srgb, var(--color-primary) 72%, var(--border-subtle));
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent),
-    0 12px 28px color-mix(in srgb, var(--color-primary) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
 .marketplace-tags,

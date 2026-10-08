@@ -810,7 +810,6 @@ const handleDeleteComment = async (comment: Comment) => {
   padding: 20px;
   border-radius: var(--radius-item);
   background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
 }
 
 .comment-list.is-compact .comment-skeleton-item {
@@ -857,7 +856,6 @@ const handleDeleteComment = async (comment: Comment) => {
   padding: 20px;
   border-radius: var(--radius-item);
   background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -956,7 +954,6 @@ const handleDeleteComment = async (comment: Comment) => {
   font-size: 11px;
   font-weight: 600;
   flex-shrink: 0;
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text-main) 6%, transparent);
 }
 
 .comment-content {

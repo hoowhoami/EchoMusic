@@ -1706,7 +1706,7 @@ watch(
 }
 
 .sidebar-rail-cover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-cover);
 }
 
 .sidebar-rail-empty {

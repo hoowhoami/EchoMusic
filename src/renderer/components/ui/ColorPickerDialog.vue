@@ -289,9 +289,7 @@ const confirm = () => {
   border-radius: var(--radius-card);
   color: white;
   flex-shrink: 0;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
-    0 8px 18px rgba(0, 0, 0, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
 }
 
 .color-picker-dynamic-text {

@@ -1163,7 +1163,6 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   border-color: var(--content-panel-border);
   --settings-divider-color: color-mix(in srgb, var(--color-text-main) 12%, transparent);
   font-size: 13px;
-  box-shadow: 0 2px 12px color-mix(in srgb, var(--color-text-main) 3%, transparent);
 }
 
 .settings-card h3 {

@@ -52,7 +52,7 @@ const handleClick = () => {
 }
 
 .cover-wrapper {
-  @apply aspect-square rounded-media overflow-hidden shadow-sm;
+  @apply aspect-square rounded-media overflow-hidden;
 }
 
 .info-wrapper {

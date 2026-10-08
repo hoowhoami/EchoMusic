@@ -150,6 +150,6 @@ const containerStyle = computed(() => {
 /* A soft outer shadow keeps artwork separate from its surface without painting
  * over the image or changing its dimensions. Explicit shadows remain unchanged. */
 .cover-boundary {
-  box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
+  box-shadow: var(--shadow-cover);
 }
 </style>

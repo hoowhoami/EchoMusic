@@ -94,7 +94,7 @@ onUnmounted(() => {
   height: var(--scroll-action-size);
   background: var(--color-bg-elevated);
   color: var(--color-text-main);
-  border: 1px solid var(--control-border);
+  border: 1px solid var(--scroll-action-border);
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
   -webkit-backdrop-filter: var(--surface-backdrop-filter);
   backdrop-filter: var(--surface-backdrop-filter);
@@ -104,7 +104,7 @@ onUnmounted(() => {
 
 .back-to-top-btn:hover {
   color: var(--color-primary-text);
-  border-color: color-mix(in srgb, var(--color-primary) 60%, var(--control-border));
+  border-color: color-mix(in srgb, var(--color-primary) 60%, var(--scroll-action-border));
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18);
   --back-to-top-hover-y: -1px;
 }
@@ -114,12 +114,11 @@ onUnmounted(() => {
 }
 
 :global(.dark .back-to-top-btn) {
-  border-color: rgba(255, 255, 255, 0.26);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
 }
 
 :global(.dark .back-to-top-btn:hover) {
-  border-color: color-mix(in srgb, var(--color-primary) 58%, rgba(255, 255, 255, 0.26));
+  border-color: color-mix(in srgb, var(--color-primary) 58%, var(--scroll-action-border));
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
 }
 

@@ -301,7 +301,7 @@ const handleFavorite = () => {
     <!-- 封面 -->
     <div
       v-if="showCover"
-      class="song-cover-frame relative w-[46px] h-[46px] shrink-0 rounded-media shadow-sm"
+      class="song-cover-frame relative w-[46px] h-[46px] shrink-0 rounded-media"
       :class="{
         'has-cover-play': showCoverPlayButton,
         'is-cover-loading': isCoverPlayPending,

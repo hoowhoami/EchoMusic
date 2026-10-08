@@ -810,7 +810,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: var(--shadow-control);
 }
 
 .cloud-progress-track {
