@@ -16,6 +16,7 @@ const QUEUE_TYPE_LABELS: Record<PlaybackQueueType, string> = {
   'listen-together': '一起听',
   manual: '我的队列',
   purchased: '已购音乐',
+  'free-listen': '免费听',
 };
 
 type QueueIdentity = Pick<PlaybackQueueState, 'id' | 'type' | 'title' | 'subtitle'>;

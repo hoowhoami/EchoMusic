@@ -49,7 +49,8 @@ export type StoragePlaybackQueueType =
   | 'fm'
   | 'listen-together'
   | 'manual'
-  | 'purchased';
+  | 'purchased'
+  | 'free-listen';
 
 export interface StoragePlaybackQueueMetaValueMap {
   [key: string]: string | number | boolean | null | undefined;

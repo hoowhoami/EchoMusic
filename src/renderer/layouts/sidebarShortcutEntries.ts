@@ -7,6 +7,7 @@ import {
   iconShoppingBag,
   iconHeadphones,
   iconArrowsSort,
+  iconMusicDiscount,
 } from '@/icons';
 import { pluginShortcuts, pluginPages, type PluginIcon as IconValue } from '@/plugins/registry';
 import { normalizeShortcutKeys, type SidebarLayout } from './sidebarLayout';
@@ -28,6 +29,7 @@ export interface SidebarShortcutEntry {
 export const builtinSidebarShortcuts: SidebarShortcutEntry[] = [
   { key: 'home', title: '为您推荐', icon: iconSparkles, path: '/main/home' },
   { key: 'explore', title: '探索发现', icon: iconCompass, path: '/main/explore' },
+  { key: 'free-listen', title: '免费听', icon: iconMusicDiscount, path: '/main/free-listen' },
   { key: 'discover-flow', title: '刷歌', icon: iconVinyl, path: '/main/discover-flow' },
   { key: 'personal-fm', title: '私人 FM', icon: iconRadio, path: '/main/personal-fm' },
   { key: 'recommend', title: '每日推荐', icon: iconCalendar, path: '/main/recommend' },

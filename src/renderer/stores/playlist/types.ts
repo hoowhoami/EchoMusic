@@ -15,7 +15,8 @@ export type PlaybackQueueType =
   | 'fm'
   | 'listen-together'
   | 'manual'
-  | 'purchased';
+  | 'purchased'
+  | 'free-listen';
 
 export type PersonalFmMode = 'normal' | 'small' | 'peak' | 'radio';
 export type PersonalFmSongPoolId = 0 | 1 | 2;

@@ -41,6 +41,7 @@ import {
   iconTrash,
   iconChevronDown,
   iconArrowsSort,
+  iconHeadphones,
 } from '@/icons';
 import type { PlaylistMeta } from '@/models/playlist';
 import { usePlaylistStore } from '@/stores/playlist';
@@ -108,6 +109,7 @@ const iconMap = {
   cloud: iconCloud,
   heart: iconHeart,
   'shopping-bag': iconShoppingBag,
+  headphones: iconHeadphones,
 } as const;
 
 type BuiltinSidebarIcon = keyof typeof iconMap;
@@ -163,6 +165,14 @@ const builtinSidebarSections = [
         path: '/main/explore',
         builtinIcon: 'compass',
         order: 20,
+      },
+      {
+        id: 'free-listen',
+        key: 'free-listen',
+        title: '免费听',
+        path: '/main/free-listen',
+        builtinIcon: 'headphones',
+        order: 30,
       },
     ],
   },
@@ -325,7 +335,7 @@ const rawMenuGroups = computed<SidebarSection[]>(() => {
     sections.set(section.id, {
       ...section,
       items: section.items.filter(
-        (item) => !['home', 'explore', 'personal-fm', 'purchased'].includes(item.id),
+        (item) => !['home', 'explore', 'free-listen', 'personal-fm', 'purchased'].includes(item.id),
       ),
     });
   }
