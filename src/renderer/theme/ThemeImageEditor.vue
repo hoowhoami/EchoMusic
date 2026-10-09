@@ -19,6 +19,7 @@ defineProps<{
   canCancel: boolean;
   canApply: boolean;
   error: string;
+  accentSource: 'theme' | 'cover' | 'custom';
 }>();
 const emit = defineEmits<{
   change: [patch: Partial<ThemeOverride['background']>];
@@ -26,6 +27,7 @@ const emit = defineEmits<{
   chooseImage: [];
   selectImage: [file: File | undefined];
   chooseTextColor: [];
+  chooseAccentColor: [];
   reset: [];
   cancel: [];
   apply: [];
@@ -101,23 +103,37 @@ const apply = () => {
               <span>{{ background.textColor.toUpperCase() }}</span>
             </button>
           </div>
-          <div
-            v-for="control in [
-              { key: 'shade', title: '背景遮罩', max: 85 },
-              { key: 'panelOpacity', title: '右侧面板遮罩', max: 100 },
-            ] as const"
-            :key="control.key"
-            class="theme-image-editor-range"
-          >
+          <div class="theme-image-editor-color">
+            <label>强调色</label>
+            <button
+              type="button"
+              aria-label="选择背景强调色"
+              :disabled="importing || !image"
+              @click="emit('chooseAccentColor')"
+            >
+              <i :style="{ background: background.accentColor }" />
+              <span>{{ background.accentColor.toUpperCase() }}</span>
+            </button>
+            <p class="theme-image-editor-hint">
+              {{
+                accentSource === 'cover'
+                  ? '歌曲封面取色优先，切换为跟随主题后使用此颜色。'
+                  : accentSource === 'custom'
+                    ? '当前使用全局自选颜色，切换为跟随主题后生效。'
+                    : '用于按钮、进度条与选中状态。'
+              }}
+            </p>
+          </div>
+          <div class="theme-image-editor-range">
             <label
-              >{{ control.title }}<output>{{ Math.round(background[control.key]) }}%</output></label
+              >背景遮罩<output>{{ Math.round(background.shade) }}%</output></label
             >
             <Slider
-              :model-value="background[control.key]"
-              :max="control.max"
-              :aria-label="control.title"
+              :model-value="background.shade"
+              :max="85"
+              aria-label="背景遮罩"
               :disabled="importing || !image"
-              @update:model-value="emit('change', { [control.key]: $event })"
+              @update:model-value="emit('change', { shade: $event })"
             />
           </div>
           <p class="theme-image-editor-hint">裁剪后的区域将拉伸铺满页面。</p>

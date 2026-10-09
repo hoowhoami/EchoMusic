@@ -5,6 +5,7 @@ import {
   resolveThemeColors,
   themeColorVariables,
   themeContentSurfaces,
+  usesLightForeground,
   type ResolvedThemeColors,
 } from '@/theme/colors';
 import {
@@ -57,7 +58,7 @@ export const useThemeStore = defineStore('appearance', {
     systemDark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     coverColor: DEFAULT_ACCENT,
     coverColorReady: false,
-    customBackgroundSample: { source: '', color: '' },
+    customBackgroundSample: { source: '', color: '', key: '' },
   }),
   getters: {
     activePreferences: (state): AppearancePreference => state.preview ?? state.preferences,
@@ -130,6 +131,7 @@ export const useThemeStore = defineStore('appearance', {
       const imagePalette =
         entry.key === CUSTOM_THEME_KEY &&
         sample.source === this.backgroundImage &&
+        sample.key === this.backgroundSampleKey &&
         validColor(sample.color)
           ? paletteFromSeed(sample.color, paletteDark)
           : null;
@@ -150,6 +152,7 @@ export const useThemeStore = defineStore('appearance', {
         ...base,
         tokens,
         ...(generated ? { accent: this.override.palette.color } : {}),
+        ...(entry.key === CUSTOM_THEME_KEY ? { accent: this.override.background.accentColor } : {}),
       };
       return definition;
     },
@@ -177,13 +180,41 @@ export const useThemeStore = defineStore('appearance', {
           : (this.appearance.accent ?? DEFAULT_THEME_ACCENT);
     },
     accentColor(): string {
-      return this.accentMode === 'theme'
+      return this.accentMode === 'theme' ||
+        (this.effectiveThemeKey === CUSTOM_THEME_KEY && this.accentMode === 'custom')
         ? this.sourceColor
-        : getNormalizedAccent(this.sourceColor, this.isDark);
+        : getNormalizedAccent(this.sourceColor, this.accentIsDark);
+    },
+    backgroundSampleKey(): string {
+      return JSON.stringify([this.backgroundImage, this.override.background.crop]);
+    },
+    artworkBackdrop(): string | undefined {
+      const sample = this.customBackgroundSample;
+      if (this.effectiveThemeKey !== CUSTOM_THEME_KEY || !this.backgroundImage) return undefined;
+      if (
+        sample.source !== this.backgroundImage ||
+        sample.key !== this.backgroundSampleKey ||
+        !validColor(sample.color)
+      )
+        return undefined;
+      return mixColor(
+        sample.color,
+        this.resolvedColors.tokens.shell,
+        this.override.background.shade / 100,
+      );
+    },
+    accentIsDark(): boolean {
+      if (this.effectiveThemeKey !== CUSTOM_THEME_KEY || !this.backgroundImage) return this.isDark;
+      if (this.artworkBackdrop) return !usesLightForeground(this.artworkBackdrop);
+      // Before sampling completes, use the artwork's chosen foreground.
+      return usesLightForeground(this.override.background.textColor);
     },
     accentTextColor(): string {
-      return createAccentPaletteFromPrimary(this.accentColor, this.isDark, this.accentSurfaces)
-        .primaryText;
+      return createAccentPaletteFromPrimary(
+        this.accentColor,
+        this.accentIsDark,
+        this.accentSurfaces,
+      ).primaryText;
     },
     accentSurfaces(): string[] {
       const atmosphere = this.activePreferences.atmosphere;
@@ -196,6 +227,7 @@ export const useThemeStore = defineStore('appearance', {
             }
           : undefined,
         this.panelOpacity,
+        this.artworkBackdrop,
       );
     },
     onAccentColor(): string {
@@ -212,9 +244,7 @@ export const useThemeStore = defineStore('appearance', {
       return this.activePreferences.floatingSurfaceFrosted;
     },
     panelOpacity(): number {
-      return this.effectiveThemeKey === CUSTOM_THEME_KEY
-        ? this.override.background.panelOpacity
-        : PANEL_MATERIAL.opacity;
+      return clamp(this.activePreferences.panelOpacity, 0, 100);
     },
     surfaceVariables(): Record<string, string> {
       const base: Record<string, string> = {};
@@ -234,9 +264,19 @@ export const useThemeStore = defineStore('appearance', {
     },
   },
   actions: {
-    setCustomBackgroundSample(source: string, color: string | null) {
-      if (this.effectiveThemeKey !== CUSTOM_THEME_KEY || source !== this.backgroundImage) return;
-      this.customBackgroundSample = { source, color: color && validColor(color) ? color : '' };
+    setCustomBackgroundSample(source: string, color: string | null, key?: string) {
+      const sampleKey = key ?? this.backgroundSampleKey;
+      if (
+        this.effectiveThemeKey !== CUSTOM_THEME_KEY ||
+        source !== this.backgroundImage ||
+        sampleKey !== this.backgroundSampleKey
+      )
+        return;
+      this.customBackgroundSample = {
+        source,
+        color: color && validColor(color) ? color : '',
+        key: sampleKey,
+      };
       this.applyCurrent();
     },
     removePluginThemes(pluginId: string) {
@@ -307,6 +347,9 @@ export const useThemeStore = defineStore('appearance', {
         background: { ...this.override.background, source: 'image', image, crop: null },
       });
     },
+    setPanelOpacity(value: number) {
+      this.updateGeneralPreferences({ panelOpacity: clamp(value, 0, 100) });
+    },
     updateOverride(patch: Partial<ThemeOverride>) {
       if (patch.background && this.desiredThemeKey !== CUSTOM_THEME_KEY)
         throw new Error('图片背景只能用于自定义皮肤');
@@ -325,6 +368,7 @@ export const useThemeStore = defineStore('appearance', {
         accent: defaults.accent,
         atmosphere: defaults.atmosphere,
         transparency: defaults.transparency,
+        panelOpacity: defaults.panelOpacity,
         windowFrosted: defaults.windowFrosted,
         floatingSurfaceFrosted: defaults.floatingSurfaceFrosted,
       });
@@ -372,12 +416,7 @@ export const useThemeStore = defineStore('appearance', {
         'echo-surface-translucent',
         Object.values(this.surfaceVariables).some((value) => value !== '100%' && value !== 'none'),
       );
-      applyAccentToRoot(
-        this.sourceColor,
-        this.isDark,
-        this.accentMode === 'theme',
-        this.accentSurfaces,
-      );
+      applyAccentToRoot(this.accentColor, this.accentIsDark, true, this.accentSurfaces);
       const atmos = this.activePreferences.atmosphere;
       const enabled = atmos.source === 'cover';
       const strength = clamp(atmos.strength, 20, 200);

@@ -5,6 +5,7 @@ import {
   rgbToOklab,
   oklabToRgb,
 } from '../../shared/accentPalette';
+import type { ThemeImageCrop } from '@/theme/model';
 export {
   normalizeAccent,
   getAccentPalette,
@@ -143,7 +144,7 @@ export const waitForAbortableDelay = (ms: number, signal?: AbortSignal): Promise
 // 从图片 URL 中提取主色，失败或被取消时返回 null
 const extractImageColor = (
   url: string,
-  options: { signal?: AbortSignal; average?: boolean } = {},
+  options: { signal?: AbortSignal; average?: boolean; crop?: ThemeImageCrop | null } = {},
 ): Promise<string | null> => {
   return new Promise((resolve) => {
     if (!url) {
@@ -200,7 +201,22 @@ const extractImageColor = (
           finish(null);
           return;
         }
-        ctx.drawImage(img, 0, 0, size, size);
+        const crop = options.crop;
+        if (crop) {
+          const scaleX = img.naturalWidth / crop.sourceWidth;
+          const scaleY = img.naturalHeight / crop.sourceHeight;
+          ctx.drawImage(
+            img,
+            crop.x * scaleX,
+            crop.y * scaleY,
+            crop.width * scaleX,
+            crop.height * scaleY,
+            0,
+            0,
+            size,
+            size,
+          );
+        } else ctx.drawImage(img, 0, 0, size, size);
         const data = ctx.getImageData(0, 0, size, size).data;
         if (options.average) {
           let r = 0,
@@ -294,8 +310,10 @@ const extractImageColor = (
 
 export const extractDominantColor = (url: string, options: { signal?: AbortSignal } = {}) =>
   extractImageColor(url, options);
-export const extractAverageColor = (url: string, options: { signal?: AbortSignal } = {}) =>
-  extractImageColor(url, { ...options, average: true });
+export const extractAverageColor = (
+  url: string,
+  options: { signal?: AbortSignal; crop?: ThemeImageCrop | null } = {},
+) => extractImageColor(url, { ...options, average: true });
 
 // ─────────────── 写入 CSS 变量 ───────────────
 

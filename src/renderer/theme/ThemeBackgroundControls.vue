@@ -58,6 +58,23 @@ const updateAtmosphere = (patch: Partial<AppearancePreference['atmosphere']>) =>
     </div>
   </section>
   <section class="editor-section">
+    <header class="editor-heading"><h2>右侧面板遮罩</h2></header>
+    <div class="editor-field">
+      <label class="editor-range-heading"
+        >遮罩强度<output>{{ Math.round(theme.panelOpacity) }}%</output></label
+      >
+      <Slider
+        :model-value="theme.panelOpacity"
+        :min="0"
+        :max="100"
+        :step="1"
+        aria-label="右侧面板遮罩"
+        @update:model-value="theme.setPanelOpacity($event)"
+      />
+      <span class="editor-help">右侧内容区与底部播放器</span>
+    </div>
+  </section>
+  <section class="editor-section">
     <header class="editor-heading"><h2>皮肤透明度</h2></header>
     <div class="editor-field">
       <label class="editor-range-heading"

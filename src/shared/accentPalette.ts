@@ -174,15 +174,24 @@ const readable = (color: string, backgrounds: string[], dark: boolean): string =
   const passes = (rgb: Rgb) =>
     backgrounds.every((bg) => contrastRatio(rgb, parseAccent(bg)) >= 4.55);
   if (passes(parseAccent(color))) return color;
+  // Artwork can have the opposite polarity to the system theme. Only adjust
+  // towards an endpoint that can actually contrast with every visible surface.
+  let target = dark ? 1 : 0;
+  if (!passes(parseAccent(target ? '#ffffff' : '#000000'))) {
+    target = 1 - target;
+    // Mixed bright/dark artwork may admit no single readable foreground.
+    // Keep the selected hue instead of forcing it to invisible black/white.
+    if (!passes(parseAccent(target ? '#ffffff' : '#000000'))) return color;
+  }
   let low = 0,
     high = 1;
   for (let i = 0; i < 22; i++) {
     const t = (low + high) / 2;
-    const rgb = oklabToRgb({ ...lab, l: lab.l + ((dark ? 1 : 0) - lab.l) * t });
+    const rgb = oklabToRgb({ ...lab, l: lab.l + (target - lab.l) * t });
     if (passes(rgb)) high = t;
     else low = t;
   }
-  return accentHex(oklabToRgb({ ...lab, l: lab.l + ((dark ? 1 : 0) - lab.l) * high }));
+  return accentHex(oklabToRgb({ ...lab, l: lab.l + (target - lab.l) * high }));
 };
 const onColor = (hex: string) =>
   contrastRatio(parseAccent(hex), parseAccent('#fff')) >=

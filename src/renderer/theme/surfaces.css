@@ -51,7 +51,14 @@
   --control-danger-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   --control-border: color-mix(in srgb, var(--border-light) 76%, transparent);
   --control-border-hover: color-mix(in srgb, var(--content-tone) 24%, transparent);
-  --scroll-action-border: color-mix(in srgb, var(--content-tone) 26%, transparent);
+  /* Scroll actions share the page's translucent neutral controls and icons. */
+  --scroll-action-bg: var(--control-muted-bg);
+  --scroll-action-hover-bg: var(--control-hover-bg);
+  --scroll-action-pressed-bg: var(--control-neutral-pressed-bg);
+  --scroll-action-text: var(--icon-main);
+  --scroll-action-hover-text: var(--text-main);
+  --scroll-action-border: color-mix(in srgb, var(--text-main) 22%, transparent);
+  --scroll-action-hover-border: color-mix(in srgb, var(--text-main) 36%, transparent);
   --control-track-bg: color-mix(in srgb, var(--content-tone) 12%, transparent);
   --control-track-bg-hover: color-mix(in srgb, var(--content-tone) 18%, transparent);
   --control-checkbox-bg: var(--control-muted-bg);

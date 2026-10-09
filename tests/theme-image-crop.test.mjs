@@ -299,7 +299,7 @@ test('corner resizing remains captured through parent updates and can change asp
 
 test('selecting the full original image keeps other background settings', async (t) => {
   const f = await fixture(t);
-  f.props.background = { ...f.props.background, shade: 25, panelOpacity: 40, textColor: '#6633ff' };
+  f.props.background = { ...f.props.background, shade: 25, textColor: '#6633ff' };
   f.api.selectWholeImage();
   assert.deepEqual(f.props.background.crop, {
     x: 0,
@@ -310,7 +310,6 @@ test('selecting the full original image keeps other background settings', async 
     sourceHeight: 900,
   });
   assert.equal(f.props.background.shade, 25);
-  assert.equal(f.props.background.panelOpacity, 40);
   assert.equal(f.props.background.textColor, '#6633ff');
 });
 

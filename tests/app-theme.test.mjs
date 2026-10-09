@@ -519,7 +519,7 @@ test('applying and resetting theme parameters preserves palette and global appea
   assert.equal(s.preferences.accent.source, 'cover');
   assert.equal(s.preferences.mode, 'light');
 });
-test('standard themes retain fixed panel material without a global panel preference', () => {
+test('standard themes default to the original panel material', () => {
   const s = store();
   assert.equal('surfaces' in s.preferences, false);
   assert.equal('setPanelEffect' in s, false);
@@ -528,28 +528,100 @@ test('standard themes retain fixed panel material without a global panel prefere
   assert.equal(s.surfaceVariables['--surface-backdrop-filter'], 'none');
   assert.equal(s.floatingSurfaceFrosted, false);
 });
-test('custom panel opacity previews, saves and cancels independently of global transparency', () => {
+test('general panel opacity persists across theme drafts and drives host and plugin content surfaces', () => {
+  const plugin = register('panel-opacity', {
+    variants: {
+      light: { tokens: { ...api.neutralTokens(false), shell: '#aaccee', main: '#f0f0f0' } },
+      dark: { tokens: { ...api.neutralTokens(true), shell: '#223344', main: '#151515' } },
+    },
+  });
+  const s = store();
+  s.beginPreview();
+  s.selectTheme('host:solid');
+  s.setPanelOpacity(25);
+  s.cancelPreview();
+  assert.equal(s.preferences.panelOpacity, 25);
+  assert.equal(s.preferences.themeKey, 'host:echo');
+  for (const key of ['host:echo', 'host:solid', plugin.key]) {
+    s.selectTheme(key);
+    for (const mode of ['light', 'dark']) {
+      s.updateGeneralPreferences({ mode });
+      for (const value of [0, 25, 100]) {
+        s.setPanelOpacity(value);
+        assert.equal(s.surfaceVariables['--surface-main-opacity'], `${value}%`);
+        assert.equal(s.surfaceVariables['--surface-player-opacity'], `${value}%`);
+        assert.equal(s.surfaceVariables['--surface-sidebar-opacity'], '50%');
+        assert.equal(
+          s.accentSurfaces[0],
+          api.mixColor(s.appearance.tokens.shell, s.appearance.tokens.main, value / 100),
+        );
+      }
+    }
+    s.setPanelOpacity(25);
+    const before = api.copyAppearance(s.appearance.floating);
+    s.setPanelOpacity(75);
+    assert.deepEqual(s.appearance.floating, before);
+  }
+  s.resetAppearanceAdjustments();
+  assert.equal(s.panelOpacity, 50);
+  assert.equal(s.preferences.themeKey, plugin.key);
+});
+test('appearance panel opacity remains global through custom image cancellation and reset', () => {
+  const s = store();
+  s.setPanelOpacity(30);
+  s.setCustomBackground('landscape.png');
+  s.setPanelOpacity(80);
+  assert.equal('panelOpacity' in s.override.background, false);
+  assert.equal(s.preferences.panelOpacity, 80);
+  s.beginPreview();
+  s.setPanelOpacity(10);
+  assert.equal(s.panelOpacity, 10);
+  s.cancelPreview();
+  assert.equal(s.panelOpacity, 10);
+  s.selectTheme('host:echo');
+  assert.equal(s.panelOpacity, 10);
+  s.selectTheme(api.CUSTOM_THEME_KEY);
+  s.resetAppearanceAdjustments();
+  assert.equal(s.panelOpacity, 50);
+  assert.equal(s.override.background.image, 'landscape.png');
+  assert.equal(s.preferences.panelOpacity, 50);
+});
+test('panel opacity controls bound input to the supported range', () => {
+  const s = store();
+  assert.equal(s.panelOpacity, 50);
+  for (const [input, expected] of [
+    [-20, 0],
+    [140, 100],
+    [NaN, 0],
+  ]) {
+    s.setPanelOpacity(input);
+    assert.equal(s.panelOpacity, expected);
+  }
+});
+test('panel opacity changes persist while custom image geometry previews and cancels', () => {
   const s = store();
   s.setCustomBackground('landscape.png');
   s.setCustomBackgroundSample('landscape.png', '#8b9879');
   s.updateGeneralPreferences({ transparency: 40 });
   assert.equal(s.panelOpacity, 50);
   s.beginPreview();
-  s.updateOverride({ background: { ...s.override.background, panelOpacity: 0, zoom: 135 } });
+  s.setPanelOpacity(0);
+  s.updateOverride({ background: { ...s.override.background, zoom: 135 } });
   assert.equal(s.surfaceVariables['--surface-main-opacity'], '0%');
   assert.equal(s.surfaceVariables['--surface-player-opacity'], '0%');
   assert.equal(s.surfaceVariables['--surface-sidebar-opacity'], '50%');
   assert.equal(s.windowTransparency, 40);
   assert.equal(s.override.background.zoom, 135);
   s.cancelPreview();
-  assert.equal(s.panelOpacity, 50);
+  assert.equal(s.panelOpacity, 0);
   assert.equal(s.override.background.zoom, 110);
   s.beginPreview();
-  s.updateOverride({ background: { ...s.override.background, panelOpacity: 85, zoom: 150 } });
+  s.setPanelOpacity(85);
+  s.updateOverride({ background: { ...s.override.background, zoom: 150 } });
   s.applyPreview();
-  assert.equal(s.preferences.overrides[api.CUSTOM_THEME_KEY].background.panelOpacity, 85);
+  assert.equal(s.preferences.panelOpacity, 85);
   s.selectTheme('host:echo');
-  assert.equal(s.panelOpacity, 50);
+  assert.equal(s.panelOpacity, 85);
   s.selectTheme(api.CUSTOM_THEME_KEY);
   assert.equal(s.panelOpacity, 85);
   assert.equal(s.override.background.zoom, 150);
@@ -558,22 +630,19 @@ test('custom panel opacity previews, saves and cancels independently of global t
   assert.equal(s.windowTransparency, 40);
 });
 
-test('old image preferences gain safe defaults and invalid zoom and panel opacity are bounded', () => {
+test('old image preferences gain safe zoom defaults and invalid zoom is bounded', () => {
   const legacy = api.defaultOverride();
   delete legacy.background.zoom;
-  delete legacy.background.panelOpacity;
   assert.equal(api.normalizeOverride(legacy).background.zoom, 110);
-  assert.equal(api.normalizeOverride(legacy).background.panelOpacity, 50);
-  for (const [zoom, opacity, expectedZoom, expectedOpacity] of [
-    [70, -20, 100, 0],
-    [300, 140, 200, 100],
+  for (const [zoom, expectedZoom] of [
+    [70, 100],
+    [300, 200],
   ]) {
     const value = api.normalizeOverride({
       ...legacy,
-      background: { ...legacy.background, zoom, panelOpacity: opacity },
+      background: { ...legacy.background, zoom },
     });
     assert.equal(value.background.zoom, expectedZoom);
-    assert.equal(value.background.panelOpacity, expectedOpacity);
   }
 });
 
@@ -583,11 +652,11 @@ test('custom panel opacity participates in contrast calculations without recolor
   s.setCustomBackgroundSample('landscape.png', '#8b9879');
   const floating = api.copyAppearance(s.appearance.floating);
   for (const panelOpacity of [0, 50, 100]) {
-    s.updateOverride({ background: { ...s.override.background, panelOpacity } });
+    s.setPanelOpacity(panelOpacity);
     const surfaces = s.accentSurfaces;
     assert.equal(
       surfaces[0],
-      api.mixColor(s.appearance.tokens.shell, s.appearance.tokens.main, panelOpacity / 100),
+      api.mixColor('#8b9879', s.appearance.tokens.main, panelOpacity / 100),
     );
     assert.deepEqual(s.appearance.floating, floating);
   }
@@ -1353,4 +1422,95 @@ test('independent windows pair image/plugin accents with their floating foregrou
 
 test('the renderer-free playback snapshot uses the host default accent before theme synchronization', () => {
   assert.equal(api.DEFAULT_NOW_PLAYING_APPEARANCE.accentColor, api.DEFAULT_THEME_ACCENT);
+});
+
+test('custom image highlight is exact, reversible and subordinate to the global cover/custom source', () => {
+  const s = store();
+  s.setCustomBackground('dark.png');
+  s.setCustomBackgroundSample('dark.png', '#101010');
+  s.beginPreview();
+  s.updateOverride({ background: { ...s.override.background, accentColor: '#ffdd00' } });
+  assert.equal(s.accentColor, '#ffdd00');
+  assert.equal(document.documentElement.style.getPropertyValue('--color-primary'), '#ffdd00');
+  s.cancelPreview();
+  assert.equal(s.override.background.accentColor, api.defaultOverride().background.accentColor);
+  s.beginPreview();
+  s.updateOverride({ background: { ...s.override.background, accentColor: '#ffdd00' } });
+  s.applyPreview();
+  s.coverColor = '#220044';
+  s.setMode('cover');
+  const coverAccent = s.accentColor;
+  assert.notEqual(coverAccent, '#ffdd00');
+  s.updateOverride({ background: { ...s.override.background, accentColor: '#ff0000' } });
+  assert.equal(s.accentColor, coverAccent);
+  s.coverColor = '#003322';
+  s.applyCurrent();
+  assert.notEqual(s.accentColor, coverAccent);
+  s.setMode('theme');
+  assert.equal(s.accentColor, '#ff0000');
+  s.setCustomColor('#ffff00');
+  assert.equal(s.accentColor, '#ffff00');
+  s.selectTheme('host:echo');
+  s.setMode('theme');
+  assert.equal(s.accentColor, api.DEFAULT_THEME_ACCENT);
+  s.selectTheme(api.CUSTOM_THEME_KEY);
+  assert.equal(s.accentColor, '#ff0000');
+});
+
+test('artwork polarity and accent readability follow the image and shade independently of OS mode', () => {
+  const s = store();
+  s.setCustomBackground('artwork.png');
+  for (const [mode, sample, expectedDark] of [
+    ['light', '#101010', true],
+    ['dark', '#fafafa', false],
+  ]) {
+    s.updateGeneralPreferences({ mode });
+    s.setPanelOpacity(0);
+    s.updateOverride({
+      background: { ...s.override.background, shade: 0, accentColor: '#ffff00' },
+    });
+    s.setCustomBackgroundSample('artwork.png', sample);
+    assert.equal(s.accentIsDark, expectedDark);
+    assert.equal(s.isDark, mode === 'dark');
+    assert.equal(s.accentColor, '#ffff00');
+    for (const surface of s.accentSurfaces)
+      assert.ok(api.contrast(s.accentTextColor, surface) >= 4.5);
+    assert.equal(
+      document.documentElement.style.getPropertyValue('--color-primary-text'),
+      s.accentTextColor,
+    );
+    const floating = api.copyAppearance(s.appearance.floating);
+    s.coverColor = '#220044';
+    s.setMode('cover');
+    for (const surface of s.accentSurfaces)
+      assert.ok(api.contrast(s.accentTextColor, surface) >= 4.5);
+    s.updateOverride({ background: { ...s.override.background, shade: 85 } });
+    assert.equal(s.artworkBackdrop, api.mixColor(sample, s.appearance.tokens.shell, 0.85));
+    assert.deepEqual(s.appearance.floating, floating);
+    s.setMode('theme');
+  }
+});
+
+test('crop changes reject obsolete artwork samples and legacy backgrounds receive a highlight default', () => {
+  const legacy = api.defaultOverride();
+  delete legacy.background.accentColor;
+  assert.equal(api.normalizeOverride(legacy).background.accentColor, api.DEFAULT_THEME_ACCENT);
+  legacy.background.accentColor = 'invalid';
+  assert.equal(api.normalizeOverride(legacy).background.accentColor, api.DEFAULT_THEME_ACCENT);
+  const s = store();
+  s.setCustomBackground('artwork.png');
+  const key = s.backgroundSampleKey;
+  s.setCustomBackgroundSample('artwork.png', '#101010', key);
+  assert.equal(s.artworkBackdrop, '#101010');
+  s.updateOverride({
+    background: {
+      ...s.override.background,
+      crop: { x: 0, y: 0, width: 10, height: 10, sourceWidth: 100, sourceHeight: 100 },
+    },
+  });
+  assert.equal(s.artworkBackdrop, undefined);
+  s.setCustomBackgroundSample('artwork.png', '#101010', key);
+  assert.equal(s.artworkBackdrop, undefined);
+  s.setCustomBackgroundSample('artwork.png', '#fafafa', s.backgroundSampleKey);
+  assert.equal(s.artworkBackdrop, '#fafafa');
 });

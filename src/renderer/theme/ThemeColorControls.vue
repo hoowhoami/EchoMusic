@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { Icon } from '@iconify/vue';
+import { iconPlus } from '@/icons';
 import { useThemeStore } from '@/stores/theme';
 import type { AccentSource } from './model';
 import Select from '@/components/ui/Select.vue';
@@ -42,7 +44,7 @@ const accentOptions = [
         aria-label="自定义强调色"
         @click="showAccent = true"
       >
-        ＋
+        <Icon :icon="iconPlus" :width="14" :height="14" aria-hidden="true" />
       </button>
     </div>
   </section>
@@ -75,6 +77,10 @@ const accentOptions = [
   outline-offset: 3px;
 }
 .custom-accent {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 0;
   color: var(--text-main);
 }
 </style>

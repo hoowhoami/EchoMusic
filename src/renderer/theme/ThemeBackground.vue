@@ -11,26 +11,33 @@ const theme = useThemeStore(),
 const imageUrl = ref('');
 const isCustom = computed(() => theme.effectiveThemeKey === CUSTOM_THEME_KEY);
 let revision = 0;
+let loadedSource = '';
 let sampling: AbortController | undefined;
 const source = computed(() => theme.backgroundImage);
 watch(
-  [source, isCustom],
-  async ([value, custom]) => {
+  [source, isCustom, () => theme.backgroundSampleKey],
+  async ([value, custom, key]) => {
     const current = ++revision;
     sampling?.abort();
     const controller = new AbortController();
     sampling = controller;
-    imageUrl.value = '';
+    if (loadedSource !== value) imageUrl.value = '';
     if (!value) return;
     try {
-      const result = /^[a-f0-9]{64}\.png$/.test(value)
-        ? await window.electron.ipcRenderer.invoke('appearance:read-image', value)
-        : { url: value };
+      const result = imageUrl.value
+        ? { url: imageUrl.value }
+        : /^[a-f0-9]{64}\.png$/.test(value)
+          ? await window.electron.ipcRenderer.invoke('appearance:read-image', value)
+          : { url: value };
       if (current !== revision) return;
+      loadedSource = value;
       imageUrl.value = result.url;
       if (custom) {
-        const color = await extractAverageColor(result.url, { signal: controller.signal });
-        if (current === revision) theme.setCustomBackgroundSample(value, color);
+        const color = await extractAverageColor(result.url, {
+          signal: controller.signal,
+          crop: theme.override.background.crop,
+        });
+        if (current === revision) theme.setCustomBackgroundSample(value, color, key);
       }
     } catch {
       if (current === revision) toast.warning('背景图片不可用，已显示主题默认底色');

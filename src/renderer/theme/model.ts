@@ -1,4 +1,4 @@
-import { neutralThemePalette } from '../../shared/themePalette';
+import { DEFAULT_THEME_ACCENT, neutralThemePalette } from '../../shared/themePalette';
 
 export type AppearanceMode = 'theme' | 'system' | 'light' | 'dark';
 export type AccentSource = 'theme' | 'cover' | 'custom';
@@ -27,8 +27,8 @@ export interface ThemeOverride {
     zoom: number;
     crop: ThemeImageCrop | null;
     textColor: string;
+    accentColor: string;
     shade: number;
-    panelOpacity: number;
   };
   settings: Record<string, unknown>;
 }
@@ -38,6 +38,7 @@ export interface AppearancePreference {
   overrides: Record<string, ThemeOverride>;
   accent: AccentPreference;
   transparency: number;
+  panelOpacity: number;
   windowFrosted: boolean;
   /** 失焦时强制保持毛玻璃渲染（仅 Windows 毛玻璃后端生效）。 */
   windowFrostedKeepOnBlur: boolean;
@@ -50,6 +51,7 @@ export type GeneralAppearancePreference = Pick<
   | 'accent'
   | 'atmosphere'
   | 'transparency'
+  | 'panelOpacity'
   | 'windowFrosted'
   | 'windowFrostedKeepOnBlur'
   | 'floatingSurfaceFrosted'
@@ -95,6 +97,7 @@ export const defaultAppearance = (): AppearancePreference => ({
   accent: { source: 'theme', color: '#0071e3' },
   atmosphere: { source: 'off', height: 70, strength: 100 },
   transparency: 0,
+  panelOpacity: PANEL_MATERIAL.opacity,
   windowFrosted: false,
   windowFrostedKeepOnBlur: false,
   floatingSurfaceFrosted: false,
@@ -110,8 +113,8 @@ export const defaultOverride = (): ThemeOverride => ({
     zoom: 110,
     crop: null,
     textColor: '#ffffff',
+    accentColor: DEFAULT_THEME_ACCENT,
     shade: 0,
-    panelOpacity: PANEL_MATERIAL.opacity,
   },
   settings: {},
 });
@@ -224,9 +227,10 @@ export function normalizeOverride(value: ThemeOverride): ThemeOverride {
       zoom: b.zoom === undefined ? base.background.zoom : clamp(b.zoom, 100, 200),
       crop: normalizeImageCrop(b.crop),
       textColor: validColor(b.textColor) ? b.textColor.toLowerCase() : '#ffffff',
+      accentColor: validColor(b.accentColor)
+        ? b.accentColor.toLowerCase()
+        : base.background.accentColor,
       shade: clamp(b.shade, 0, 85),
-      panelOpacity:
-        b.panelOpacity === undefined ? PANEL_MATERIAL.opacity : clamp(b.panelOpacity, 0, 100),
     };
   }
   if (value.settings && typeof value.settings === 'object' && !Array.isArray(value.settings))

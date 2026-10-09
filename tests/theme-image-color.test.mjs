@@ -11,11 +11,13 @@ const result = await build({
 const module = { exports: {} };
 new Function('module', 'exports', result.outputFiles[0].text)(module, module.exports);
 const { extractAverageColor } = module.exports;
-let pixels, latestImage, canvas;
+let pixels, latestImage, canvas, drawArgs;
 globalThis.window = { setTimeout, clearTimeout };
 globalThis.Image = class {
   constructor() {
     latestImage = this;
+    this.naturalWidth = 200;
+    this.naturalHeight = 100;
   }
   set src(value) {
     if (value && value !== 'pending') queueMicrotask(() => this.onload?.());
@@ -26,7 +28,12 @@ globalThis.document = {
     (canvas = {
       width: 64,
       height: 64,
-      getContext: () => ({ drawImage() {}, getImageData: () => ({ data: pixels }) }),
+      getContext: () => ({
+        drawImage(...args) {
+          drawArgs = args;
+        },
+        getImageData: () => ({ data: pixels }),
+      }),
     }),
 };
 test('average color includes neutral pixels and weights alpha without transparent-color contamination', async () => {
@@ -47,4 +54,15 @@ test('cancelled image sampling releases callbacks and resolves without stale col
   assert.equal(latestImage.onload, null);
   assert.equal(latestImage.onerror, null);
   assert.equal(await extractAverageColor('sample', { signal: controller.signal }), null);
+});
+
+test('artwork sampling reads the selected crop in natural image coordinates', async () => {
+  pixels = Uint8ClampedArray.from([16, 16, 16, 255]);
+  assert.equal(
+    await extractAverageColor('sample', {
+      crop: { x: 10, y: 5, width: 50, height: 20, sourceWidth: 100, sourceHeight: 50 },
+    }),
+    '#101010',
+  );
+  assert.deepEqual(drawArgs.slice(1), [20, 10, 100, 40, 0, 0, 64, 64]);
 });

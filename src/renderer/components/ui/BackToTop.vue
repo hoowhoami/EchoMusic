@@ -92,34 +92,26 @@ onUnmounted(() => {
   --back-to-top-active-scale: 1;
   width: var(--scroll-action-size);
   height: var(--scroll-action-size);
-  background: var(--color-bg-elevated);
-  color: var(--color-text-main);
+  background: var(--scroll-action-bg);
+  color: var(--scroll-action-text);
   border: 1px solid var(--scroll-action-border);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+  box-shadow: var(--control-neutral-action-shadow);
   -webkit-backdrop-filter: var(--surface-backdrop-filter);
   backdrop-filter: var(--surface-backdrop-filter);
   scale: 1;
   transform: translateY(var(--back-to-top-hover-y)) scale(var(--back-to-top-active-scale));
 }
 
-.back-to-top-btn:hover {
-  color: var(--color-primary-text);
-  border-color: color-mix(in srgb, var(--color-primary) 60%, var(--scroll-action-border));
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18);
+.back-to-top-btn:is(:hover, :focus-visible) {
+  color: var(--scroll-action-hover-text);
+  background: var(--scroll-action-hover-bg);
+  border-color: var(--scroll-action-hover-border);
   --back-to-top-hover-y: -1px;
 }
 
 .back-to-top-btn:active {
+  background: var(--scroll-action-pressed-bg);
   --back-to-top-active-scale: 0.96;
-}
-
-:global(.dark .back-to-top-btn) {
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
-}
-
-:global(.dark .back-to-top-btn:hover) {
-  border-color: color-mix(in srgb, var(--color-primary) 58%, var(--scroll-action-border));
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
 }
 
 .back-to-top-leave-active {
@@ -129,6 +121,7 @@ onUnmounted(() => {
 @media (prefers-reduced-motion: no-preference) {
   .back-to-top-btn {
     transition:
+      background-color var(--motion-duration-fast) var(--motion-ease-standard),
       color var(--motion-duration-fast) var(--motion-ease-standard),
       border-color var(--motion-duration-fast) var(--motion-ease-standard),
       box-shadow var(--motion-duration-fast) var(--motion-ease-standard),

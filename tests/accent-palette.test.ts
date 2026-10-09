@@ -59,6 +59,19 @@ test('legacy grayscale and invalid inputs fall back to the original blue', () =>
     }
   }
 });
+test('accent text adapts to surfaces with opposite system polarity and preserves hue on mixed artwork', () => {
+  for (const [dark, surfaces] of [
+    [false, ['#101010', '#202020']],
+    [true, ['#eeeeee', '#ffffff']],
+  ] as const) {
+    const palette = createAccentPaletteFromPrimary('#8833bb', dark, [...surfaces]);
+    assert.equal(palette.primary, '#8833bb');
+    for (const surface of surfaces)
+      assert.ok(contrastRatio(parseAccent(palette.primaryText), parseAccent(surface)) >= 4.5);
+  }
+  const mixed = createAccentPaletteFromPrimary('#ffdd00', false, ['#101010', '#f5f5f5']);
+  assert.equal(mixed.primaryText, '#ffdd00');
+});
 test('OKLab round trip preserves sRGB samples to one channel level', () => {
   for (const seed of colors) {
     const rgb = parseAccent(seed),

@@ -50,6 +50,7 @@ const theme = useThemeStore(),
   toast = useToastStore();
 const { width: windowWidth, height: windowHeight } = useWindowSize();
 const showTextColor = ref(false);
+const showBackgroundAccent = ref(false);
 const showSkinColor = ref(false),
   isImporting = ref(false);
 const showAdjustments = ref(false);
@@ -86,7 +87,7 @@ const customBackground = computed(
 const customBackgroundHasAdjustments = computed(() => {
   const defaults = defaultOverride().background;
   return (
-    ['positionX', 'positionY', 'fit', 'zoom', 'crop', 'textColor', 'shade', 'panelOpacity'] as const
+    ['positionX', 'positionY', 'fit', 'zoom', 'crop', 'textColor', 'accentColor', 'shade'] as const
   ).some((key) => customBackground.value[key] !== defaults[key]);
 });
 const colours = [
@@ -447,6 +448,7 @@ watch(
         :image="imagePreview"
         :has-image="!!customBackground.image"
         :background="customBackground"
+        :accent-source="theme.accentMode"
         :viewport="{ width: windowWidth, height: windowHeight }"
         :shell="theme.appearance.tokens.shell"
         :importing="isImporting"
@@ -459,6 +461,7 @@ watch(
         @choose-image="imageInput?.click()"
         @select-image="importImage($event)"
         @choose-text-color="showTextColor = true"
+        @choose-accent-color="showBackgroundAccent = true"
         @reset="resetBackgroundAdjustments"
         @cancel="cancelBackground(true)"
         @apply="acceptBackground"
@@ -525,6 +528,22 @@ watch(
       '#c3e7af',
     ]"
     @confirm="updateBackground({ textColor: $event })"
+  />
+  <ColorPickerDialog
+    v-model:open="showBackgroundAccent"
+    title="背景强调色"
+    :value="customBackground.accentColor"
+    :presets="[
+      '#00cc65',
+      '#ffdd00',
+      '#ff9f0a',
+      '#ff6b81',
+      '#c4a0ff',
+      '#6ac8ff',
+      '#ffffff',
+      '#000000',
+    ]"
+    @confirm="updateBackground({ accentColor: $event })"
   />
   <ColorPickerDialog
     :open="showSkinColor"

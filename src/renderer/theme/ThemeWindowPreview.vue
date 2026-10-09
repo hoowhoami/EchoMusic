@@ -62,7 +62,7 @@ const surface = (color?: string) => ({
       <div class="preview-covers"><b /><b /><b /></div>
     </main>
     <footer :style="surface(tokens.player)">
-      <span>正在播放</span><span :style="{ color: theme.accentColor }">◀　▶　▶</span>
+      <span>正在播放</span><span :style="{ color: theme.accentTextColor }">◀　▶　▶</span>
     </footer>
   </div>
 </template>
