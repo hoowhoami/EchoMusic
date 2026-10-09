@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
@@ -210,12 +211,13 @@ watch(
   },
   { immediate: true },
 );
-watch(
-  () => user.info?.userid,
+watchUserSession(
+  user,
   () => {
     generation++;
     emit('update:open', false);
   },
+  { flush: 'sync' },
 );
 onBeforeUnmount(() => {
   generation++;

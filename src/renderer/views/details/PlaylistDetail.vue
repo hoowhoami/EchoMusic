@@ -61,7 +61,7 @@ import { replaceQueueAndPlay } from '@/utils/playback';
 import { copyShareTarget, createPlaylistShareTarget } from '@/utils/share';
 import { useToastStore } from '@/stores/toast';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
-import { captureUserSession } from '@/utils/userSession';
+import { captureUserSession, userSessionSources } from '@/utils/userSession';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
@@ -571,10 +571,7 @@ onBeforeUnmount(() => {
 
 const playlistSessionSources = [
   () => playlistStore.userCollectionsGeneration,
-  () => userStore.isLoggedIn,
-  () => userStore.accountRevision,
-  () => userStore.info?.userid ?? userStore.info?.userId,
-  () => userStore.info?.token,
+  ...userSessionSources(userStore),
 ];
 watch(
   playlistSessionSources,

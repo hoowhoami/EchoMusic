@@ -596,6 +596,7 @@ export function usePlayerControls() {
     openQueue,
     // 添加到歌单
     showAddToPlaylistDialog,
+    addToPlaylistTrack,
     isPlaylistLoading,
     canAddToPlaylist,
     createdPlaylists,

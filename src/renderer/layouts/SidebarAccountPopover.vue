@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { userSessionSources } from '@/utils/userSession';
+
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Icon } from '@iconify/vue';
@@ -82,14 +84,11 @@ watch(open, (value) => {
   void user.fetchUserInfoOnce();
   void user.fetchGradeInfo();
 });
-watch(
-  () => [user.accountRevision, route.fullPath],
-  () => {
-    open.value = false;
-    confirmLogout.value = false;
-    accountSwitcherOpen.value = false;
-  },
-);
+watch([...userSessionSources(user), () => route.fullPath], () => {
+  open.value = false;
+  confirmLogout.value = false;
+  accountSwitcherOpen.value = false;
+});
 const navigate = (path: string) => {
   open.value = false;
   void router.push(path);

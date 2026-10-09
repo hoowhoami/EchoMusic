@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { watchUserSession } from '@/utils/watchUserSession';
+
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
@@ -10,10 +12,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 const userStore = useUserStore();
 
-watch(
-  () => userStore.accountRevision,
-  () => authStore.hideSessionExpiredDialog(),
-);
+watchUserSession(userStore, () => authStore.hideSessionExpiredDialog());
 
 const open = computed({
   get: () => authStore.sessionExpiredDialogOpen,

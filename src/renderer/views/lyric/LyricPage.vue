@@ -75,6 +75,7 @@ const {
   currentTrack,
   isQueueDrawerOpen,
   showAddToPlaylistDialog,
+  addToPlaylistTrack,
   isPlaylistLoading,
   createdPlaylists,
   addToPlaybackQueues,
@@ -901,9 +902,10 @@ onUnmounted(() => {
       v-model:open="showAddToPlaylistDialog"
       :playbackQueues="addToPlaybackQueues"
       :playlists="createdPlaylists"
+      :songs="addToPlaylistTrack ? [addToPlaylistTrack] : []"
       :loading="isPlaylistLoading"
       @selectQueue="handleAddToQueue"
-      @selectPlaylist="handleSelectPlaylist"
+      :addPlaylist="handleSelectPlaylist"
     />
   </div>
 </template>

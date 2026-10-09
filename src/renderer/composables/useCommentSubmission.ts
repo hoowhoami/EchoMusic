@@ -5,7 +5,7 @@ import {
   COMMENT_MAX_LENGTH,
   countCommentCharacters,
 } from '@/utils/commentLimits';
-import { captureUserSession } from '@/utils/userSession';
+import { captureUserSession, userSessionSources } from '@/utils/userSession';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 
@@ -41,13 +41,7 @@ export function useCommentSubmission(options: {
   let generation = 0;
   let disposed = false;
   watch(
-    [
-      key,
-      () => user.isLoggedIn,
-      () => user.accountRevision,
-      () => user.info?.userid ?? user.info?.userId,
-      () => user.info?.token,
-    ],
+    [key, ...userSessionSources(user)],
     () => {
       generation++;
       content.value = '';

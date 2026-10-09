@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 defineOptions({ name: 'login-page' });
@@ -636,18 +638,10 @@ const activateLoginMethod = (method: LoginMethod) => {
 };
 
 watch(activeMethod, activateLoginMethod);
-watch(
-  [
-    () => userStore.accountRevision,
-    () => userStore.isLoggedIn,
-    () => userStore.info?.userid,
-    () => userStore.info?.token,
-  ],
-  () => {
-    isLoginDone = true;
-    invalidateQrSession();
-  },
-);
+watchUserSession(userStore, () => {
+  isLoginDone = true;
+  invalidateQrSession();
+});
 
 onMounted(() => {
   activateLoginMethod(activeMethod.value);

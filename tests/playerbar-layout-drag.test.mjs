@@ -124,6 +124,20 @@ function fixture(t, slots = {}) {
         },
       },
       sortablejs: Sortable,
+      '@vueuse/core': {
+        useElementBounding: (target) => {
+          const bounds = Object.fromEntries(
+            ['left', 'top', 'width', 'height'].map((field) => [field, vue.ref(0)]),
+          );
+          return {
+            ...bounds,
+            update() {
+              const rect = target.value?.getBoundingClientRect();
+              for (const field of Object.keys(bounds)) bounds[field].value = rect?.[field] ?? 0;
+            },
+          };
+        },
+      },
       './playerBarActions': actions,
       '@/stores/setting': { useSettingStore: () => settings },
     },
@@ -276,3 +290,35 @@ for (const component of ['speed', 'play-mode']) {
     assert.equal(f.view.floatingAction.value, null);
   });
 }
+
+test('an open overflow panel follows its actual more icon after measurement and layout changes', async (t) => {
+  const f = fixture(t);
+  let rect = { left: 900, top: 600, width: 36, height: 36 };
+  const anchor = vue.markRaw({ getBoundingClientRect: () => rect });
+  f.view.moreTriggerRef.value = anchor;
+  f.view.activate(
+    { component: 'speed' },
+    { currentTarget: { getBoundingClientRect: () => ({ left: 300, top: 200 }) } },
+  );
+  assert.equal(f.view.floatingAnchorRef.value, anchor);
+  assert.deepEqual(f.view.floatingActionStyle.value, {
+    left: '900px',
+    top: '600px',
+    width: '36px',
+    height: '36px',
+  });
+  f.view.floatingAnchorBounds.left.value = 700;
+  assert.equal(f.view.floatingActionStyle.value.left, '700px');
+  rect = { left: 500, top: 400, width: 40, height: 40 };
+  f.settings.playerBarLayout = { placements: { volume: 'left' }, order: [], badges: {} };
+  await vue.nextTick();
+  assert.deepEqual(f.view.floatingActionStyle.value, {
+    left: '500px',
+    top: '400px',
+    width: '40px',
+    height: '40px',
+  });
+  assert.equal(f.view.floatingAction.value.component, 'speed');
+  f.view.closeFloatingPanels();
+  assert.equal(f.view.floatingAnchorRef.value, null);
+});

@@ -436,11 +436,16 @@ export function reportGradeProgress(payload: { d_sec: number; diff_sec: number }
 }
 
 /**
- * 查询听歌等级信息（累计听歌时长/等级/积分，需登录）
+ * 查询听歌等级信息（累计听歌时长/等级/积分）；显式 userid 可查询已保存账号。
  * 对接 /user/grade/info 的查询模式
  */
-export function getUserGradeInfo() {
-  return request.get('/user/grade/info');
+export function getUserGradeInfo(userid?: number) {
+  return request.get(
+    '/user/grade/info',
+    userid === undefined
+      ? undefined
+      : { params: { userid }, skipUserAuth: true, skipKugouVerification: true },
+  );
 }
 
 /**

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { userSessionSources } from '@/utils/userSession';
 import Tag from '@/components/ui/Tag.vue';
 defineOptions({ name: 'mv-detail' });
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
@@ -105,10 +106,7 @@ const toggleCollection = async () => {
   }
 };
 
-watch(
-  () => [collectionId.value, userStore.isLoggedIn, userStore.info?.userid],
-  () => void loadCollectionState(),
-);
+watch([collectionId, ...userSessionSources(userStore)], () => void loadCollectionState());
 
 const routeAlbumAudioId = computed(() =>
   String(route.query.albumAudioId ?? route.query.mixSongId ?? '').trim(),

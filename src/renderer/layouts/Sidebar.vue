@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import { computed, onMounted, ref, useAttrs, watch } from 'vue';
 import type { Component } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -742,16 +744,13 @@ onMounted(() => {
   syncCloudData();
 });
 
-watch(
-  () => [isLoggedIn.value, currentUserId.value, userStore.accountRevision] as const,
-  ([loggedIn]) => {
-    if (loggedIn) {
-      syncCloudData();
-    } else {
-      playlistStore.userPlaylists = [];
-    }
-  },
-);
+watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
+  if (loggedIn) {
+    syncCloudData();
+  } else {
+    playlistStore.userPlaylists = [];
+  }
+});
 
 watch(
   () => [route.name, route.params.id, playlistStore.userPlaylists.length, currentUserId.value],

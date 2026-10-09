@@ -1,3 +1,4 @@
+import { userSession, userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -42,6 +43,7 @@ const setup = (get, set = async () => {}) => {
     info: { userid: 1, token: 'first' },
   });
   const { useVideoCollectionStore } = load('../src/renderer/stores/videoCollection.ts', {
+    '@/utils/watchUserSession': userSessionWatch,
     '@/api/user': { getUserVideoCollect: get },
     '@/api/video': { setVideoCollected: set },
     '@/stores/user': { useUserStore: () => user },
@@ -274,6 +276,7 @@ const setupDetail = ({ route, api = {}, collection = {} }) => {
   const user = reactive({ isLoggedIn: true, info: { userid: 1 } });
   const notices = [];
   const mocks = {
+    '@/utils/userSession': userSession,
     vue: { ...vue, onMounted: () => {}, onBeforeUnmount: () => {}, watch: () => {} },
     'vue-router': { useRoute: () => route },
     '@/api/video': api,

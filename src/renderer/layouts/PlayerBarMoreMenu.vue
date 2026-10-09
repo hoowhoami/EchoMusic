@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
 import { computed, nextTick, onBeforeUnmount, ref, useSlots, watch } from 'vue';
+import { useElementBounding } from '@vueuse/core';
 import Sortable from 'sortablejs';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -50,8 +51,22 @@ const open = ref(false);
 const editMode = ref(false);
 const isSorting = ref(false);
 const floatingAction = ref<ResolvedPlayerBarAction | null>(null);
-const floatingActionStyle = ref<Record<string, string>>({});
 const moreTriggerRef = ref<HTMLElement | null>(null);
+const floatingAnchorRef = ref<HTMLElement | null>(null);
+const floatingAnchorBounds = useElementBounding(floatingAnchorRef);
+const floatingActionStyle = computed(() => ({
+  left: `${Math.round(floatingAnchorRef.value ? floatingAnchorBounds.left.value : window.innerWidth - 48)}px`,
+  top: `${Math.round(floatingAnchorRef.value ? floatingAnchorBounds.top.value : window.innerHeight - 86)}px`,
+  width: `${Math.round(floatingAnchorBounds.width.value || 36)}px`,
+  height: `${Math.round(floatingAnchorBounds.height.value || 36)}px`,
+}));
+watch(
+  () => props.items,
+  () => {
+    if (floatingAction.value) floatingAnchorBounds.update();
+  },
+  { flush: 'post' },
+);
 const boardRef = ref<HTMLElement | null>(null);
 const editMenuRef = ref<HTMLElement | null>(null);
 const lockedEditMenuHeight = ref<number | null>(null);
@@ -68,6 +83,7 @@ const editMenuStyle = computed(() =>
 
 const closeFloatingPanels = () => {
   floatingAction.value = null;
+  floatingAnchorRef.value = null;
 };
 
 const popoverComponents = new Set([
@@ -82,14 +98,8 @@ const popoverComponents = new Set([
 
 const openFloatingAction = (item: ResolvedPlayerBarAction, event: MouseEvent) => {
   const target = event.currentTarget as HTMLElement | null;
-  const fallbackRect = target?.getBoundingClientRect();
-  const rect = moreTriggerRef.value?.getBoundingClientRect() ?? fallbackRect;
-  floatingActionStyle.value = {
-    left: `${Math.round(rect?.left ?? window.innerWidth - 48)}px`,
-    top: `${Math.round(rect?.top ?? window.innerHeight - 86)}px`,
-    width: `${Math.round(rect?.width ?? 36)}px`,
-    height: `${Math.round(rect?.height ?? 36)}px`,
-  };
+  floatingAnchorRef.value = moreTriggerRef.value ?? target;
+  floatingAnchorBounds.update();
   open.value = false;
   editMode.value = false;
   floatingAction.value = item;
@@ -291,7 +301,7 @@ onBeforeUnmount(() => {
   <Popover
     trigger="click"
     side="top"
-    align="end"
+    align="center"
     :side-offset="10"
     :delay="80"
     :duration="160"

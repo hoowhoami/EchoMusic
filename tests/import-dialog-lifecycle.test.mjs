@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -269,6 +270,7 @@ function fixture(t) {
       },
       '@/stores/importTask': { useImportTaskStore: () => store },
       '@/stores/setting': { useSettingStore: () => settings },
+      '@/utils/watchUserSession': userSessionWatch,
       '@/utils/userSession': sessions,
     };
     new Function('require', 'module', 'exports', 'window', 'FileReader', script)(

@@ -21,7 +21,7 @@ import { useThemeStore } from '@/stores/theme';
 import { createThemedIconCoverUrl } from '@/utils/cover';
 import { useHistoryStore, type LocalHistoryEntry } from '@/stores/historyStore';
 import { useUserStore } from '@/stores/user';
-import { captureUserSession } from '@/utils/userSession';
+import { captureUserSession, userSessionSources } from '@/utils/userSession';
 import { registerSongContextMenuExtension } from '@/components/music/songContextMenuExtensions';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
@@ -68,15 +68,7 @@ const metadataActive = ref(true);
 let metadataGeneration = 0;
 let metadataDisposed = false;
 watch(
-  [
-    () => historyStore.entries,
-    () => route.name,
-    metadataActive,
-    () => userStore.isLoggedIn,
-    () => userStore.accountRevision,
-    () => userStore.info?.userid ?? userStore.info?.userId,
-    () => userStore.info?.token,
-  ],
+  [() => historyStore.entries, () => route.name, metadataActive, ...userSessionSources(userStore)],
   () => {
     const generation = ++metadataGeneration;
     if (metadataDisposed || !metadataActive.value || route.name !== 'history') return;

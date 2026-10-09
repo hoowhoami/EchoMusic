@@ -26,6 +26,13 @@ const localPlaylistSongsComplete = new Map<string, boolean>();
 
 export type AddToPlaylistResult = 'added' | 'exists' | 'failed';
 
+export type PlaylistBatchAddOptions = {
+  checkDuplicates?: boolean;
+  /** 弹窗关闭时停止后续批次；已确认的写入仍同步至当前账号。 */
+  isCurrent?: () => boolean;
+  onBatchResult?: (songs: readonly Song[], result: 'added' | 'failed') => void;
+};
+
 const DUPLICATE_CHECK_PAGE_SIZE = 300;
 const DUPLICATE_CHECK_MAX_PAGES = 50;
 
@@ -51,11 +58,11 @@ const loadPlaylistSongsForDuplicateCheck = async (
       if (!isCurrent()) return null;
       const res = await getPlaylistTracksNew(targetId, page, DUPLICATE_CHECK_PAGE_SIZE);
       if (!isCurrent()) return null;
-      if (!res || typeof res !== 'object') return songs.length > 0 ? songs : null;
+      if (!res || typeof res !== 'object') return null;
       const hasStatus = 'status' in res;
       const statusOk = hasStatus && (res as { status?: number }).status === 1;
       const hasPayload = 'data' in res || 'info' in res;
-      if (!statusOk && !hasPayload) return songs.length > 0 ? songs : null;
+      if ((hasStatus && !statusOk) || (!statusOk && !hasPayload)) return null;
 
       const payload =
         'data' in res
@@ -547,13 +554,31 @@ export const favoritesActions = {
     listId: string | number,
     songs: Song[],
     onProgress?: (done: number, total: number) => void,
+    options: PlaylistBatchAddOptions = {},
   ): Promise<{ successCount: number; failedCount: number }> {
     const isCurrent = captureCollectionScope(this);
     const targetId = String(listId ?? '');
     const total = songs.length;
     if (!targetId || total === 0) return { successCount: 0, failedCount: total };
 
-    const existingSongs = this.getKnownPlaylistSongs(targetId);
+    const canContinue = () => isCurrent() && (options.isCurrent?.() ?? true);
+    if (!canContinue()) return { successCount: 0, failedCount: total };
+    let existingSongs = this.getKnownPlaylistSongs(targetId);
+    if (options.checkDuplicates && !this.hasCompleteKnownPlaylistSongs(targetId)) {
+      const targetPlaylist = this.userPlaylists.find((playlist) =>
+        includesPlaylistIdentity(playlist, targetId),
+      );
+      const loadedSongs =
+        targetPlaylist?.count === 0
+          ? []
+          : await loadPlaylistSongsForDuplicateCheck(targetId, canContinue);
+      if (!canContinue()) return { successCount: 0, failedCount: total };
+      if (!loadedSongs) {
+        options.onBatchResult?.(songs, 'failed');
+        return { successCount: 0, failedCount: total };
+      }
+      existingSongs = dedupeSongs([...loadedSongs, ...this.getKnownPlaylistSongs(targetId)]);
+    }
     syncPlaylistFavorites(
       this,
       targetId,
@@ -600,13 +625,12 @@ export const favoritesActions = {
     let successCount = 0;
     let failedCount = 0;
     let done = 0;
-    const addedSongs: Song[] = [];
     const skippedCount = total - dedupedSongs.length;
     onProgress?.(skippedCount, total);
     done = skippedCount;
 
     for (const batch of batches) {
-      if (!isCurrent()) return { successCount, failedCount: dedupedSongs.length - successCount };
+      if (!canContinue()) return { successCount, failedCount: dedupedSongs.length - successCount };
       try {
         const res = await addPlaylistTrack(
           targetId,
@@ -616,29 +640,28 @@ export const favoritesActions = {
         if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
           successCount += batch.length;
           syncPlaylistFavorites(this, targetId, 'add', batch);
-          addedSongs.push(...batch);
+          if (this.hasCompleteKnownPlaylistSongs(targetId)) {
+            this.rememberPlaylistSongs(
+              targetId,
+              [...this.getKnownPlaylistSongs(targetId), ...batch],
+              true,
+            );
+          }
+          this.markPlaylistContentChanged(targetId, 'add', batch);
+          options.onBatchResult?.(batch, 'added');
         } else {
           failedCount += batch.length;
+          options.onBatchResult?.(batch, 'failed');
           logger.warn('PlaylistStore', 'Batch add partial failure:', res);
         }
       } catch (e) {
         if (!isCurrent()) return { successCount, failedCount: dedupedSongs.length - successCount };
         failedCount += batch.length;
+        options.onBatchResult?.(batch, 'failed');
         logger.error('PlaylistStore', 'Batch add error:', e);
       }
       done += batch.length;
       onProgress?.(done, total);
-    }
-
-    if (isCurrent() && addedSongs.length > 0) {
-      if (this.hasCompleteKnownPlaylistSongs(targetId)) {
-        this.rememberPlaylistSongs(
-          targetId,
-          [...this.getKnownPlaylistSongs(targetId), ...addedSongs],
-          true,
-        );
-      }
-      this.markPlaylistContentChanged(targetId, 'add', addedSongs);
     }
 
     return { successCount, failedCount };

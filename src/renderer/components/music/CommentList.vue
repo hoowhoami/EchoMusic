@@ -12,7 +12,7 @@ import { mapCommentItem } from '@/utils/mappers';
 import { enrichCommentsWithYoungVip } from '@/utils/commentVipCache';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
-import { captureUserSession } from '@/utils/userSession';
+import { captureUserSession, userSessionSources } from '@/utils/userSession';
 import { toRecord } from '../../../shared/object';
 import {
   groupCommentRelations,
@@ -237,10 +237,7 @@ watch(
     () => props.resourceType,
     () => props.resourceId,
     () => props.fallbackMixSongId,
-    () => userStore.isLoggedIn,
-    () => userStore.accountRevision,
-    () => userStore.info?.userid ?? userStore.info?.userId,
-    () => userStore.info?.token,
+    ...userSessionSources(userStore),
   ],
   invalidate,
   { flush: 'sync' },

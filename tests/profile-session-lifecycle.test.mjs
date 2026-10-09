@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -98,6 +99,7 @@ function fixture(t) {
   const deps = {
     vue: { ...vue, onMounted() {}, onUnmounted: (fn) => unmounts.push(fn) },
     'vue-router': { useRouter: () => ({ push() {} }) },
+    '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': sessionModule.exports,
     '@/utils/accountVip': vipModule.exports,
     '@/stores/user': { useUserStore: () => user },
@@ -261,6 +263,7 @@ for (const [name, change] of Object.entries({
     await flush();
     f.view.socialDrawerOpen.value = true;
     f.view.showProfileEditor.value = true;
+    f.view.showAccountSwitcher.value = true;
     f.view.profileForm.nickname = 'old';
     f.view.showKickConfirm.value = true;
     f.view.socialChatDraft.value = 'old draft';
@@ -270,6 +273,7 @@ for (const [name, change] of Object.entries({
     assert.equal(f.view.socialChatTarget.value, null);
     assert.equal(f.view.socialChatDraft.value, '');
     assert.equal(f.view.showProfileEditor.value, false);
+    assert.equal(f.view.showAccountSwitcher.value, false);
     assert.equal(f.view.profileForm.nickname, '');
     assert.equal(f.view.showKickConfirm.value, false);
     assert.equal(f.view.socialDrawerOpen.value, false);

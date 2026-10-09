@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import Tag from '@/components/ui/Tag.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import { captureUserSession } from '@/utils/userSession';
@@ -1144,13 +1146,8 @@ watch(
   },
   { flush: 'sync' },
 );
-watch(
-  [
-    () => userStore.isLoggedIn,
-    () => userStore.accountRevision,
-    () => userStore.info?.userid ?? userStore.info?.userId,
-    () => userStore.info?.token,
-  ],
+watchUserSession(
+  userStore,
   () => {
     previewOpen.value = false;
     createOpen.value = false;

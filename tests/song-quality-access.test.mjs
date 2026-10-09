@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -125,6 +126,7 @@ const setup = (t, api = {}, suppliedUser) => {
     pinia: { defineStore },
     vue,
     '@/stores/user': { useUserStore: () => user },
+    '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': session,
     '@/utils/songQualityAccess': access,
     '@/api/music': {

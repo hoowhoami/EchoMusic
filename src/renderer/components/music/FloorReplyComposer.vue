@@ -6,7 +6,7 @@ import type { Comment } from '@/models/comment';
 import Button from '@/components/ui/Button.vue';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
-import { captureUserSession } from '@/utils/userSession';
+import { captureUserSession, userSessionSources } from '@/utils/userSession';
 import { iconX } from '@/icons';
 const props = withDefaults(
   defineProps<{
@@ -37,13 +37,7 @@ const targetKey = computed(() =>
 let generation = 0;
 let disposed = false;
 watch(
-  [
-    targetKey,
-    () => user.isLoggedIn,
-    () => user.accountRevision,
-    () => user.info?.userid ?? user.info?.userId,
-    () => user.info?.token,
-  ],
+  [targetKey, ...userSessionSources(user)],
   () => {
     generation++;
     draft.value = '';

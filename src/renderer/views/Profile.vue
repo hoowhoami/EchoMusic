@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import Tooltip from '@/components/ui/Tooltip.vue';
 import RollingNumber from '@/components/ui/RollingNumber.vue';
 
@@ -10,6 +12,7 @@ import { useUserStore } from '@/stores/user';
 import { useLoginDeviceStore, type LoginDeviceSession } from '@/stores/loginDevices';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
+import Tag from '@/components/ui/Tag.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import DatePicker from '@/components/ui/DatePicker.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -21,6 +24,7 @@ import Textarea from '@/components/ui/Textarea.vue';
 import ContentBlacklistDialog from '@/components/profile/ContentBlacklistDialog.vue';
 import ListeningPreferencesDialog from '@/components/profile/ListeningPreferencesDialog.vue';
 import LogoutConfirmDialog from '@/components/profile/LogoutConfirmDialog.vue';
+import AccountSwitcherDialog from '@/components/profile/AccountSwitcherDialog.vue';
 
 import Avatar from '@/components/ui/Avatar.vue';
 
@@ -52,6 +56,7 @@ import {
   iconDiamond,
   iconSmartphone,
   iconUser,
+  iconUsers,
   iconX,
 } from '@/icons';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
@@ -81,6 +86,7 @@ const userInfo = computed(() => userStore.info);
 const isLoading = ref(false);
 const showContentBlacklist = ref(false);
 const showListeningPreferences = ref(false);
+const showAccountSwitcher = ref(false);
 const showDeviceManager = ref(false);
 const showKickConfirm = ref(false);
 const pendingKickDevice = ref<LoginDeviceSession | null>(null);
@@ -324,6 +330,7 @@ const resetProfileState = () => {
   showLogoutConfirm.value = false;
   showContentBlacklist.value = false;
   showListeningPreferences.value = false;
+  showAccountSwitcher.value = false;
   Object.assign(profileForm, {
     nickname: '',
     sex: 2,
@@ -1404,15 +1411,8 @@ const confirmKickDevice = async () => {
 
 const showLogoutConfirm = ref(false);
 
-const profileSessionSources = [
-  () => userStore.isLoggedIn,
-  () => userStore.accountRevision,
-  () => userStore.info?.userid,
-  () => userStore.info?.userId,
-  () => userStore.info?.token,
-];
-watch(profileSessionSources, resetProfileState, { flush: 'sync' });
-watch(profileSessionSources, () => void loadData());
+watchUserSession(userStore, resetProfileState, { flush: 'sync' });
+watchUserSession(userStore, () => void loadData());
 watch(
   socialDrawerOpen,
   (open) => {
@@ -1436,7 +1436,17 @@ onUnmounted(() => {
             <!-- 1. Header -->
             <header class="profile-page-header">
               <h1 class="text-[20px] font-semibold tracking-tight">个人中心</h1>
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center justify-end gap-2">
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  @click="showAccountSwitcher = true"
+                  class="action-icon w-9 h-9 flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  tooltip="切换账号"
+                  aria-label="切换账号"
+                >
+                  <Icon :icon="iconUsers" width="20" height="20" />
+                </Button>
                 <Button
                   variant="unstyled"
                   size="none"
@@ -1681,6 +1691,7 @@ onUnmounted(() => {
     </div>
 
     <LogoutConfirmDialog v-model:open="showLogoutConfirm" @confirm="confirmLogout" />
+    <AccountSwitcherDialog v-model:open="showAccountSwitcher" />
 
     <Dialog
       v-model:open="showProfileEditor"
@@ -2123,15 +2134,12 @@ onUnmounted(() => {
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 min-w-0">
                 <span class="text-[13px] font-black truncate">{{ device.title }}</span>
-                <span
-                  v-if="device.isCurrent"
-                  class="px-1.5 py-0.5 rounded-md bg-primary/12 text-primary-text text-[10px] font-black shrink-0"
-                  >本机</span
-                >
-                <span
+                <Tag v-if="device.isCurrent" tone="accent" class="shrink-0">本机</Tag>
+                <Tag
                   v-if="device.isNew && !device.isCurrent"
-                  class="px-1.5 py-0.5 rounded-md bg-green-500/12 text-green-500 text-[10px] font-black shrink-0"
-                  >新设备</span
+                  color="var(--state-success)"
+                  class="shrink-0"
+                  >新设备</Tag
                 >
               </div>
               <p class="text-[11px] text-text-secondary font-bold truncate">
@@ -2314,16 +2322,18 @@ onUnmounted(() => {
 }
 .profile-details {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr);
-  gap: 32px;
+  grid-template-columns: minmax(0, 1fr);
+  container: profile-details / inline-size;
+  gap: 24px;
   padding: 24px;
   border-radius: var(--radius-card);
   background: var(--content-panel-bg);
 }
 .profile-account-summary {
   display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-content: start;
-  gap: 18px;
+  gap: 18px 24px;
   margin: 0;
   min-width: 0;
   font-size: 13px;
@@ -2331,12 +2341,12 @@ onUnmounted(() => {
 }
 .profile-account-summary > div {
   display: grid;
-  grid-template-columns: 80px minmax(0, 1fr);
-  align-items: baseline;
-  gap: 20px;
+  align-content: start;
+  gap: 8px;
   min-width: 0;
 }
 .profile-account-summary dt {
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .profile-account-summary dd {
@@ -2347,20 +2357,25 @@ onUnmounted(() => {
 }
 .profile-memberships {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-auto-rows: minmax(0, 1fr);
-  padding-left: 32px;
-  border-left: 1px solid var(--border-subtle);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
 }
 .profile-membership {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding-block: 12px;
+  gap: 12px;
+  padding-inline: 20px;
   min-width: 0;
 }
+.profile-membership:first-child {
+  padding-left: 0;
+}
+.profile-membership:last-child {
+  padding-right: 0;
+}
 .profile-membership + .profile-membership {
-  border-top: 1px solid var(--border-subtle);
+  border-left: 1px solid var(--border-subtle);
 }
 .profile-membership-icon {
   display: grid;
@@ -2399,6 +2414,9 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
   text-align: left;
 }
+.profile-expiry > span {
+  overflow-wrap: anywhere;
+}
 .profile-expiry-info {
   display: inline-flex;
   align-items: center;
@@ -2430,22 +2448,30 @@ onUnmounted(() => {
 .profile-expiry-details dd {
   font-weight: 500;
 }
-@media (max-width: 700px) {
-  .profile-details {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 18px;
+@container profile-details (max-width: 680px) {
+  .profile-account-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  .profile-membership {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding-inline: 16px;
+  }
+  .profile-membership-icon {
+    width: 24px;
+    height: 24px;
+  }
+}
+@container profile-details (max-width: 440px) {
+  .profile-account-summary,
   .profile-memberships {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: none;
-    padding: 16px 0 0;
-    border-left: 0;
-    border-top: 1px solid var(--border-subtle);
   }
-  .profile-membership + .profile-membership {
-    border-top: 0;
-    border-left: 1px solid var(--border-subtle);
-    padding-left: 20px;
+  .profile-membership {
+    flex-direction: row;
+    gap: 8px;
+    padding-block: 12px;
   }
   .profile-membership:nth-child(odd) {
     border-left: 0;
@@ -2485,16 +2511,6 @@ onUnmounted(() => {
   }
   .profile-details {
     padding: 16px;
-  }
-}
-@media (max-width: 440px) {
-  .profile-memberships {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .profile-membership + .profile-membership {
-    padding-left: 0;
-    border-left: 0;
-    border-top: 1px solid var(--border-subtle);
   }
 }
 :global(.profile-social-drawer-overlay) {

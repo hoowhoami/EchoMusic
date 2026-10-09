@@ -311,12 +311,16 @@ const handleSelectPlaylist = async (listId: string | number) => {
       (done, tot) => {
         batchProgress.value = { done, total: tot };
       },
+      { checkDuplicates: true },
     );
     if (successCount > 0 && failedCount === 0) {
       toastStore.actionCompleted(`已添加 ${successCount} 首到『${targetName}』`);
       open.value = false;
     } else if (successCount > 0 && failedCount > 0) {
       toastStore.warning(`已添加 ${successCount} 首到『${targetName}』，${failedCount} 首失败`);
+    } else if (failedCount === 0) {
+      toastStore.actionCompleted('所选歌曲已在目标歌单中');
+      open.value = false;
     } else {
       toastStore.actionFailed('添加到歌单');
     }
@@ -544,9 +548,14 @@ const confirmRemoveFromPlaylist = async () => {
     v-model:open="showPlaylistDialog"
     :playbackQueues="addToPlaybackQueues"
     :playlists="createdPlaylists"
+    :songs="selectedSongs"
+    reversePlaylistSongs
     :loading="isPlaylistLoading"
+    :disabled="isBatchBusy"
+    @update:busy="batchOp = $event ? 'addPlaylist' : null"
+    @added="open = false"
     @selectQueue="handleAddToQueue"
-    @selectPlaylist="handleSelectPlaylist"
+    :addPlaylist="handleSelectPlaylist"
   />
 
   <Dialog

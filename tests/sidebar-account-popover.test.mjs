@@ -1,3 +1,4 @@
+import { userSession } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -26,6 +27,7 @@ function fixture(t, detail = {}, vip = {}) {
   });
   const route = vue.reactive({ fullPath: '/main/home' });
   const deps = {
+    '@/utils/userSession': userSession,
     vue,
     'vue-router': {
       useRoute: () => route,

@@ -43,7 +43,7 @@ import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { useContentBlacklistStore } from '@/stores/contentBlacklist';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
-import { captureUserSession } from '@/utils/userSession';
+import { captureUserSession, userSessionSources } from '@/utils/userSession';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import {
   iconCurrentLocation,
@@ -331,13 +331,7 @@ const isFollowed = computed(() => userStore.isArtistFollowed(artist.value?.id ??
 
 let followGeneration = 0;
 watch(
-  [
-    getArtistId,
-    () => userStore.isLoggedIn,
-    () => userStore.accountRevision,
-    () => userStore.info?.userid ?? userStore.info?.userId,
-    () => userStore.info?.token,
-  ],
+  [getArtistId, ...userSessionSources(userStore)],
   () => {
     followGeneration++;
     togglingFollow.value = false;
@@ -420,14 +414,7 @@ const artistBlacklistStatus = computed(() =>
 );
 
 let blacklistGeneration = 0;
-const blacklistScopeSources = [
-  getArtistId,
-  blacklistArtistId,
-  () => userStore.isLoggedIn,
-  () => userStore.accountRevision,
-  () => userStore.info?.userid ?? userStore.info?.userId,
-  () => userStore.info?.token,
-];
+const blacklistScopeSources = [getArtistId, blacklistArtistId, ...userSessionSources(userStore)];
 watch(
   blacklistScopeSources,
   () => {

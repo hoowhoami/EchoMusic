@@ -1,4 +1,5 @@
-import { reactive, watch } from 'vue';
+import { watchUserSession } from '@/utils/watchUserSession';
+import { reactive } from 'vue';
 import { registerSongContextMenuExtension } from '@/components/music/songContextMenuExtensions';
 import type { Song } from '@/models/song';
 import { useContentBlacklistStore } from '@/stores/contentBlacklist';
@@ -27,13 +28,8 @@ export const registerContentBlacklistIntegration = () => {
   const pendingHashes = reactive(new Set<string>());
   let generation = 0;
   let disposed = false;
-  const stopSessionWatch = watch(
-    [
-      () => userStore.isLoggedIn,
-      () => userStore.accountRevision,
-      () => userStore.info?.userid ?? userStore.info?.userId,
-      () => userStore.info?.token,
-    ],
+  const stopSessionWatch = watchUserSession(
+    userStore,
     () => {
       generation++;
       pendingHashes.clear();

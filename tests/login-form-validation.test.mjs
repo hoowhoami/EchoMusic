@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -56,6 +57,7 @@ function fixture(api = {}, loggedIn = false) {
     '@/stores/user': {
       useUserStore: () => user,
     },
+    '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': sessionModule.exports,
     '@/api/user': defaults,
     '@/utils/kugouVerification': {

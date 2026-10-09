@@ -1021,9 +1021,10 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
       v-model:open="showPlaylistDialog"
       :playbackQueues="addToPlaybackQueues"
       :playlists="selectablePlaylists"
+      :songs="contextMenuTarget ? [contextMenuTarget] : []"
       :loading="isPlaylistLoading"
       @selectQueue="ctxAddToQueue"
-      @selectPlaylist="ctxSelectPlaylist"
+      :addPlaylist="ctxSelectPlaylist"
     />
   </div>
 

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   formatAccountAge,
   formatListeningDuration,
+  getListeningSeconds,
   getGradeProgress,
 } from '../src/shared/profileStats.ts';
 
@@ -32,6 +33,14 @@ test('listening duration uses seconds and falls back to profile minutes', () => 
   assert.equal(formatListeningDuration(0, 61), '0 秒');
   assert.equal(formatListeningDuration(-1, '60'), '1 小时');
   assert.equal(formatListeningDuration(NaN, -1), '0 秒');
+});
+
+test('listening seconds distinguishes missing data from zero and normalizes profile minutes', () => {
+  assert.equal(getListeningSeconds(0, 61), 0);
+  assert.equal(getListeningSeconds(undefined, '61'), 3660);
+  for (const value of [undefined, null, '', '  ', false, -1, Infinity, 'invalid']) {
+    assert.equal(getListeningSeconds(value), null);
+  }
 });
 
 test('grade progress follows cumulative experience, matching the mobile example', () => {

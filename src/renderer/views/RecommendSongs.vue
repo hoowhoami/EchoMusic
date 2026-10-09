@@ -11,6 +11,7 @@ import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
 import { createThemedDateCoverUrl } from '@/utils/themedCover';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
+import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
@@ -136,122 +137,126 @@ onMounted(() => {
 <template>
   <PageScrollContainer class="recommend-songs-container">
     <div class="recommend-songs-view bg-bg-main min-h-full">
-      <SliverHeader
-        ref="sliverHeaderRef"
-        typeLabel="RECOMMEND"
-        title="每日推荐"
-        :coverUrl="recommendCoverUrl"
-        :hasDetails="true"
-        distribute-details
-        :expandedHeight="176"
-        :collapsedHeight="56"
-      >
-        <template #details>
-          <div class="contents">
-            <div class="text-[13px] font-semibold text-text-secondary">
-              {{ recommendSubtitle || '为你量身定制的每日歌单' }}
-            </div>
-            <div
-              class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
-            >
-              <span v-if="!loading" class="inline-flex items-center gap-1.5">
-                <Icon :icon="iconPlay" width="12" height="12" />
-                {{ songs.length }} 首歌曲
-              </span>
-              <span v-if="recommendDate">{{ recommendDate }} 推荐</span>
-            </div>
-          </div>
-        </template>
+      <DetailPageSkeleton v-if="loading" typeLabel="RECOMMEND" :expandedHeight="176" />
 
-        <template #actions>
-          <ActionRow @play="handlePlayAll" @batch="openBatchDrawer" />
-        </template>
-
-        <template #collapsed-actions>
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="handlePlayAll"
-            class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
-          >
-            <Icon :icon="iconPlay" width="20" height="20" />
-          </Button>
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="openBatchDrawer"
-            class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
-          >
-            <Icon :icon="iconList" width="18" height="18" />
-          </Button>
-        </template>
-      </SliverHeader>
-
-      <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="recommend" />
-
-      <Tabs model-value="songs" class="w-full" :style="{ minHeight: tabsMinHeight }">
-        <PageStickyHeader
-          class="song-list-sticky sticky z-110 bg-bg-main"
-          :style="{ top: `${tabsTop}px` }"
+      <template v-else>
+        <SliverHeader
+          ref="sliverHeaderRef"
+          typeLabel="RECOMMEND"
+          title="每日推荐"
+          :coverUrl="recommendCoverUrl"
+          :hasDetails="true"
+          distribute-details
+          :expandedHeight="176"
+          :collapsedHeight="56"
         >
-          <div class="px-6">
-            <div class="border-b border-[var(--border-subtle)]">
-              <div class="flex items-center justify-between h-14">
-                <TabsList class="bg-transparent border-none gap-8">
-                  <TabsTrigger value="songs">
-                    <span class="badge-label">歌曲 <Badge :count="songs.length" /></span>
-                  </TabsTrigger>
-                </TabsList>
+          <template #details>
+            <div class="contents">
+              <div class="text-[13px] font-semibold text-text-secondary">
+                {{ recommendSubtitle || '为你量身定制的每日歌单' }}
+              </div>
+              <div
+                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
+              >
+                <span v-if="!loading" class="inline-flex items-center gap-1.5">
+                  <Icon :icon="iconPlay" width="12" height="12" />
+                  {{ songs.length }} 首歌曲
+                </span>
+                <span v-if="recommendDate">{{ recommendDate }} 推荐</span>
+              </div>
+            </div>
+          </template>
 
-                <div class="flex items-center gap-2">
-                  <SongSearchInput v-model="searchQuery" />
-                  <Button
-                    variant="unstyled"
-                    size="none"
-                    @click="handleLocate"
-                    class="action-icon song-locate-btn p-2"
-                    tooltip="定位当前播放"
-                  >
-                    <Icon :icon="iconCurrentLocation" width="16" height="16" />
-                  </Button>
+          <template #actions>
+            <ActionRow @play="handlePlayAll" @batch="openBatchDrawer" />
+          </template>
+
+          <template #collapsed-actions>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="handlePlayAll"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
+            >
+              <Icon :icon="iconPlay" width="20" height="20" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="openBatchDrawer"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+            >
+              <Icon :icon="iconList" width="18" height="18" />
+            </Button>
+          </template>
+        </SliverHeader>
+
+        <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="recommend" />
+
+        <Tabs model-value="songs" class="w-full" :style="{ minHeight: tabsMinHeight }">
+          <PageStickyHeader
+            class="song-list-sticky sticky z-110 bg-bg-main"
+            :style="{ top: `${tabsTop}px` }"
+          >
+            <div class="px-6">
+              <div class="border-b border-[var(--border-subtle)]">
+                <div class="flex items-center justify-between h-14">
+                  <TabsList class="bg-transparent border-none gap-8">
+                    <TabsTrigger value="songs">
+                      <span class="badge-label">歌曲 <Badge :count="songs.length" /></span>
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <div class="flex items-center gap-2">
+                    <SongSearchInput v-model="searchQuery" />
+                    <Button
+                      variant="unstyled"
+                      size="none"
+                      @click="handleLocate"
+                      class="action-icon song-locate-btn p-2"
+                      tooltip="定位当前播放"
+                    >
+                      <Icon :icon="iconCurrentLocation" width="16" height="16" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
+
+            <SongListHeader
+              :sortField="sortField"
+              :sortOrder="sortOrder"
+              :showCover="true"
+              paddingClass="px-6"
+              @sort="handleSort"
+            />
+          </PageStickyHeader>
+
+          <div class="px-6 pb-12">
+            <SongList
+              ref="songListRef"
+              :loading="loading"
+              :songs="displayedSongs"
+              :contextSongs="sortedSongs"
+              :searchQuery="searchQuery"
+              :disableInternalFilter="true"
+              :activeId="activeSongId"
+              :showCover="true"
+              :queueOptions="{
+                queueId: 'queue:daily-recommend',
+                title: '每日推荐',
+                subtitle: '',
+                type: 'daily-recommend',
+                dynamic: false,
+              }"
+              :enableDefaultDoubleTapPlay="true"
+              :onSongDoubleTapPlay="
+                settingStore.playbackQueueMode === 'context' ? handleSongDoubleTapPlay : undefined
+              "
+            />
           </div>
-
-          <SongListHeader
-            :sortField="sortField"
-            :sortOrder="sortOrder"
-            :showCover="true"
-            paddingClass="px-6"
-            @sort="handleSort"
-          />
-        </PageStickyHeader>
-
-        <div class="px-6 pb-12">
-          <SongList
-            ref="songListRef"
-            :loading="loading"
-            :songs="displayedSongs"
-            :contextSongs="sortedSongs"
-            :searchQuery="searchQuery"
-            :disableInternalFilter="true"
-            :activeId="activeSongId"
-            :showCover="true"
-            :queueOptions="{
-              queueId: 'queue:daily-recommend',
-              title: '每日推荐',
-              subtitle: '',
-              type: 'daily-recommend',
-              dynamic: false,
-            }"
-            :enableDefaultDoubleTapPlay="true"
-            :onSongDoubleTapPlay="
-              settingStore.playbackQueueMode === 'context' ? handleSongDoubleTapPlay : undefined
-            "
-          />
-        </div>
-      </Tabs>
+        </Tabs>
+      </template>
     </div>
   </PageScrollContainer>
 </template>

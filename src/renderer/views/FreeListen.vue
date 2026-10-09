@@ -1,13 +1,16 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
+import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongSearchInput from '@/components/music/SongSearchInput.vue';
 import DetailPageError from '@/components/music/DetailPageError.vue';
 import Button from '@/components/ui/Button.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { getFreeListenSongs } from '@/api/music';
 import { extractList } from '@/utils/extractors';
 import { mapTopSong } from '@/utils/mappers';
@@ -36,7 +39,7 @@ const settingStore = useSettingStore();
 const userStore = useUserStore();
 
 const songs = ref<Song[]>([]);
-const loading = ref(false);
+const loading = ref(true);
 const loadError = ref(false);
 const searchQuery = ref('');
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
@@ -135,13 +138,8 @@ onMounted(() => {
 });
 
 // 页面被 keepAlive 缓存，onMounted 只跑一次；账号切换（含登出）必须清空重载。
-watch(
-  () => [
-    userStore.isLoggedIn,
-    userStore.accountRevision,
-    userStore.info?.userid ?? userStore.info?.userId,
-    userStore.info?.token,
-  ],
+watchUserSession(
+  userStore,
   () => {
     songs.value = [];
     seenKeys.clear();
@@ -154,124 +152,134 @@ watch(
 <template>
   <PageScrollContainer class="free-listen-container">
     <div class="free-listen-view bg-bg-main min-h-full">
-      <SliverHeader
+      <DetailPageSkeleton
+        v-if="loading && songs.length === 0"
         typeLabel="FREE"
-        title="免费听"
-        :coverUrl="coverUrl"
-        :hasDetails="true"
-        distribute-details
         :expandedHeight="176"
-        :collapsedHeight="56"
-      >
-        <template #details>
-          <div class="contents">
-            <div class="text-[13px] font-semibold text-text-secondary">
-              概念版免费听推荐流，跟着推着听
-            </div>
-            <div
-              class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
-            >
-              <span v-if="!loading" class="inline-flex items-center gap-1.5">
-                <Icon :icon="iconPlay" width="12" height="12" />
-                {{ songs.length }} 首歌曲
-              </span>
-            </div>
-          </div>
-        </template>
-
-        <template #actions>
-          <div class="flex flex-wrap gap-2">
-            <Button
-              variant="soft-primary"
-              size="none"
-              class="free-listen-btn"
-              :disabled="displayedSongs.length === 0"
-              @click="handlePlayAll"
-            >
-              <Icon :icon="iconPlay" width="16" height="16" />
-              <span>播放</span>
-            </Button>
-            <Button
-              variant="soft-secondary"
-              size="none"
-              class="free-listen-btn"
-              :disabled="loading"
-              @click="refresh"
-            >
-              <RefreshIcon width="16" height="16" :class="{ 'free-listen-spin': loading }" />
-              <span>刷新</span>
-            </Button>
-          </div>
-        </template>
-
-        <template #collapsed-actions>
-          <Button
-            variant="unstyled"
-            size="none"
-            class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
-            :disabled="displayedSongs.length === 0"
-            @click="handlePlayAll"
-          >
-            <Icon :icon="iconPlay" width="20" height="20" />
-          </Button>
-        </template>
-      </SliverHeader>
-
-      <DetailPageError
-        v-if="loadError && songs.length === 0"
-        resourceName="免费听推荐"
-        @retry="refresh"
       />
 
-      <div v-else-if="!loading && songs.length === 0" class="free-listen-placeholder">
-        <Icon
-          :icon="iconMusicDiscount"
-          width="34"
-          height="34"
-          class="free-listen-placeholder-icon"
-        />
-        <p class="free-listen-placeholder-title">这次没拿到推荐内容</p>
-        <p class="free-listen-placeholder-desc">
-          免费听来自概念版接口，返回空列表时通常是上游临时不可用，稍后重试即可。
-        </p>
-        <Button variant="secondary" size="sm" class="mt-5" @click="loadSongs">刷新</Button>
-      </div>
-
       <template v-else>
-        <div class="free-listen-toolbar">
-          <span class="free-listen-toolbar-title">推荐歌曲</span>
-          <div class="flex items-center gap-2">
-            <SongSearchInput v-model="searchQuery" />
+        <SliverHeader
+          typeLabel="FREE"
+          title="免费听"
+          :coverUrl="coverUrl"
+          :hasDetails="true"
+          distribute-details
+          :expandedHeight="176"
+          :collapsedHeight="56"
+        >
+          <template #details>
+            <div class="contents">
+              <div class="text-[13px] font-semibold text-text-secondary">
+                概念版免费听推荐流，跟着推着听
+              </div>
+              <div
+                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
+              >
+                <span v-if="!loading" class="inline-flex items-center gap-1.5">
+                  <Icon :icon="iconPlay" width="12" height="12" />
+                  {{ songs.length }} 首歌曲
+                </span>
+              </div>
+            </div>
+          </template>
+
+          <template #actions>
+            <div class="flex flex-wrap gap-2">
+              <Button
+                variant="soft-primary"
+                size="none"
+                class="free-listen-btn"
+                :disabled="displayedSongs.length === 0"
+                @click="handlePlayAll"
+              >
+                <Icon :icon="iconPlay" width="16" height="16" />
+                <span>播放</span>
+              </Button>
+              <Button
+                variant="soft-secondary"
+                size="none"
+                class="free-listen-btn"
+                :disabled="loading"
+                @click="refresh"
+              >
+                <RefreshIcon width="16" height="16" :class="{ 'free-listen-spin': loading }" />
+                <span>刷新</span>
+              </Button>
+            </div>
+          </template>
+
+          <template #collapsed-actions>
             <Button
               variant="unstyled"
               size="none"
-              @click="handleLocate"
-              class="action-icon p-2"
-              tooltip="定位当前播放"
+              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
+              :disabled="displayedSongs.length === 0"
+              @click="handlePlayAll"
             >
-              <Icon :icon="iconCurrentLocation" width="16" height="16" />
+              <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
-          </div>
+          </template>
+        </SliverHeader>
+
+        <DetailPageError
+          v-if="loadError && songs.length === 0"
+          resourceName="免费听推荐"
+          @retry="refresh"
+        />
+
+        <div v-else-if="!loading && songs.length === 0" class="free-listen-placeholder">
+          <Icon
+            :icon="iconMusicDiscount"
+            width="34"
+            height="34"
+            class="free-listen-placeholder-icon"
+          />
+          <p class="free-listen-placeholder-title">这次没拿到推荐内容</p>
+          <p class="free-listen-placeholder-desc">
+            免费听来自概念版接口，返回空列表时通常是上游临时不可用，稍后重试即可。
+          </p>
+          <Button variant="secondary" size="sm" class="mt-5" @click="loadSongs">刷新</Button>
         </div>
 
-        <div class="px-6 pb-12">
-          <p v-if="loadError" class="free-listen-inline-error">加载失败，可点上方「刷新」重试。</p>
-          <SongList
-            ref="songListRef"
-            :loading="loading"
-            :songs="displayedSongs"
-            :contextSongs="songs"
-            :searchQuery="searchQuery"
-            :disableInternalFilter="true"
-            :activeId="activeSongId"
-            :showCover="true"
-            :queueOptions="queueOptions"
-            :enableDefaultDoubleTapPlay="true"
-            :onSongDoubleTapPlay="
-              settingStore.playbackQueueMode === 'context' ? handleSongDoubleTapPlay : undefined
-            "
-          />
-        </div>
+        <template v-else>
+          <div class="free-listen-toolbar">
+            <span class="free-listen-toolbar-title">推荐歌曲</span>
+            <div class="flex items-center gap-2">
+              <SongSearchInput v-model="searchQuery" />
+              <Button
+                variant="unstyled"
+                size="none"
+                @click="handleLocate"
+                class="action-icon p-2"
+                tooltip="定位当前播放"
+              >
+                <Icon :icon="iconCurrentLocation" width="16" height="16" />
+              </Button>
+            </div>
+          </div>
+
+          <div class="px-6 pb-12">
+            <p v-if="loadError" class="free-listen-inline-error">
+              加载失败，可点上方「刷新」重试。
+            </p>
+            <SongList
+              ref="songListRef"
+              :loading="loading"
+              :songs="displayedSongs"
+              :contextSongs="songs"
+              :searchQuery="searchQuery"
+              :disableInternalFilter="true"
+              :activeId="activeSongId"
+              :showCover="true"
+              :queueOptions="queueOptions"
+              :enableDefaultDoubleTapPlay="true"
+              :onSongDoubleTapPlay="
+                settingStore.playbackQueueMode === 'context' ? handleSongDoubleTapPlay : undefined
+              "
+            />
+          </div>
+        </template>
       </template>
     </div>
   </PageScrollContainer>

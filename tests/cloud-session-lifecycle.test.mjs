@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -185,6 +186,7 @@ function pageFixture(t) {
         { [`use${key[0].toUpperCase() + key.slice(1)}Store`]: () => ({}) },
       ]),
     ),
+    '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': session,
     '@/utils/logger': log,
     '@/services/songMetadata': {
@@ -342,6 +344,7 @@ function uploadFixture(t) {
           return post(...args);
         },
       },
+      '@/utils/watchUserSession': userSessionWatch,
       '@/utils/userSession': session,
 
       '@/utils/extractors': extractors,

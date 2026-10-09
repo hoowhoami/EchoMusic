@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -204,6 +205,7 @@ test('sidebar renders one VIP badge in super, deluxe, concept, music order as in
           sidebarSectionCollapsed: {},
         }),
       },
+      '@/utils/watchUserSession': userSessionWatch,
       '@/stores/user': { useUserStore: () => user },
       '@/stores/playlist': { usePlaylistStore: () => ({ userPlaylists: [] }) },
       '@/stores/playlistCovers': { usePlaylistCoversStore: () => ({ hydrate() {} }) },
@@ -264,6 +266,7 @@ test('removing either default card leaves one and last visible card cannot be re
       '@/stores/playlistCovers': {
         usePlaylistCoversStore: () => ({ hydrate() {}, coverFor() {} }),
       },
+      '@/utils/watchUserSession': userSessionWatch,
       '@/stores/user': { useUserStore: () => ({}) },
       './sidebarShortcutEntries': entries,
       './sidebarLayout': layout,
@@ -306,6 +309,7 @@ test('card handlers reject deleting the last visible card and keep first-card or
       '@/stores/playlistCovers': {
         usePlaylistCoversStore: () => ({ hydrate() {}, coverFor() {} }),
       },
+      '@/utils/watchUserSession': userSessionWatch,
       '@/stores/user': { useUserStore: () => ({}) },
       './sidebarShortcutEntries': entries,
       './sidebarLayout': layout,
@@ -397,6 +401,7 @@ for (const collapsed of [false, true])
       'layouts/Sidebar.vue',
       {
         '@/stores/setting': { useSettingStore: () => settings },
+        '@/utils/watchUserSession': userSessionWatch,
         '@/stores/user': { useUserStore: () => user },
         '@/stores/playlist': { usePlaylistStore: () => playlists },
         '@/stores/playlistCovers': {

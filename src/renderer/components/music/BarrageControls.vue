@@ -100,7 +100,7 @@ watch(
       :open="open"
       trigger="click"
       :side="variant === 'lyric' ? 'top' : 'bottom'"
-      align="end"
+      align="center"
       content-class="barrage-send-popover"
       @update:open="updateOpen"
     >

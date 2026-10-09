@@ -560,6 +560,8 @@ const handleSelectPlaylist = async (listId: string | number) => {
     const { successCount, failedCount } = await playlistStore.addSongsToPlaylist(
       listId,
       songsToAdd,
+      undefined,
+      { checkDuplicates: true },
     );
     if (successCount > 0 && failedCount === 0) {
       toastStore.actionCompleted(`已添加 ${successCount} 首到『${targetName}』`);
@@ -571,7 +573,12 @@ const handleSelectPlaylist = async (listId: string | number) => {
       showPlaylistDialog.value = false;
       return;
     }
-    toastStore.warning('所选歌曲已在目标歌单中');
+    if (failedCount === 0) {
+      toastStore.actionCompleted('所选歌曲已在目标歌单中');
+      showPlaylistDialog.value = false;
+    } else {
+      toastStore.actionFailed('添加到歌单');
+    }
   } catch {
     toastStore.actionFailed('添加到歌单');
   } finally {
@@ -920,10 +927,13 @@ onBeforeUnmount(() => {
   <AddToPlaylistDialog
     v-model:open="showPlaylistDialog"
     :playlists="createdPlaylists"
+    :songs="previewQueue?.songs ?? []"
+    reversePlaylistSongs
     :loading="isPlaylistLoading"
     :disabled="isAddingToPlaylist"
     :showPlaybackQueues="false"
-    @selectPlaylist="handleSelectPlaylist"
+    @update:busy="isAddingToPlaylist = $event"
+    :addPlaylist="handleSelectPlaylist"
   />
 </template>
 

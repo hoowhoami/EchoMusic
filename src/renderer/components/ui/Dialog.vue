@@ -64,7 +64,8 @@ const {
 
 const hasTitle = computed(() => Boolean(props.title) || Boolean(slots.title));
 const hasDescription = computed(() => Boolean(props.description) || Boolean(slots.description));
-const hasFooter = computed(() => Boolean(slots.footer));
+// 动态具名插槽会随父组件渲染更新，slots 本身不是响应式依赖。
+const hasFooter = () => Boolean(slots.footer);
 const hasBody = computed(() => Boolean(slots.default));
 
 const overlayClass = computed(() => ['dialog-overlay', props.overlayClass]);
@@ -198,7 +199,7 @@ const handleInteractOutside = (event: Event) => {
           </template>
 
           <!-- 固定底部：页脚 -->
-          <div v-if="hasFooter" class="dialog-footer shrink-0">
+          <div v-if="hasFooter()" class="dialog-footer shrink-0">
             <slot name="footer" />
           </div>
         </div>

@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -247,6 +248,8 @@ function fixture(t, kind) {
       useStickyTabsLayout: () => ({ tabsTop: vue.ref(0), tabsMinHeight: vue.ref(0) }),
     },
     '@/utils/extractors': extractors,
+
+    '@/utils/watchUserSession': userSessionWatch,
 
     '@/utils/userSession': session,
     '@/utils/PagedSongLoader': loaders,

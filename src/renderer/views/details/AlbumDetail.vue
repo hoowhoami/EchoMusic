@@ -56,7 +56,7 @@ import { useScrollContainer } from '@/composables/usePageScroll';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { isRecord } from '../../../shared/object';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
-import { captureUserSession } from '@/utils/userSession';
+import { captureUserSession, userSessionSources } from '@/utils/userSession';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 const router = useRouter();
@@ -165,13 +165,7 @@ const isFavoriteAlbum = computed(() => {
 const togglingFavorite = ref(false);
 let favoriteGeneration = 0;
 watch(
-  [
-    getAlbumId,
-    () => userStore.isLoggedIn,
-    () => userStore.accountRevision,
-    () => userStore.info?.userid ?? userStore.info?.userId,
-    () => userStore.info?.token,
-  ],
+  [getAlbumId, ...userSessionSources(userStore)],
   () => {
     favoriteGeneration++;
     togglingFavorite.value = false;

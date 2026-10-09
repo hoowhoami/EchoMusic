@@ -1,5 +1,6 @@
+import { watchUserSession } from '@/utils/watchUserSession';
 import { defineStore } from 'pinia';
-import { computed, ref, shallowRef, toRaw, watch } from 'vue';
+import { computed, ref, shallowRef, toRaw } from 'vue';
 import { useUserStore } from '@/stores/user';
 import { captureUserSession } from '@/utils/userSession';
 import { getLoginDevices, kickLoginDevice } from '@/api/user';
@@ -139,16 +140,7 @@ export const useLoginDeviceStore = defineStore('loginDevices', () => {
     loaded.value = false;
     error.value = '';
   };
-  watch(
-    [
-      () => user.isLoggedIn,
-      () => user.accountRevision,
-      () => user.info?.userid ?? user.info?.userId,
-      () => user.info?.token,
-    ],
-    reset,
-    { flush: 'sync' },
-  );
+  watchUserSession(user, reset, { flush: 'sync' });
 
   const fetchDevices = (force = false): Promise<void> => {
     if (!user.isLoggedIn) return Promise.resolve();

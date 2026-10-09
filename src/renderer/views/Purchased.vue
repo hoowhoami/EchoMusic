@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'purchased' });
-import { computed, onUnmounted, ref, shallowRef, watch } from 'vue';
+import { computed, onUnmounted, ref, shallowRef } from 'vue';
 import { getPurchasedSongs, getPurchasedAlbum } from '@/api/purchased';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
@@ -357,8 +359,8 @@ const openBatchDrawer = () => {
 
 const handleLocate = () => songListRef.value?.scrollToActive?.();
 
-watch(
-  [() => userStore.accountRevision, () => userStore.isLoggedIn],
+watchUserSession(
+  userStore,
   () => {
     songsRevision++;
     albumsRevision++;

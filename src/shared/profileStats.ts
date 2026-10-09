@@ -1,12 +1,24 @@
 const nonNegativeNumber = (value: unknown): number | null => {
-  if (value === null || value === undefined || value === '' || typeof value === 'boolean')
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === 'string' && !value.trim()) ||
+    typeof value === 'boolean'
+  )
     return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
 };
 
+export function getListeningSeconds(seconds: unknown, minutes?: unknown): number | null {
+  const direct = nonNegativeNumber(seconds);
+  if (direct !== null) return direct;
+  const fallback = nonNegativeNumber(minutes);
+  return fallback === null ? null : fallback * 60;
+}
+
 export function formatListeningDuration(seconds: unknown, minutes?: unknown): string {
-  const value = nonNegativeNumber(seconds) ?? (nonNegativeNumber(minutes) ?? 0) * 60;
+  const value = getListeningSeconds(seconds, minutes) ?? 0;
   const total = Math.floor(value);
   if (total < 60) return `${total} 秒`;
   const days = Math.floor(total / 86400);

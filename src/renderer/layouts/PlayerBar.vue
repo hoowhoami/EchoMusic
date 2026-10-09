@@ -82,6 +82,7 @@ const {
   isQueueDrawerOpen,
   openQueue,
   showAddToPlaylistDialog,
+  addToPlaylistTrack,
   isPlaylistLoading,
   canAddToPlaylist,
   createdPlaylists,
@@ -647,7 +648,7 @@ onUnmounted(() => {
               <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
               <SpeedPopover v-else-if="item.component === 'speed'" />
               <QualityPopover v-else-if="item.component === 'quality'" />
-              <EffectPopover v-else-if="item.component === 'effect'" align="start" />
+              <EffectPopover v-else-if="item.component === 'effect'" />
               <CastPopover
                 v-else-if="item.component === 'cast'"
                 :show-badge="Boolean(item.visibleBadge)"
@@ -699,7 +700,7 @@ onUnmounted(() => {
             <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
             <SpeedPopover v-else-if="item.component === 'speed'" />
             <QualityPopover v-else-if="item.component === 'quality'" />
-            <EffectPopover v-else-if="item.component === 'effect'" align="center" />
+            <EffectPopover v-else-if="item.component === 'effect'" />
             <CastPopover
               v-else-if="item.component === 'cast'"
               :show-badge="Boolean(item.visibleBadge)"
@@ -868,9 +869,10 @@ onUnmounted(() => {
     v-model:open="showAddToPlaylistDialog"
     :playbackQueues="addToPlaybackQueues"
     :playlists="createdPlaylists"
+    :songs="addToPlaylistTrack ? [addToPlaylistTrack] : []"
     :loading="isPlaylistLoading"
     @selectQueue="handleAddToQueue"
-    @selectPlaylist="handleSelectPlaylist"
+    :addPlaylist="handleSelectPlaylist"
   />
 </template>
 

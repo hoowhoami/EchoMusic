@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
@@ -254,6 +255,7 @@ function pageFixture(t, native) {
           },
         ),
       },
+      '@/utils/watchUserSession': userSessionWatch,
       '@/utils/userSession': session,
     },
     {

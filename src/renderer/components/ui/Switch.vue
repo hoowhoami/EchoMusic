@@ -5,12 +5,14 @@ import { SwitchRoot, SwitchThumb } from 'reka-ui';
 interface Props {
   modelValue?: boolean;
   disabled?: boolean;
+  size?: 'sm' | 'md';
   class?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: false,
   disabled: false,
+  size: 'md',
 });
 
 const emit = defineEmits<{
@@ -28,6 +30,7 @@ const handleUpdate = (next: unknown) => {
   <SwitchRoot
     :model-value="value"
     :disabled="props.disabled"
+    :data-size="props.size"
     :class="['switch-root', props.class]"
     @update:model-value="handleUpdate"
   >
@@ -63,5 +66,23 @@ const handleUpdate = (next: unknown) => {
 .switch-thumb {
   @apply block h-4 w-4 shrink-0 rounded-full bg-white shadow-sm transition-transform;
   @apply data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-1;
+}
+
+.switch-root[data-size='sm'] {
+  width: 36px;
+  height: 20px;
+}
+
+.switch-root[data-size='sm'] .switch-thumb {
+  width: 14px;
+  height: 14px;
+}
+
+.switch-root[data-size='sm'] .switch-thumb[data-state='unchecked'] {
+  translate: 3px 0;
+}
+
+.switch-root[data-size='sm'] .switch-thumb[data-state='checked'] {
+  translate: 17px 0;
 }
 </style>

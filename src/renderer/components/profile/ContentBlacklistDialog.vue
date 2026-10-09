@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { computed, nextTick, ref, useId, watch, onBeforeUnmount } from 'vue';
@@ -11,7 +13,7 @@ import { iconEyeOff, iconHeartOff, iconRefreshCw, iconRotateCcw } from '@/icons'
 import { useContentBlacklistStore } from '@/stores/contentBlacklist';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
-import { captureUserSession } from '@/utils/userSession';
+import { captureUserSession, userSessionSources } from '@/utils/userSession';
 
 interface Props {
   open?: boolean;
@@ -165,19 +167,13 @@ const confirmRemoval = async () => {
   }
 };
 
-const sessionSources = [
-  () => userStore.isLoggedIn,
-  () => userStore.accountRevision,
-  () => userStore.info?.userid ?? userStore.info?.userId,
-  () => userStore.info?.token,
-];
 const invalidateRemoval = () => {
   generation++;
   pendingRemoval.value = null;
   removingKey.value = '';
 };
-watch([() => props.open, ...sessionSources], invalidateRemoval, { flush: 'sync' });
-watch(sessionSources, () => {
+watch([() => props.open, ...userSessionSources(userStore)], invalidateRemoval, { flush: 'sync' });
+watchUserSession(userStore, () => {
   blacklistStore.syncAccount();
   if (props.open) void loadCurrentTab(true);
 });

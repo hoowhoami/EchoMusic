@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -320,6 +321,7 @@ function pageFixture(t, loggedIn = true) {
     '@/stores/setting': { useSettingStore: () => ({}) },
     '@/utils/cover': { createThemedIconCoverUrl: () => '' },
     '@/utils/song': { getSongQualityTags: () => [] },
+    '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': sessionModule.exports,
     '@/icons': {},
   };

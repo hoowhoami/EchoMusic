@@ -20,6 +20,7 @@ export type SavedAccount = Pick<
   'userid' | 'token' | 't1' | 'nickname' | 'pic' | 'expires'
 > & {
   lastUsedAt: number;
+  listeningSeconds?: number;
 };
 
 // 听歌等级字段白名单：合并进用户档案 detail 时仅取这些字段，
@@ -133,11 +134,22 @@ export const useUserStore = defineStore('user', {
         pic: info.pic,
         expires: info.expires,
         lastUsedAt: used ? Date.now() : (existing?.lastUsedAt ?? Date.now()),
+        ...(existing?.listeningSeconds !== undefined
+          ? { listeningSeconds: existing.listeningSeconds }
+          : {}),
       };
       this.savedAccounts = [
         account,
         ...this.savedAccounts.filter((saved) => saved.userid !== account.userid),
       ];
+    },
+    updateSavedAccountListeningSeconds(userid: number, value: unknown) {
+      if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return;
+      const seconds = Number(value);
+      if (!Number.isFinite(seconds) || seconds < 0) return;
+      this.savedAccounts = this.savedAccounts.map((account) =>
+        account.userid === userid ? { ...account, listeningSeconds: seconds } : account,
+      );
     },
     /** 登录与切换共用入口；仅恢复凭证，账号资料由正常初始化重新获取。 */
     login(data: Record<string, unknown>) {
@@ -163,7 +175,9 @@ export const useUserStore = defineStore('user', {
       this.login({ ...account });
     },
     forgetAccount(userid: number) {
-      if (this.info?.userid === userid) this.logout();
+      if (this.isLoggedIn && this.info?.userid === userid) {
+        throw new Error('当前登录账号不能移除，请先切换账号');
+      }
       this.savedAccounts = this.savedAccounts.filter((account) => account.userid !== userid);
     },
     setUserInfo(info: UserInfo, newSession = false) {
@@ -382,6 +396,7 @@ export const useUserStore = defineStore('user', {
           }),
         );
         logger.info('UserStore', 'Grade info fetched');
+        this.updateSavedAccountListeningSeconds(this.info.userid, gradeData.d_sec);
       } catch (e) {
         logger.warn('UserStore', 'Fetch grade info error:', e);
       }

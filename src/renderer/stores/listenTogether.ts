@@ -1,3 +1,4 @@
+import { watchUserSession } from '@/utils/watchUserSession';
 import { computed, onScopeDispose, ref, watch } from 'vue';
 import { captureUserSession } from '@/utils/userSession';
 import { defineStore } from 'pinia';
@@ -2834,13 +2835,8 @@ export const useListenTogetherStore = defineStore(
       },
     );
 
-    watch(
-      [
-        () => userStore.isLoggedIn,
-        () => userStore.accountRevision,
-        () => userStore.info?.userid ?? userStore.info?.userId,
-        () => userStore.info?.token,
-      ],
+    watchUserSession(
+      userStore,
       () => {
         resetSessionState();
         closePreview();

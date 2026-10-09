@@ -57,13 +57,11 @@ import {
 interface Props {
   variant?: 'lyric' | 'bar';
   side?: 'top' | 'bottom';
-  align?: 'start' | 'center' | 'end';
   open?: boolean;
 }
 const props = withDefaults(defineProps<Props>(), {
   variant: 'bar',
   side: 'top',
-  align: 'end',
   open: undefined,
 });
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
@@ -796,8 +794,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
     v-model:open="effectPopoverOpen"
     trigger="click"
     :side="side"
-    :align="props.align"
-    :align-offset="props.align === 'end' ? -24 : 0"
+    align="center"
     :side-offset="8"
     content-class="effect-popover"
   >

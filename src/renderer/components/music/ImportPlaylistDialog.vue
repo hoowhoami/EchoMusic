@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { captureUserSession } from '@/utils/userSession';
 import { useVModel } from '@vueuse/core';
@@ -299,13 +301,8 @@ watch(
   { flush: 'sync' },
 );
 
-watch(
-  [
-    () => userStore.isLoggedIn,
-    () => userStore.accountRevision,
-    () => userStore.info?.userid ?? userStore.info?.userId,
-    () => userStore.info?.token,
-  ],
+watchUserSession(
+  userStore,
   () => {
     currentDialogRun?.dismiss();
     cancelReset();

@@ -1,3 +1,4 @@
+import { userSessionWatch } from './user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -120,6 +121,7 @@ export function fixture(t, kind, initialProps = {}, options = {}) {
   const deps = {
     vue,
     '@/api/comment': api,
+    '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': session,
     '@/utils/commentLimits': limits,
     '@/utils/composerKeyboard': keyboard,

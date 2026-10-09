@@ -1720,9 +1720,10 @@ watch(total, (value) => {
     v-model:open="showPlaylistDialog"
     :playbackQueues="addToPlaybackQueues"
     :playlists="selectablePlaylists"
+    :songs="actionSong ? [actionSong] : []"
     :loading="isPlaylistLoading"
     @selectQueue="handleAddToQueue"
-    @selectPlaylist="handleSelectPlaylist"
+    :addPlaylist="handleSelectPlaylist"
   />
 </template>
 

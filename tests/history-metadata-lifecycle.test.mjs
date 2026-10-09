@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -66,6 +67,7 @@ function fixture(t) {
         { [`use${name[0].toUpperCase()}${name.slice(1)}Store`]: () => ({}) },
       ]),
     ),
+    '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': sessionModule.exports,
     '@/utils/cover': { createThemedIconCoverUrl: () => '' },
     '@/components/music/songContextMenuExtensions': {

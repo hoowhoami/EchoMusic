@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -72,6 +73,7 @@ const setup = ({
       pinia,
       '@/api/user': { getLoginDevices: get, kickLoginDevice: kick },
       '@/stores/user': { useUserStore: () => user },
+      '@/utils/watchUserSession': userSessionWatch,
       '@/utils/userSession': session,
       '@/stores/device': { useDeviceStore: () => ({ info: { mid: 'local' } }) },
       '@/utils/device': { ensureDevice: ensure },

@@ -1,8 +1,9 @@
+import { watchUserSession } from '@/utils/watchUserSession';
 import { onBeforeUnmount, ref, watch } from 'vue';
 import { getAlbumComments, getPlaylistComments } from '@/api/comment';
 import { mapCommentItem } from '@/utils/mappers';
 import { enrichCommentsWithYoungVip } from '@/utils/commentVipCache';
-import { captureUserSession } from '@/utils/userSession';
+import { captureUserSession, userSessionSources } from '@/utils/userSession';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { isRecord, toRecord } from '../../shared/object';
@@ -36,15 +37,10 @@ export function useDetailComments(options: {
     commentPage.value = 1;
     hasMoreComments.value = true;
   };
-  const sessionSources = [
-    () => user.isLoggedIn,
-    () => user.accountRevision,
-    () => user.info?.userid ?? user.info?.userId,
-    () => user.info?.token,
-  ];
-  watch([options.resourceId, ...sessionSources], invalidate, { flush: 'sync' });
+
+  watch([options.resourceId, ...userSessionSources(user)], invalidate, { flush: 'sync' });
   // 账号切换仍停留在同一个详情时，重新取得当前账号的评论状态。
-  watch(sessionSources, () => {
+  watchUserSession(user, () => {
     if (options.isActive()) void fetchComments(true);
   });
   onBeforeUnmount(() => {

@@ -575,7 +575,7 @@ useResizeObserver(
               <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
               <SpeedPopover v-else-if="item.component === 'speed'" />
               <QualityPopover v-else-if="item.component === 'quality'" />
-              <EffectPopover v-else-if="item.component === 'effect'" align="start" />
+              <EffectPopover v-else-if="item.component === 'effect'" />
               <CastPopover
                 v-else-if="item.component === 'cast'"
                 variant="lyric"
@@ -621,7 +621,7 @@ useResizeObserver(
             <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
             <SpeedPopover v-else-if="item.component === 'speed'" />
             <QualityPopover v-else-if="item.component === 'quality'" />
-            <EffectPopover v-else-if="item.component === 'effect'" align="center" />
+            <EffectPopover v-else-if="item.component === 'effect'" />
             <CastPopover
               v-else-if="item.component === 'cast'"
               variant="lyric"

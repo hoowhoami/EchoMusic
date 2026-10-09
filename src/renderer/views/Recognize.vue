@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 defineOptions({ name: 'recognize-page' });
@@ -16,9 +18,8 @@ import {
 import { useRouter } from 'vue-router';
 import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
-import Dialog from '@/components/ui/Dialog.vue';
+import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import Popover from '@/components/ui/Popover.vue';
-import Skeleton from '@/components/ui/Skeleton.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import {
   iconMicrophone,
@@ -451,16 +452,7 @@ watch(
   },
   { flush: 'sync' },
 );
-watch(
-  [
-    () => userStore.accountRevision,
-    () => userStore.isLoggedIn,
-    () => userStore.info?.userid,
-    () => userStore.info?.token,
-  ],
-  closePlaylistDialog,
-  { flush: 'sync' },
-);
+watchUserSession(userStore, closePlaylistDialog, { flush: 'sync' });
 
 function deactivatePage() {
   active = false;
@@ -701,40 +693,18 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 添加到歌单弹窗 -->
-    <Dialog
+    <AddToPlaylistDialog
       v-model:open="showPlaylistDialog"
       title="添加到歌单"
-      contentClass="max-w-[420px]"
-      showClose
-    >
-      <div class="flex flex-col gap-3">
-        <div v-if="isPlaylistLoading" class="rec-playlist-skeleton" aria-busy="true">
-          <div v-for="item in 4" :key="item" class="rec-playlist-item">
-            <Skeleton variant="text" width="54%" height="13px" />
-            <Skeleton variant="text" width="42px" height="11px" />
-          </div>
-        </div>
-        <div
-          v-else-if="selectablePlaylists.length === 0"
-          class="py-6 text-center text-text-secondary text-[12px]"
-        >
-          暂无可用歌单
-        </div>
-        <Button
-          v-for="entry in selectablePlaylists"
-          :key="entry.listid ?? entry.id"
-          type="button"
-          class="rec-playlist-item"
-          variant="ghost"
-          size="sm"
-          :disabled="isPlaylistLoading || isPlaylistSubmitting"
-          @click="handleSelectPlaylist(entry.listid ?? entry.id)"
-        >
-          <span class="text-[13px] font-semibold text-text-main truncate">{{ entry.name }}</span>
-          <span class="text-[11px] text-text-secondary">{{ entry.count ?? 0 }} 首</span>
-        </Button>
-      </div>
-    </Dialog>
+      :playlists="selectablePlaylists"
+      :songs="pendingSong ? [pendingSong] : []"
+      :loading="isPlaylistLoading"
+      :disabled="isPlaylistSubmitting"
+      :showPlaybackQueues="false"
+      :addPlaylist="handleSelectPlaylist"
+      @update:busy="isPlaylistSubmitting = $event"
+      @added="closePlaylistDialog"
+    />
   </PageScrollContainer>
 </template>
 
@@ -1202,33 +1172,6 @@ onBeforeUnmount(() => {
 .rec-circle-ghost:hover {
   color: var(--color-text-main);
   background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
-}
-
-.rec-playlist-item {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: var(--radius-item);
-  border: 1px solid var(--control-border);
-  background: var(--control-muted-bg);
-  text-align: left;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--color-text-main);
-  transition:
-    color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.rec-playlist-item:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary-text);
-}
-
-.rec-playlist-skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 .rec-retry-center {

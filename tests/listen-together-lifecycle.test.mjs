@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -239,6 +240,7 @@ function fixture(t) {
       '@/api/listenTogether': api,
       '@/api/music': { getAudioMetadata: async () => ok() },
       '@/utils/listenTogether': utils,
+      '@/utils/watchUserSession': userSessionWatch,
       '@/utils/userSession': session,
       './player': { usePlayerStore: () => player },
       './lyric': { useLyricStore: () => ({ fetchLyrics: async () => {} }) },
@@ -847,6 +849,7 @@ function pageFixture(t) {
       useRoute: () => vue.reactive({ name: 'listen-together', query: {} }),
       useRouter: () => ({ push() {}, replace() {} }),
     },
+    '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': session,
 
     '@/utils/composerKeyboard': keyboard,

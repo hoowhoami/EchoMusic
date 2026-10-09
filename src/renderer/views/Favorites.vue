@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'favorites' });
@@ -505,22 +507,19 @@ onUnmounted(() => {
   loadMoreObserver = null;
 });
 
-watch(
-  () => [isLoggedIn.value, currentUserKey.value, userStore.accountRevision] as const,
-  ([loggedIn]) => {
-    accountGeneration += 1;
-    if (!loggedIn) {
-      resetFollowed();
-      resetVideos();
-      return;
-    }
-
+watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
+  accountGeneration += 1;
+  if (!loggedIn) {
     resetFollowed();
     resetVideos();
-    void refreshFavorites();
-    loadActiveTabData();
-  },
-);
+    return;
+  }
+
+  resetFollowed();
+  resetVideos();
+  void refreshFavorites();
+  loadActiveTabData();
+});
 </script>
 
 <template>

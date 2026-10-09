@@ -41,7 +41,7 @@ function closePopover(): void {
     trigger="click"
     :open="props.open"
     :side="props.side"
-    align="end"
+    align="center"
     :side-offset="8"
     :hold-open="Boolean(output.connectingTargetId)"
     content-class="cast-popover"

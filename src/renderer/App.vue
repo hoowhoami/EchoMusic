@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import { setOpenThemesHandler } from '@/theme/registry';
 import { settingsDialogOpen } from '@/composables/useSettingsDialog';
 import { useLyricPageTransition } from '@/composables/useLyricPageTransition';
@@ -121,10 +123,6 @@ const rootPageTransitionKey = computed(() => route.matched[0]?.path ?? route.ful
 const currentCoverColorUrls = computed(() =>
   resolveCoverColorUrls(player.value?.currentTrackSnapshot?.coverUrl, 300, { scope: 'theme' }),
 );
-const currentUserKey = computed(() =>
-  String(userStore.info?.userid ?? userStore.info?.userId ?? ''),
-);
-
 const updateTheme = () => themeStore.onThemeChange();
 
 const applyGlobalFont = () => {
@@ -455,15 +453,15 @@ watch(
     syncTrayPlayback();
   },
 );
-watch(
-  [() => userStore.isLoggedIn, () => currentUserKey.value, () => userStore.accountRevision],
-  ([loggedIn], previous) => {
+watchUserSession(
+  userStore,
+  ({ isLoggedIn: loggedIn }, previous) => {
     contentBlacklistStore.reset();
-    if (previous?.length) playlistStore.resetUserCollections();
+    if (previous) playlistStore.resetUserCollections();
     if (loggedIn) {
       scheduleCloudAudioIndexWarmup();
     } else {
-      if (!previous?.length) playlistStore.resetUserCollections();
+      if (!previous) playlistStore.resetUserCollections();
       clearCloudAudioIndexWarmupTimer();
       clearCloudAudioIndex();
     }

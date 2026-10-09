@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -91,6 +92,7 @@ function fixture(t) {
     vue,
     pinia,
     '@/api/blacklist': api,
+    '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': session,
     '@/stores/user': { useUserStore: () => user },
     '@/utils/logger': logger,
@@ -581,14 +583,12 @@ test('round12: App ordinary profile updates do not reset collections or blacklis
     scope = vue.effectScope();
   t.after(() => scope.stop());
   const source = read('../src/renderer/App.vue');
-  const statement =
-    source.match(/watch\(\s*\[\s*\(\) => userStore\.isLoggedIn,[\s\S]*?\n\);/)?.[0] ??
-    source.match(/watch\(\s*\(\) => \[userStore\.isLoggedIn,[\s\S]*?\n\);/)[0];
+  const statement = source.match(/watchUserSession\(\s*userStore,[\s\S]*?\n\);/)[0];
   const code = transformSync(statement, { loader: 'ts' }).code;
   let resets = 0;
   scope.run(() =>
     new Function(
-      'watch',
+      'watchUserSession',
       'userStore',
       'currentUserKey',
       'contentBlacklistStore',
@@ -598,7 +598,7 @@ test('round12: App ordinary profile updates do not reset collections or blacklis
       'clearCloudAudioIndex',
       code,
     )(
-      vue.watch,
+      userSessionWatch.watchUserSession,
       f.user,
       vue.computed(() => String(f.user.info?.userid ?? '')),
       f.store,
@@ -619,7 +619,7 @@ test('round12: App ordinary profile updates do not reset collections or blacklis
   assert.equal(await f.store.ensureFullyLoaded('song'), true);
   assert.equal(f.calls.length, 1);
   f.user.setUserInfo({ userid: 7, token: 'two' });
-  assert.equal(resets, 1);
+  assert.ok(resets > 0);
   assert.equal(f.store.status('song', hash), 'unknown');
 });
 

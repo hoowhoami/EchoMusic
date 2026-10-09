@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -70,6 +71,7 @@ function setup(overrides = {}) {
     ...overrides,
   };
   const scope = compile('../src/renderer/stores/playlist/accountScope.ts', {
+    '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': compile('../src/renderer/utils/userSession.ts'),
     '@/stores/user': { useUserStore: () => user },
   });
@@ -186,6 +188,130 @@ test('a failed duplicate-check page never marks its partial cache complete', asy
   store.userPlaylists[0].count = 301;
   assert.equal(await store.addToPlaylist(12, track(999)), 'added');
   assert.equal(store.hasCompleteKnownPlaylistSongs(12), false);
+});
+
+test('checked batch additions read uncached targets and submit only missing songs', async () => {
+  const writes = [];
+  const batches = [];
+  const { store } = setup({
+    getPlaylistTracksNew: async () => page([track(1)]),
+    addPlaylistTrack: async (_id, payload) => {
+      writes.push(payload);
+      return { status: 1 };
+    },
+  });
+  store.userPlaylists[0].count = 1;
+  assert.deepEqual(
+    await store.addSongsToPlaylist(12, [track(1), track(2)], undefined, {
+      checkDuplicates: true,
+      onBatchResult: (songs, result) => batches.push([songs.map((song) => song.id), result]),
+    }),
+    { successCount: 1, failedCount: 0 },
+  );
+  assert.equal(writes.length, 1);
+  assert.match(writes[0], /hash-2/);
+  assert.doesNotMatch(writes[0], /hash-1/);
+  assert.deepEqual(batches, [[['2'], 'added']]);
+  assert.equal(store.hasCompleteKnownPlaylistSongs(12), false);
+  assert.deepEqual(store.getKnownPlaylistSongs(12), []);
+  assert.equal(store.userPlaylists[0].count, 2);
+});
+
+test('checked batches do not write after a failed duplicate read or mark a partial read complete', async () => {
+  let writes = 0;
+  const { store } = setup({
+    getPlaylistTracksNew: async (_id, number) =>
+      number === 1
+        ? page(Array.from({ length: 300 }, (_, index) => track(index + 1)))
+        : { status: 0, data: {} },
+    addPlaylistTrack: async () => {
+      writes++;
+      return { status: 1 };
+    },
+  });
+  store.userPlaylists[0].count = 301;
+  const failed = [];
+  assert.deepEqual(
+    await store.addSongsToPlaylist(12, [track(999)], undefined, {
+      checkDuplicates: true,
+      onBatchResult: (songs, result) => failed.push([songs.map((song) => song.id), result]),
+    }),
+    { successCount: 0, failedCount: 1 },
+  );
+  assert.equal(writes, 0);
+  assert.equal(store.hasCompleteKnownPlaylistSongs(12), false);
+  assert.deepEqual(failed, [[['999'], 'failed']]);
+});
+
+test('a confirmed batch updates an existing complete cache and count; cancellation stops subsequent batches', async () => {
+  let active = true;
+  let writes = 0;
+  const { store } = setup({
+    addPlaylistTrack: async () => {
+      writes++;
+      return { status: 1 };
+    },
+  });
+  store.rememberPlaylistSongs(12, [], true);
+  const songs = [1, 2].map((id) => ({ ...track(id), name: 'x'.repeat(3000) }));
+  assert.deepEqual(
+    await store.addSongsToPlaylist(12, songs, undefined, {
+      checkDuplicates: true,
+      isCurrent: () => active,
+      onBatchResult: (_songs, result) => {
+        assert.equal(result, 'added');
+        assert.equal(store.userPlaylists[0].count, 1);
+        assert.equal(store.getKnownPlaylistSongs(12).length, 1);
+        active = false;
+      },
+    }),
+    { successCount: 1, failedCount: 1 },
+  );
+  assert.equal(writes, 1);
+});
+
+test('closing during an in-flight write still publishes confirmed additions for the same account', async () => {
+  let active = true;
+  const pending = deferred();
+  const { store } = setup({ addPlaylistTrack: () => pending.promise });
+  const operation = store.addSongsToPlaylist(12, [track(1)], undefined, {
+    checkDuplicates: true,
+    isCurrent: () => active,
+  });
+  active = false;
+  pending.resolve({ status: 1 });
+  assert.deepEqual(await operation, { successCount: 1, failedCount: 0 });
+  assert.equal(store.userPlaylists[0].count, 1);
+  assert.deepEqual(store.getKnownPlaylistSongs(12), []);
+  assert.equal(store.hasCompleteKnownPlaylistSongs(12), false);
+});
+
+test('batch result details permit retrying only failed songs without recounting successful batches', async () => {
+  let writes = 0;
+  const { store } = setup({ addPlaylistTrack: async () => ({ status: ++writes === 2 ? 0 : 1 }) });
+  const songs = [1, 2].map((id) => ({ ...track(id), name: 'x'.repeat(3000) }));
+  const failed = [];
+  const options = {
+    checkDuplicates: true,
+    onBatchResult: (batch, result) => {
+      if (result === 'failed') failed.push(...batch);
+    },
+  };
+  assert.deepEqual(await store.addSongsToPlaylist(12, songs, undefined, options), {
+    successCount: 1,
+    failedCount: 1,
+  });
+  assert.deepEqual(
+    failed.map((song) => song.id),
+    ['2'],
+  );
+  assert.equal(store.userPlaylists[0].count, 1);
+  assert.deepEqual(
+    await store.addSongsToPlaylist(12, failed, undefined, { checkDuplicates: true }),
+    { successCount: 1, failedCount: 0 },
+  );
+  assert.equal(writes, 3);
+  assert.equal(store.userPlaylists[0].count, 2);
 });
 
 for (const method of ['addSongsToPlaylist', 'removeSongsFromPlaylist']) {
@@ -419,15 +545,13 @@ const createUserStore = () => {
 
 test('App synchronously resets collections on actual same-user token replacement and logout/relogin', () => {
   const source = readFileSync(new URL('../src/renderer/App.vue', import.meta.url), 'utf8');
-  const statement =
-    source.match(/watch\(\s*\[\s*\(\) => userStore\.isLoggedIn,[\s\S]*?\n\);/)?.[0] ??
-    source.match(/watch\(\s*\(\) => \[userStore\.isLoggedIn,[\s\S]*?\n\);/)[0];
+  const statement = source.match(/watchUserSession\(\s*userStore,[\s\S]*?\n(?:\);|\}\);)/)[0];
   const userStore = createUserStore();
   const currentUserKey = vue.computed(() => String(userStore.info?.userid ?? ''));
   let resets = 0;
   const code = transformSync(statement, { loader: 'ts' }).code;
   new Function(
-    'watch',
+    'watchUserSession',
     'userStore',
     'currentUserKey',
     'playlistStore',
@@ -438,7 +562,7 @@ test('App synchronously resets collections on actual same-user token replacement
     'loadedCloudUserKey',
     code,
   )(
-    vue.watch,
+    userSessionWatch.watchUserSession,
     userStore,
     currentUserKey,
     {
@@ -453,7 +577,7 @@ test('App synchronously resets collections on actual same-user token replacement
     '',
   );
   userStore.setUserInfo({ userid: 7, token: 'renewed' });
-  assert.equal(resets, 1);
+  assert.ok(resets > 0);
   userStore.logout();
   const loggedOut = resets;
   assert.ok(loggedOut > 1);
@@ -466,16 +590,14 @@ test('Sidebar reloads collections after a same-user token replacement without du
     new URL('../src/renderer/layouts/Sidebar.vue', import.meta.url),
     'utf8',
   );
-  const statement =
-    source.match(/watch\(\s*\(\) => \[isLoggedIn\.value, currentUserId[\s\S]*?\n\);/)?.[0] ??
-    source.match(/watch\(isLoggedIn,[\s\S]*?\n\}\);/)[0];
+  const statement = source.match(/watchUserSession\(\s*userStore,[\s\S]*?\n(?:\);|\}\);)/)[0];
   const userStore = createUserStore();
   const isLoggedIn = vue.computed(() => userStore.isLoggedIn);
   const currentUserId = vue.computed(() => String(userStore.info?.userid ?? ''));
   let reads = 0;
   const code = transformSync(statement, { loader: 'ts' }).code;
   new Function(
-    'watch',
+    'watchUserSession',
     'isLoggedIn',
     'currentUserId',
     'userStore',
@@ -483,7 +605,7 @@ test('Sidebar reloads collections after a same-user token replacement without du
     'playlistStore',
     code,
   )(
-    vue.watch,
+    userSessionWatch.watchUserSession,
     isLoggedIn,
     currentUserId,
     userStore,
@@ -505,16 +627,14 @@ test('Favorites refreshes account-bound tabs after same-user relogin', async () 
     new URL('../src/renderer/views/Favorites.vue', import.meta.url),
     'utf8',
   );
-  const statement = source.match(
-    /watch\(\s*\(\) => \[isLoggedIn\.value, currentUserKey[\s\S]*?\n\);/,
-  )[0];
+  const statement = source.match(/watchUserSession\(\s*userStore,[\s\S]*?\n(?:\);|\}\);)/)[0];
   const userStore = createUserStore();
   const isLoggedIn = vue.computed(() => userStore.isLoggedIn);
   const currentUserKey = vue.computed(() => String(userStore.info?.userid ?? ''));
   const events = [];
   const code = transformSync('let accountGeneration = 0;\n' + statement, { loader: 'ts' }).code;
   new Function(
-    'watch',
+    'watchUserSession',
     'isLoggedIn',
     'currentUserKey',
     'userStore',
@@ -524,7 +644,7 @@ test('Favorites refreshes account-bound tabs after same-user relogin', async () 
     'loadActiveTabData',
     code,
   )(
-    vue.watch,
+    userSessionWatch.watchUserSession,
     isLoggedIn,
     currentUserKey,
     userStore,

@@ -1,5 +1,6 @@
+import { watchUserSession } from '@/utils/watchUserSession';
 import { defineStore } from 'pinia';
-import { shallowRef, watch } from 'vue';
+import { shallowRef } from 'vue';
 import { getSongPrivilegeLite } from '@/api/music';
 import { getYouthUnionVip } from '@/api/user';
 import { useUserStore } from '@/stores/user';
@@ -42,13 +43,8 @@ export const useSongQualityAccessStore = defineStore('songQualityAccess', () => 
     pending.clear();
     cachedUserInfoRevision = user.userInfoRevision;
   };
-  watch(
-    [
-      () => user.accountRevision,
-      () => user.isLoggedIn,
-      () => user.info?.userid ?? user.info?.userId,
-      () => user.info?.token,
-    ],
+  watchUserSession(
+    user,
     () => {
       sessionRevision.value += 1;
       clearCache();

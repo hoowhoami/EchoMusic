@@ -1,3 +1,4 @@
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -53,6 +54,7 @@ function fixture(t) {
   const mocks = {
     vue: { ...vue, onUnmounted: (fn) => unmount.push(fn) },
     '@/stores/user': { useUserStore: () => user },
+    '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': session.exports,
     '@/api/purchased': {
       getPurchasedSongs: (page) => fetch('songs', page),

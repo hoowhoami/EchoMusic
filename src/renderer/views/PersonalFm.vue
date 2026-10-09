@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 defineOptions({ name: 'personal-fm' });
@@ -410,14 +412,9 @@ const bindVinylsObserver = () => {
     observer.observe(personalFmVinylsRef.value);
   }
 };
-const sessionSources = [
-  () => userStore.isLoggedIn,
-  () => userStore.accountRevision,
-  () => userStore.info?.userid ?? userStore.info?.userId,
-  () => userStore.info?.token,
-];
-watch(sessionSources, invalidateOperations, { flush: 'sync' });
-watch(sessionSources, () => {
+
+watchUserSession(userStore, invalidateOperations, { flush: 'sync' });
+watchUserSession(userStore, () => {
   if (!disposed && active && isLoggedIn.value) void preloadPersonalFmPreview();
 });
 watch(personalFmVinylsRef, bindVinylsObserver);

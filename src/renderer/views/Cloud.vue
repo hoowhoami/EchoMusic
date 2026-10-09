@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watchUserSession } from '@/utils/watchUserSession';
+
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'cloud' });
 import {
@@ -480,12 +482,6 @@ const handleUploadOpenRequest = () => {
   showUploadDialog.value = true;
 };
 
-const sessionSources = [
-  () => userStore.isLoggedIn,
-  () => userStore.accountRevision,
-  () => userStore.info?.userid ?? userStore.info?.userId,
-  () => userStore.info?.token,
-];
 const invalidatePageOperations = () => {
   sessionGeneration.value++;
   dataGeneration++;
@@ -497,8 +493,8 @@ const invalidatePageOperations = () => {
   deletingCloudSong.value = false;
   showBatchDrawer.value = false;
 };
-watch(
-  sessionSources,
+watchUserSession(
+  userStore,
   () => {
     invalidatePageOperations();
     resetCloudState();
@@ -510,7 +506,7 @@ watch(
   },
   { flush: 'sync' },
 );
-watch(sessionSources, () => {
+watchUserSession(userStore, () => {
   if (active && isLoggedIn.value) void loadCloud();
 });
 

@@ -1,4 +1,5 @@
-import { computed, ref, shallowRef, watch } from 'vue';
+import { watchUserSession } from '@/utils/watchUserSession';
+import { computed, ref, shallowRef } from 'vue';
 import { defineStore } from 'pinia';
 import { getUserVideoCollect } from '@/api/user';
 import { setVideoCollected } from '@/api/video';
@@ -19,8 +20,8 @@ export const useVideoCollectionStore = defineStore('videoCollection', () => {
   let generation = 0;
   let loadPromise: Promise<void> | null = null;
 
-  watch(
-    [accountKey, () => userStore.accountRevision, () => userStore.info?.token],
+  watchUserSession(
+    userStore,
     () => {
       generation += 1;
       collectedIds.value = new Set();
