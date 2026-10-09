@@ -41,6 +41,7 @@ import {
   iconHeadphones,
   iconPlugin,
   iconVinyl,
+  iconMusicDiscount,
 } from '@/icons';
 
 const route = useRoute();
@@ -158,6 +159,16 @@ const registerBuiltinActions = () => {
     defaultPlacement: 'toolbar',
     order: 20,
     onClick: toggleTaskPanel,
+  });
+  builtinApi.register({
+    id: 'free-listen',
+    title: '免费听',
+    icon: iconMusicDiscount,
+    defaultPlacement: 'toolbar',
+    order: 25,
+    onClick: async () => {
+      await router.push({ name: 'free-listen' });
+    },
   });
   builtinApi.register({
     id: 'listen-together',

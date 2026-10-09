@@ -309,6 +309,17 @@ export function getHomeDiscover(params: HomeDiscoverParams = {}) {
 }
 
 /**
+ * 概念版「免费听」推荐流。
+ *
+ * 不要传 page/pagesize：IPC 层（main/server.ts）会把请求参数统一 String() 化，
+ * 而 server module 直接把它们塞进 JSON body，上游对字符串型数值会回 20010 参数错误。
+ * 该接口目前返回固定的 30 首且不接受翻页，交给 module 用数字默认值即可。
+ */
+export function getFreeListenSongs() {
+  return request.get('/ai/recommend/song');
+}
+
+/**
  * 获取歌曲高潮片段
  */
 export function getSongClimax(hash: string) {

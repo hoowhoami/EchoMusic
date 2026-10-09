@@ -71,6 +71,12 @@ const routes: RouteRecordRaw[] = [
         meta: { tabQueryKeys: ['tab'] },
       },
       {
+        path: 'free-listen',
+        name: 'free-listen',
+        component: () => import('@/views/FreeListen.vue'),
+        meta: { title: '免费听', keepAlive: true },
+      },
+      {
         path: 'listen-together',
         name: 'listen-together',
         component: () => import('@/views/listenTogether/index.vue'),
