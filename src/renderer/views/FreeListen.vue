@@ -7,7 +7,7 @@ import DetailPageError from '@/components/music/DetailPageError.vue';
 import Button from '@/components/ui/Button.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { getFreeListenSongs } from '@/api/music';
 import { extractList } from '@/utils/extractors';
 import { mapTopSong } from '@/utils/mappers';
@@ -16,6 +16,8 @@ import { usePlaylistStore, type SetPlaybackQueueOptions } from '@/stores/playlis
 import { usePlayerStore } from '@/stores/player';
 import { useThemeStore } from '@/stores/theme';
 import { useSettingStore } from '@/stores/setting';
+import { useUserStore } from '@/stores/user';
+import { captureUserSession } from '@/utils/userSession';
 import { createThemedIconCoverUrl } from '@/utils/cover';
 import { filterSongsByQuery } from '@/utils/songList';
 import { replaceQueueAndPlay } from '@/utils/playback';
@@ -31,6 +33,7 @@ const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const themeStore = useThemeStore();
 const settingStore = useSettingStore();
+const userStore = useUserStore();
 
 const songs = ref<Song[]>([]);
 const loading = ref(false);
@@ -38,6 +41,7 @@ const loadError = ref(false);
 const searchQuery = ref('');
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
 const seenKeys = new Set<string>();
+let loadGeneration = 0;
 
 const coverUrl = computed(() =>
   createThemedIconCoverUrl(themeStore.sourceColor, iconMusicDiscount),
@@ -81,16 +85,22 @@ const collectSongs = (payload: unknown): Song[] => {
 };
 
 const loadSongs = async () => {
+  const generation = ++loadGeneration;
+  const isSessionCurrent = captureUserSession(userStore);
   loading.value = true;
   loadError.value = false;
   seenKeys.clear();
   try {
-    songs.value = collectSongs(await getFreeListenSongs());
+    const payload = await getFreeListenSongs();
+    // 代次或会话变了说明响应已过期，丢弃以免旧账号的数据写回。
+    if (generation !== loadGeneration || !isSessionCurrent()) return;
+    songs.value = collectSongs(payload);
   } catch {
+    if (generation !== loadGeneration || !isSessionCurrent()) return;
     songs.value = [];
     loadError.value = true;
   } finally {
-    loading.value = false;
+    if (generation === loadGeneration) loading.value = false;
   }
 };
 
@@ -123,6 +133,22 @@ const handleLocate = () => songListRef.value?.scrollToActive?.();
 onMounted(() => {
   void loadSongs();
 });
+
+// 页面被 keepAlive 缓存，onMounted 只跑一次；账号切换（含登出）必须清空重载。
+watch(
+  () => [
+    userStore.isLoggedIn,
+    userStore.accountRevision,
+    userStore.info?.userid ?? userStore.info?.userId,
+    userStore.info?.token,
+  ],
+  () => {
+    songs.value = [];
+    seenKeys.clear();
+    void loadSongs();
+  },
+  { flush: 'sync' },
+);
 </script>
 
 <template>

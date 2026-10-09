@@ -96,6 +96,8 @@ export const mapTopSong = (json: unknown): Song => {
       : parseIntSafe(
           pickValue(
             record.timelength,
+            // 部分推荐流（如概念版 /ai/recommend/song）把毫秒时长只放在 audio_info 里
+            audioInfo.timelength,
             record.duration,
             audioInfo.duration_128,
             audioInfo.duration,
@@ -227,8 +229,8 @@ export const mapTopSong = (json: unknown): Song => {
         '',
       ),
     ),
-    privilege: parseOptionalInt(pickValue(record.privilege, undefined)),
-    payType: parseOptionalInt(pickValue(record.pay_type, undefined)),
+    privilege: parseOptionalInt(pickValue(record.privilege, audioInfo.privilege, undefined)),
+    payType: parseOptionalInt(pickValue(record.pay_type, audioInfo.pay_type, undefined)),
     oldCpy: parseOptionalInt(pickValue(record.old_cpy, record.media_old_cpy, undefined)),
     relateGoods,
     recDesc: normalizeText(readString(pickValue(recSongInfo.rec_desc, recSongInfo.recDesc, ''))),
