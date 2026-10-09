@@ -9,6 +9,8 @@ import type {
   PluginWindowShowOptions,
 } from '../../../shared/plugins';
 import { serializeForIpc } from './ipc';
+import type { FileRef, DirectoryRef } from '../../../shared/pluginFiles';
+import { createPluginResourceApi } from './resources';
 import { createWindowDragLifecycle } from '@/composables/useWindowDrag';
 import { useWindowResize, type WindowResizeBounds } from '@/composables/useWindowResize';
 
@@ -221,17 +223,35 @@ export const createPluginHostApi = () => {
   };
 };
 
-export const createPluginFsApi = (pluginId: string) => {
+export const createPluginFsApi = (
+  pluginId: string,
+  resources = createPluginResourceApi(pluginId, () => {}),
+) => {
   const getFsApi = () => window.electron.plugins?.fs;
   const unavailable = (message = '插件文件 API 不可用') =>
     Promise.resolve({ ok: false as const, error: message });
   return {
+    ...resources.files,
     listFiles: (
-      directoryPath: string,
+      directoryPath: string | DirectoryRef,
       options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['listFiles']>[2],
     ) =>
-      getFsApi()?.listFiles(pluginId, directoryPath, serializeForIpc(options) as typeof options) ??
-      unavailable(),
+      typeof directoryPath !== 'string'
+        ? resources.request<{
+            files: {
+              file: FileRef;
+              name: string;
+              relativePath: string;
+              size: number;
+              kind: string;
+            }[];
+            limitReached: boolean;
+          }>('listFiles', { directory: directoryPath, options })
+        : (getFsApi()?.listFiles(
+            pluginId,
+            directoryPath,
+            serializeForIpc(options) as typeof options,
+          ) ?? unavailable()),
     listImageFiles: (
       directoryPath: string,
       options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['listImageFiles']>[1],
@@ -240,26 +260,54 @@ export const createPluginFsApi = (pluginId: string) => {
       unavailable(),
     getFileUrl: (filePath: string) => getFsApi()?.getFileUrl(filePath) ?? unavailable(),
     readTextFile: (
-      filePath: string,
+      filePath: string | FileRef,
       options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['readTextFile']>[2],
     ) =>
-      getFsApi()?.readTextFile(pluginId, filePath, serializeForIpc(options) as typeof options) ??
-      unavailable(),
+      typeof filePath !== 'string'
+        ? resources.request<{
+            content: string;
+            size: number;
+            bytesRead: number;
+            truncated: boolean;
+          }>('readTextFile', { ref: filePath, options })
+        : (getFsApi()?.readTextFile(
+            pluginId,
+            filePath,
+            serializeForIpc(options) as typeof options,
+          ) ?? unavailable()),
     readFileBytes: (
-      filePath: string,
+      filePath: string | FileRef,
       options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['readFileBytes']>[2],
     ) =>
-      getFsApi()?.readFileBytes(pluginId, filePath, serializeForIpc(options) as typeof options) ??
-      unavailable(),
-    readAudioMetadata: (filePath: string) =>
-      getFsApi()?.readAudioMetadata(pluginId, filePath) ?? unavailable(),
+      typeof filePath !== 'string'
+        ? resources.request<{
+            data: ArrayBuffer;
+            size: number;
+            bytesRead: number;
+            truncated: boolean;
+          }>('readFileBytes', { ref: filePath, options })
+        : (getFsApi()?.readFileBytes(
+            pluginId,
+            filePath,
+            serializeForIpc(options) as typeof options,
+          ) ?? unavailable()),
+    readAudioMetadata: (filePath: string | FileRef) =>
+      typeof filePath !== 'string'
+        ? resources.call('readAudioMetadata', { ref: filePath })
+        : (getFsApi()?.readAudioMetadata(pluginId, filePath) ?? unavailable()),
     writeFile: (
-      filePath: string,
+      filePath: string | FileRef,
       data: Parameters<NonNullable<Window['electron']['plugins']>['fs']['writeFile']>[2],
       options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['writeFile']>[3],
     ) => {
       const payload =
         data instanceof ArrayBuffer || ArrayBuffer.isView(data) ? data : serializeForIpc(data);
+      if (typeof filePath !== 'string')
+        return resources.request<{ file: FileRef; bytesWritten: number }>('writeFile', {
+          ref: filePath,
+          data: payload,
+          options,
+        });
       return (
         getFsApi()?.writeFile(
           pluginId,
@@ -269,7 +317,10 @@ export const createPluginFsApi = (pluginId: string) => {
         ) ?? unavailable()
       );
     },
-    deleteFile: (filePath: string) => getFsApi()?.deleteFile(pluginId, filePath) ?? unavailable(),
+    deleteFile: (filePath: string | FileRef) =>
+      typeof filePath !== 'string'
+        ? resources.call<boolean>('deleteFile', { ref: filePath })
+        : (getFsApi()?.deleteFile(pluginId, filePath) ?? unavailable()),
   };
 };
 

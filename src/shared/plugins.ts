@@ -164,7 +164,7 @@ export type PluginListImageFilesResult =
       error: string;
     };
 
-export type PluginFileKind = 'audio' | 'image' | 'lyric' | 'playlist' | 'cue' | 'other';
+export type PluginFileKind = 'audio' | 'video' | 'image' | 'lyric' | 'playlist' | 'cue' | 'other';
 
 export interface PluginFileEntry extends PluginImageFileEntry {
   kind: PluginFileKind;
@@ -840,6 +840,7 @@ export interface EchoPluginManifest {
     kugouApi?: boolean;
     kugouVerification?: boolean;
     localFiles?: boolean;
+    downloads?: boolean;
     lyricEffects?: boolean;
     lyrics?: boolean;
     lyricsPage?: boolean;
@@ -868,7 +869,8 @@ export interface EchoPluginCompatibility {
 }
 
 export type PluginInstallSource =
-  { kind: 'local' } | { kind: 'marketplace'; id: string; name: string; url: string };
+  | { kind: 'local' }
+  | { kind: 'marketplace'; id: string; name: string; url: string; origin?: string };
 
 export interface EchoPluginDescriptor {
   tags?: string[];

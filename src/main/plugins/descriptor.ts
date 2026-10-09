@@ -230,6 +230,9 @@ const validateManifestCapabilities = (manifest: EchoPluginManifest) => {
   if (capabilities.localFiles !== undefined && typeof capabilities.localFiles !== 'boolean') {
     return 'manifest.capabilities.localFiles 必须是布尔值';
   }
+  if (capabilities.downloads !== undefined && typeof capabilities.downloads !== 'boolean') {
+    return 'manifest.capabilities.downloads 必须是布尔值';
+  }
   if (capabilities.lyricEffects !== undefined && typeof capabilities.lyricEffects !== 'boolean') {
     return 'manifest.capabilities.lyricEffects 必须是布尔值';
   }

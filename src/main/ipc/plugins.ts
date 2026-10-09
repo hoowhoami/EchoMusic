@@ -1,4 +1,5 @@
 import { ipcRegistry } from './registry';
+import { registerPluginResourceHandlers } from './pluginResources';
 import { registerPluginTcpHandlers } from './pluginTcp';
 import { BrowserWindow, dialog, type OpenDialogOptions, type WebContents } from 'electron';
 import type {
@@ -224,6 +225,7 @@ const showPluginOpenDialog = async (
 };
 
 export const registerPluginHandlers = (context: IpcContext) => {
+  registerPluginResourceHandlers(context);
   registerPluginTcpHandlers(assertPluginTcpAccess);
   const refreshPluginAppIcons = (options?: { force?: boolean }): PluginAppIconRefreshResult => {
     refreshAppIconConfig();
@@ -648,9 +650,13 @@ export const registerPluginHandlers = (context: IpcContext) => {
   );
   ipcRegistry.registerHandler(
     'plugins:uninstall',
-    async (_event, pluginId: string): Promise<PluginUninstallResult> => {
+    async (
+      _event,
+      pluginId: string,
+      options?: { removeData?: boolean },
+    ): Promise<PluginUninstallResult> => {
       closePluginWindows(pluginId);
-      const result = await uninstallPlugin(pluginId);
+      const result = await uninstallPlugin(pluginId, options);
       if (result.ok) refreshPluginAppIcons({ force: true });
       return result;
     },

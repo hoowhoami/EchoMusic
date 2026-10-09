@@ -5,6 +5,7 @@ import type {
   PluginNetworkResponse,
 } from '../../../shared/plugins';
 import { createPluginTcpApi } from './tcp';
+import { createPluginResourceApi } from './resources';
 
 export type PluginNetworkRequestInit = Omit<PluginNetworkRequestOptions, 'body'> & {
   body?: PluginNetworkRequestOptions['body'] | Blob;
@@ -53,6 +54,7 @@ const withBlobContentType = (
 export const createPluginNetworkApi = (
   descriptor: EchoPluginDescriptor,
   addDisposable: (dispose: () => void) => () => void,
+  resources = createPluginResourceApi(descriptor.id, addDisposable),
 ) => {
   const pendingRequestIds = new Set<string>();
   const getNativeApi = () => window.electron.plugins?.net;
@@ -108,6 +110,8 @@ export const createPluginNetworkApi = (
   }) as PluginNetworkRequest;
 
   return {
+    download: resources.download,
+    downloads: resources.downloads,
     tcp: createPluginTcpApi(descriptor, addDisposable),
     /** Browser Fetch semantics, including Chromium's forbidden-header rules. */
     fetch: window.fetch.bind(window),

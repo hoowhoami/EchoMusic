@@ -1,10 +1,10 @@
-import { Menu, Tray, app, nativeImage, type MenuItemConstructorOptions } from 'electron';
+import { Menu, Tray, app, nativeImage, screen, type MenuItemConstructorOptions } from 'electron';
 import { statSync } from 'fs';
 import { quitApplication } from './window';
 import { DEFAULT_PLAYER_VOLUME, type PlayMode } from '../shared/playback';
 import type { DesktopLyricSnapshot } from '../shared/desktopLyric';
 import type { TrayCommand, TrayPlaybackPayload } from '../shared/tray';
-import log from './logger';
+import log, { isDiagnosticModeActive } from './logger';
 import { resolveTrayIconPath } from './appIcons';
 import { registerMacTrayVisibility } from './macBackgroundMode';
 
@@ -22,6 +22,11 @@ let trayContext: TrayContext | null = null;
 let trayVisible = true;
 let cachedTrayImage: { key: string; image: Electron.NativeImage } | null = null;
 let appliedTrayImageKey: string | null = null;
+let trayPopupSequence = 0;
+// VS Code #72447 and Electron #53738 retain menus while native code references
+// their models. 43.7.6 lacks the tray fix. Keep the latest menu even after close
+// because the Win32 MenuRunner remains owned by the tray until replacement.
+const retainedElectronTrayMenus = new Set<Menu>();
 let playbackState: TrayPlaybackState = {
   isPlaying: false,
   playMode: 'list',
@@ -184,6 +189,68 @@ const createTrayMenu = () => {
   ]);
 };
 
+const logTrayDiagnostic = (tray: Tray, phase: string, details: Record<string, unknown> = {}) => {
+  if (process.platform !== 'win32' || !isDiagnosticModeActive()) return;
+  try {
+    const mainWindow = trayContext?.getMainWindow();
+    const cursor = screen.getCursorScreenPoint();
+    log.info('[TrayDiagnostic]', {
+      phase,
+      appVersion: app.getVersion(),
+      electron: process.versions.electron,
+      chromium: process.versions.chrome,
+      windowsVersion: process.getSystemVersion(),
+      forcedScale: app.commandLine.getSwitchValue('force-device-scale-factor'),
+      trayBounds: tray.getBounds(),
+      cursor,
+      cursorDisplayId: screen.getDisplayNearestPoint(cursor).id,
+      displays: screen.getAllDisplays().map(({ id, bounds, workArea, scaleFactor, rotation }) => ({
+        id,
+        bounds,
+        workArea,
+        scaleFactor,
+        rotation,
+      })),
+      mainWindow:
+        mainWindow && !mainWindow.isDestroyed()
+          ? {
+              bounds: mainWindow.getBounds(),
+              visible: mainWindow.isVisible(),
+              minimized: mainWindow.isMinimized(),
+              focused: mainWindow.isFocused(),
+            }
+          : null,
+      ...details,
+    });
+  } catch (error) {
+    // Diagnostic collection must never prevent a popup.
+    log.warn('[TrayDiagnostic] Snapshot failed:', error);
+  }
+};
+
+const popupElectronTrayMenu = (tray: Tray, attempt: number) => {
+  const menu = createTrayMenu();
+  // Retain the previous model too, until popUpContextMenu replaces its runner.
+  retainedElectronTrayMenus.add(menu);
+  if (process.platform === 'win32' && isDiagnosticModeActive()) {
+    // These events show how far the popup request progressed, not whether the
+    // menu was actually visible on the desktop.
+    menu.once('menu-will-show', () => logTrayDiagnostic(tray, 'menu-will-show', { attempt }));
+    menu.once('menu-will-close', () => logTrayDiagnostic(tray, 'menu-will-close', { attempt }));
+  }
+  logTrayDiagnostic(tray, 'electron-popup-request', { attempt });
+  try {
+    tray.popUpContextMenu(menu);
+    for (const previousMenu of retainedElectronTrayMenus) {
+      if (previousMenu !== menu) retainedElectronTrayMenus.delete(previousMenu);
+    }
+    logTrayDiagnostic(tray, 'electron-popup-returned', { attempt });
+  } catch (error) {
+    retainedElectronTrayMenus.delete(menu);
+    log.error('[Tray] Electron menu failed:', error);
+  }
+};
+
 export const createDockMenu = () =>
   Menu.buildFromTemplate([
     ...createPlaybackMenuItems(),
@@ -221,6 +288,7 @@ export const initTray = (context: TrayContext) => {
   appTray = new Tray(trayImage.image);
   appliedTrayImageKey = trayImage.key;
   appTray.setToolTip('EchoMusic');
+  logTrayDiagnostic(appTray, 'created');
 
   appTray.on('click', () => {
     void trayContext?.restoreWindow();
@@ -229,8 +297,9 @@ export const initTray = (context: TrayContext) => {
   if (process.platform === 'linux') {
     appTray.setContextMenu(createTrayMenu());
   } else {
-    appTray.on('right-click', () => {
-      appTray?.popUpContextMenu(createTrayMenu());
+    appTray.on('right-click', (_event, eventBounds) => {
+      if (appTray) logTrayDiagnostic(appTray, 'right-click', { eventBounds });
+      if (appTray) popupElectronTrayMenu(appTray, ++trayPopupSequence);
     });
   }
 
@@ -248,8 +317,10 @@ export const refreshTray = () => {
 
 export const destroyTray = () => {
   if (!appTray) return;
+  if (retainedElectronTrayMenus.size) appTray.closeContextMenu();
   appTray.destroy();
   appTray = null;
+  retainedElectronTrayMenus.clear();
   clearTrayImageCache();
 };
 

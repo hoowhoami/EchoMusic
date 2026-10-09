@@ -13,6 +13,7 @@ export const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
   if (manifest.capabilities?.kugouApi) tags.push('酷狗 API');
   if (manifest.capabilities?.kugouVerification) tags.push('酷狗验证');
   if (manifest.capabilities?.localFiles) tags.push('本地文件');
+  if (manifest.capabilities?.downloads) tags.push('文件下载');
   if (manifest.capabilities?.process) tags.push('本地进程');
   if (manifest.capabilities?.sqlite) tags.push('SQLite');
   if (manifest.capabilities?.unrestrictedNetwork) tags.push('原生网络');

@@ -21,12 +21,22 @@ const iconCombinations = [
   bothHidden,
 ];
 
-function setup(platform = 'darwin', { deferDockShow = false } = {}) {
+function setup(
+  platform = 'darwin',
+  {
+    deferDockShow = false,
+    forceDpi = false,
+    displayCount = 1,
+    diagnosticMode = false,
+    weakMenus = false,
+  } = {},
+) {
   const calls = [];
   const trays = [];
   const pendingDockShows = [];
   const sent = [];
   const warnings = [];
+  const diagnostics = [];
   let dockVisible = true;
   let restoreCount = 0;
   let quitCount = 0;
@@ -53,7 +63,17 @@ function setup(platform = 'darwin', { deferDockShow = false } = {}) {
       dock.menu = menu;
     },
   };
-  const app = Object.assign(new EventEmitter(), { dock });
+  const app = Object.assign(new EventEmitter(), {
+    dock,
+    getVersion: () => '2.3.2-test',
+    commandLine: {
+      hasSwitch: (name) => name === 'force-device-scale-factor' && forceDpi,
+      getSwitchValue: (name) => {
+        if (name === 'force-device-scale-factor' && forceDpi) return '1';
+        return '';
+      },
+    },
+  });
   class MockTray extends EventEmitter {
     constructor(image) {
       super();
@@ -71,7 +91,14 @@ function setup(platform = 'darwin', { deferDockShow = false } = {}) {
       this.menu = menu;
     }
     popUpContextMenu(menu) {
-      this.menu = menu;
+      if (weakMenus) this.menuRef = new WeakRef(menu);
+      else this.menu = menu;
+    }
+    closeContextMenu() {
+      (this.menuRef?.deref() ?? this.menu)?.emit('menu-will-close');
+    }
+    getBounds() {
+      return { x: 1900, y: 1000, width: 20, height: 20 };
     }
     destroy() {
       this.destroyed = true;
@@ -88,10 +115,32 @@ function setup(platform = 'darwin', { deferDockShow = false } = {}) {
   const electron = {
     app,
     Tray: MockTray,
-    Menu: { buildFromTemplate: (template) => template },
+    Menu: {
+      buildFromTemplate: (template) => {
+        const events = new EventEmitter();
+        return Object.assign(template, {
+          once: events.once.bind(events),
+          emit: events.emit.bind(events),
+        });
+      },
+    },
     nativeImage: { createFromPath: makeImage, createEmpty: makeImage },
+    screen: {
+      getCursorScreenPoint: () => ({ x: 1900, y: 1000 }),
+      getDisplayNearestPoint: () => ({ id: 1 }),
+      getAllDisplays: () =>
+        Array.from({ length: displayCount }, (_, index) => ({
+          id: index + 1,
+          bounds: { x: index * 1920, y: 0, width: 1920, height: 1080 },
+          workArea: { x: index * 1920, y: 0, width: 1920, height: 1040 },
+          scaleFactor: index === 0 ? 2 : 1,
+          rotation: index === 0 ? 0 : 90,
+        })),
+    },
   };
   const logger = {
+    info: (...args) => diagnostics.push(args),
+    isDiagnosticModeActive: () => diagnosticMode,
     warn: (...args) => warnings.push(args),
     error: (...args) => warnings.push(args),
   };
@@ -107,7 +156,11 @@ function setup(platform = 'darwin', { deferDockShow = false } = {}) {
     const module = { exports: {} };
     runInNewContext(code, {
       module,
-      process: { platform },
+      process: {
+        platform,
+        versions: { electron: '43.7.6', chrome: 'test-chromium' },
+        getSystemVersion: () => '10.0.test-build',
+      },
       require(name) {
         assert.ok(Object.hasOwn(modules, name), `unexpected dependency: ${name}`);
         return modules[name];
@@ -120,6 +173,10 @@ function setup(platform = 'darwin', { deferDockShow = false } = {}) {
   const context = {
     getMainWindow: () => ({
       isDestroyed: () => false,
+      getBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }),
+      isVisible: () => false,
+      isMinimized: () => true,
+      isFocused: () => false,
       webContents: { send: (...args) => sent.push(args) },
     }),
     restoreWindow: () => restoreCount++,
@@ -139,6 +196,8 @@ function setup(platform = 'darwin', { deferDockShow = false } = {}) {
     sent,
     lyrics,
     warnings,
+    diagnostics,
+    screen: electron.screen,
     loadTray: () => load(trayCode),
     finishDockShow() {
       assert.ok(pendingDockShows.length, 'expected a pending Dock transition');
@@ -421,3 +480,127 @@ test('restored tray keeps current playback, lyric controls, window recovery and 
   item('退出').click();
   assert.equal(e.quitCount, 1);
 });
+
+test('normal tray configurations retain the existing Electron menu path', () => {
+  for (const [platform, forceDpi, displayCount] of [
+    ['win32', false, 2],
+    ['win32', true, 2],
+    ['win32', true, 1],
+    ['darwin', true, 2],
+    ['linux', true, 2],
+  ]) {
+    const e = setup(platform, {
+      forceDpi,
+      displayCount,
+    });
+    const icon = e.loadTray().initTray(e.context);
+    icon.emit('right-click');
+    assert.ok(icon.menu.some((item) => item.label === '显示窗口'));
+    assert.equal(e.diagnostics.length, 0);
+  }
+});
+
+test('Windows diagnostics observe the original menu path without changing it', () => {
+  const e = setup('win32', {
+    forceDpi: true,
+    displayCount: 2,
+    diagnosticMode: true,
+  });
+  const icon = e.loadTray().initTray(e.context);
+  const eventBounds = { x: 1900, y: 1000, width: 20, height: 20 };
+  icon.emit('right-click', {}, eventBounds);
+  icon.menu.emit('menu-will-show');
+  icon.menu.emit('menu-will-close');
+  const snapshots = e.diagnostics.map(([, data]) => data);
+  assert.deepEqual(
+    snapshots.map((data) => data.phase),
+    [
+      'created',
+      'right-click',
+      'electron-popup-request',
+      'electron-popup-returned',
+      'menu-will-show',
+      'menu-will-close',
+    ],
+  );
+  const click = snapshots.find((data) => data.phase === 'right-click');
+  assert.deepEqual(click.eventBounds, eventBounds);
+  assert.equal(click.windowsVersion, '10.0.test-build');
+  assert.equal(click.electron, '43.7.6');
+  assert.equal(click.forcedScale, '1');
+  assert.equal(click.displays.length, 2);
+  assert.equal(click.displays[1].rotation, 90);
+  assert.equal(click.mainWindow.minimized, true);
+  const attempts = snapshots.filter((data) => data.attempt !== undefined);
+  assert.ok(attempts.every((data) => data.attempt === attempts[0].attempt));
+  assert.equal(e.warnings.length, 0);
+});
+
+test('diagnostic collection failure cannot prevent the Electron menu from opening', () => {
+  const e = setup('win32', { diagnosticMode: true });
+  e.screen.getCursorScreenPoint = () => {
+    throw new Error('screen unavailable');
+  };
+  const icon = e.loadTray().initTray(e.context);
+  icon.emit('right-click');
+  assert.ok(icon.menu.some((item) => item.label === '显示窗口'));
+  assert.ok(e.warnings.some(([message]) => message.includes('Snapshot failed')));
+});
+
+test(
+  'Electron tray model survives GC through closing and is released after replacement',
+  {
+    skip: typeof global.gc !== 'function' ? 'Run with node --expose-gc --test' : false,
+  },
+  async () => {
+    const e = setup('win32', { weakMenus: true, forceDpi: true, displayCount: 2 });
+    const icon = e.loadTray().initTray(e.context);
+    icon.emit('right-click');
+    const reference = icon.menuRef;
+    for (let i = 0; i < 8; i++) {
+      await settle();
+      global.gc();
+    }
+    assert.ok(reference.deref(), 'the native popup alone cannot keep the JS Menu alive');
+    reference.deref().emit('menu-will-close');
+    for (let i = 0; i < 8; i++) {
+      await settle();
+      global.gc();
+    }
+    assert.ok(reference.deref(), 'the native runner still owns the model after closing');
+    icon.emit('right-click');
+    for (let i = 0; i < 8; i++) {
+      await settle();
+      global.gc();
+    }
+    assert.equal(reference.deref(), undefined, 'release the old model after replacing its runner');
+  },
+);
+
+test(
+  'closing an older popup cannot release the current menu; tray destruction releases it',
+  {
+    skip: typeof global.gc !== 'function' ? 'Run with node --expose-gc --test' : false,
+  },
+  async () => {
+    const e = setup('win32', { weakMenus: true });
+    const tray = e.loadTray();
+    const icon = tray.initTray(e.context);
+    icon.emit('right-click');
+    const olderMenu = icon.menuRef.deref();
+    icon.emit('right-click');
+    const reference = icon.menuRef;
+    olderMenu.emit('menu-will-close');
+    for (let i = 0; i < 8; i++) {
+      await settle();
+      global.gc();
+    }
+    assert.ok(reference.deref());
+    tray.destroyTray();
+    for (let i = 0; i < 8; i++) {
+      await settle();
+      global.gc();
+    }
+    assert.equal(reference.deref(), undefined);
+  },
+);

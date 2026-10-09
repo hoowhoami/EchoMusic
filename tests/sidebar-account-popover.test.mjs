@@ -1,3 +1,4 @@
+import { userIdentity } from './helpers/user-identity.mjs';
 import { userSession } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -39,6 +40,7 @@ function fixture(t, detail = {}, vip = {}) {
     },
     '../../shared/profileStats': profileStats,
     '@/utils/accountVip': accountVip,
+    '@/utils/userIdentity': userIdentity,
   };
   const mod = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => deps[name] ?? {}, mod, mod.exports);
@@ -169,4 +171,20 @@ test('logout waits for confirmation and profile navigation closes the popover', 
   api.navigate('/main/profile');
   assert.equal(api.open.value, false);
   assert.deepEqual(calls, ['/main/profile']);
+});
+
+test('popover identity follows the current account, student info and logout', (t) => {
+  const { api, user } = fixture(t, { kq_talent: 32, auth_info: '歌词制作达人' }, { user_type: 16 });
+  user.info.extendsInfo.identity = { student_status: 1, tags: '流行、安静' };
+  assert.deepEqual(
+    api.identity.value.badges.map((badge) => badge.label),
+    ['学生', '歌词制作达人'],
+  );
+  assert.deepEqual(api.identity.value.tags, ['流行', '安静']);
+  assert.match(api.identity.value.avatarIcon, /20180627153930257837/);
+  user.info = { userid: 2, extendsInfo: { detail: { kq_talent: 0 } } };
+  assert.deepEqual(api.identity.value.badges, []);
+  assert.equal(api.identity.value.avatarIcon, '');
+  user.isLoggedIn = false;
+  assert.equal(api.identity.value.membership, null);
 });

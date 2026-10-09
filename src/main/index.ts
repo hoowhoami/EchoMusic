@@ -1,4 +1,16 @@
-import { app } from 'electron';
+import { app, protocol } from 'electron';
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'echo-plugin-media',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      corsEnabled: true,
+    },
+  },
+]);
 import { getDisableGpuAccelerationSetting, getHighDpiSettings } from './storage/settings';
 
 // Windows 音频/媒体会话初始化前先固定应用身份，避免系统把后续会话识别成临时客户端。

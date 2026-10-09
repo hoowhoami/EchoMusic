@@ -22,6 +22,8 @@ interface Props {
   ariaLabel?: string;
   /** 弹层默认与选择框右侧对齐，空间不足时自动避让 */
   contentAlign?: 'start' | 'center' | 'end';
+  /** 长选项自动换行，完整显示名称 */
+  wrapOptions?: boolean;
   /** 是否可搜索 */
   filterable?: boolean;
   /** 是否可清空 */
@@ -39,6 +41,7 @@ const props = withDefaults(defineProps<Props>(), {
   placeholder: '请选择',
   disabled: false,
   contentAlign: 'end',
+  wrapOptions: false,
   filterable: false,
   clearable: false,
   multiple: false,
@@ -101,7 +104,10 @@ const filteredOptions = computed(() => {
 });
 
 // 虚拟滚动
-const useVirtual = computed(() => filteredOptions.value.length > props.virtualThreshold);
+// Wrapped labels have variable heights, so they cannot use fixed-height virtualization.
+const useVirtual = computed(
+  () => !props.wrapOptions && filteredOptions.value.length > props.virtualThreshold,
+);
 const triggerRef = ref<HTMLElement | null>(null);
 const menuWidth = ref<number | null>(null);
 const measureMenuWidth = () => {
@@ -238,7 +244,9 @@ watch(open, (val) => {
     :side-offset="6"
     :show-arrow="false"
     :disabled="props.disabled"
-    content-class="echo-select-content"
+    :content-class="
+      props.wrapOptions ? 'echo-select-content echo-select-content-wrap' : 'echo-select-content'
+    "
     :content-style="{
       width: menuWidth === null ? 'var(--reka-popover-trigger-width)' : `${menuWidth}px`,
     }"
@@ -567,6 +575,20 @@ watch(open, (val) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.echo-select-content-wrap .echo-select-item {
+  height: auto;
+  min-height: 36px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.echo-select-content-wrap .echo-select-item-text {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .echo-select-item-check {

@@ -12,9 +12,13 @@ const fixture = {
   directory,
   handlers: new Map(),
   size: { width: 640, height: 360 },
-  resized: false,
+  empty: false,
 };
-const png = Buffer.from('89504e470d0a1a0a', 'hex');
+const png = Buffer.alloc(24);
+Buffer.from('89504e470d0a1a0a', 'hex').copy(png);
+png.write('IHDR', 12);
+png.writeUInt32BE(640, 16);
+png.writeUInt32BE(360, 20);
 const result = await build({
   stdin: {
     contents: `export * from './src/main/ipc/themeAssets';`,
@@ -37,7 +41,7 @@ const result = await build({
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, (args) => ({
           contents:
             args.path === 'electron'
-              ? `export const app={getPath:()=>fixture.directory};export const nativeImage={createFromBuffer:()=>({getSize:()=>fixture.size,isEmpty:()=>false,resize:()=>{fixture.resized=true;return{toPNG:()=>Buffer.from('89504e470d0a1a0a','hex')};},toPNG:()=>Buffer.from('89504e470d0a1a0a','hex')})};`
+              ? `export const app={getPath:()=>fixture.directory};export const nativeImage={createFromBuffer:()=>({getSize:()=>fixture.size,isEmpty:()=>fixture.empty})};`
               : `export const ipcRegistry={registerHandler:(name,handler)=>fixture.handlers.set(name,handler)};`,
         }));
       },
@@ -55,25 +59,29 @@ module.exports.registerThemeAssetHandlers();
 const invoke = (name, ...args) => fixture.handlers.get('appearance:' + name)({}, ...args);
 test('background assets are content-addressed, duplicate imports and scoped reads work', async () => {
   const first = await invoke('import-image', new Uint8Array(png));
+  assert.equal(first.ok, true);
   const second = await invoke('import-image', new Uint8Array(png));
   assert.equal(first.id, second.id);
   assert.match(first.id, /^[a-f0-9]{64}\.png$/);
   assert.deepEqual(await readFile(join(directory, 'theme-backgrounds', first.id)), png);
   assert.equal((await invoke('read-image', first.id)).url, first.url);
 });
-test('reject arbitrary files, oversized input, oversized pixels and path traversal', async () => {
-  await assert.rejects(invoke('import-image', new Uint8Array([1, 2, 3])));
-  await assert.rejects(invoke('import-image', new Uint8Array(20 * 1024 * 1024 + 1)));
+test('invalid and unprocessed images return clear errors; asset paths remain scoped', async () => {
+  assert.match((await invoke('import-image', new Uint8Array([1, 2, 3]))).error, /格式无效/);
+  assert.equal((await invoke('import-image', new Uint8Array(32 * 1024 * 1024 + 1))).ok, false);
   fixture.size = { width: 100000, height: 100000 };
-  await assert.rejects(invoke('import-image', new Uint8Array(png)));
+  assert.match((await invoke('import-image', new Uint8Array(png))).error, /尚未完成缩放/);
   fixture.size = { width: 640, height: 360 };
+  fixture.empty = true;
+  assert.match((await invoke('import-image', new Uint8Array(png))).error, /无法解码/);
+  fixture.empty = false;
   await assert.rejects(invoke('read-image', '../../settings.json'));
   await assert.rejects(invoke('clean-images', ['../settings.json']));
 });
-test('large accepted image is resized and cleanup keeps retained and unrelated files', async () => {
-  fixture.size = { width: 4000, height: 2000 };
+test('prepared images save without re-encoding and cleanup keeps retained and unrelated files', async () => {
+  fixture.size = { width: 2560, height: 1707 };
   const result = await invoke('import-image', new Uint8Array(png));
-  assert.equal(fixture.resized, true);
+  assert.equal(result.ok, true);
   const assets = join(directory, 'theme-backgrounds');
   await writeFile(join(assets, 'unrelated.txt'), 'keep');
   await invoke('clean-images', [result.id]);

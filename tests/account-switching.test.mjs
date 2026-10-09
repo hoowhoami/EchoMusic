@@ -1,3 +1,4 @@
+import { userIdentity } from './helpers/user-identity.mjs';
 import { userSession, userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -62,6 +63,10 @@ const fixture = (api = {}) => {
         reads.push('detail');
         return api.detail?.() ?? { status: 0 };
       },
+      getUserInfo: () => {
+        reads.push('info');
+        return api.info?.() ?? { status: 0 };
+      },
       getUserVipDetail: () => {
         reads.push('vip');
         return api.vip?.() ?? { status: 0 };
@@ -75,6 +80,7 @@ const fixture = (api = {}) => {
       }),
     },
     '@/utils/mappers': mapper,
+    '@/utils/userIdentity': userIdentity,
     '@/utils/logger': logger,
   });
   return { user: useUserStore(pinia.createPinia()), reads, resets: () => resets };
@@ -110,7 +116,7 @@ test('A to B to A restores credentials, reloads profile and only saves credentia
   assert.equal(user.info.t1, 't1-1');
   assert.equal(user.info.vip, undefined);
   assert.ok(user.accountRevision > revision);
-  assert.deepEqual(reads, ['detail', 'vip', 'detail', 'vip']);
+  assert.deepEqual(reads, ['detail', 'vip', 'info', 'detail', 'vip', 'info']);
   assert.equal(resets(), 2);
   await flush();
 });
@@ -214,7 +220,7 @@ test('selecting the current account does not reload or invalidate the current se
   const revision = user.accountRevision;
   user.switchAccount(1);
   assert.equal(user.accountRevision, revision);
-  assert.equal(reads.length, 2);
+  assert.equal(reads.length, 3);
 });
 
 test('normal SQLite persistence restores the current account and saved credentials after restart', async (t) => {
@@ -319,6 +325,7 @@ test('account dialog displays the current unsaved account, sorts and deduplicate
       },
       '@/utils/userSession': userSession,
       '@/utils/watchUserSession': userSessionWatch,
+      '@/utils/userIdentity': userIdentity,
       '@/stores/user': { useUserStore: () => user },
       '@/api/user': { getUserGradeInfo: async () => ({ status: 0 }) },
       '../../../shared/profileStats': profileStats,
@@ -383,6 +390,7 @@ test('expired-session reauthentication preserves the current account and a switc
       },
       '@/utils/userSession': userSession,
       '@/utils/watchUserSession': userSessionWatch,
+      '@/utils/userIdentity': userIdentity,
       '@/stores/user': { useUserStore: () => user },
       '@/stores/auth': { useAuthStore: () => auth },
     },
@@ -412,6 +420,7 @@ const durationDialog = (t, user, query, messages = []) => {
       'vue-router': { useRouter: () => ({ currentRoute: vue.ref({ fullPath: '/main/profile' }) }) },
       '@/utils/userSession': userSession,
       '@/utils/watchUserSession': userSessionWatch,
+      '@/utils/userIdentity': userIdentity,
       '@/stores/user': { useUserStore: () => user },
       '@/stores/toast': {
         useToastStore: () => ({
@@ -615,4 +624,84 @@ test('a pending removal cannot remove an account that becomes current before con
   assert.equal(view.removal.value, null);
   assert.deepEqual(messages, ['当前登录账号不能移除，请先切换账号']);
   await flush();
+});
+
+test('student identity response is account scoped and persists only fields used for display', async () => {
+  const oldInfo = deferred();
+  let first = true;
+  const { user } = fixture({
+    detail: () => ({ status: 1, data: { nickname: first ? 'A' : 'B' } }),
+    info: () =>
+      first
+        ? oldInfo.promise
+        : {
+            status: 1,
+            data: {
+              student_status: 1,
+              student_school: 'B 学校',
+              tags: '摇滚',
+              login_mobile: 'private',
+            },
+          },
+  });
+  user.login(account(1));
+  first = false;
+  user.login(account(2));
+  await flush();
+  oldInfo.resolve({
+    status: 1,
+    data: { student_status: 1, student_school: 'A 学校', tags: '流行' },
+  });
+  await flush();
+  assert.equal(user.info.userid, 2);
+  assert.deepEqual(user.info.extendsInfo.identity, {
+    student_status: 1,
+    student_school: 'B 学校',
+    student_expire_time: '',
+    tags: '摇滚',
+  });
+  assert.equal(user.info.extendsInfo.identity.login_mobile, undefined);
+  assert.equal(
+    user.savedAccounts.some((item) => 'identity' in item),
+    false,
+  );
+});
+
+test('saved display summaries stay with their own account and refresh can clear obsolete identity', async (t) => {
+  const { user } = fixture();
+  user.login({
+    ...account(1),
+    detail: { kq_talent: 32, auth_info: '歌词制作达人', mobile: 'private' },
+    vip: { user_type: 16 },
+  });
+  await flush();
+  const snapshot = user.savedAccounts.find((saved) => saved.userid === 1).display;
+  assert.deepEqual(
+    snapshot.badges.map((badge) => badge.label),
+    ['歌词制作达人'],
+  );
+  assert.equal(snapshot.membership.label, '超级VIP');
+  assert.equal(snapshot.mobile, undefined);
+  assert.equal(snapshot.token, undefined);
+  user.login(account(2));
+  await flush();
+  assert.equal(user.savedAccounts.find((saved) => saved.userid === 2).display, undefined);
+  const dialog = durationDialog(t, user, async () => ({ status: 0 })).view;
+  assert.deepEqual(dialog.accountDisplay(dialog.accounts.value[0]).badges, []);
+  assert.deepEqual(dialog.accountDisplay(dialog.accounts.value[1]).badges, snapshot.badges);
+  user.switchAccount(1);
+  await flush();
+  assert.equal(user.info.extendsInfo.detail.kq_talent, undefined);
+  assert.equal(dialog.accountDisplay(dialog.accounts.value[0]).membership.label, '超级VIP');
+  user.setUserInfo({
+    ...account(1),
+    detail: { kq_talent: 0, auth_info: '' },
+    extendsInfo: {
+      detail: { kq_talent: 0, auth_info: '' },
+      vip: { user_type: 0, vip_type: 0 },
+    },
+  });
+  assert.deepEqual(user.savedAccounts.find((saved) => saved.userid === 1).display.badges, []);
+  assert.equal(user.savedAccounts.find((saved) => saved.userid === 1).display.avatarIcon, '');
+  assert.equal(user.savedAccounts.find((saved) => saved.userid === 1).display.membership, null);
 });

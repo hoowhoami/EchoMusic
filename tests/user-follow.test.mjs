@@ -1,3 +1,4 @@
+import { userIdentity } from './helpers/user-identity.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -86,6 +87,7 @@ function fixture() {
     vue: { ...vue, onMounted() {}, onUnmounted() {} },
     '@/utils/userSession': sessionModule.exports,
     '@/utils/accountVip': vipModule.exports,
+    '@/utils/userIdentity': userIdentity,
     'vue-router': { useRouter: () => ({}) },
     '@/stores/user': { useUserStore: () => user },
     '@/stores/loginDevices': { useLoginDeviceStore: () => ({}) },

@@ -873,7 +873,7 @@ const handleDeleteComment = async (comment: Comment) => {
 .comment-avatar-frame {
   width: 100%;
   height: 100%;
-  border-radius: var(--radius-card);
+  border-radius: 50%;
   overflow: hidden;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   display: flex;
@@ -1052,10 +1052,6 @@ const handleDeleteComment = async (comment: Comment) => {
   width: 30px;
   height: 30px;
   flex-shrink: 0;
-}
-
-.comment-floor-reply-avatar .comment-avatar-frame {
-  border-radius: 50%;
 }
 
 .comment-floor-reply-avatar .comment-avatar-fallback {

@@ -4,7 +4,8 @@ import { watchUserSession } from '@/utils/watchUserSession';
 import { computed, onMounted, ref, useAttrs, watch } from 'vue';
 import type { Component } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import Avatar from '@/components/ui/Avatar.vue';
+import UserAvatar from '@/components/profile/UserAvatar.vue';
+import { getAccountIdentity } from '@/utils/userIdentity';
 import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -77,6 +78,7 @@ const importTaskStore = useImportTaskStore();
 
 const isLoggedIn = computed(() => userStore.isLoggedIn);
 const userInfo = computed(() => userStore.info);
+const userIdentity = computed(() => getAccountIdentity(isLoggedIn.value ? userInfo.value : null));
 
 const vipBadge = computed(() =>
   getPrimaryVipBadge(getAccountVipStatus(userInfo.value?.extendsInfo?.vip)),
@@ -811,8 +813,10 @@ watch(
                 :aria-label="isLoggedIn ? userInfo?.nickname || '个人主页' : '点击登录账号'"
                 @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
               >
-                <Avatar
+                <UserAvatar
                   :src="isLoggedIn ? userInfo?.pic : ''"
+                  :identity-icon="userIdentity.avatarIcon"
+                  :identity-label="userIdentity.avatarLabel"
                   class="w-9 h-9 rounded-full"
                   error-class="opacity-30"
                 />
@@ -976,7 +980,11 @@ watch(
                   @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
                 >
                   <div class="sidebar-profile-avatar">
-                    <Avatar :src="isLoggedIn ? userInfo?.pic : ''" class="w-full h-full" />
+                    <UserAvatar
+                      :src="isLoggedIn ? userInfo?.pic : ''"
+                      :identity-icon="userIdentity.avatarIcon"
+                      :identity-label="userIdentity.avatarLabel"
+                    />
                   </div>
                   <div class="sidebar-profile-copy">
                     <span class="sidebar-profile-name" data-tooltip-label>
@@ -1821,7 +1829,7 @@ watch(
   width: 36px;
   height: 36px;
   flex: none;
-  overflow: hidden;
+  overflow: visible;
   border-radius: 50%;
   background: var(--control-muted-bg);
 }

@@ -1,3 +1,4 @@
+import { userIdentity } from './helpers/user-identity.mjs';
 import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -70,6 +71,7 @@ const renderer = vue.createRenderer({
 function fixture(t) {
   const p = pinia.createPinia();
   const user = load('../src/renderer/stores/user.ts', {
+    '@/utils/userIdentity': userIdentity,
     pinia,
     '@/api/user': {},
     '@/utils/mappers': {},

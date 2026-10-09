@@ -1,3 +1,4 @@
+import { userIdentity } from './helpers/user-identity.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -166,7 +167,8 @@ function userFixture() {
     ]),
   );
   const { useUserStore } = compile('../src/renderer/stores/user.ts', {
-    '@/api/user': api,
+    '@/utils/userIdentity': userIdentity,
+    '@/api/user': { ...api, getUserInfo: async () => ({ status: 0 }) },
     '@/utils/mappers': mapper.exports,
     '@/utils/logger': logger,
     '@/stores/listenReport': { useListenReportStore: () => ({ reset() {} }) },

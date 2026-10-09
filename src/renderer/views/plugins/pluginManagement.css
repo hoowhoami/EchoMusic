@@ -63,7 +63,47 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+.plugin-header-main,
+.plugin-header-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.plugin-header-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.plugin-header-copy {
+  min-width: 0;
+}
+
+.plugin-header-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.plugin-header-navigation {
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
 .plugin-header-icon {
+  flex-shrink: 0;
   width: 32px;
   height: 32px;
   display: flex;
@@ -78,6 +118,8 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-shrink: 0;
+  margin-left: auto;
   padding: 0.375rem 0.75rem;
   border-radius: var(--radius-control);
   background: var(--control-muted-bg);

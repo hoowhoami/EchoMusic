@@ -27,6 +27,10 @@ import LogoutConfirmDialog from '@/components/profile/LogoutConfirmDialog.vue';
 import AccountSwitcherDialog from '@/components/profile/AccountSwitcherDialog.vue';
 
 import Avatar from '@/components/ui/Avatar.vue';
+import UserAvatar from '@/components/profile/UserAvatar.vue';
+import UserIdentityBadges from '@/components/profile/UserIdentityBadges.vue';
+import UserIdentitySummary from '@/components/profile/UserIdentitySummary.vue';
+import { getAccountIdentity, getUserIdentity, type UserIdentityBadge } from '@/utils/userIdentity';
 
 import logger from '@/utils/logger';
 import { useToastStore } from '@/stores/toast';
@@ -62,6 +66,7 @@ import {
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import {
   getAccountVipStatus,
+  getPrimaryVipBadge,
   type AccountVipInfo as VipInfoState,
   type VipProduct as VipLevelInfo,
 } from '@/utils/accountVip';
@@ -142,6 +147,9 @@ interface SocialUser {
   canMessage: boolean;
   nickname: string;
   avatar: string;
+  identityIcon: string;
+  identityLabel: string;
+  badges: UserIdentityBadge[];
   description: string;
   meta: string;
   friendAction: 'follow' | 'unfollow' | '';
@@ -180,6 +188,8 @@ const vipInfo = computed<VipInfoState>(
   () => (userInfo.value?.extendsInfo?.vip as VipInfoState | undefined) || {},
 );
 const vipStatus = computed(() => getAccountVipStatus(vipInfo.value));
+const primaryVipBadge = computed(() => getPrimaryVipBadge(vipStatus.value));
+const userIdentity = computed(() => getAccountIdentity(userInfo.value));
 const visitorCount = computed(() => {
   const value = detail.value.hvisitors ?? 0;
   const count = Number(value);
@@ -881,6 +891,13 @@ const mapSocialUser = (item: unknown, index: number, tab: SocialTabKey): SocialU
         ? 'follow'
         : '';
   const rawId = isArtistOnly ? `singer:${singerId}` : userId || `row-${tab}-${index}`;
+  const identity = getUserIdentity(
+    {
+      ...Object.assign({}, ...nested.slice().reverse()),
+      ...(isArtistOnly ? { singer_status: 1 } : {}),
+    },
+    true,
+  );
 
   const mapped: SocialUser = {
     key: rawId,
@@ -888,6 +905,9 @@ const mapSocialUser = (item: unknown, index: number, tab: SocialTabKey): SocialU
     canMessage: canFollow,
     nickname,
     avatar,
+    identityIcon: identity.avatarIcon,
+    identityLabel: identity.avatarLabel,
+    badges: identity.badges,
     description: description || (isArtistOnly ? '歌手' : ''),
     meta: relationText,
     friendAction,
@@ -1497,12 +1517,18 @@ onUnmounted(() => {
                     <template #trigger>
                       <button
                         type="button"
-                        class="profile-avatar-button group relative rounded-full shrink-0 overflow-hidden"
+                        class="profile-avatar-button group relative rounded-full shrink-0"
                         :disabled="isUploadingAvatar"
                         aria-label="修改头像"
                         @click="triggerAvatarPicker"
                       >
-                        <Avatar :src="userInfo.pic" :size="56" class="rounded-full" />
+                        <UserAvatar
+                          :src="userInfo.pic"
+                          :size="56"
+                          :identity-inset="3"
+                          :identity-icon="userIdentity.avatarIcon"
+                          :identity-label="userIdentity.avatarLabel"
+                        />
                         <span
                           class="absolute inset-0 rounded-full flex items-center justify-center bg-black/45 text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
                         >
@@ -1527,17 +1553,18 @@ onUnmounted(() => {
                     <div class="profile-name-line">
                       <h2>{{ userInfo.nickname }}</h2>
 
-                      <span v-if="superVip" class="profile-member-badge is-super">超级VIP</span>
-                      <span v-if="deluxeVip" class="profile-member-badge is-deluxe">豪华VIP</span>
-                      <span v-if="svip" class="profile-member-badge is-concept">概念VIP</span>
-                      <span v-if="tvip" class="profile-member-badge is-music">畅听VIP</span>
+                      <span
+                        v-if="primaryVipBadge"
+                        class="profile-member-badge"
+                        :class="`is-${primaryVipBadge.kind}`"
+                        >{{ primaryVipBadge.label }}</span
+                      >
+                      <Tag v-if="ipLocation" tone="muted" aria-label="地域">{{ ipLocation }}</Tag>
                     </div>
                     <p v-if="detail.descri" class="profile-signature">{{ detail.descri }}</p>
                   </div>
                 </div>
-                <div class="profile-overview-meta">
-                  <Badge v-if="ipLocation" :count="ipLocation" tone="muted" class="badge-size-sm" />
-                </div>
+                <UserIdentitySummary :identity="userIdentity" class="profile-identity-labels" />
               </div>
               <div class="profile-stats">
                 <button
@@ -1612,6 +1639,14 @@ onUnmounted(() => {
                 <div>
                   <dt>累计听歌</dt>
                   <dd>{{ listeningDuration }}</dd>
+                </div>
+                <div v-if="userIdentity.studentSchool">
+                  <dt>学生学校</dt>
+                  <dd>{{ userIdentity.studentSchool }}</dd>
+                </div>
+                <div v-if="userIdentity.studentExpireTime">
+                  <dt>学生认证到期</dt>
+                  <dd>{{ userIdentity.studentExpireTime }}</dd>
                 </div>
               </dl>
               <section class="profile-memberships" aria-label="会员状态">
@@ -1869,12 +1904,19 @@ onUnmounted(() => {
             </div>
             <div v-else class="profile-social-users">
               <div v-for="item in activeSocialUsers" :key="item.key" class="profile-social-user">
-                <Avatar :src="item.avatar" class="profile-social-avatar" />
+                <UserAvatar
+                  :src="item.avatar"
+                  :size="42"
+                  class="profile-social-avatar"
+                  :identity-icon="item.identityIcon"
+                  :identity-label="item.identityLabel"
+                />
                 <div class="profile-social-user-main">
                   <div class="profile-social-user-line">
                     <strong>{{ item.nickname }}</strong>
                     <span v-if="item.meta">{{ item.meta }}</span>
                   </div>
+                  <UserIdentityBadges :badges="item.badges" class="profile-social-labels" />
                   <p>{{ item.description || `ID ${item.userId || '-'}` }}</p>
                 </div>
                 <div class="profile-social-user-actions">
@@ -2209,7 +2251,7 @@ onUnmounted(() => {
 }
 .profile-overview-main {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
   padding: 18px 20px;
@@ -2222,6 +2264,9 @@ onUnmounted(() => {
   flex: 1;
 }
 .profile-avatar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   border: 1px solid transparent;
   cursor: pointer;
@@ -2231,7 +2276,19 @@ onUnmounted(() => {
   outline-offset: 4px;
 }
 .profile-identity-copy {
+  display: grid;
+  gap: 8px;
+  flex: 1;
   min-width: 0;
+}
+.profile-identity-labels {
+  justify-content: flex-end;
+  align-self: flex-start;
+  flex: 0 1 auto;
+  max-width: 60%;
+}
+.profile-social-labels {
+  margin-top: 6px;
 }
 .profile-name-line {
   display: flex;
@@ -2247,7 +2304,6 @@ onUnmounted(() => {
   margin-right: 4px;
 }
 .profile-signature {
-  margin-top: 8px;
   font-size: 13px;
   line-height: 1.6;
   color: var(--color-text-secondary);
@@ -2256,10 +2312,6 @@ onUnmounted(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-.profile-overview-meta {
-  flex: none;
-  align-self: flex-start;
 }
 .profile-stats {
   display: grid;
@@ -2490,9 +2542,9 @@ onUnmounted(() => {
     margin-bottom: 20px;
   }
   .profile-overview-main {
-    flex-wrap: nowrap;
+    flex-direction: column;
     padding: 16px;
-    gap: 20px;
+    gap: 12px;
   }
   .profile-identity {
     flex: 1;
@@ -2500,6 +2552,11 @@ onUnmounted(() => {
   }
   .profile-name-line h2 {
     font-size: 18px;
+  }
+  .profile-identity-labels {
+    order: -1;
+    align-self: stretch;
+    max-width: none;
   }
   .profile-stats {
     padding: 14px 8px;

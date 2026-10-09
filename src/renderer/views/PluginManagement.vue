@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
+import Checkbox from '@/components/ui/Checkbox.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Input from '@/components/ui/Input.vue';
@@ -12,6 +13,7 @@ import Skeleton from '@/components/ui/Skeleton.vue';
 import Switch from '@/components/ui/Switch.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import InstalledPluginCard from '@/views/plugins/InstalledPluginCard.vue';
+import PluginAuthorizedFilesDialog from '@/views/plugins/PluginAuthorizedFilesDialog.vue';
 import PluginLocalInstallOverlay from '@/views/plugins/PluginLocalInstallOverlay.vue';
 import MarketplacePluginCard from '@/views/plugins/MarketplacePluginCard.vue';
 import PluginSourceDialog from '@/views/plugins/PluginSourceDialog.vue';
@@ -23,6 +25,7 @@ import {
   iconArrowBarDown,
   iconCloud,
   iconFolderOpen,
+  iconLockOpen,
   iconPlugin,
   iconRefreshCw,
   iconShield,
@@ -42,6 +45,7 @@ import { getPluginFeatureTags } from '@/views/plugins/pluginPresentation';
 
 const route = useRoute();
 const toastStore = useToastStore();
+const grantsOpen = ref(false);
 const {
   state: { view: activeView },
   isActive,
@@ -50,6 +54,7 @@ const isRefreshing = ref(false);
 const isSafeModeBusy = ref(false);
 const isUninstalling = ref(false);
 const pendingUninstallPluginId = ref('');
+const removePluginData = ref(false);
 const busyPluginIds = ref<Set<string>>(new Set());
 const failedPluginIconIds = ref<Set<string>>(new Set());
 
@@ -210,6 +215,7 @@ const toggleSafeMode = async (enabled: boolean) => {
 };
 
 const requestUninstallPlugin = (pluginId: string) => {
+  removePluginData.value = false;
   pendingUninstallPluginId.value = pluginId;
 };
 
@@ -222,7 +228,7 @@ const confirmUninstallPlugin = async () => {
   busyPluginIds.value = next;
   isUninstalling.value = true;
   try {
-    await uninstallRuntimePlugin(pluginId);
+    await uninstallRuntimePlugin(pluginId, { removeData: removePluginData.value });
     toastStore.actionCompleted('插件已卸载');
     pendingUninstallPluginId.value = '';
   } catch (error) {
@@ -293,44 +299,53 @@ const getPluginAccentStyle = (pluginId: string) => {
   >
     <!-- 页面头部 -->
     <header class="plugin-header shrink-0 px-6 pt-4 pb-3">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3">
+      <div class="plugin-header-main">
+        <div class="plugin-header-title">
           <div class="plugin-header-icon">
             <Icon :icon="iconPlugin" width="20" height="20" />
           </div>
-          <div>
+          <div class="plugin-header-copy">
             <h1 class="text-lg font-bold text-text-main">插件管理</h1>
-            <p class="text-xs text-text-secondary mt-0.5">
+            <p
+              class="plugin-header-path text-xs text-text-secondary mt-0.5"
+              :title="pluginRuntimeState.directory"
+            >
               {{ pluginRuntimeState.directory || '插件目录尚未初始化' }}
             </p>
           </div>
         </div>
 
         <!-- 右上角操作区 -->
-        <div class="flex items-center gap-3">
-          <!-- 安全模式 -->
-          <div class="plugin-safe-mode-control">
-            <Icon :icon="iconShield" width="14" height="14" class="text-primary-text" />
-            <span class="text-xs font-medium text-text-main">安全模式</span>
-            <Switch
-              :model-value="pluginRuntimeState.safeMode"
-              :disabled="isSafeModeBusy || pluginRuntimeState.loading"
-              @update:model-value="toggleSafeMode"
-            />
-          </div>
+        <div class="plugin-header-actions">
+          <Button
+            variant="secondary"
+            size="sm"
+            class="action-icon h-9! w-9! p-0! shrink-0"
+            tooltip="已授权文件与目录"
+            @click="grantsOpen = true"
+          >
+            <Icon :icon="iconLockOpen" width="16" height="16" />
+          </Button>
 
           <!-- 打开目录 -->
-          <Button variant="ghost" size="sm" @click="openDirectory" class="action-icon h-8">
+          <Button
+            variant="secondary"
+            size="sm"
+            @click="openDirectory"
+            class="action-icon h-9! w-9! p-0! shrink-0"
+            tooltip="打开插件目录"
+          >
             <Icon :icon="iconFolderOpen" width="16" height="16" />
           </Button>
 
           <!-- 刷新 -->
           <Button
-            variant="ghost"
+            variant="secondary"
             size="sm"
             :disabled="isRefreshing || isMarketplaceRefreshing"
             @click="activeView === 'marketplace' ? loadMarketplace(true) : refresh()"
-            class="action-icon h-8"
+            class="action-icon h-9! w-9! p-0! shrink-0"
+            tooltip="刷新插件列表"
           >
             <Icon
               :icon="iconRefreshCw"
@@ -342,21 +357,35 @@ const getPluginAccentStyle = (pluginId: string) => {
         </div>
       </div>
 
-      <CustomTabBar
-        class="plugin-view-tabs mt-4"
-        aria-label="插件视图"
-        :tabs="['已安装', '在线插件']"
-        :model-value="activeView === 'marketplace' ? 1 : 0"
-        @update:model-value="switchView($event === 1 ? 'marketplace' : 'installed')"
-      >
-        <template #tab="{ label, index }">
-          <Icon :icon="index === 0 ? iconPlugin : iconCloud" width="14" height="14" />
-          <span class="plugin-view-tab-label">{{ label }}</span>
-          <small class="plugin-view-tab-count">
-            {{ index === 0 ? records.length : marketplaceLoaded ? marketplacePlugins.length : '-' }}
-          </small>
-        </template>
-      </CustomTabBar>
+      <div class="plugin-header-navigation">
+        <CustomTabBar
+          class="plugin-view-tabs"
+          aria-label="插件视图"
+          :tabs="['已安装', '在线插件']"
+          :model-value="activeView === 'marketplace' ? 1 : 0"
+          @update:model-value="switchView($event === 1 ? 'marketplace' : 'installed')"
+        >
+          <template #tab="{ label, index }">
+            <Icon :icon="index === 0 ? iconPlugin : iconCloud" width="14" height="14" />
+            <span class="plugin-view-tab-label">{{ label }}</span>
+            <small class="plugin-view-tab-count">
+              {{
+                index === 0 ? records.length : marketplaceLoaded ? marketplacePlugins.length : '-'
+              }}
+            </small>
+          </template>
+        </CustomTabBar>
+        <div class="plugin-safe-mode-control">
+          <Icon :icon="iconShield" width="14" height="14" class="text-primary-text" />
+          <span class="text-xs font-medium text-text-main">安全模式</span>
+          <Switch
+            aria-label="安全模式"
+            :model-value="pluginRuntimeState.safeMode"
+            :disabled="isSafeModeBusy || pluginRuntimeState.loading"
+            @update:model-value="toggleSafeMode"
+          />
+        </div>
+      </div>
 
       <!-- 错误提示 -->
       <div v-if="globalFailure" class="plugin-failure-card mt-3">
@@ -450,7 +479,7 @@ const getPluginAccentStyle = (pluginId: string) => {
                 :options="sourceSelectOptions"
               />
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="sm"
                 class="action-icon h-9! w-9! p-0! shrink-0"
                 tooltip="管理插件源"
@@ -588,6 +617,7 @@ const getPluginAccentStyle = (pluginId: string) => {
       :title="localInstallOverlayTitle"
       :description="localInstallOverlayDescription"
     />
+    <PluginAuthorizedFilesDialog v-model:open="grantsOpen" />
 
     <PluginSourceDialog
       v-model:open="isSourceDialogOpen"
@@ -611,6 +641,15 @@ const getPluginAccentStyle = (pluginId: string) => {
           : '确定卸载该插件？'
       "
     >
+      <label class="flex items-center gap-2 text-sm">
+        <Checkbox
+          :model-value="removePluginData"
+          :disabled="isUninstalling"
+          aria-label="同时删除插件私有数据"
+          @update:model-value="removePluginData = $event === true"
+        />
+        同时删除插件私有数据（用户授权目录中的文件会保留）
+      </label>
       <template #footer>
         <Button
           variant="secondary"

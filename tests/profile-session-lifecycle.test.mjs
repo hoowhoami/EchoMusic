@@ -1,3 +1,4 @@
+import { userIdentity } from './helpers/user-identity.mjs';
 import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -102,6 +103,7 @@ function fixture(t) {
     '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': sessionModule.exports,
     '@/utils/accountVip': vipModule.exports,
+    '@/utils/userIdentity': userIdentity,
     '@/stores/user': { useUserStore: () => user },
     '@/stores/loginDevices': { useLoginDeviceStore: () => devices },
     '@/stores/toast': {
@@ -1001,4 +1003,41 @@ test('duplicate sends and over-limit drafts do not dispatch extra messages', asy
   gate.resolve({ errcode: 0, data: { msgid: 'one' } });
   await first;
   assert.equal(f.view.socialChatMessages.value.length, 1);
+});
+
+test('all social list kinds map returned identities and keep artist-only entries non-actionable', (t) => {
+  const f = fixture(t);
+  for (const tab of ['friends', 'follow', 'fans', 'visitors']) {
+    const item = f.view.mapSocialUser(
+      {
+        userid: 123,
+        nickname: '测试用户',
+        kq_talent: 32,
+        vip_type: 6,
+        auth_info: '歌词制作达人',
+        user_type: 0,
+        student_status: 1,
+      },
+      0,
+      tab,
+    );
+    assert.deepEqual(
+      item.badges.map((badge) => badge.label),
+      ['豪华VIP', '学生', '歌词制作达人'],
+    );
+    assert.match(item.identityIcon, /20180627153930257837/);
+  }
+  const artist = f.view.mapSocialUser(
+    { userid: 0, singerid: 6076, nickname: '测试歌手', iden_type: 1 },
+    0,
+    'follow',
+  );
+  assert.equal(artist.key, 'singer:6076');
+  assert.equal(artist.canMessage, false);
+  assert.equal(artist.friendAction, '');
+  assert.deepEqual(
+    artist.badges.map((badge) => badge.label),
+    ['歌手'],
+  );
+  assert.match(artist.identityIcon, /20180627153852371280/);
 });

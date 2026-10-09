@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron';
+import { pluginResourcesNative, managePluginGrants } from './pluginResources';
 import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/apiServer';
 import type { AppInfoResult, UpdateDownloadResult, UpdateState } from '../shared/app';
@@ -1091,6 +1092,8 @@ contextBridge.exposeInMainWorld('electron', {
       invokeWithPlainPayload<ResolvePlaylistResponse>('external:resolve-playlist', req),
   },
   plugins: {
+    resources: pluginResourcesNative,
+    manageGrants: managePluginGrants,
     list: () => ipcRenderer.invoke('plugins:list') as Promise<PluginListResult>,
     backups: {
       create: (
@@ -1188,8 +1191,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('plugins:set-safe-mode', enabled) as Promise<PluginSetSafeModeResult>,
     installLocal: (paths: string[], options?: PluginLocalInstallOptions) =>
       invokeWithPlainPayload<PluginLocalInstallResult>('plugins:install-local', paths, options),
-    uninstall: (pluginId: string) =>
-      ipcRenderer.invoke('plugins:uninstall', pluginId) as Promise<PluginUninstallResult>,
+    uninstall: (pluginId: string, options?: { removeData?: boolean }) =>
+      ipcRenderer.invoke('plugins:uninstall', pluginId, options) as Promise<PluginUninstallResult>,
     markStartup: (pluginIds: string[]) =>
       invokeWithPlainPayload<PluginReportFailureResult>('plugins:startup:mark', pluginIds),
     clearStartup: () =>

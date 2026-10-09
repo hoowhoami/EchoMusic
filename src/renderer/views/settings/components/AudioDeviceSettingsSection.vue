@@ -89,6 +89,7 @@ onMounted(() => {
       </div>
       <Select
         class="w-45 shrink-0"
+        wrap-options
         :model-value="settingStore.inputDevice"
         :options="inputDeviceOptions"
         @update:model-value="handleInputDeviceChange($event as string)"
@@ -103,6 +104,7 @@ onMounted(() => {
       </div>
       <Select
         class="w-45 shrink-0"
+        wrap-options
         :model-value="settingStore.outputDevice"
         :options="outputDeviceOptions"
         @update:model-value="handleOutputDeviceChange($event as string)"

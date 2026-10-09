@@ -164,7 +164,7 @@ const registerBuiltinActions = () => {
     id: 'free-listen',
     title: '免费听',
     icon: iconMusicDiscount,
-    defaultPlacement: 'toolbar',
+    defaultPlacement: 'more',
     order: 25,
     onClick: async () => {
       await router.push({ name: 'free-listen' });

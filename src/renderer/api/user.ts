@@ -135,6 +135,11 @@ export function getUserDetail() {
   return request.get('/user/detail');
 }
 
+/** 学生身份与个人资料标签。 */
+export function getUserInfo() {
+  return request.get('/user/info');
+}
+
 /** 获取歌曲 Auth 接口所需的用户授权，IPC 调用方需显式传递返回的 auth。 */
 export function getUserVerify() {
   return request.get('/user/verify');

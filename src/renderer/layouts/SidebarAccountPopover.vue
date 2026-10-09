@@ -6,6 +6,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import { iconChevronDown, iconChevronRight } from '@/icons';
 import Avatar from '@/components/ui/Avatar.vue';
+import UserAvatar from '@/components/profile/UserAvatar.vue';
+import { getAccountDisplay } from '@/utils/userIdentity';
 import RollingNumber from '@/components/ui/RollingNumber.vue';
 import Button from '@/components/ui/Button.vue';
 import LogoutConfirmDialog from '@/components/profile/LogoutConfirmDialog.vue';
@@ -26,6 +28,7 @@ const open = ref(false);
 const confirmLogout = ref(false);
 const accountSwitcherOpen = ref(false);
 const detail = computed(() => user.info?.extendsInfo?.detail ?? {});
+const identity = computed(() => getAccountDisplay(user.isLoggedIn ? user.info : null));
 const grade = computed(() => getGradeProgress(detail.value));
 const duration = computed(() => formatListeningDuration(detail.value.d_sec, detail.value.duration));
 const signature = computed(() =>
@@ -134,7 +137,12 @@ const logout = () => {
     <section class="account-panel" aria-label="账号信息">
       <template v-if="user.isLoggedIn && user.info">
         <header class="account-identity">
-          <Avatar :src="user.info.pic" :size="44" class="rounded-full" />
+          <UserAvatar
+            :src="user.info.pic"
+            :size="44"
+            :identity-icon="identity.avatarIcon"
+            :identity-label="identity.avatarLabel"
+          />
           <div class="account-name">
             <div class="account-name-line">
               <strong>{{ user.info.nickname }}</strong

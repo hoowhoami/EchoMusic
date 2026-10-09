@@ -1,3 +1,4 @@
+import { userIdentity } from './helpers/user-identity.mjs';
 import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -435,8 +436,10 @@ const userMapper = evaluate(
 );
 const userFixture = (t, api = {}) => {
   const userModule = compile('../src/renderer/stores/user.ts', {
+    '@/utils/userIdentity': userIdentity,
     pinia: { defineStore },
     '@/api/user': {
+      getUserInfo: async () => ({ status: 0 }),
       getUserDetail: async () => ({ status: 1, data: { userid: 10, nickname: 'listener' } }),
       getUserVipDetail: async () => ({ status: 1, data: { vip_type: 0 } }),
       ...api,

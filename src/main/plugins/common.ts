@@ -30,6 +30,7 @@ export const PLUGIN_IMAGE_EXTENSIONS = new Set([
   '.webp',
 ]);
 export const PLUGIN_AUDIO_EXTENSIONS = normalizeFileExtensions(LOCAL_AUDIO_EXTENSIONS);
+export const PLUGIN_VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.webm', '.mov', '.mkv']);
 export const PLUGIN_LYRIC_EXTENSIONS = new Set(['.krc', '.lrc', '.qrc', '.srt', '.ttml', '.txt']);
 export const PLUGIN_PLAYLIST_EXTENSIONS = new Set(['.m3u', '.m3u8', '.pls']);
 export const PLUGIN_CUE_EXTENSIONS = new Set(['.cue']);

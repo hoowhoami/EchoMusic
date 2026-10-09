@@ -33,6 +33,7 @@ import {
   MAX_PLUGIN_READ_BYTES,
   MAX_PLUGIN_WRITE_BYTES,
   PLUGIN_AUDIO_EXTENSIONS,
+  PLUGIN_VIDEO_EXTENSIONS,
   PLUGIN_CUE_EXTENSIONS,
   PLUGIN_IMAGE_EXTENSIONS,
   PLUGIN_LYRIC_EXTENSIONS,
@@ -70,6 +71,7 @@ const normalizeFileScanDepth = (depth: unknown) => {
 
 const getPluginFileKind = (extension: string): PluginFileKind => {
   if (PLUGIN_AUDIO_EXTENSIONS.has(extension)) return 'audio';
+  if (PLUGIN_VIDEO_EXTENSIONS.has(extension)) return 'video';
   if (PLUGIN_IMAGE_EXTENSIONS.has(extension)) return 'image';
   if (PLUGIN_LYRIC_EXTENSIONS.has(extension)) return 'lyric';
   if (PLUGIN_PLAYLIST_EXTENSIONS.has(extension)) return 'playlist';
@@ -80,6 +82,7 @@ const getPluginFileKind = (extension: string): PluginFileKind => {
 const normalizePluginFileKinds = (kinds: unknown) => {
   const validKinds = new Set<PluginFileKind>([
     'audio',
+    'video',
     'image',
     'lyric',
     'playlist',

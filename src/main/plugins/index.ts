@@ -1,8 +1,9 @@
 import { findInstalledPluginCatalogTags } from '../../shared/pluginSource';
+import { getPluginResources, peekPluginResources } from './resources';
+import { recoverInstallTransactions, withInstallLock } from './installTransaction';
 import { app, shell, type WebContents } from 'electron';
 import { statSync } from 'fs';
 import fs from 'fs/promises';
-import { createHash } from 'crypto';
 import { tmpdir } from 'os';
 import { extname, isAbsolute, join, resolve } from 'path';
 import { coerce as semverCoerce, gt as semverGt, valid as semverValid } from 'semver';
@@ -72,7 +73,6 @@ import {
   PLUGIN_MANIFEST_FILE,
   PLUGIN_MARKETPLACE_CACHE_KEY,
   PLUGIN_MARKETPLACE_CACHE_VERSION,
-  PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS,
   PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
   PLUGIN_MARKETPLACE_INDEX_FILE,
   PLUGIN_MARKETPLACE_SOURCES_KEY,
@@ -182,26 +182,39 @@ const compareInstalledPlugins = (
 
 const pluginProcessSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-const accessRevokedListeners = new Set<(pluginIds: string[]) => void>();
+const accessRevokedListeners = new Set<(pluginIds: string[]) => void | Promise<void>>();
 const resourceCleanup = new Map<string, Promise<void>>();
 const revokePluginAccess = (pluginIds: string[]) => {
-  for (const listener of accessRevokedListeners) listener(pluginIds);
+  const listenerCleanup = [...accessRevokedListeners].map((listener) =>
+    (() => {
+      try {
+        return Promise.resolve(listener(pluginIds));
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    })(),
+  );
   for (const pluginId of pluginIds) {
     pluginTcpManager.closeAll({ pluginId });
     closePluginSqliteDatabases(pluginId);
-    const cleanup = Promise.allSettled([
+    const cleanup = Promise.all([
+      Promise.all(listenerCleanup),
       resourceCleanup.get(pluginId),
-      closePluginWindows(pluginId),
-      closePluginWebServer(pluginId),
-      terminatePluginProcesses(pluginId),
+      Promise.allSettled([
+        closePluginWindows(pluginId),
+        closePluginWebServer(pluginId),
+        terminatePluginProcesses(pluginId),
+      ]),
     ]).then(() => {});
     resourceCleanup.set(pluginId, cleanup);
-    void cleanup.finally(() => {
-      if (resourceCleanup.get(pluginId) === cleanup) resourceCleanup.delete(pluginId);
-    });
+    void cleanup
+      .finally(() => {
+        if (resourceCleanup.get(pluginId) === cleanup) resourceCleanup.delete(pluginId);
+      })
+      .catch(() => {});
   }
 };
-export const onPluginAccessRevoked = (listener: (pluginIds: string[]) => void) => {
+export const onPluginAccessRevoked = (listener: (pluginIds: string[]) => void | Promise<void>) => {
   accessRevokedListeners.add(listener);
   return () => accessRevokedListeners.delete(listener);
 };
@@ -572,9 +585,41 @@ export const reportPluginRendererFailure = (
 };
 
 let discoveredInstallTimes: PluginInstallTimes = {};
+let installRecovery: Promise<void> | undefined;
+const snapshotInstallationMetadata = (id: string) => ({
+  id,
+  enabled: getEnabledState()[id],
+  source: getKvStorage().get(getPluginInstallSourceKey(id)),
+  tags: getKvStorage().get(getPluginTagsKey(id)),
+  installedAt: getPluginInstallTimes()[id],
+});
+const restoreInstallationMetadata = async (id: string, value: unknown) => {
+  const data = value as ReturnType<typeof snapshotInstallationMetadata> | undefined;
+  if (!data) return;
+  for (const [key, saved] of [
+    [getPluginInstallSourceKey(id), data.source],
+    [getPluginTagsKey(id), data.tags],
+  ] as const) {
+    if (saved == null) getKvStorage().delete(key);
+    else getKvStorage().set(key, saved);
+  }
+  const times = getPluginInstallTimes();
+  if (data.installedAt) times[id] = data.installedAt;
+  else delete times[id];
+  setPluginInstallTimes(times);
+  const enabled = { ...getEnabledState() };
+  if (data.enabled === undefined) delete enabled[id];
+  else enabled[id] = data.enabled;
+  setEnabledState(enabled);
+};
 const scanPluginDescriptors = async (): Promise<EchoPluginDescriptor[]> => {
   const root = getPluginRoot();
   await fs.mkdir(root, { recursive: true });
+  installRecovery ??= recoverInstallTransactions(root, async (target, metadata) => {
+    const id = (metadata as { id?: string })?.id ?? target.split(/[\\/]/).pop()!;
+    await restoreInstallationMetadata(id, metadata);
+  });
+  await installRecovery;
   const enabledState = getEnabledState();
   const installTimes = getPluginInstallTimes();
   const plugins: EchoPluginDescriptor[] = [];
@@ -1229,39 +1274,6 @@ const fetchWithTimeout = async (
   }
 };
 
-const runWithTimeout = async <T>(
-  task: Promise<T>,
-  timeoutMs: number,
-  timeoutMessage: string,
-  lateFailureSource: string,
-) => {
-  let timedOut = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const guardedTask = task.catch((error) => {
-    if (timedOut) {
-      log.warn('[PluginMarketplace] late async failure after timeout', {
-        source: lateFailureSource,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    throw error;
-  });
-
-  try {
-    return await Promise.race([
-      guardedTask,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          timedOut = true;
-          reject(new Error(timeoutMessage));
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-};
-
 const normalizeMarketplaceSource = (
   source: Partial<PluginMarketplaceSource> | null | undefined,
 ): PluginMarketplaceSource | null => {
@@ -1309,13 +1321,14 @@ const pluginInstaller = createPluginInstaller({
   getEnabledState,
   isSafePackagePath: isSafeMarketplacePackagePath,
   normalizePackagePath: normalizeMarketplacePackagePath,
-  runWithTimeout,
   setEnabledState,
   setPluginInstalledAt,
   setPluginInstallSource,
   setPluginTags,
   terminatePluginProcesses,
   withMetadataMutation: withPluginMetadataMutation,
+  snapshotMetadata: snapshotInstallationMetadata,
+  restoreMetadata: restoreInstallationMetadata,
 });
 
 const {
@@ -1988,21 +2001,15 @@ const downloadMarketplacePackage = async (
     sourceId: plugin.sourceId,
   });
   const download = async (url: string) => {
-    const response = await fetchWithTimeout(
+    return getPluginResources().downloadPackage(
       url,
-      {
-        headers: {
-          Accept: 'application/zip,application/octet-stream,*/*',
-          'User-Agent': 'EchoMusic-Plugin-Marketplace',
-        },
-      },
-      PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS,
-      '插件安装包下载超时，请检查网络或 GitHub 加速地址',
+      plugin.id,
+      join(directory, `${plugin.id}.zip`),
+      MAX_PLUGIN_PACKAGE_SIZE_BYTES,
+      plugin.checksum,
     );
-    if (!response.ok) throw new Error(`插件下载失败 (${response.status})`);
-    return Buffer.from(await response.arrayBuffer());
   };
-  const buffer = await runGithubAcceleratorFallback({
+  const zipPath = await runGithubAcceleratorFallback({
     acceleratorEnabled: acceleratedUrl !== plugin.downloadUrl,
     accelerated: () => download(acceleratedUrl),
     github: () => download(plugin.downloadUrl),
@@ -2013,26 +2020,8 @@ const downloadMarketplacePackage = async (
   log.info('[PluginMarketplace] package download finished', {
     pluginId: plugin.id,
     sourceId: plugin.sourceId,
-    bytes: buffer.byteLength,
+    bytes: (await fs.stat(zipPath)).size,
   });
-  if (buffer.byteLength > MAX_PLUGIN_PACKAGE_SIZE_BYTES) {
-    throw new Error('插件安装包超过 80 MB');
-  }
-
-  const zipPath = join(directory, `${plugin.id}.zip`);
-  await fs.writeFile(zipPath, buffer);
-
-  if (plugin.checksum) {
-    const expected = plugin.checksum
-      .replace(/^sha256:/i, '')
-      .trim()
-      .toLowerCase();
-    if (/^[a-f0-9]{64}$/.test(expected)) {
-      const actual = createHash('sha256').update(buffer).digest('hex');
-      if (actual !== expected) throw new Error('插件安装包校验失败');
-    }
-  }
-
   return zipPath;
 };
 
@@ -2109,6 +2098,7 @@ export const installPluginFromMarketplace = async (
           id: plugin.sourceId,
           name: plugin.sourceName,
           url: plugin.sourceUrl,
+          origin: plugin.repo,
         },
         tags: plugin.tags,
         expectedPluginId: plugin.id,
@@ -2286,7 +2276,10 @@ export const {
   deletePluginFile,
 } = pluginFileApi;
 
-export const uninstallPlugin = async (pluginId: string): Promise<PluginUninstallResult> => {
+export const uninstallPlugin = async (
+  pluginId: string,
+  options?: { removeData?: boolean },
+): Promise<PluginUninstallResult> => {
   const plugin = findPlugin(pluginId);
   if (!plugin) return { ok: false, error: '插件不存在' };
 
@@ -2297,33 +2290,36 @@ export const uninstallPlugin = async (pluginId: string): Promise<PluginUninstall
   }
 
   try {
-    return await withPluginMetadataMutation(plugin.id, async () => {
-      const nextState = getEnabledState();
-      delete nextState[plugin.id];
-      setEnabledState(nextState);
-      clearPluginStorage(plugin.id);
-      removePluginInstalledAt(plugin.id);
-      getKvStorage().delete(getPluginInstallSourceKey(plugin.id));
-      getKvStorage().delete(getPluginTagsKey(plugin.id));
-      clearPluginProcessConsents(plugin.id);
+    return await withInstallLock(plugin.id, () =>
+      withPluginMetadataMutation(plugin.id, async () => {
+        const nextState = getEnabledState();
+        delete nextState[plugin.id];
+        setEnabledState(nextState);
+        clearPluginStorage(plugin.id);
+        removePluginInstalledAt(plugin.id);
+        getKvStorage().delete(getPluginInstallSourceKey(plugin.id));
+        getKvStorage().delete(getPluginTagsKey(plugin.id));
+        clearPluginProcessConsents(plugin.id);
+        await peekPluginResources()?.uninstall(plugin.id, options?.removeData === true);
 
-      pluginTcpManager.closeAll({ pluginId: plugin.id });
+        pluginTcpManager.closeAll({ pluginId: plugin.id });
 
-      await closePluginWebServer(plugin.id);
-      deletePluginSqliteDatabases(plugin.id);
+        await closePluginWebServer(plugin.id);
+        deletePluginSqliteDatabases(plugin.id);
 
-      // 等待进程完全终止
-      await terminatePluginProcesses(plugin.id);
+        // 等待进程完全终止
+        await terminatePluginProcesses(plugin.id);
 
-      // Windows下额外等待一小段时间，确保文件句柄被释放
-      if (process.platform === 'win32') {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
+        // Windows下额外等待一小段时间，确保文件句柄被释放
+        if (process.platform === 'win32') {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
 
-      await fs.rm(directory, { recursive: true, force: true });
-      clearPluginFailureRecord(plugin.id);
-      return { ok: true as const, pluginId: plugin.id };
-    });
+        await fs.rm(directory, { recursive: true, force: true });
+        clearPluginFailureRecord(plugin.id);
+        return { ok: true as const, pluginId: plugin.id };
+      }),
+    );
   } catch (error) {
     return {
       ok: false,

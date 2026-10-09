@@ -1,3 +1,9 @@
+import type {
+  PluginResourcesNativeApi,
+  PluginResourceResult,
+  PluginFileGrantGroup,
+  PluginGrantManagementAction,
+} from '../shared/pluginFiles';
 import type { ApiServerStatus } from '../shared/apiServer';
 import type { PluginTcpNativeApi } from '../shared/pluginTcp';
 import type {
@@ -511,6 +517,12 @@ export interface IElectronAPI {
       setRuntimeWindowIcon: (iconPath: string) => Promise<PluginRestoreIconResult>;
       restoreDefaultWindowIcon: () => Promise<PluginRestoreIconResult>;
     };
+    resources: PluginResourcesNativeApi;
+    manageGrants: (
+      pluginId?: string,
+      grantId?: string,
+      action?: PluginGrantManagementAction,
+    ) => Promise<PluginResourceResult<PluginFileGrantGroup[]>>;
     onRuntimeReloadRequested: (func: () => void) => () => void;
     setEnabled: (pluginId: string, enabled: boolean) => Promise<PluginSetEnabledResult>;
     setSafeMode: (enabled: boolean) => Promise<PluginSetSafeModeResult>;
@@ -518,7 +530,10 @@ export interface IElectronAPI {
       paths: string[],
       options?: PluginLocalInstallOptions,
     ) => Promise<PluginLocalInstallResult>;
-    uninstall: (pluginId: string) => Promise<PluginUninstallResult>;
+    uninstall: (
+      pluginId: string,
+      options?: { removeData?: boolean },
+    ) => Promise<PluginUninstallResult>;
     markStartup: (pluginIds: string[]) => Promise<PluginReportFailureResult>;
     clearStartup: () => Promise<PluginReportFailureResult>;
     setActiveSession: (pluginIds: string[]) => Promise<PluginReportFailureResult>;

@@ -50,7 +50,6 @@ graphics drivers and remote sessions can affect visible results even after a
 successful API call. Do not emulate corners using `SetWindowRgn` or add layered
 window styles; those would defeat the native window frame.
 
-
 ## Clear composition
 
 Clear backgrounds explicitly enable DWM alpha composition through
@@ -103,7 +102,6 @@ OS and application versions, GPU feature status and renderer background layers.
 No window screenshot or unrelated application content is collected. A successful
 readback still does not establish visible transparency; compare with the actual
 window. Older addons remain loadable and report native diagnostics unavailable.
-
 
 ## Retired legacy HWND frame synchronization (comparison only)
 

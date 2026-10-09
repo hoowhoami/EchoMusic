@@ -1,4 +1,7 @@
 import { constants as fsConstants, type Stats } from 'fs';
+import { createWriteStream } from 'node:fs';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import fs from 'fs/promises';
 import { tmpdir } from 'os';
 import { extname, join, resolve } from 'path';
@@ -20,6 +23,12 @@ import {
 } from './common';
 import { readManifest, toDescriptor } from './descriptor';
 import { getPluginRoot, isPathInside } from './path';
+import {
+  createInstallTransaction,
+  validateProgramDirectory,
+  withInstallLock,
+} from './installTransaction';
+import { safePath } from '../downloads/files';
 
 type PluginDirectoryInstallOptions = {
   expectedPluginId?: string;
@@ -39,12 +48,6 @@ type PluginInstallerOptions = {
   getEnabledState: () => Record<string, boolean>;
   isSafePackagePath: (value: string) => boolean;
   normalizePackagePath: (value: unknown) => string;
-  runWithTimeout: <T>(
-    promise: Promise<T>,
-    timeoutMs: number,
-    message: string,
-    label: string,
-  ) => Promise<T>;
   setEnabledState: (state: Record<string, boolean>) => void;
   setPluginTags: (pluginId: string, tags: unknown) => void;
   setPluginInstallSource: (
@@ -54,6 +57,8 @@ type PluginInstallerOptions = {
   setPluginInstalledAt: (pluginId: string, installedAt: number) => void;
   terminatePluginProcesses: (pluginId?: string) => Promise<void>;
   withMetadataMutation: <T>(pluginId: string, mutate: () => Promise<T>) => Promise<T>;
+  snapshotMetadata?: (pluginId: string) => unknown;
+  restoreMetadata?: (pluginId: string, value: unknown) => Promise<void>;
 };
 
 const pathExists = async (filePath: string) => {
@@ -69,10 +74,28 @@ const extractZipWithStreamZip = async (zipPath: string, extractDirectory: string
   const zip = new StreamZip.async({ file: zipPath });
   try {
     const entries = await zip.entries();
+    if (Object.keys(entries).length > 10000) throw new Error('插件包文件数量过多');
     let totalSize = 0;
 
+    const names = new Set<string>();
+    const casing = new Map<string, string>();
     for (const entry of Object.values(entries)) {
       if (entry.encrypted) throw new Error('插件安装包包含加密文件');
+      if (((entry.attr >>> 16) & 0xf000) === 0xa000) throw new Error('插件安装包不能包含链接');
+      const mode = (entry.attr >>> 16) & 0xf000;
+      if (mode && mode !== 0x4000 && mode !== 0x8000) throw new Error('插件安装包包含特殊文件');
+      const name = entry.name.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
+      if (names.has(name)) throw new Error('插件安装包包含重复路径');
+      names.add(name);
+      const parts = entry.name.replace(/\\/g, '/').replace(/\/$/, '').split('/');
+      for (let i = 1; i <= parts.length; i++) {
+        const actual = parts.slice(0, i).join('/');
+        const key = actual.toLowerCase();
+        if (casing.has(key) && casing.get(key) !== actual)
+          throw new Error('插件安装包包含大小写冲突路径');
+        casing.set(key, actual);
+      }
+      await safePath(extractDirectory, entry.name.replace(/\/$/, ''), true);
       if (!entry.isFile) continue;
       totalSize += Math.max(0, Math.round(Number(entry.size) || 0));
       if (totalSize > MAX_PLUGIN_PACKAGE_SIZE_BYTES) {
@@ -80,7 +103,33 @@ const extractZipWithStreamZip = async (zipPath: string, extractDirectory: string
       }
     }
 
-    await zip.extract(null, extractDirectory);
+    let output = 0;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PLUGIN_MARKETPLACE_EXTRACT_TIMEOUT_MS);
+    try {
+      for (const entry of Object.values(entries)) {
+        if (controller.signal.aborted) throw new Error('插件安装包解压超时');
+        const target = await safePath(extractDirectory, entry.name.replace(/\/$/, ''), true);
+        if (entry.isDirectory) {
+          await fs.mkdir(target, { recursive: true });
+          continue;
+        }
+        const stream = await zip.stream(entry);
+        const budget = new Transform({
+          transform(chunk: Buffer, _encoding, callback) {
+            output += chunk.length;
+            if (output > MAX_PLUGIN_PACKAGE_SIZE_BYTES)
+              callback(new Error('插件安装包解压后超过 80 MB'));
+            else callback(null, chunk);
+          },
+        });
+        await pipeline(stream, budget, createWriteStream(target, { flags: 'wx' }), {
+          signal: controller.signal,
+        });
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   } finally {
     await zip.close().catch((error) => {
       log.warn('[PluginMarketplace] zip close failed', {
@@ -141,13 +190,14 @@ export const createPluginInstaller = ({
   getEnabledState,
   isSafePackagePath,
   normalizePackagePath,
-  runWithTimeout,
   setEnabledState,
   setPluginInstalledAt,
   setPluginInstallSource,
   setPluginTags,
   terminatePluginProcesses,
   withMetadataMutation,
+  snapshotMetadata,
+  restoreMetadata,
 }: PluginInstallerOptions) => {
   const extractMarketplacePackage = async (
     zipPath: string,
@@ -158,12 +208,7 @@ export const createPluginInstaller = ({
       pluginId: plugin.id,
       sourceId: plugin.sourceId,
     });
-    await runWithTimeout(
-      extractZipWithStreamZip(zipPath, extractDirectory),
-      PLUGIN_MARKETPLACE_EXTRACT_TIMEOUT_MS,
-      '插件安装包解压超时',
-      'node-stream-zip',
-    );
+    await extractZipWithStreamZip(zipPath, extractDirectory);
     log.info('[PluginMarketplace] package extract finished', {
       pluginId: plugin.id,
       sourceId: plugin.sourceId,
@@ -210,57 +255,74 @@ export const createPluginInstaller = ({
 
     const root = resolve(getPluginRoot());
     await fs.mkdir(root, { recursive: true });
-    const existingPlugin = findPlugin(pluginId);
-    const targetDirectory = existingPlugin
-      ? resolve(existingPlugin.directory)
-      : resolve(root, pluginId);
-    if (!isPathInside(root, targetDirectory) || targetDirectory === root) {
-      throw new Error('插件安装目录非法');
-    }
-
-    const stagingParent = await fs.mkdtemp(join(tmpdir(), 'echo-plugin-install-'));
-    const stagingDirectory = join(stagingParent, pluginId);
-    try {
-      const enableAfterInstall = Boolean(options.enableAfterInstall);
-      await fs.cp(sourceDirectory, stagingDirectory, { recursive: true });
-      const descriptor = await toDescriptor(stagingDirectory, pluginId, {
-        ...getEnabledState(),
-        ...(enableAfterInstall ? { [pluginId]: true } : {}),
-      });
-      if (descriptor.invalid) throw new Error(descriptor.error || '插件清单无效');
-      if (!descriptor.compatibility.compatible) {
-        throw new Error(descriptor.compatibility.message || '插件与当前 EchoMusic 版本不兼容');
+    return withInstallLock(pluginId, async () => {
+      const existingPlugin = findPlugin(pluginId);
+      const targetDirectory = existingPlugin
+        ? resolve(existingPlugin.directory)
+        : resolve(root, pluginId);
+      if (!isPathInside(root, targetDirectory) || targetDirectory === root) {
+        throw new Error('插件安装目录非法');
       }
 
-      await withMetadataMutation(pluginId, async () => {
-        try {
-          await terminatePluginProcesses(pluginId);
-          if (process.platform === 'win32') {
-            await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-          }
-          await fs.rm(targetDirectory, { recursive: true, force: true });
-          await fs.cp(stagingDirectory, targetDirectory, { recursive: true });
-          setPluginInstallSource(pluginId, options.source ?? { kind: 'local' });
-          setPluginTags(pluginId, options.tags ?? descriptor.manifest.tags);
-          if (!existingPlugin) setPluginInstalledAt(pluginId, Date.now());
-          // Read current preferences after async work, preserving changes to other plugins.
-          if (enableAfterInstall) setEnabledState({ ...getEnabledState(), [pluginId]: true });
-        } catch (error) {
-          setEnabledState({ ...getEnabledState(), [pluginId]: false });
-          throw error;
+      const transaction = await createInstallTransaction(
+        root,
+        targetDirectory,
+        snapshotMetadata?.(pluginId),
+      );
+      const stagingDirectory = transaction.staged;
+      let applying = false;
+      try {
+        const enableAfterInstall = Boolean(options.enableAfterInstall);
+        await validateProgramDirectory(sourceDirectory);
+        await fs.cp(sourceDirectory, stagingDirectory, { recursive: true });
+        await validateProgramDirectory(stagingDirectory);
+        const descriptor = await toDescriptor(stagingDirectory, pluginId, {
+          ...getEnabledState(),
+          ...(enableAfterInstall ? { [pluginId]: true } : {}),
+        });
+        if (descriptor.invalid) throw new Error(descriptor.error || '插件清单无效');
+        if (!descriptor.compatibility.compatible) {
+          throw new Error(descriptor.compatibility.message || '插件与当前 EchoMusic 版本不兼容');
         }
-      });
 
-      const installed = findPlugin(pluginId);
-      if (!installed) throw new Error('插件安装后扫描失败');
-      return {
-        plugin: installed,
-        updated: Boolean(existingPlugin),
-        enabled: installed.enabled,
-      };
-    } finally {
-      await fs.rm(stagingParent, { recursive: true, force: true });
-    }
+        const metadata = snapshotMetadata?.(pluginId);
+        await transaction.setMetadata(metadata);
+        applying = true;
+        await transaction.apply(
+          (fn) => withMetadataMutation(pluginId, fn),
+          async () => {
+            await terminatePluginProcesses(pluginId);
+            setPluginInstallSource(pluginId, options.source ?? { kind: 'local' });
+            setPluginTags(pluginId, options.tags ?? descriptor.manifest.tags);
+            if (!existingPlugin) setPluginInstalledAt(pluginId, Date.now());
+            // Read current preferences after async work, preserving changes to other plugins.
+            if (enableAfterInstall) setEnabledState({ ...getEnabledState(), [pluginId]: true });
+          },
+          async () => {
+            await restoreMetadata?.(pluginId, metadata);
+          },
+          () => {
+            const installed = findPlugin(pluginId);
+            if (!installed || installed.invalid || !installed.compatibility.compatible)
+              throw new Error('插件安装后扫描失败');
+          },
+        );
+
+        const installed = findPlugin(pluginId);
+        if (!installed) throw new Error('插件安装后扫描失败');
+        return {
+          plugin: installed,
+          updated: Boolean(existingPlugin),
+          enabled: installed.enabled,
+        };
+      } catch (error) {
+        if ((error as { code?: string }).code === 'ROLLBACK_FAILED')
+          setEnabledState({ ...getEnabledState(), [pluginId]: false });
+        throw error;
+      } finally {
+        if (!applying) await transaction.discard();
+      }
+    });
   };
 
   const installPluginFromLocalSource = async (

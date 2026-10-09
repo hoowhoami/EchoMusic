@@ -640,11 +640,22 @@ onBeforeUnmount(() => {
               contentClass="rec-source-dropdown"
             >
               <template #trigger>
-                <button class="rec-source-toggle" :disabled="isActive">
-                  <Icon :icon="sourceIcon" width="14" height="14" />
-                  <span class="rec-source-toggle-label">{{ currentSourceLabel }}</span>
-                  <Icon :icon="iconChevronDown" width="12" height="12" class="rec-source-arrow" />
-                </button>
+                <Tooltip :content="currentSourceLabel" overflow-only>
+                  <template #trigger>
+                    <button class="rec-source-toggle" :disabled="isActive">
+                      <Icon :icon="sourceIcon" width="14" height="14" />
+                      <span class="rec-source-toggle-label" data-tooltip-label>
+                        {{ currentSourceLabel }}
+                      </span>
+                      <Icon
+                        :icon="iconChevronDown"
+                        width="12"
+                        height="12"
+                        class="rec-source-arrow"
+                      />
+                    </button>
+                  </template>
+                </Tooltip>
               </template>
 
               <div class="rec-source-menu">
@@ -873,7 +884,7 @@ onBeforeUnmount(() => {
   gap: 5px;
   max-width: 220px;
   padding: 6px 14px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
@@ -884,10 +895,15 @@ onBeforeUnmount(() => {
 }
 
 .rec-source-toggle-label {
+  min-width: 0;
+  max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 150px;
+}
+
+.rec-source-toggle :deep(svg) {
+  flex-shrink: 0;
 }
 
 .rec-source-toggle:hover:not(:disabled) {
@@ -916,13 +932,18 @@ onBeforeUnmount(() => {
 
 /* 音源选择下拉菜单 */
 :global(.rec-source-dropdown) {
-  width: 220px;
+  width: max-content;
+  max-width: min(480px, calc(100vw - 24px), var(--reka-popover-content-available-width, 100vw));
+  box-sizing: border-box;
 }
 
 .rec-source-menu {
   display: flex;
   flex-direction: column;
   padding: 4px;
+  max-height: calc(var(--reka-popover-content-available-height, 384px) - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .rec-source-menu-group-label {
@@ -939,7 +960,7 @@ onBeforeUnmount(() => {
   gap: 6px;
   width: 100%;
   padding: 7px 10px;
-  border-radius: var(--radius-popover);
+  border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
@@ -948,9 +969,8 @@ onBeforeUnmount(() => {
   cursor: pointer;
   text-align: left;
   transition: all 0.15s ease;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .rec-source-menu-item:hover {
@@ -970,7 +990,7 @@ onBeforeUnmount(() => {
 }
 
 .rec-source-menu-mic-list {
-  max-height: 160px;
+  max-height: 240px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -1061,7 +1081,7 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   min-width: 76px;
   padding: 6px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-detail);
   display: inline-flex;
   align-items: center;
   justify-content: center;

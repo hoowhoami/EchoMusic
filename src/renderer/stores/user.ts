@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import {
   getUserDetail,
+  getUserInfo,
   getUserFollow,
   getUserGradeInfo,
   getUserVipDetail,
@@ -12,6 +13,11 @@ import { useListenReportStore } from '@/stores/listenReport';
 import type { User, UserExtendsInfo } from '@/models/user';
 import { mapUser } from '@/utils/mappers';
 import logger from '@/utils/logger';
+import {
+  getAccountDisplay,
+  hasAccountDisplayData,
+  type AccountDisplay,
+} from '@/utils/userIdentity';
 
 export type UserInfo = User;
 
@@ -21,6 +27,7 @@ export type SavedAccount = Pick<
 > & {
   lastUsedAt: number;
   listeningSeconds?: number;
+  display?: AccountDisplay;
 };
 
 // 听歌等级字段白名单：合并进用户档案 detail 时仅取这些字段，
@@ -134,6 +141,11 @@ export const useUserStore = defineStore('user', {
         pic: info.pic,
         expires: info.expires,
         lastUsedAt: used ? Date.now() : (existing?.lastUsedAt ?? Date.now()),
+        ...(hasAccountDisplayData(info)
+          ? { display: getAccountDisplay(info) }
+          : existing?.display
+            ? { display: existing.display }
+            : {}),
         ...(existing?.listeningSeconds !== undefined
           ? { listeningSeconds: existing.listeningSeconds }
           : {}),
@@ -251,13 +263,18 @@ export const useUserStore = defineStore('user', {
       if (!this.isLoggedIn) return;
       const revision = this.accountRevision;
       try {
-        const [detailRes, vipRes] = await Promise.allSettled([getUserDetail(), getUserVipDetail()]);
+        const [detailRes, vipRes, infoRes] = await Promise.allSettled([
+          getUserDetail(),
+          getUserVipDetail(),
+          getUserInfo(),
+        ]);
         if (!this.isLoggedIn || revision !== this.accountRevision) return false;
         const detailPayload = asApiPayload(
           detailRes.status === 'fulfilled' ? detailRes.value : null,
         );
         const vipPayload = asApiPayload(vipRes.status === 'fulfilled' ? vipRes.value : null);
-        for (const result of [detailRes, vipRes]) {
+        const infoPayload = asApiPayload(infoRes.status === 'fulfilled' ? infoRes.value : null);
+        for (const result of [detailRes, vipRes, infoRes]) {
           if (result.status === 'rejected')
             logger.warn('UserStore', 'User info request failed:', result.reason);
         }
@@ -290,8 +307,26 @@ export const useUserStore = defineStore('user', {
           );
         }
 
+        if (infoPayload?.status === 1 && this.info) {
+          const source = isRecord(infoPayload.data) ? infoPayload.data : {};
+          // 此接口也包含联系方式；仅保留身份展示需要的字段。
+          const identity = Object.fromEntries(
+            ['student_status', 'student_school', 'student_expire_time', 'tags'].map((key) => [
+              key,
+              source[key] ?? (key === 'student_status' ? 0 : ''),
+            ]),
+          );
+          const mergedExtends = mergeExtendsInfo(this.info.extendsInfo, { identity });
+          this.setUserInfo(
+            buildPatchedUserInfo(this.info, {
+              extends: mergedExtends,
+              extendsInfo: mergedExtends,
+            }),
+          );
+        }
+
         // 同一账号刷新成功也通知依赖账号权益的缓存；登录会话编号保持独立。
-        if (detailPayload?.status === 1 || vipPayload?.status === 1) {
+        if (detailPayload?.status === 1 || vipPayload?.status === 1 || infoPayload?.status === 1) {
           this.userInfoRevision += 1;
         }
         return detailPayload?.status === 1;

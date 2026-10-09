@@ -49,6 +49,7 @@ import { createShortcutsApi } from './shortcuts';
 import { createStyleDisposer } from './styles';
 import { createThemeApi, type PluginThemeApi } from './theme';
 import { createPluginNetworkApi } from './network';
+import { createPluginResourceApi } from './resources';
 import { createPluginBackupsApi, type PluginBackupsApi } from './backups';
 import { createPluginGraphicsApi, type PluginGraphicsApi } from './graphics';
 import { createServerInterceptApi, type PluginServerInterceptApi } from './serverIntercept';
@@ -201,6 +202,7 @@ export const createPluginContext = (
     disposables.push(dispose);
     return dispose;
   };
+  const resourceApi = createPluginResourceApi(descriptor.id, addDisposable);
   let playerStore: ReturnType<typeof usePlayerStore> | null = null;
   let playlistStore: ReturnType<typeof usePlaylistStore> | null = null;
 
@@ -325,7 +327,7 @@ export const createPluginContext = (
         window.electron.plugins?.dialog.selectFiles(serializeForIpc(options) as typeof options) ??
         Promise.resolve({ canceled: true, paths: [] }),
     },
-    fs: createPluginFsApi(descriptor.id),
+    fs: createPluginFsApi(descriptor.id, resourceApi),
     process: createPluginProcessApi(descriptor.id),
     webServer: createPluginWebServerApi(
       descriptor,
@@ -409,7 +411,7 @@ export const createPluginContext = (
       on: (event, handler) => registerPlayerEvent(event, handler),
     },
     dom: createDomApi(descriptor.id, addDisposable, runPluginCallback),
-    net: createPluginNetworkApi(descriptor, addDisposable),
+    net: createPluginNetworkApi(descriptor, addDisposable, resourceApi),
     server: createServerInterceptApi(descriptor, apiDeps),
     icons,
     tasks: createTaskApi(descriptor.id, apiDeps),

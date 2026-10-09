@@ -1,3 +1,4 @@
+import { userIdentity } from './helpers/user-identity.mjs';
 import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -532,6 +533,7 @@ test('same-user relogin starts a fresh playlist read; old cleanup cannot remove 
 
 const createUserStore = () => {
   const { useUserStore } = compile('../src/renderer/stores/user.ts', {
+    '@/utils/userIdentity': userIdentity,
     pinia,
     '@/api/user': {},
     '@/stores/listenReport': { useListenReportStore: () => ({ reset() {} }) },

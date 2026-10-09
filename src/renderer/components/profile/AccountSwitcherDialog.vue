@@ -6,10 +6,13 @@ import { userSessionSources } from '@/utils/userSession';
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
+import UserAvatar from './UserAvatar.vue';
+import { getAccountDisplay, hasAccountDisplayData } from '@/utils/userIdentity';
 import Badge from '@/components/ui/Badge.vue';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Tag from '@/components/ui/Tag.vue';
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { useUserStore, type SavedAccount } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { getUserGradeInfo } from '@/api/user';
@@ -38,6 +41,11 @@ const accounts = computed(() => {
       expires: current.expires,
       lastUsedAt: index >= 0 ? saved[index]!.lastUsedAt : 0,
       listeningSeconds: index >= 0 ? saved[index]!.listeningSeconds : undefined,
+      display: hasAccountDisplayData(current)
+        ? getAccountDisplay(current)
+        : index >= 0
+          ? saved[index]!.display
+          : undefined,
     };
     if (index >= 0) saved[index] = summary;
     else saved.push(summary);
@@ -61,6 +69,7 @@ const accountDuration = (account: SavedAccount) => {
     return `${Math.floor(seconds / 60).toLocaleString('zh-CN')} 分钟`;
   return loadingDurations.value.has(account.userid) ? '正在获取…' : '暂无数据';
 };
+const accountDisplay = (account: SavedAccount) => account.display ?? getAccountDisplay(null);
 
 watch(
   [open, ...userSessionSources(user)],
@@ -156,10 +165,26 @@ const removeAccount = () => {
         class="saved-account"
         :class="{ 'is-current': account.userid === currentId }"
       >
-        <Avatar :src="account.pic" :size="44" class="saved-account-avatar rounded-full" />
+        <UserAvatar
+          :src="account.pic"
+          :size="44"
+          class="saved-account-avatar"
+          :identity-icon="accountDisplay(account).avatarIcon"
+          :identity-label="accountDisplay(account).avatarLabel"
+        />
         <div class="saved-account-info">
           <div class="saved-account-name">
-            <strong>{{ account.nickname || `账号 ${account.userid}` }}</strong>
+            <Tooltip :content="account.nickname || `账号 ${account.userid}`" overflow-only>
+              <template #trigger>
+                <strong>{{ account.nickname || `账号 ${account.userid}` }}</strong>
+              </template>
+            </Tooltip>
+            <span
+              v-if="accountDisplay(account).membership"
+              class="profile-member-badge"
+              :class="`is-${accountDisplay(account).membership?.kind}`"
+              >{{ accountDisplay(account).membership?.label }}</span
+            >
             <Tag
               v-if="account.userid === currentId"
               tone="accent"
@@ -262,6 +287,7 @@ const removeAccount = () => {
   min-width: 0;
 }
 .saved-account-info strong {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -283,6 +309,7 @@ const removeAccount = () => {
 .saved-account-action {
   flex: none;
   min-width: 56px;
+  align-self: center;
 }
 .account-empty {
   padding: 24px 0;

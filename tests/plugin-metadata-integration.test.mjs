@@ -133,11 +133,15 @@ async function fixture(t) {
       if (path === join(userData, 'plugins')) {
         harness.scans++;
         if (harness.failScan) throw new Error('scan failed');
+        if (harness.failScanOnce) {
+          harness.failScanOnce = false;
+          throw new Error('one scan failed');
+        }
       }
       return fs.readdir(path, ...args);
     },
     async cp(source, target, ...args) {
-      if (harness.failCopy && target === pluginDirectory) throw new Error('copy failed');
+      if (harness.failCopy && String(target).endsWith('/staged')) throw new Error('copy failed');
       return fs.cp(source, target, ...args);
     },
   };
@@ -242,7 +246,7 @@ test('real local install/update and uninstall publish current metadata before re
   assert.equal(api.getPluginDescriptor('rgb'), null);
 });
 
-test('failed installation cannot reuse stale privileges; rollback reloads restored files and preferences', async (t) => {
+test('staging failure preserves the running old version; later mutation revokes its context', async (t) => {
   const { api, harness, pluginDirectory, userData } = await fixture(t);
   const source = join(userData, 'source');
   const old = api.getPluginDescriptor('rgb');
@@ -250,7 +254,9 @@ test('failed installation cannot reuse stale privileges; rollback reloads restor
   harness.failCopy = true;
   const failed = await api.installPluginsFromLocal([source], { enableAfterInstall: true });
   assert.equal(failed.ok, false);
-  assert.throws(() => api.assertPluginTcpAccess('rgb'), /不存在|未启用/);
+  api.assertPluginTcpAccess('rgb');
+  assert.equal(api.getPluginDescriptor('rgb').version, '1.0.0');
+  assert.equal(api.isPluginAccessCurrent(old), true);
   harness.failCopy = false;
   await api.withPluginMetadataMutation('rgb', async () => {
     await writePlugin(pluginDirectory);
@@ -259,6 +265,21 @@ test('failed installation cannot reuse stale privileges; rollback reloads restor
   api.assertPluginTcpAccess('rgb');
   assert.equal(api.getPluginDescriptor('rgb').version, '1.0.0');
   assert.equal(api.isPluginAccessCurrent(old), false);
+});
+
+test('refresh failure rolls back files, metadata and the previous disabled preference', async (t) => {
+  const { api, harness, userData } = await fixture(t);
+  api.replacePluginEnabledPreference('rgb', false);
+  const old = api.getPluginDescriptor('rgb');
+  const source = join(userData, 'source');
+  await writePlugin(source, '2.0.0');
+  harness.failScanOnce = true;
+  const result = await api.installPluginsFromLocal([source], { enableAfterInstall: true });
+  assert.equal(result.ok, false);
+  assert.equal(api.getPluginDescriptor('rgb').version, '1.0.0');
+  assert.equal(api.getPluginDescriptor('rgb').enabled, false);
+  assert.equal(api.isPluginAccessCurrent(old), false);
+  assert.throws(() => api.assertPluginTcpAccess('rgb'), /未启用/);
 });
 
 test(

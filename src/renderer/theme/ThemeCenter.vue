@@ -44,6 +44,8 @@ import ThemeBackgroundControls from './ThemeBackgroundControls.vue';
 import ThemeColorControls from './ThemeColorControls.vue';
 import ThemeThumbnail from './ThemeThumbnail.vue';
 import ThemeImageEditor from './ThemeImageEditor.vue';
+import { prepareThemeImage } from './prepareThemeImage';
+import type { ThemeImageImportResult } from '../../shared/themeImage';
 defineOptions({ name: 'theme-center' });
 let ownsPreview = false;
 const theme = useThemeStore(),
@@ -257,19 +259,18 @@ async function importImage(file?: File) {
   backgroundError.value = '';
   isImporting.value = true;
   try {
-    if (
-      !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
-      file.size > 20 * 1024 * 1024
-    )
-      throw new Error('支持 JPG、PNG、WebP，不超过 20 MB');
-    beginBackground();
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    const bytes = await prepareThemeImage(file);
     if (current !== importRevision) return;
-    const result = await window.electron.ipcRenderer.invoke('appearance:import-image', bytes);
+    beginBackground();
+    const result: ThemeImageImportResult = await window.electron.ipcRenderer.invoke(
+      'appearance:import-image',
+      bytes,
+    );
     if (current !== importRevision) {
       cleanImages();
       return;
     }
+    if (!result.ok) throw new Error(result.error);
     theme.setCustomBackground(result.id);
     imagePreview.value = result.url;
     activeTab.value = 2;

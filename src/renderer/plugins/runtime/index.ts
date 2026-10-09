@@ -603,9 +603,12 @@ export const clearRuntimePluginFailure = async (pluginId?: string) => {
   clearRecordFailure(pluginId);
 };
 
-export const uninstallRuntimePlugin = async (pluginId: string) => {
+export const uninstallRuntimePlugin = async (
+  pluginId: string,
+  options?: { removeData?: boolean },
+) => {
   await deactivatePlugin(pluginId);
-  const result = await window.electron.plugins?.uninstall(pluginId);
+  const result = await window.electron.plugins?.uninstall(pluginId, options);
   if (!result?.ok) {
     throw new Error(result?.error || '插件卸载失败');
   }
