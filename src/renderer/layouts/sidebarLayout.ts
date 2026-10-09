@@ -203,7 +203,7 @@ export const SIDEBAR_PLAYLIST_SECTION_ID = 'created-playlist-defaults';
 export const isSidebarPlaylistVisible = (layout?: SidebarLayout) =>
   layout?.hiddenSections?.[SIDEBAR_PLAYLIST_SECTION_ID] !== true;
 
-export const DEFAULT_SHORTCUT_KEYS = ['home', 'explore', 'free-listen'];
+export const DEFAULT_SHORTCUT_KEYS = ['home', 'explore'];
 export function normalizeShortcutKeys(keys?: readonly string[]): string[] {
   const unique = [...new Set(Array.isArray(keys) ? keys : DEFAULT_SHORTCUT_KEYS)].filter(
     (key) => typeof key === 'string' && key.trim().length > 0,
