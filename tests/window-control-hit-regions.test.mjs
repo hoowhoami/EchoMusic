@@ -126,7 +126,7 @@ for (const platform of ['win32', 'linux']) {
             getRouteViewCacheQuery: () => ({}),
             updateRouteViewCacheKey: (key) => ({ key }),
           },
-          'yzs-keep-alive-v3': { YzsKeepAlive: slot },
+          '@/components/app/RouteKeepAlive': { default: slot },
           './Sidebar.vue': { default: sidebar },
           './TitleBar.vue': { default: titlebar },
           './PlayerBar.vue': { default: empty },

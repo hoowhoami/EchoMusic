@@ -1,220 +1,217 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue';
+import { FluidBackgroundRenderer } from './fluidBackgroundRenderer';
 
-interface Props {
-  coverUrl: string;
-  enabled: boolean;
-}
+const props = defineProps<{ coverUrl: string; enabled: boolean }>();
+const emit = defineEmits<{ ready: [value: boolean] }>();
+const canvas = ref<HTMLCanvasElement | null>(null);
+const ready = ref(false);
+const FRAME_INTERVAL = 1000 / 30;
+const COVER_SETTLE_MS = 180;
+let renderer: FluidBackgroundRenderer | null = null;
+let mounted = false;
+let active = true;
+let contextLost = false;
+let frame = 0;
+let loadTimer: number | null = null;
+let image: HTMLImageElement | null = null;
+let sequence = 0;
+let loadedUrl = '';
+let elapsedSeconds = 0;
+let lastDraw: number | null = null;
+let layoutDirty = false;
 
-const props = defineProps<Props>();
-
-const canvas1 = ref<HTMLCanvasElement | null>(null);
-const canvas2 = ref<HTMLCanvasElement | null>(null);
-const canvas3 = ref<HTMLCanvasElement | null>(null);
-const canvas4 = ref<HTMLCanvasElement | null>(null);
-const viewWidth = ref(0);
-const viewHeight = ref(0);
-const fluidSeed = ref(0);
-let pendingRefreshFrame = 0;
-let pendingRefreshTimer: number | null = null;
-let activeImage: HTMLImageElement | null = null;
-let refreshSeq = 0;
-const FLUID_BACKGROUND_SETTLE_MS = 180;
-
-const hashString = (value: string) => {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+const setReady = (value: boolean) => {
+  if (ready.value === value) return;
+  ready.value = value;
+  emit('ready', value);
+};
+const canRun = () => mounted && active && props.enabled && !document.hidden && !contextLost;
+const stopFrames = () => {
+  if (frame) cancelAnimationFrame(frame);
+  frame = 0;
+  lastDraw = null;
+};
+const cancelLoad = () => {
+  sequence++;
+  if (loadTimer !== null) window.clearTimeout(loadTimer);
+  loadTimer = null;
+  if (image) {
+    image.onload = image.onerror = null;
+    image.src = '';
+    image = null;
   }
-  return hash;
 };
-
-const canvasSize = computed(() => Math.max(viewWidth.value, viewHeight.value) * 0.707);
-
-const canvasStyle = (index: number) => {
-  const size = canvasSize.value;
-  const x = index % 2;
-  const y = Math.floor(index / 2);
-  const signX = x === 0 ? -1 : 1;
-  const signY = y === 0 ? -1 : 1;
-
-  return {
-    width: `${size}px`,
-    height: `${size}px`,
-    left: `${viewWidth.value / 2 + signX * size * 0.35 - size / 2}px`,
-    top: `${viewHeight.value / 2 + signY * size * 0.35 - size / 2}px`,
-  };
+const releaseRenderer = () => {
+  stopFrames();
+  renderer?.dispose();
+  renderer = null;
+  loadedUrl = '';
+  setReady(false);
 };
-
-const updateCanvasLayout = () => {
-  viewWidth.value = window.innerWidth;
-  viewHeight.value = window.innerHeight;
+const fail = () => {
+  cancelLoad();
+  releaseRenderer();
 };
-
-const clearCanvases = () => {
-  [canvas1.value, canvas2.value, canvas3.value, canvas4.value].forEach((canvas) => {
-    const context = canvas?.getContext('2d');
-    if (!canvas || !context) return;
-    context.clearRect(0, 0, canvas.width, canvas.height);
-  });
+const tick = (timestamp: number) => {
+  frame = 0;
+  if (!canRun() || !renderer || !loadedUrl) return;
+  const delta = lastDraw === null ? FRAME_INTERVAL : timestamp - lastDraw;
+  if (delta >= FRAME_INTERVAL - 0.1) {
+    if (lastDraw !== null) elapsedSeconds += Math.min(delta, 250) / 1000;
+    lastDraw = timestamp;
+    try {
+      if (layoutDirty) resize();
+      if (!renderer) return;
+      renderer.draw(elapsedSeconds);
+      setReady(true);
+    } catch {
+      fail();
+      return;
+    }
+  }
+  frame = requestAnimationFrame(tick);
 };
-
-const cancelActiveImageLoad = () => {
-  if (!activeImage) return;
-  activeImage.onload = null;
-  activeImage.onerror = null;
-  activeImage.src = '';
-  activeImage = null;
+const startFrames = () => {
+  if (!frame && canRun() && renderer && loadedUrl) frame = requestAnimationFrame(tick);
 };
-
-const drawCanvas = (
-  canvas: HTMLCanvasElement | null,
-  image: HTMLImageElement,
-  sx: number,
-  sy: number,
-) => {
-  if (!canvas) return;
-  const context = canvas.getContext('2d');
-  if (!context) return;
-
-  canvas.width = 100;
-  canvas.height = 100;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.filter = 'blur(5px)';
-  context.drawImage(image, sx, sy, image.width / 2, image.height / 2, 0, 0, 100, 100);
+const resize = () => {
+  if (!renderer || !canRun()) return;
+  try {
+    // Same overscan as the original fluid layer; never multiply by screen DPR.
+    renderer.resize(window.innerWidth + 150, window.innerHeight + 150);
+    layoutDirty = false;
+  } catch {
+    fail();
+  }
 };
-
-const refreshCanvases = () => {
-  const seq = ++refreshSeq;
-  cancelActiveImageLoad();
-  if (!props.enabled || !props.coverUrl) {
-    clearCanvases();
+const scheduleResize = () => {
+  layoutDirty = true;
+  startFrames();
+};
+const reconcile = () => {
+  cancelLoad();
+  if (!mounted) return;
+  if (!props.enabled || !props.coverUrl || !canvas.value) {
+    releaseRenderer();
     return;
   }
-
-  const image = new Image();
-  activeImage = image;
-  image.crossOrigin = 'anonymous';
-  image.onload = () => {
-    if (seq !== refreshSeq || activeImage !== image) return;
-    drawCanvas(canvas1.value, image, 0, 0);
-    drawCanvas(canvas2.value, image, image.width / 2, 0);
-    drawCanvas(canvas3.value, image, 0, image.height / 2);
-    drawCanvas(canvas4.value, image, image.width / 2, image.height / 2);
-    fluidSeed.value = hashString(props.coverUrl) % 1000;
-    activeImage = null;
-  };
-  image.onerror = () => {
-    if (activeImage === image) activeImage = null;
-  };
-  image.src = props.coverUrl;
-};
-
-const scheduleRefreshCanvases = () => {
-  if (pendingRefreshTimer !== null) {
-    window.clearTimeout(pendingRefreshTimer);
-    pendingRefreshTimer = null;
+  if (!canRun()) {
+    stopFrames();
+    return;
   }
-  if (pendingRefreshFrame) cancelAnimationFrame(pendingRefreshFrame);
-  pendingRefreshTimer = window.setTimeout(() => {
-    pendingRefreshTimer = null;
-    pendingRefreshFrame = requestAnimationFrame(() => {
-      pendingRefreshFrame = 0;
-      refreshCanvases();
-    });
-  }, FLUID_BACKGROUND_SETTLE_MS);
+  if (!renderer) {
+    try {
+      renderer = new FluidBackgroundRenderer(canvas.value);
+      resize();
+    } catch {
+      fail();
+      return;
+    }
+  } else resize();
+  if (!renderer) return;
+  startFrames();
+  if (loadedUrl === props.coverUrl) return;
+  const request = sequence,
+    url = props.coverUrl;
+  loadTimer = window.setTimeout(() => {
+    loadTimer = null;
+    if (!canRun() || request !== sequence) return;
+    const pending = new Image();
+    image = pending;
+    pending.crossOrigin = 'anonymous';
+    const releaseImage = () => {
+      pending.onload = pending.onerror = null;
+      pending.src = '';
+      if (image === pending) image = null;
+    };
+    pending.onload = () => {
+      if (request !== sequence || image !== pending || !canRun() || !renderer) {
+        releaseImage();
+        return;
+      }
+      try {
+        renderer.setCover(pending, url);
+        loadedUrl = url;
+        startFrames();
+      } catch {
+        fail();
+      } finally {
+        releaseImage();
+      }
+    };
+    pending.onerror = () => {
+      if (request === sequence && image === pending) fail();
+      releaseImage();
+    };
+    pending.src = url;
+  }, COVER_SETTLE_MS);
+};
+const handleContextLost = (event: Event) => {
+  if (!mounted || event.currentTarget !== canvas.value || !props.enabled) return;
+  event.preventDefault();
+  contextLost = true;
+  cancelLoad();
+  stopFrames();
+  // The browser owns lost GPU resources. Drop references and use the static cover.
+  renderer = null;
+  loadedUrl = '';
+  setReady(false);
+};
+const handleContextRestored = (event: Event) => {
+  if (!mounted || event.currentTarget !== canvas.value) return;
+  contextLost = false;
+  reconcile();
 };
 
 watch(
   () => [props.enabled, props.coverUrl],
-  () => {
-    updateCanvasLayout();
-    scheduleRefreshCanvases();
+  ([enabled], [wasEnabled]) => {
+    // A toggled-on canvas has a fresh context, including after a previous failure.
+    if (enabled && !wasEnabled && canvas.value) contextLost = false;
+    reconcile();
   },
-  { immediate: true },
+  { flush: 'post' },
 );
-
 onMounted(() => {
-  updateCanvasLayout();
-  refreshCanvases();
-  window.addEventListener('resize', updateCanvasLayout);
+  mounted = true;
+  reconcile();
+  document.addEventListener('visibilitychange', reconcile);
+  window.addEventListener('resize', scheduleResize);
 });
-
+onActivated(() => {
+  active = true;
+  reconcile();
+});
+onDeactivated(() => {
+  active = false;
+  cancelLoad();
+  stopFrames();
+});
 onUnmounted(() => {
-  refreshSeq += 1;
-  if (pendingRefreshTimer !== null) {
-    window.clearTimeout(pendingRefreshTimer);
-    pendingRefreshTimer = null;
-  }
-  if (pendingRefreshFrame) {
-    cancelAnimationFrame(pendingRefreshFrame);
-    pendingRefreshFrame = 0;
-  }
-  cancelActiveImageLoad();
-  clearCanvases();
-  window.removeEventListener('resize', updateCanvasLayout);
+  mounted = false;
+  cancelLoad();
+  releaseRenderer();
+  document.removeEventListener('visibilitychange', reconcile);
+  window.removeEventListener('resize', scheduleResize);
 });
 </script>
 
 <template>
-  <template v-if="enabled">
-    <svg width="0" height="0" class="lyric-fluid-filter-svg" aria-hidden="true">
-      <filter
-        id="lyric-fluid-filter"
-        x="-20%"
-        y="-20%"
-        width="140%"
-        height="140%"
-        filterUnits="objectBoundingBox"
-        primitiveUnits="userSpaceOnUse"
-        color-interpolation-filters="sRGB"
-      >
-        <feTurbulence type="fractalNoise" baseFrequency="0.005" numOctaves="1" :seed="fluidSeed" />
-        <feDisplacementMap in="SourceGraphic" scale="400" />
-      </filter>
-    </svg>
-    <div class="lyric-fluid-bg">
-      <div class="lyric-fluid-bg-rect">
-        <canvas
-          ref="canvas1"
-          class="lyric-fluid-bg-canvas"
-          :style="canvasStyle(0)"
-          width="100"
-          height="100"
-        ></canvas>
-        <canvas
-          ref="canvas2"
-          class="lyric-fluid-bg-canvas"
-          :style="canvasStyle(1)"
-          width="100"
-          height="100"
-        ></canvas>
-        <canvas
-          ref="canvas3"
-          class="lyric-fluid-bg-canvas"
-          :style="canvasStyle(2)"
-          width="100"
-          height="100"
-        ></canvas>
-        <canvas
-          ref="canvas4"
-          class="lyric-fluid-bg-canvas"
-          :style="canvasStyle(3)"
-          width="100"
-          height="100"
-        ></canvas>
-      </div>
-    </div>
-  </template>
+  <canvas
+    v-if="enabled"
+    ref="canvas"
+    v-show="ready"
+    class="lyric-fluid-bg"
+    width="1"
+    height="1"
+    aria-hidden="true"
+    @webglcontextlost="handleContextLost"
+    @webglcontextrestored="handleContextRestored"
+  />
 </template>
 
 <style scoped>
-.lyric-fluid-filter-svg {
-  position: absolute;
-  width: 0;
-  height: 0;
-}
-
 .lyric-fluid-bg {
   position: absolute;
   left: -150px;
@@ -222,74 +219,6 @@ onUnmounted(() => {
   z-index: 1;
   width: calc(100% + 150px);
   height: calc(100% + 150px);
-  overflow: hidden;
-}
-
-.lyric-fluid-bg::before {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
   pointer-events: none;
-  content: '';
-  background: rgba(0, 0, 0, 0.24);
-}
-
-.lyric-fluid-bg::after {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  content: '';
-  backdrop-filter: blur(64px);
-}
-
-.lyric-fluid-bg-rect {
-  position: relative;
-  top: calc(50% - 50vh);
-  left: calc(50% - 50vw);
-  width: max(100vw, 100vh);
-  height: max(100vw, 100vh);
-  filter: saturate(1.3) brightness(1.5) url('#lyric-fluid-filter');
-  animation: lyric-fluid-container-rotate 150s linear infinite;
-  will-change: transform;
-}
-
-.lyric-fluid-bg-canvas {
-  position: absolute;
-  opacity: 1;
-  animation: lyric-fluid-block-rotate 60s linear infinite;
-  will-change: transform;
-}
-
-.lyric-fluid-bg-canvas:nth-child(2) {
-  animation-delay: -5s;
-}
-
-.lyric-fluid-bg-canvas:nth-child(3) {
-  animation-delay: -10s;
-}
-
-.lyric-fluid-bg-canvas:nth-child(4) {
-  animation-delay: -15s;
-}
-
-@keyframes lyric-fluid-block-rotate {
-  0% {
-    transform: rotate(0deg);
-  }
-
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes lyric-fluid-container-rotate {
-  0% {
-    transform: scale(1.2) rotate(0deg);
-  }
-
-  100% {
-    transform: scale(1.2) rotate(-360deg);
-  }
 }
 </style>

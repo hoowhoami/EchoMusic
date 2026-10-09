@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { defineAsyncComponent } from 'vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import Settings from '@/views/Settings.vue';
 import { settingsDialogOpen, settingsDialogSection } from '@/composables/useSettingsDialog';
-
-const Settings = defineAsyncComponent(() => import('@/views/Settings.vue'));
 </script>
 
 <template>

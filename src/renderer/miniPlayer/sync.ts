@@ -18,6 +18,8 @@ import type {
   MiniPlayerQueuePayload,
 } from '../../shared/miniPlayer';
 import { normalizeLyricLinePayload as normalizeSharedLyricLinePayload } from '../../shared/lyrics';
+import { resolveCoverLyricColor } from '../../shared/lyricColor';
+import { normalizeMiniLyricStyle } from '../../shared/miniPlayer';
 
 const MINI_PLAYER_PROGRESS_SYNC_INTERVAL_MS = 120;
 // 歌词面板未展开时使用较低的同步频率，减少 IPC 开销
@@ -416,12 +418,37 @@ export const initMiniPlayerSync = async () => {
   };
 
   const syncAppearanceSnapshot = () => {
+    const coverLyricColor =
+      themeStore.coverColorReady &&
+      (settingStore.miniLyricFollowCoverColor || settingStore.miniLyricUnplayedFollowCoverColor)
+        ? resolveCoverLyricColor(
+            themeStore.coverColor,
+            themeStore.isDark ? 'dark' : 'light',
+            themeStore.accentSurfaces,
+          )
+        : undefined;
     window.electron.miniPlayer?.syncSnapshot({
       appearance: {
         isDark: themeStore.isDark,
         colors: themeStore.cssTokens,
         floatingSurfaceFrosted: themeStore.floatingSurfaceFrosted,
         accentColor: themeStore.accentColor,
+        lyricPlayedColor:
+          (settingStore.miniLyricFollowCoverColor ? coverLyricColor : undefined) ||
+          settingStore.miniLyricPlayedColor ||
+          undefined,
+        lyricUnplayedColor:
+          (settingStore.miniLyricUnplayedFollowCoverColor ? coverLyricColor : undefined) ||
+          settingStore.miniLyricUnplayedColor ||
+          undefined,
+        lyricStyle: normalizeMiniLyricStyle({
+          fontSize: settingStore.miniLyricFontSize,
+          secondaryFontSize: settingStore.miniLyricSecondaryFontSize,
+          fontWeight: settingStore.miniLyricFontWeight,
+          alignment: settingStore.miniLyricAlignment,
+          lineGap: settingStore.miniLyricLineGap,
+          backgroundBlur: settingStore.miniLyricBackgroundBlur,
+        }),
         fontFamily: settingStore.buildGlobalFontFamily(),
       },
     });
@@ -514,6 +541,18 @@ export const initMiniPlayerSync = async () => {
         () => themeStore.floatingSurfaceFrosted,
         () => themeStore.accentMode,
         () => themeStore.customColor,
+        () => themeStore.coverColor,
+        () => themeStore.coverColorReady,
+        () => settingStore.miniLyricFollowCoverColor,
+        () => settingStore.miniLyricPlayedColor,
+        () => settingStore.miniLyricUnplayedFollowCoverColor,
+        () => settingStore.miniLyricUnplayedColor,
+        () => settingStore.miniLyricFontSize,
+        () => settingStore.miniLyricSecondaryFontSize,
+        () => settingStore.miniLyricFontWeight,
+        () => settingStore.miniLyricAlignment,
+        () => settingStore.miniLyricLineGap,
+        () => settingStore.miniLyricBackgroundBlur,
       ],
       syncAppearanceSnapshot,
       { immediate: true },

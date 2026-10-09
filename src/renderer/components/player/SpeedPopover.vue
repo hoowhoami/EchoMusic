@@ -65,12 +65,15 @@ const popoverOpen = computed({
       <div class="flex items-center justify-between">
         <span class="text-[11px] font-bold text-text-secondary">倍速播放</span>
         <Button
-          variant="soft-secondary"
+          variant="unstyled"
           size="none"
-          class="text-[13px] font-extrabold px-1.5 py-0.5 rounded-control"
+          class="speed-current-rate app-focus-ring-soft"
+          :aria-label="`当前倍速 ${playbackRateDisplay}，重置为 1.0x`"
           @click="resetPlaybackRate"
-          >{{ playbackRateDisplay }}</Button
         >
+          <span class="speed-current-value" aria-hidden="true">{{ playbackRateDisplay }}</span>
+          <span class="speed-current-reset" aria-hidden="true">重置</span>
+        </Button>
       </div>
       <div class="flex items-center gap-2">
         <span class="text-[10px] font-semibold text-text-secondary shrink-0">0.1</span>
@@ -122,6 +125,44 @@ const popoverOpen = computed({
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 6px;
+}
+
+.speed-current-rate {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  padding: 2px 4px;
+  border-radius: var(--radius-detail);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.speed-current-rate:hover,
+.speed-current-rate:focus-visible {
+  color: var(--color-primary-text);
+}
+
+.speed-current-rate span {
+  grid-area: 1 / 1;
+}
+
+.speed-current-reset {
+  visibility: hidden;
+}
+
+.speed-current-rate:hover .speed-current-value,
+.speed-current-rate:focus-visible .speed-current-value {
+  visibility: hidden;
+}
+
+.speed-current-rate:hover .speed-current-reset,
+.speed-current-rate:focus-visible .speed-current-reset {
+  visibility: visible;
 }
 
 @media (max-width: 380px) {

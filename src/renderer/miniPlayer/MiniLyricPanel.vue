@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useResizeObserver } from '@vueuse/core';
-import type { MiniPlayerExpandDirection, MiniPlayerLyricPayload } from '../../shared/miniPlayer';
+import {
+  normalizeMiniLyricStyle,
+  type MiniPlayerLyricStyle,
+  type MiniPlayerExpandDirection,
+  type MiniPlayerLyricPayload,
+} from '../../shared/miniPlayer';
 import { computeLyricCharBackgroundPosition } from '@/composables/useLyricTimeline';
 
 const props = defineProps<{
@@ -9,6 +14,9 @@ const props = defineProps<{
   title: string;
   artist: string;
   coverUrl: string;
+  playedColor?: string;
+  unplayedColor?: string;
+  lyricStyle?: Partial<MiniPlayerLyricStyle>;
   visible: boolean;
   expandDirection?: MiniPlayerExpandDirection;
   timelineMs?: number;
@@ -16,6 +24,17 @@ const props = defineProps<{
 }>();
 
 const lyricLines = computed(() => props.lyric?.lines ?? []);
+const resolvedLyricStyle = computed(() => normalizeMiniLyricStyle(props.lyricStyle));
+const lyricAppearanceStyle = computed(() => ({
+  '--mini-lyric-played': props.playedColor || 'var(--color-primary-text)',
+  '--mini-lyric-unplayed': props.unplayedColor || 'var(--text-secondary)',
+  '--mini-lyric-font-size': `${resolvedLyricStyle.value.fontSize}px`,
+  '--mini-lyric-secondary-size': `${resolvedLyricStyle.value.secondaryFontSize}px`,
+  '--mini-lyric-font-weight': resolvedLyricStyle.value.fontWeight,
+  '--mini-lyric-secondary-weight': Math.min(resolvedLyricStyle.value.fontWeight, 650),
+  '--mini-lyric-alignment': resolvedLyricStyle.value.alignment,
+  '--mini-lyric-line-gap': `${resolvedLyricStyle.value.lineGap}px`,
+}));
 const lyricViewportRef = ref<HTMLElement | null>(null);
 const lyricTrackRef = ref<HTMLElement | null>(null);
 const lyricTrackOffset = ref(0);
@@ -359,7 +378,11 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="mini-lyric no-drag" :class="{ 'expand-up': expandDirection === 'up' }">
-    <div class="mini-lyric-bg" :style="lyricBackgroundStyle"></div>
+    <div
+      v-if="resolvedLyricStyle.backgroundBlur"
+      class="mini-lyric-bg"
+      :style="lyricBackgroundStyle"
+    ></div>
     <div class="mini-lyric-scrim"></div>
     <div class="mini-lyric-content">
       <div class="mini-lyric-heading">
@@ -412,7 +435,11 @@ onBeforeUnmount(() => {
         class="mini-lyric-lines"
         @wheel.prevent="handleLyricWheel"
       >
-        <div ref="lyricTrackRef" class="mini-lyric-track" :style="lyricTrackStyle">
+        <div
+          ref="lyricTrackRef"
+          class="mini-lyric-track"
+          :style="[lyricTrackStyle, lyricAppearanceStyle]"
+        >
           <div
             v-for="entry in lyricEntries"
             :key="`${entry.index}-${entry.line.time}`"
@@ -659,9 +686,8 @@ onBeforeUnmount(() => {
 .mini-lyric-line {
   min-width: 0;
   padding: 7px 0;
-  text-align: center;
-  color: var(--text-secondary);
-  --mini-lyric-unplayed: var(--text-secondary);
+  text-align: var(--mini-lyric-alignment);
+  color: var(--mini-lyric-unplayed);
   cursor: pointer;
   transition:
     color 0.18s ease,
@@ -669,7 +695,7 @@ onBeforeUnmount(() => {
 }
 
 .mini-lyric-line + .mini-lyric-line {
-  margin-top: 2px;
+  margin-top: var(--mini-lyric-line-gap);
 }
 
 .mini-lyric-line:hover {
@@ -677,16 +703,16 @@ onBeforeUnmount(() => {
 }
 
 .mini-lyric-line.active {
-  color: var(--color-primary-text);
+  color: var(--mini-lyric-played);
 }
 
 .mini-lyric-primary {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 780;
+  font-size: var(--mini-lyric-font-size);
+  line-height: calc(var(--mini-lyric-font-size) * 1.428571);
+  font-weight: var(--mini-lyric-font-weight);
   letter-spacing: 0;
 }
 
@@ -740,7 +766,7 @@ onBeforeUnmount(() => {
   background-color: transparent;
   background-image: linear-gradient(
     to right,
-    var(--color-primary-text) 50%,
+    var(--mini-lyric-played) 50%,
     var(--mini-lyric-unplayed) 50%
   );
   background-clip: text;
@@ -759,14 +785,14 @@ onBeforeUnmount(() => {
   display: block;
   white-space: nowrap;
   margin-top: 3px;
-  font-size: 11px;
-  line-height: 15px;
-  font-weight: 650;
-  color: var(--text-secondary);
+  font-size: var(--mini-lyric-secondary-size);
+  line-height: calc(var(--mini-lyric-secondary-size) * 1.363636);
+  font-weight: var(--mini-lyric-secondary-weight);
+  color: var(--mini-lyric-unplayed);
 }
 
 .mini-lyric-line.active .mini-lyric-secondary {
-  color: var(--color-primary-text);
+  color: var(--mini-lyric-played);
 }
 
 .mini-lyric-empty {

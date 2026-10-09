@@ -24,8 +24,8 @@ const settingStore = useSettingStore();
     <DisplayModeControl />
     <div class="settings-divider" />
     <div class="settings-item">
-      <div>
-        <h3>专辑动态封面</h3>
+      <div class="space-y-1">
+        <h3 class="font-semibold">专辑动态封面</h3>
         <p class="text-sm text-text-secondary">在专辑详情展示动态封面，播放页可单独设置</p>
       </div>
       <Switch v-model="settingStore.dynamicAlbumCover" />

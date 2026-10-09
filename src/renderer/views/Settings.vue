@@ -1,9 +1,69 @@
+<script lang="ts">
+import { defineAsyncComponent, defineComponent, h } from 'vue';
+import type { Component } from 'vue';
+
+// 弹窗壳、导航和默认分类同步可用；其余分类只在选中时加载，避免首次打开等待全部依赖。
+// 异步组件定义留在模块作用域，关闭再打开时复用已加载的分类。
+const SettingsSectionLoading = defineComponent({
+  setup: () => () =>
+    h(
+      'div',
+      {
+        class: 'flex min-h-40 items-center justify-center text-sm text-text-secondary',
+        role: 'status',
+      },
+      '正在加载设置…',
+    ),
+});
+const loadSection = (loader: () => Promise<{ default: Component }>) =>
+  defineAsyncComponent({ loader, loadingComponent: SettingsSectionLoading, delay: 0 });
+const WindowSettingsSection = loadSection(
+  () => import('./settings/components/WindowSettingsSection.vue'),
+);
+const FontSettingsSection = loadSection(
+  () => import('./settings/components/FontSettingsSection.vue'),
+);
+const PlaybackSettingsSection = loadSection(
+  () => import('./settings/components/PlaybackSettingsSection.vue'),
+);
+const SpatialAudioSettingsSection = loadSection(
+  () => import('./settings/components/SpatialAudioSettingsSection.vue'),
+);
+const PlayerSettingsSection = loadSection(
+  () => import('./settings/components/PlayerSettingsSection.vue'),
+);
+const NetworkSettingsSection = loadSection(
+  () => import('./settings/components/NetworkSettingsSection.vue'),
+);
+const LyricSettingsSection = loadSection(
+  () => import('./settings/components/LyricSettingsSection.vue'),
+);
+const ShortcutSettingsSection = loadSection(
+  () => import('./settings/components/ShortcutSettingsSection.vue'),
+);
+const AudioDeviceSettingsSection = loadSection(
+  () => import('./settings/components/AudioDeviceSettingsSection.vue'),
+);
+const CastSettingsSection = loadSection(
+  () => import('./settings/components/CastSettingsSection.vue'),
+);
+const ExperimentalSettingsSection = loadSection(
+  () => import('./settings/components/ExperimentalSettingsSection.vue'),
+);
+const PluginSettingsSection = loadSection(
+  () => import('./settings/components/PluginSettingsSection.vue'),
+);
+const DataSettingsSection = loadSection(
+  () => import('./settings/components/DataSettingsSection.vue'),
+);
+const AboutSettingsSection = loadSection(
+  () => import('./settings/components/AboutSettingsSection.vue'),
+);
+</script>
+
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
-
-defineOptions({ name: 'settings-page' });
 import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
-import type { Component } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useUpdateStore } from '@/stores/update';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
@@ -12,24 +72,10 @@ import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import { iconSearch, iconX } from '@/icons';
-import { marked } from 'marked';
-import { sanitizeHtml } from '@/utils/sanitize';
 import InterfaceSettingsSection from './settings/components/InterfaceSettingsSection.vue';
-import WindowSettingsSection from './settings/components/WindowSettingsSection.vue';
-import FontSettingsSection from './settings/components/FontSettingsSection.vue';
-import PlaybackSettingsSection from './settings/components/PlaybackSettingsSection.vue';
-import SpatialAudioSettingsSection from './settings/components/SpatialAudioSettingsSection.vue';
-import PlayerSettingsSection from './settings/components/PlayerSettingsSection.vue';
-import NetworkSettingsSection from './settings/components/NetworkSettingsSection.vue';
-import LyricSettingsSection from './settings/components/LyricSettingsSection.vue';
-import ShortcutSettingsSection from './settings/components/ShortcutSettingsSection.vue';
-import AudioDeviceSettingsSection from './settings/components/AudioDeviceSettingsSection.vue';
-import CastSettingsSection from './settings/components/CastSettingsSection.vue';
-import ExperimentalSettingsSection from './settings/components/ExperimentalSettingsSection.vue';
-import PluginSettingsSection from './settings/components/PluginSettingsSection.vue';
-import DataSettingsSection from './settings/components/DataSettingsSection.vue';
-import AboutSettingsSection from './settings/components/AboutSettingsSection.vue';
 import { sectionTitles, shortcutItems } from './settings/constants';
+
+defineOptions({ name: 'settings-page' });
 
 const settingStore = useSettingStore();
 const updateStore = useUpdateStore();
@@ -55,7 +101,9 @@ let settingsSearchCollapseTimer: number | null = null;
 
 const normalizeSearchText = (value: string) => value.toLocaleLowerCase().replace(/\s+/g, '');
 const normalizeSettingsSectionId = (section: string) =>
-  section === 'pageLyric' || section === 'desktopLyric' ? 'lyric' : section;
+  section === 'pageLyric' || section === 'desktopLyric' || section === 'miniLyric'
+    ? 'lyric'
+    : section;
 
 // 当前激活的锚点
 const activeSection = ref(normalizeSettingsSectionId(props.initialSection));
@@ -100,6 +148,10 @@ const handleShowChangelog = async () => {
     if (!raw) {
       changelogHtml.value = '<p>暂无更新日志</p>';
     } else {
+      const [{ marked }, { sanitizeHtml }] = await Promise.all([
+        import('marked'),
+        import('@/utils/sanitize'),
+      ]);
       changelogHtml.value = sanitizeHtml(marked.parse(raw, { async: false }) as string);
     }
   } catch {
@@ -330,6 +382,12 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       'XWayland',
       'Mini 歌词',
       'Mini歌词',
+      '跟随封面',
+      '封面取色',
+      '歌词字号',
+      '翻译与音译字号',
+      '歌词行间距',
+      '文字字重',
     ],
   },
   {

@@ -87,7 +87,9 @@ export function getDesktopLyricSettings(): DesktopLyricSettings {
         ? raw.showNextLinePreview
         : DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.showNextLinePreview,
     playedColor: String(raw.playedColor || '#31cfa1'),
+    followCoverColor: Boolean(raw.followCoverColor),
     unplayedColor: String(raw.unplayedColor || '#7a7a7a'),
+    unplayedFollowCoverColor: Boolean(raw.unplayedFollowCoverColor),
     strokeColor: String(raw.strokeColor || '#f1b8b3'),
     strokeEnabled: Boolean(raw.strokeEnabled),
     shadowStrength: isDesktopLyricShadowStrength(raw.shadowStrength)
@@ -150,7 +152,15 @@ export function sanitizeDesktopLyricSettings(
     alignment: mergedBase.alignment ?? current.alignment,
     showNextLinePreview: Boolean(mergedBase.showNextLinePreview),
     playedColor: String(mergedBase.playedColor || current.playedColor),
+    followCoverColor:
+      typeof mergedBase.followCoverColor === 'boolean'
+        ? mergedBase.followCoverColor
+        : current.followCoverColor,
     unplayedColor: String(mergedBase.unplayedColor || current.unplayedColor),
+    unplayedFollowCoverColor:
+      typeof mergedBase.unplayedFollowCoverColor === 'boolean'
+        ? mergedBase.unplayedFollowCoverColor
+        : current.unplayedFollowCoverColor,
     strokeColor: String(mergedBase.strokeColor || current.strokeColor),
     strokeEnabled: Boolean(mergedBase.strokeEnabled),
     shadowStrength: isDesktopLyricShadowStrength(mergedBase.shadowStrength)
@@ -186,7 +196,9 @@ export function persistDesktopLyricSettings(nextSettings: DesktopLyricSettings) 
     alignment: nextSettings.alignment,
     showNextLinePreview: nextSettings.showNextLinePreview,
     playedColor: nextSettings.playedColor,
+    followCoverColor: nextSettings.followCoverColor,
     unplayedColor: nextSettings.unplayedColor,
+    unplayedFollowCoverColor: nextSettings.unplayedFollowCoverColor,
     strokeColor: nextSettings.strokeColor,
     strokeEnabled: nextSettings.strokeEnabled,
     shadowStrength: nextSettings.shadowStrength,

@@ -56,6 +56,7 @@ export const useThemeStore = defineStore('appearance', {
     preview: null as AppearancePreference | null,
     systemDark: window.matchMedia('(prefers-color-scheme: dark)').matches,
     coverColor: DEFAULT_ACCENT,
+    coverColorReady: false,
     customBackgroundSample: { source: '', color: '' },
   }),
   getters: {
@@ -401,6 +402,7 @@ export const useThemeStore = defineStore('appearance', {
     },
     async refreshCoverColor(coverUrl: CoverColorSource): Promise<string | null> {
       const seq = ++coverColorRequestSeq;
+      this.coverColorReady = false;
       coverColorAbortController?.abort();
       const abortController = new AbortController();
       coverColorAbortController = abortController;
@@ -430,6 +432,7 @@ export const useThemeStore = defineStore('appearance', {
 
       if (coverColorAbortController === abortController) coverColorAbortController = null;
       this.coverColor = extracted || DEFAULT_ACCENT;
+      this.coverColorReady = Boolean(extracted);
       this.applyCurrent();
       return this.coverColor;
     },

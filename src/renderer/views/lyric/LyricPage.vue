@@ -158,6 +158,7 @@ const isBlurBackgroundRhythmEnabled = computed(
     Boolean(settledBlurCoverUrl.value) &&
     viewMode.value !== 'portrait',
 );
+const fluidBackgroundReady = ref(false);
 
 // 背景样式
 const backgroundStyle = computed(() => {
@@ -456,13 +457,14 @@ onUnmounted(() => {
       <div
         v-if="settingStore.lyricPageBackgroundBlur && settledBlurCoverUrl"
         class="lyric-blur-bg"
-        :class="{ 'lyric-blur-bg--rhythm': isBlurBackgroundRhythmEnabled }"
+        :class="{ 'lyric-blur-bg--rhythm': isBlurBackgroundRhythmEnabled && fluidBackgroundReady }"
       >
         <img
+          v-if="!isBlurBackgroundRhythmEnabled || !fluidBackgroundReady"
           :src="settledBlurCoverUrl"
           class="lyric-blur-bg-img"
           :class="{
-            'lyric-blur-bg-img--rhythm': isBlurBackgroundRhythmEnabled,
+            'lyric-blur-bg-img--rhythm': isBlurBackgroundRhythmEnabled && fluidBackgroundReady,
             'is-loaded': blurImgLoaded,
           }"
           @load="blurImgLoaded = true"
@@ -470,6 +472,7 @@ onUnmounted(() => {
         <LyricFluidBackground
           :cover-url="settledBlurCoverUrl"
           :enabled="isBlurBackgroundRhythmEnabled"
+          @ready="fluidBackgroundReady = $event"
         />
         <div class="lyric-blur-bg-overlay"></div>
       </div>

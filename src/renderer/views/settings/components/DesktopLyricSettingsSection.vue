@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
+import { useThemeStore } from '@/stores/theme';
+import { resolveCoverLyricColor } from '../../../../shared/lyricColor';
 import type { DesktopLyricSettings } from '../../../../shared/desktopLyric';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../../../shared/desktopLyric';
 import Select from '@/components/ui/Select.vue';
@@ -18,18 +20,48 @@ import {
 } from '../constants';
 
 const desktopLyricStore = useDesktopLyricStore();
+const themeStore = useThemeStore();
+const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
+const coverLyricColor = computed(() =>
+  themeStore.coverColorReady ? resolveCoverLyricColor(themeStore.coverColor, 'desktop') : undefined,
+);
+const playedColorPreview = computed(() =>
+  desktopLyricStore.settings.followCoverColor
+    ? (coverLyricColor.value ?? desktopLyricStore.settings.playedColor)
+    : desktopLyricStore.settings.playedColor,
+);
+const unplayedColorPreview = computed(() =>
+  desktopLyricStore.settings.unplayedFollowCoverColor
+    ? (coverLyricColor.value ?? desktopLyricStore.settings.unplayedColor)
+    : desktopLyricStore.settings.unplayedColor,
+);
+const coverColorOption = computed(() => ({
+  label: '跟随封面',
+  value: '__cover__',
+  color:
+    coverLyricColor.value ??
+    (activeDesktopLyricColorField.value === 'unplayedColor'
+      ? desktopLyricStore.settings.unplayedColor
+      : desktopLyricStore.settings.playedColor),
+}));
 const isLinux = computed(() => window.electron?.platform === 'linux');
 const isWayland = computed(() => window.electron?.isWayland ?? false);
-const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
 
 const hasCustomDesktopLyricColors = computed(
   () =>
+    desktopLyricStore.settings.followCoverColor ||
+    desktopLyricStore.settings.unplayedFollowCoverColor ||
     desktopLyricStore.settings.playedColor !== DEFAULT_DESKTOP_LYRIC_SETTINGS.playedColor ||
     desktopLyricStore.settings.unplayedColor !== DEFAULT_DESKTOP_LYRIC_SETTINGS.unplayedColor,
 );
 
 const activeDesktopLyricColorValue = computed(() => {
   if (!activeDesktopLyricColorField.value) return '#31cfa1';
+  const followsCover =
+    activeDesktopLyricColorField.value === 'unplayedColor'
+      ? desktopLyricStore.settings.unplayedFollowCoverColor
+      : desktopLyricStore.settings.followCoverColor;
+  if (followsCover) return '__cover__';
   return desktopLyricStore.settings[activeDesktopLyricColorField.value];
 });
 
@@ -47,9 +79,15 @@ const closeDesktopLyricColorPicker = () => {
 
 const applyDesktopLyricColor = async (value: string) => {
   if (!activeDesktopLyricColorField.value) return;
-  await commitDesktopLyricSettings({
-    [activeDesktopLyricColorField.value]: value,
-  });
+  await commitDesktopLyricSettings(
+    activeDesktopLyricColorField.value === 'playedColor'
+      ? value === '__cover__'
+        ? { followCoverColor: true }
+        : { followCoverColor: false, playedColor: value }
+      : value === '__cover__'
+        ? { unplayedFollowCoverColor: true }
+        : { unplayedFollowCoverColor: false, unplayedColor: value },
+  );
   closeDesktopLyricColorPicker();
 };
 </script>
@@ -173,7 +211,7 @@ const applyDesktopLyricColor = async (value: string) => {
     <div class="settings-item items-start">
       <div class="space-y-1">
         <h3 class="font-semibold">文字颜色</h3>
-        <p class="text-sm text-text-secondary">设置逐字歌词的已播颜色与未播颜色</p>
+        <p class="text-sm text-text-secondary">已播和未播字色均可独立选色或跟随封面取色</p>
       </div>
       <div class="settings-color-stack">
         <div class="settings-color-grid">
@@ -182,7 +220,10 @@ const applyDesktopLyricColor = async (value: string) => {
             <button
               type="button"
               class="settings-color-swatch"
-              :style="{ backgroundColor: desktopLyricStore.settings.playedColor }"
+              :style="{ backgroundColor: playedColorPreview }"
+              :aria-label="
+                desktopLyricStore.settings.followCoverColor ? '已播字色：跟随封面' : '选择已播字色'
+              "
               @click="openDesktopLyricColorPicker('playedColor')"
             ></button>
           </div>
@@ -191,7 +232,12 @@ const applyDesktopLyricColor = async (value: string) => {
             <button
               type="button"
               class="settings-color-swatch"
-              :style="{ backgroundColor: desktopLyricStore.settings.unplayedColor }"
+              :style="{ backgroundColor: unplayedColorPreview }"
+              :aria-label="
+                desktopLyricStore.settings.unplayedFollowCoverColor
+                  ? '未播字色：跟随封面'
+                  : '选择未播字色'
+              "
               @click="openDesktopLyricColorPicker('unplayedColor')"
             ></button>
           </div>
@@ -204,7 +250,9 @@ const applyDesktopLyricColor = async (value: string) => {
             @click="
               commitDesktopLyricSettings({
                 playedColor: DEFAULT_DESKTOP_LYRIC_SETTINGS.playedColor,
+                followCoverColor: false,
                 unplayedColor: DEFAULT_DESKTOP_LYRIC_SETTINGS.unplayedColor,
+                unplayedFollowCoverColor: false,
               })
             "
           >
@@ -219,6 +267,7 @@ const applyDesktopLyricColor = async (value: string) => {
       :title="activeDesktopLyricColorField === 'unplayedColor' ? '选择未播字色' : '选择已播字色'"
       :value="activeDesktopLyricColorValue"
       :presets="desktopLyricColorPresets"
+      :dynamic-option="coverColorOption"
       @update:open="(open) => !open && closeDesktopLyricColorPicker()"
       @confirm="applyDesktopLyricColor"
     />

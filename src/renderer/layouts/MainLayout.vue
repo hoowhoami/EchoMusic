@@ -6,7 +6,7 @@ import { useSettingStore } from '@/stores/setting';
 import { usePageEntryMotion } from '@/composables/usePageEntryMotion';
 import { pageTransitionState } from '@/plugins/runtime/theme';
 import { getRouteViewCacheQuery, updateRouteViewCacheKey } from '@/utils/routeViewCache';
-import { YzsKeepAlive } from 'yzs-keep-alive-v3';
+import RouteKeepAlive, { type RouteKeepAliveController } from '@/components/app/RouteKeepAlive';
 import Sidebar from './Sidebar.vue';
 import ThemeBackground from '@/theme/ThemeBackground.vue';
 import ThemeContent from '@/theme/ThemeContent.vue';
@@ -40,11 +40,7 @@ useResizeObserver(playerPanel, ([entry]) => {
       `${entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height}px`,
     );
 });
-type KeepAliveController = {
-  clearCacheByKey: (key: string) => void;
-};
-
-const keepAliveRef = ref<KeepAliveController | null>(null);
+const keepAliveRef = ref<RouteKeepAliveController | null>(null);
 const routeCacheRevisions = new Map<string, string>();
 const canonicalRouteKey = computed(() => {
   const query = getRouteViewCacheQuery(route);
@@ -61,9 +57,7 @@ watch(
   [canonicalRouteKey, routeRefreshToken],
   ([canonicalKey, refreshToken]) => {
     const update = updateRouteViewCacheKey(canonicalKey, refreshToken, routeCacheRevisions);
-    if (update.staleKey) {
-      keepAliveRef.value?.clearCacheByKey(update.staleKey);
-    }
+    if (update.staleKey) keepAliveRef.value?.clearCacheByKey(update.staleKey);
     routeViewKey.value = update.key;
   },
   { immediate: true, flush: 'sync' },
@@ -208,14 +202,14 @@ watch(routeViewKey, () => {
           :class="{ [pageRouteEnterClass]: isPageRouteEntering }"
         >
           <router-view v-slot="{ Component }">
-            <YzsKeepAlive
+            <RouteKeepAlive
               v-if="keepAliveMax > 0"
               ref="keepAliveRef"
               :exclude="excludeFromCache"
               :max="keepAliveMax"
             >
               <component :is="Component" :key="routeViewKey" />
-            </YzsKeepAlive>
+            </RouteKeepAlive>
             <component v-else :is="Component" :key="routeViewKey" />
           </router-view>
         </div>

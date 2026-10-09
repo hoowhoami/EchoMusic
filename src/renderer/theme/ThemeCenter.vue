@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, useId, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  ref,
+  useId,
+  watch,
+} from 'vue';
 import { useWindowSize } from '@vueuse/core';
 import { Icon } from '@iconify/vue';
 import { iconCheckMark, iconSlidersHorizontal, iconX } from '@/icons';
@@ -128,10 +137,6 @@ const tabId = useId();
 const tabIds = [`${tabId}-themes-tab`, `${tabId}-solid-tab`, `${tabId}-custom-tab`];
 const panelIds = [`${tabId}-themes-panel`, `${tabId}-solid-panel`, `${tabId}-custom-panel`];
 const gallery = ref<HTMLElement | null>(null);
-watch(activeTab, (tab, previous) => {
-  if (previous === 2 && tab !== 2 && beforeBackground.value) cancelBackground();
-  if (gallery.value) gallery.value.scrollTop = 0;
-});
 const themeTypeLabels = { default: '静态', solid: '纯色', dynamic: '动态' };
 const shownThemes = computed(() =>
   catalogAppThemes.value.filter((entry) => entry.key !== 'host:solid'),
@@ -196,14 +201,19 @@ const beginBackground = () => {
   theme.selectTheme(CUSTOM_THEME_KEY);
   backgroundError.value = '';
 };
-const cancelBackground = () => {
+const cancelBackground = (keepCustomPreview = false) => {
   ++importRevision;
   isImporting.value = false;
-  if (beforeBackground.value) theme.restoreThemeDraft(beforeBackground.value);
-  beforeBackground.value = null;
-  if (ownsPreview) {
-    theme.cancelPreview();
-    ownsPreview = false;
+  const draft = beforeBackground.value;
+  if (keepCustomPreview && draft?.overrides[CUSTOM_THEME_KEY]?.background.image) {
+    theme.restoreThemeDraft({ ...draft, themeKey: CUSTOM_THEME_KEY });
+  } else {
+    if (draft) theme.restoreThemeDraft(draft);
+    beforeBackground.value = null;
+    if (ownsPreview) {
+      theme.cancelPreview();
+      ownsPreview = false;
+    }
   }
   backgroundError.value = '';
   cleanImages();
@@ -221,6 +231,24 @@ const acceptBackground = () => {
   beforeBackground.value = null;
   cleanImages();
 };
+const previewCustomBackground = () => {
+  if (
+    activeTab.value === 2 &&
+    customBackground.value.image &&
+    theme.desiredThemeKey !== CUSTOM_THEME_KEY
+  )
+    beginBackground();
+};
+watch(
+  activeTab,
+  (tab, previous) => {
+    if (previous === 2 && tab !== 2 && beforeBackground.value) cancelBackground();
+    if (gallery.value) gallery.value.scrollTop = 0;
+    previewCustomBackground();
+  },
+  { immediate: true },
+);
+onActivated(previewCustomBackground);
 async function importImage(file?: File) {
   if (!file) return;
   if (imageInput.value) imageInput.value.value = '';
@@ -432,7 +460,7 @@ watch(
         @select-image="importImage($event)"
         @choose-text-color="showTextColor = true"
         @reset="resetBackgroundAdjustments"
-        @cancel="cancelBackground"
+        @cancel="cancelBackground(true)"
         @apply="acceptBackground"
       />
     </section>

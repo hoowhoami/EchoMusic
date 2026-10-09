@@ -863,6 +863,21 @@ export const registerDesktopLyricHandlers = () => {
             : {}),
         };
       }
+      // 取色完成可能晚于原生进度补丁；只合并同一播放实例的颜色，保留更新的时钟。
+      if (
+        payload.playback &&
+        snapshot.playback &&
+        !desktopLyricPlaybackBridge.awaitingRenderer &&
+        isSameDesktopLyricPlayback(payload.playback, snapshot.playback) &&
+        payload.playback.coverUrl === snapshot.playback.coverUrl &&
+        payload.playback.coverColor !== snapshot.playback.coverColor
+      ) {
+        snapshot = {
+          ...snapshot,
+          playback: { ...snapshot.playback, coverColor: payload.playback.coverColor },
+        };
+        desktopPatch = { ...desktopPatch, playback: snapshot.playback };
+      }
       if (payload.lyrics !== undefined) {
         const activeLyricsTrackId =
           snapshot.playback?.lyricHash || snapshot.playback?.trackId || null;

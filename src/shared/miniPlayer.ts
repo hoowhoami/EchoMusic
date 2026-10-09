@@ -91,8 +91,57 @@ export interface MiniPlayerAppearancePayload {
   colors?: Record<string, string>;
   isDark: boolean;
   accentColor: string;
+  /** 只作用于 Mini 歌词，不改变控件主题。 */
+  lyricPlayedColor?: string;
+  lyricUnplayedColor?: string;
+  lyricStyle?: MiniPlayerLyricStyle;
   fontFamily?: string;
 }
+
+export type MiniPlayerLyricStyle = {
+  fontSize: number;
+  secondaryFontSize: number;
+  fontWeight: number;
+  alignment: 'left' | 'center' | 'right';
+  lineGap: number;
+  backgroundBlur: boolean;
+};
+
+export const DEFAULT_MINI_LYRIC_STYLE: MiniPlayerLyricStyle = {
+  fontSize: 14,
+  secondaryFontSize: 11,
+  fontWeight: 780,
+  alignment: 'center',
+  lineGap: 2,
+  backgroundBlur: true,
+};
+
+// 设置恢复、跨窗口同步和渲染使用同一约束，旧快照自动补齐默认值。
+export const normalizeMiniLyricStyle = (
+  value: Partial<MiniPlayerLyricStyle> = {},
+): MiniPlayerLyricStyle => {
+  const number = (input: unknown, fallback: number, min: number, max: number) =>
+    typeof input === 'number' && Number.isFinite(input)
+      ? Math.min(max, Math.max(min, Math.round(input)))
+      : fallback;
+  return {
+    fontSize: number(value.fontSize, DEFAULT_MINI_LYRIC_STYLE.fontSize, 12, 22),
+    secondaryFontSize: number(
+      value.secondaryFontSize,
+      DEFAULT_MINI_LYRIC_STYLE.secondaryFontSize,
+      10,
+      18,
+    ),
+    fontWeight:
+      value.fontWeight === 400 || value.fontWeight === 600 || value.fontWeight === 780
+        ? value.fontWeight
+        : DEFAULT_MINI_LYRIC_STYLE.fontWeight,
+    alignment:
+      value.alignment === 'left' || value.alignment === 'right' ? value.alignment : 'center',
+    lineGap: number(value.lineGap, DEFAULT_MINI_LYRIC_STYLE.lineGap, 0, 12),
+    backgroundBlur: typeof value.backgroundBlur === 'boolean' ? value.backgroundBlur : true,
+  };
+};
 
 export interface MiniPlayerWindowPayload {
   alwaysOnTop: boolean;

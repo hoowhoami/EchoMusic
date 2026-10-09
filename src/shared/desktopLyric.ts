@@ -12,6 +12,8 @@ export type DesktopLyricPlaybackPayload = {
   artist: string;
   album?: string;
   coverUrl?: string;
+  /** 当前封面已完成取色时的主色；仅运行时同步，不持久化。 */
+  coverColor?: string;
   duration: number;
   currentTime: number;
   isPlaying: boolean;
@@ -64,7 +66,9 @@ export type DesktopLyricSettings = {
   alignment: DesktopLyricAlign;
   showNextLinePreview: boolean;
   playedColor: string;
+  followCoverColor: boolean;
   unplayedColor: string;
+  unplayedFollowCoverColor: boolean;
   strokeColor: string;
   strokeEnabled: boolean;
   shadowStrength: DesktopLyricShadowStrength;
@@ -97,7 +101,9 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   alignment: 'both',
   showNextLinePreview: true,
   playedColor: '#31cfa1',
+  followCoverColor: false,
   unplayedColor: '#7a7a7a',
+  unplayedFollowCoverColor: false,
   strokeColor: '#f1b8b3',
   strokeEnabled: false,
   shadowStrength: 'normal',

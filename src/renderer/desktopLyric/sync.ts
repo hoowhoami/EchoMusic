@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia';
 import { usePlayerStore } from '@/stores/player';
 import { useLyricStore } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
+import { useThemeStore } from '@/stores/theme';
 import { useToastStore } from '@/stores/toast';
 import { useDesktopLyricStore } from './store';
 import {
@@ -76,7 +77,9 @@ const buildSettingsSignature = (settings: DesktopLyricSettings) =>
     settings.alignment,
     boolKey(settings.showNextLinePreview),
     settings.playedColor,
+    boolKey(settings.followCoverColor),
     settings.unplayedColor,
+    boolKey(settings.unplayedFollowCoverColor),
     settings.strokeColor,
     boolKey(settings.strokeEnabled),
     settings.shadowStrength,
@@ -102,6 +105,7 @@ const buildPlaybackSignature = (
     playback?.artist ?? '',
     playback?.album ?? '',
     playback?.coverUrl ?? '',
+    playback?.coverColor ?? '',
     stableNumberKey(playback?.duration, 1000),
     stableNumberKey(playback?.currentTime, 1000),
     boolKey(playback?.isPlaying),
@@ -189,6 +193,7 @@ const normalizeLinePayload = (
 const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
   const playerStore = usePlayerStore();
   const track = playerStore.currentTrackSnapshot;
+  const themeStore = useThemeStore();
   if (!track || !playerStore.currentTrackId) return null;
   const lyricHash = String(track.hash ?? track.id ?? playerStore.currentTrackId ?? '').trim();
   const trackId = String(playerStore.currentTrackId);
@@ -210,6 +215,7 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
     ),
     album: String(track.album ?? track.albumName ?? ''),
     coverUrl: String(track.coverUrl || track.cover || ''),
+    coverColor: themeStore.coverColorReady ? themeStore.coverColor : undefined,
     duration,
     currentTime,
     isPlaying,
@@ -259,6 +265,7 @@ export const initDesktopLyricSync = async () => {
     textConversionMode,
   } = storeToRefs(lyricStore);
   const settingStore = useSettingStore();
+  const themeStore = useThemeStore();
 
   const buildSyncedSettings = (settings = desktopLyricStore.settings) => {
     return {
@@ -470,6 +477,8 @@ export const initDesktopLyricSync = async () => {
         currentTimeOffset,
         currentTrackTimeOffset,
         seekTimestamp,
+        () => themeStore.coverColor,
+        () => themeStore.coverColorReady,
       ],
       () => {
         scheduleProgressSync();

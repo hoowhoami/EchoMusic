@@ -126,17 +126,16 @@ const apply = () => {
       <p v-if="error" class="theme-image-editor-error" role="alert">{{ error }}</p>
     </div>
     <footer class="theme-image-editor-footer">
-      <Button
-        variant="secondary"
-        size="sm"
-        class="theme-image-editor-reset"
-        :disabled="importing || !canReset"
-        @click="emit('reset')"
-        >恢复默认</Button
-      >
       <div class="theme-image-editor-actions">
+        <Button
+          variant="secondary"
+          size="sm"
+          :disabled="importing || !canReset"
+          @click="emit('reset')"
+          >恢复默认</Button
+        >
         <Button variant="secondary" size="sm" :disabled="!canCancel" @click="emit('cancel')"
-          >取消</Button
+          >还原</Button
         >
         <Button size="sm" :disabled="importing || !image || !canApply" @click="apply">应用</Button>
       </div>
@@ -183,12 +182,9 @@ const apply = () => {
   flex-shrink: 0;
   gap: 12px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: 12px 0 0;
   border-top: 1px solid var(--border-subtle);
-}
-.theme-image-editor-reset {
-  margin-right: auto;
 }
 .theme-image-editor-settings {
   display: flex;

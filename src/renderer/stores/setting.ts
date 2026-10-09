@@ -15,6 +15,7 @@ import type { RecognizeAudioSource } from '../../shared/recognize';
 import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../shared/logging';
 import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
 import { buildFontFamily } from '../../shared/font';
+import { DEFAULT_MINI_LYRIC_STYLE } from '../../shared/miniPlayer';
 import {
   normalizeAudioEffectName,
   type DspProviderRecord,
@@ -235,6 +236,16 @@ export const useSettingStore = defineStore('setting', {
     // 字体设置
     globalFont: 'system-ui',
     lyricFont: 'follow',
+    miniLyricFollowCoverColor: false,
+    miniLyricPlayedColor: '',
+    miniLyricUnplayedFollowCoverColor: false,
+    miniLyricUnplayedColor: '',
+    miniLyricFontSize: DEFAULT_MINI_LYRIC_STYLE.fontSize,
+    miniLyricSecondaryFontSize: DEFAULT_MINI_LYRIC_STYLE.secondaryFontSize,
+    miniLyricFontWeight: DEFAULT_MINI_LYRIC_STYLE.fontWeight,
+    miniLyricAlignment: DEFAULT_MINI_LYRIC_STYLE.alignment,
+    miniLyricLineGap: DEFAULT_MINI_LYRIC_STYLE.lineGap,
+    miniLyricBackgroundBlur: DEFAULT_MINI_LYRIC_STYLE.backgroundBlur,
     // 输入设备（麦克风）
     inputDevice: 'default',
     recognizeAudioSource: 'system' as RecognizeAudioSource,

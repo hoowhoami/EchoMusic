@@ -11,8 +11,8 @@ const modes = [
 </script>
 <template>
   <div class="settings-item display-mode-row">
-    <div>
-      <h3>深浅色模式</h3>
+    <div class="space-y-1">
+      <h3 class="font-semibold">深浅色模式</h3>
       <p class="text-sm text-text-secondary">选择主题的深浅配色，自定义背景保留所选文字颜色</p>
     </div>
     <Select

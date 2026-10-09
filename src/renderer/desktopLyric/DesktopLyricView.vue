@@ -36,6 +36,7 @@ import {
   type LyricLinePayload,
 } from '../../shared/desktopLyric';
 import { buildFontFamily } from '../../shared/font';
+import { resolveCoverLyricColor } from '../../shared/lyricColor';
 import {
   getPluginLyricEffectClassNames,
   getPluginLyricEffectSummary,
@@ -336,8 +337,21 @@ const lyricsMode = computed(() => {
 const hasTranslation = computed(() => lyrics.value.some((l) => l.translated?.trim()));
 const hasRomanization = computed(() => lyrics.value.some((l) => l.romanized?.trim()));
 const hasSecondary = computed(() => hasTranslation.value || hasRomanization.value);
-const playedColor = computed(() => settings.value?.playedColor ?? '#31cfa1');
-const unplayedColor = computed(() => settings.value?.unplayedColor ?? '#7a7a7a');
+const coverLyricColor = computed(() =>
+  resolveCoverLyricColor(snapshot.value?.playback?.coverColor, 'desktop'),
+);
+const playedColor = computed(
+  () =>
+    (settings.value?.followCoverColor ? coverLyricColor.value : undefined) ??
+    settings.value?.playedColor ??
+    '#31cfa1',
+);
+const unplayedColor = computed(
+  () =>
+    (settings.value?.unplayedFollowCoverColor ? coverLyricColor.value : undefined) ??
+    settings.value?.unplayedColor ??
+    '#7a7a7a',
+);
 const lyricTextShadow = computed(() => {
   switch (settings.value?.shadowStrength ?? 'normal') {
     case 'none':

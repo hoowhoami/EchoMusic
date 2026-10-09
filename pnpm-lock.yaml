@@ -189,9 +189,6 @@ importers:
       vue-tsc:
         specifier: ^3.3.12
         version: 3.3.12(typescript@5.9.3)
-      yzs-keep-alive-v3:
-        specifier: ^0.1.4
-        version: 0.1.4(vue@3.5.43(typescript@5.9.3))
 
   server:
     dependencies:
@@ -4169,11 +4166,6 @@ packages:
 
   yuku-parser@0.8.7:
     resolution: {integrity: sha512-vRD9nwt4L3aYpxNqeSC4WqLv58xrXef0Ong1Mc45CTXTIpvLafx7JO05sczmQZwdLEZvywrLOGdNC5+Rp5N1BQ==}
-
-  yzs-keep-alive-v3@0.1.4:
-    resolution: {integrity: sha512-sibjooOFcrryJURrhu/e04dfRBpQfRdvjyD50T71JNkTiTSOas0oSduT7046alxVXT8dZ/jmx6ubF7VOqANAxA==}
-    peerDependencies:
-      vue: ^3.0.0
 
 snapshots:
 
@@ -8156,7 +8148,3 @@ snapshots:
       '@yuku-parser/binding-linux-x64-musl': 0.8.7
       '@yuku-parser/binding-win32-arm64': 0.8.7
       '@yuku-parser/binding-win32-x64': 0.8.7
-
-  yzs-keep-alive-v3@0.1.4(vue@3.5.43(typescript@5.9.3)):
-    dependencies:
-      vue: 3.5.43(typescript@5.9.3)
