@@ -57,13 +57,16 @@ const timeline = createLyricTimeline();
 // 帧率与时间轴节流配置：
 // - AMLL 的 setCurrentTime 会遍历全部歌词组（O(n)）并分配多个 Set，逐帧调用
 //   在高刷屏（120/144Hz）上会造成显著的 CPU 与 GC 压力。
-// - update() 跟随 requestAnimationFrame 驱动动画，适配显示器刷新率；
+// - update() 默认上限 60fps；开启高刷新率动画后跟随显示器刷新。
+//   限帧按累计截止时间调度，保留时间余量，避免高刷屏意外降帧。
 //   setCurrentTime 独立节流到 ~30fps，避免高刷屏放大时间轴计算开销。
+const FRAME_INTERVAL = 1000 / 60;
 const SET_TIME_INTERVAL = 1000 / 30; // setCurrentTime 节流到 ~30fps
 const OVERSCAN_PX = 200; // 视口上下预渲染距离，默认 300 偏大
 
 let rafId: number | null = null;
 let lastFrameTime: number | null = null;
+let nextFrameTime: number | null = null;
 let lastSetTimeAt = 0;
 let settleUntil = 0;
 let lastAppliedTimeMs = Number.NaN;
@@ -76,10 +79,25 @@ const rafLoop = (timestamp: number) => {
   rafId = null;
   if (document.hidden) {
     lastFrameTime = null;
+    nextFrameTime = null;
     return;
   }
 
-  // 每次屏幕刷新均推进动画；首次/恢复时不累计隐藏期间的时间。
+  const highRefreshRate = settings.value.highRefreshRate === true;
+  if (!highRefreshRate && nextFrameTime !== null && timestamp + 0.001 < nextFrameTime) {
+    rafId = requestAnimationFrame(rafLoop);
+    return;
+  }
+  if (highRefreshRate) {
+    nextFrameTime = null;
+  } else {
+    const deadline = nextFrameTime ?? timestamp;
+    // 保留未用完的时间余量；长帧只推进截止时间，不突发补算多帧。
+    const intervals = Math.max(1, Math.floor((timestamp - deadline + 0.001) / FRAME_INTERVAL) + 1);
+    nextFrameTime = deadline + intervals * FRAME_INTERVAL;
+  }
+
+  // 使用实际更新时间差；首次/恢复时不累计隐藏期间的时间。
   const elapsed = lastFrameTime === null ? 0 : timestamp - lastFrameTime;
 
   const dt = Math.min(elapsed, 50);
@@ -104,7 +122,7 @@ const rafLoop = (timestamp: number) => {
       0,
     );
     // setCurrentTime 节流到 ~30fps：它会遍历全部歌词组（O(n)）并分配多个 Set，
-    // 逐帧调用在高刷屏上造成显著 CPU 与 GC 压力。update() 仍跟随屏幕刷新推进动画。
+    // 逐帧调用在高刷屏上造成显著 CPU 与 GC 压力。update() 按所选帧率推进动画。
     // 首次调用 lastSetTimeAt=0 会立即执行；seek/切歌时时间跳变最多延迟 ~33ms。
     if (
       Number.isFinite(timelineMs) &&
@@ -122,6 +140,7 @@ const rafLoop = (timestamp: number) => {
     rafId = requestAnimationFrame(rafLoop);
   } else {
     lastFrameTime = null;
+    nextFrameTime = null;
   }
 };
 
@@ -130,6 +149,7 @@ const requestFrame = () => {
   settleUntil = performance.now() + 1000;
   if (rafId !== null) return;
   lastFrameTime = null;
+  nextFrameTime = null;
   rafId = requestAnimationFrame(rafLoop);
 };
 
@@ -138,6 +158,7 @@ const handleVisibilityChange = () => {
     if (rafId !== null) cancelAnimationFrame(rafId);
     rafId = null;
     lastFrameTime = null;
+    nextFrameTime = null;
     playerRef.value?.pause();
   } else {
     if (playerStore.isPlaying) playerRef.value?.resume();
