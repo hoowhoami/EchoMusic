@@ -72,6 +72,7 @@ impl SharedAudio {
             .clamp(crate::tempo::MIN_SPEED, crate::tempo::MAX_SPEED)
     }
 
+    /// Normalized linear software gain, also used by volume fades.
     pub fn set_volume(&self, volume: f32) {
         self.volume_bits
             .store(volume.clamp(0.0, 1.5).to_bits(), Ordering::Release);

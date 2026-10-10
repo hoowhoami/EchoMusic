@@ -784,7 +784,7 @@ impl OutputResampler {
             *sample = self.converted_pending.pop_front().unwrap_or(0.0);
         }
         self.apply_generation_fade();
-        process_output_signal(
+        forward_or_silence(
             &mut self.device_output,
             self.output_channels,
             self.output_sample_rate,
@@ -968,6 +968,8 @@ fn process_output_signal(
 ) {
     let channels = channels.max(1);
     // Track normalization was applied at exact PCM boundaries by SharedAudio::pop_into.
+    // Apply the normalized user volume as linear gain once at the local PCM
+    // boundary; AirPlay's tap bypasses this gain stage.
     let target_gain = volume;
     // Ramp from the gain applied at the end of the previous buffer to the current
     // target across this buffer, so fades and volume changes stay zipper-free even
@@ -1364,6 +1366,55 @@ mod tests {
             classify_cpal_output_error(ErrorKind::Xrun, "auto"),
             CpalOutputErrorAction::Ignore { reason: "xrun" }
         );
+    }
+
+    #[test]
+    fn local_output_paths_apply_linear_volume_once() {
+        fn render(position: f32, sample_rate: u32, channels: usize) -> Vec<f32> {
+            let shared = SharedAudio::new(
+                MixFormat::stereo_f32(48_000),
+                1.0,
+                8.0,
+                &DspSettings::default(),
+            );
+            shared.set_volume(position);
+            shared.paused.store(false, Ordering::Release);
+            let samples: Vec<f32> = (0..4096)
+                .flat_map(|frame| {
+                    let value = 0.25 * (frame as f32 * 0.1).sin();
+                    [value, -value]
+                })
+                .collect();
+            assert!(shared.push_samples(&samples));
+            shared.mark_eof();
+            let mut output = vec![0.0; 256 * channels];
+            if sample_rate == 48_000 {
+                fill_output_reusing(&mut output, channels, &shared, &mut Vec::new());
+            } else {
+                let mut resampler =
+                    OutputResampler::new(48_000, sample_rate, MIX_CHANNELS, channels)
+                        .expect("output resampler should initialize");
+                resampler.fill_output(&mut output, channels, &shared);
+            }
+            // Output conversion must not change the position stored for controls/fades.
+            assert_eq!(shared.volume(), position);
+            output
+        }
+
+        for (sample_rate, channels) in [(48_000, 2), (48_000, 4), (44_100, 2), (44_100, 4)] {
+            let full_volume = render(1.0, sample_rate, channels);
+            assert!(full_volume.iter().any(|sample| sample.abs() > 0.01));
+            for position in [0.0, 0.1, 0.3, 0.5, 0.8] {
+                let output = render(position, sample_rate, channels);
+                for (sample, full_sample) in output.iter().zip(&full_volume) {
+                    assert!(
+                        (sample - full_sample * position).abs() < 0.000001,
+                        "position {position} at {sample_rate} Hz/{channels} channels: {sample} != {}",
+                        full_sample * position
+                    );
+                }
+            }
+        }
     }
 
     #[test]

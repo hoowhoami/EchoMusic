@@ -121,6 +121,23 @@ function harness(extra = {}) {
   return { host, calls, events, timers, local, airplay };
 }
 
+test('AirPlay volume keeps protocol percentages and bypasses local volume', async () => {
+  const remoteVolumes = [];
+  const localVolumes = [];
+  const box = harness({
+    airplay: { setVolume: async (volume) => remoteVolumes.push(volume) },
+    local: { setVolume: async (volume) => localVolumes.push(volume) },
+  });
+  try {
+    assert.equal((await box.host.connect('speaker')).ok, true);
+    for (const volume of [0, 50, 80, 100]) await box.host.setVolume(volume);
+    assert.deepEqual(remoteVolumes, [0, 50, 80, 100]);
+    assert.deepEqual(localVolumes, []);
+  } finally {
+    await box.host.shutdown();
+  }
+});
+
 test('local selection waits for an in-progress AirPlay connection and wins in request order', async () => {
   const gate = deferred();
   const box = harness({ airplay: { connect: () => gate.promise } });
