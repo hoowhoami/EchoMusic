@@ -51,6 +51,7 @@ const hasCustomSettings = computed(
   () =>
     settings.value.alignPosition !== LYRIC_SKIN_AMLL_DEFAULTS.alignPosition ||
     settings.value.enableSpring !== LYRIC_SKIN_AMLL_DEFAULTS.enableSpring ||
+    settings.value.highRefreshRate !== LYRIC_SKIN_AMLL_DEFAULTS.highRefreshRate ||
     settings.value.enableBlur !== LYRIC_SKIN_AMLL_DEFAULTS.enableBlur ||
     settings.value.enableScale !== LYRIC_SKIN_AMLL_DEFAULTS.enableScale ||
     settings.value.hidePassedLines !== LYRIC_SKIN_AMLL_DEFAULTS.hidePassedLines ||
@@ -103,6 +104,17 @@ const restoreDefaults = () => patch({ ...LYRIC_SKIN_AMLL_DEFAULTS });
       </div>
     </SkinSettingSection>
     <SkinSettingSection title="歌词动画">
+      <div class="setting-row">
+        <div class="setting-text">
+          <span class="setting-label">高刷新率动画</span>
+          <span class="setting-hint">跟随屏幕刷新率，可能增加性能开销；关闭时上限 60fps</span>
+        </div>
+        <Switch
+          :model-value="settings.highRefreshRate"
+          aria-label="高刷新率动画"
+          @update:model-value="(v: boolean) => patch({ highRefreshRate: v })"
+        />
+      </div>
       <div class="setting-row">
         <div class="setting-text">
           <span class="setting-label">弹簧动画</span

@@ -68,6 +68,8 @@ export interface LyricSkinConfigAmll extends Record<string, unknown> {
   alignPosition: number;
   /** 是否使用物理弹簧算法驱动歌词位移动画。 */
   enableSpring: boolean;
+  /** 开启后动画跟随屏幕刷新率；关闭时上限 60fps。 */
+  highRefreshRate: boolean;
   /** 是否启用歌词行的模糊效果。 */
   enableBlur: boolean;
   /** 是否启用歌词行缩放律动。 */
@@ -85,6 +87,7 @@ export interface LyricSkinConfigAmll extends Record<string, unknown> {
 export const LYRIC_SKIN_AMLL_DEFAULTS: LyricSkinConfigAmll = {
   alignPosition: 0.5,
   enableSpring: true,
+  highRefreshRate: false,
   enableBlur: true,
   enableScale: true,
   hidePassedLines: false,
