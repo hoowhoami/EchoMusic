@@ -5,7 +5,7 @@ import { startEventLoopMonitor, stopEventLoopMonitor } from './eventLoopMonitor'
 import { initApiServer } from './server';
 import { registerIpcHandlers } from './ipc';
 import { createWindow, getMainWindow } from './window';
-import { restoreActiveWindowMode } from './window/modeController';
+import { restoreActiveWindowMode, showMainWindowMode } from './window/modeController';
 import { setActiveWindowMode } from './window/mode';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import {
@@ -19,7 +19,7 @@ import { initOutputRuntime, shutdownOutputRuntime } from './outputs/outputRuntim
 import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpectrum';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { destroyAudioCapture } from './audioCapture';
-import { cleanupMiniPlayer } from './miniPlayer';
+import { cleanupMiniPlayer, showMiniPlayerWindow } from './miniPlayer';
 import { initPowerMonitor } from './powerMonitor';
 import {
   clearPluginRuntimeSession,
@@ -152,6 +152,8 @@ if (!gotTheLock) {
     const trayContext = {
       getMainWindow,
       restoreWindow: restoreActiveWindowMode,
+      showMainWindow: showMainWindowMode,
+      showMiniPlayer: showMiniPlayerWindow,
       getDesktopLyricSnapshot,
       toggleDesktopLyricLock,
     };
