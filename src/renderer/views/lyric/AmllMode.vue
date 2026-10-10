@@ -57,15 +57,16 @@ const timeline = createLyricTimeline();
 // 帧率与时间轴节流配置：
 // - AMLL 的 setCurrentTime 会遍历全部歌词组（O(n)）并分配多个 Set，逐帧调用
 //   在高刷屏（120/144Hz）上会造成显著的 CPU 与 GC 压力。
-// - update() 驱动弹簧动画，需要保持 60fps 流畅度；setCurrentTime 仅更新时间线
-//   与热行检测，节流到 ~30fps 即可（行切换延迟 ≤33ms，人眼不可感知）。
-const TARGET_FPS = 60;
-const FRAME_INTERVAL = 1000 / TARGET_FPS;
+// - update() 默认上限 60fps；开启高刷新率动画后跟随显示器刷新。
+//   限帧按累计截止时间调度，保留时间余量，避免高刷屏意外降帧。
+//   setCurrentTime 独立节流到 ~30fps，避免高刷屏放大时间轴计算开销。
+const FRAME_INTERVAL = 1000 / 60;
 const SET_TIME_INTERVAL = 1000 / 30; // setCurrentTime 节流到 ~30fps
 const OVERSCAN_PX = 200; // 视口上下预渲染距离，默认 300 偏大
 
 let rafId: number | null = null;
-let lastFrameTime = 0;
+let lastFrameTime: number | null = null;
+let nextFrameTime: number | null = null;
 let lastSetTimeAt = 0;
 let settleUntil = 0;
 let lastAppliedTimeMs = Number.NaN;
@@ -77,16 +78,27 @@ let cancelInitialization: (() => void) | undefined;
 const rafLoop = (timestamp: number) => {
   rafId = null;
   if (document.hidden) {
-    lastFrameTime = 0;
+    lastFrameTime = null;
+    nextFrameTime = null;
     return;
   }
 
-  // 帧率上限：高刷屏跳过多余帧，dt 按真实间隔累计，弹簧动画不会丢步。
-  const elapsed = lastFrameTime > 0 ? timestamp - lastFrameTime : FRAME_INTERVAL;
-  if (elapsed < FRAME_INTERVAL) {
+  const highRefreshRate = settings.value.highRefreshRate === true;
+  if (!highRefreshRate && nextFrameTime !== null && timestamp + 0.001 < nextFrameTime) {
     rafId = requestAnimationFrame(rafLoop);
     return;
   }
+  if (highRefreshRate) {
+    nextFrameTime = null;
+  } else {
+    const deadline = nextFrameTime ?? timestamp;
+    // 保留未用完的时间余量；长帧只推进截止时间，不突发补算多帧。
+    const intervals = Math.max(1, Math.floor((timestamp - deadline + 0.001) / FRAME_INTERVAL) + 1);
+    nextFrameTime = deadline + intervals * FRAME_INTERVAL;
+  }
+
+  // 使用实际更新时间差；首次/恢复时不累计隐藏期间的时间。
+  const elapsed = lastFrameTime === null ? 0 : timestamp - lastFrameTime;
 
   const dt = Math.min(elapsed, 50);
   lastFrameTime = timestamp;
@@ -110,7 +122,7 @@ const rafLoop = (timestamp: number) => {
       0,
     );
     // setCurrentTime 节流到 ~30fps：它会遍历全部歌词组（O(n)）并分配多个 Set，
-    // 逐帧调用在高刷屏上造成显著 CPU 与 GC 压力。update() 仍按 60fps 推进弹簧动画。
+    // 逐帧调用在高刷屏上造成显著 CPU 与 GC 压力。update() 按所选帧率推进动画。
     // 首次调用 lastSetTimeAt=0 会立即执行；seek/切歌时时间跳变最多延迟 ~33ms。
     if (
       Number.isFinite(timelineMs) &&
@@ -127,7 +139,8 @@ const rafLoop = (timestamp: number) => {
   if (playerStore.isPlaying || timestamp < settleUntil) {
     rafId = requestAnimationFrame(rafLoop);
   } else {
-    lastFrameTime = 0;
+    lastFrameTime = null;
+    nextFrameTime = null;
   }
 };
 
@@ -135,7 +148,8 @@ const requestFrame = () => {
   if (!playerRef.value || document.hidden) return;
   settleUntil = performance.now() + 1000;
   if (rafId !== null) return;
-  lastFrameTime = 0;
+  lastFrameTime = null;
+  nextFrameTime = null;
   rafId = requestAnimationFrame(rafLoop);
 };
 
@@ -143,7 +157,8 @@ const handleVisibilityChange = () => {
   if (document.hidden) {
     if (rafId !== null) cancelAnimationFrame(rafId);
     rafId = null;
-    lastFrameTime = 0;
+    lastFrameTime = null;
+    nextFrameTime = null;
     playerRef.value?.pause();
   } else {
     if (playerStore.isPlaying) playerRef.value?.resume();
