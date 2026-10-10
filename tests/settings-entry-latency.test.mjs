@@ -48,7 +48,14 @@ function fixture(t, initialSection = 'interface') {
     '@/composables/useSettingsDialog': { settingsDialogOpen: open, settingsDialogSection: section },
     '@/icons': {},
     './settings/components/InterfaceSettingsSection.vue': { default: defaultSection },
-    './settings/constants': { sectionTitles: {}, shortcutItems: [] },
+    './settings/constants': {
+      sectionTitles: {
+        interface: { label: '界面与外观' },
+        window: { label: '窗口与系统' },
+        player: { label: '播放引擎' },
+      },
+      shortcutItems: [],
+    },
   };
   function loadModule(path) {
     calls.push(path);
@@ -150,7 +157,7 @@ test('the first settings frame renders navigation and default controls without l
   f.open.value = true;
   await vue.nextTick();
   assert.match(f.text(), /偏好设置/);
-  assert.match(f.text(), /窗口与启动/);
+  assert.match(f.text(), /窗口与系统/);
   assert.match(f.text(), /默认界面设置/);
   assert.deepEqual(f.calls, []);
   await f.click('关闭设置');
@@ -194,4 +201,13 @@ test('opening directly into a slow section renders the shell and closing during 
   await vue.nextTick();
   assert.match(f.text(), /SpatialAudio设置内容/);
   assert.equal(f.calls.length, 1);
+});
+
+test('opening taskbar lyric settings loads the lyric category', async (t) => {
+  const f = fixture(t, 'taskbarLyric');
+  f.open.value = true;
+  await vue.nextTick();
+  assert.deepEqual(f.calls, ['./settings/components/LyricSettingsSection.vue']);
+  await f.resolve('Lyric');
+  assert.match(f.text(), /Lyric设置内容/);
 });

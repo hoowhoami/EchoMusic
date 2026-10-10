@@ -546,8 +546,11 @@ const createUserStore = () => {
 };
 
 test('App synchronously resets collections on actual same-user token replacement and logout/relogin', () => {
-  const source = readFileSync(new URL('../src/renderer/App.vue', import.meta.url), 'utf8');
-  const statement = source.match(/watchUserSession\(\s*userStore,[\s\S]*?\n(?:\);|\}\);)/)[0];
+  const source = readFileSync(
+    new URL('../src/renderer/app/useAppUserSession.ts', import.meta.url),
+    'utf8',
+  );
+  const statement = source.match(/watchUserSession\(\s*userStore,[\s\S]*?\n\s*(?:\);|\}\);)/)[0];
   const userStore = createUserStore();
   const currentUserKey = vue.computed(() => String(userStore.info?.userid ?? ''));
   let resets = 0;

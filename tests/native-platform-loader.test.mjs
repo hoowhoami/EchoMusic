@@ -15,11 +15,10 @@ function setup({ platform = 'win32', packaged = false, valid = true } = {}) {
   const api = Object.fromEntries(
     [
       'setWindowComposition',
-      'taskbarEnableIconic',
-      'taskbarDisableIconic',
-      'taskbarInvalidate',
-      'taskbarSetThumbnail',
-      'taskbarSetLivePreview',
+      'taskbarThumbnailEnable',
+      'taskbarThumbnailDisable',
+      'taskbarThumbnailSetCover',
+      'TaskbarLyricSession',
     ].map((name) => [name, () => {}]),
   );
   runInNewContext(code, {
@@ -40,13 +39,30 @@ function setup({ platform = 'win32', packaged = false, valid = true } = {}) {
       throw Error(name);
     },
   });
-  return { get: module.exports.getNativePlatform, paths, warnings, api };
+  return {
+    get: module.exports.getNativePlatform,
+    getLyric: module.exports.getNativeTaskbarLyric,
+    paths,
+    warnings,
+    api,
+  };
 }
 test('platform addon is shared by composition and taskbar with one validated load', () => {
   const e = setup();
   assert.equal(e.get(), e.api);
   assert.equal(e.get(), e.api);
   assert.deepEqual(e.paths, ['/app/native/echo-platform-adaptor/echo-platform-adaptor.node']);
+});
+test('taskbar lyrics validate their native session independently of composition', () => {
+  const e = setup();
+  assert.equal(e.getLyric(), e.api);
+  assert.equal(e.getLyric(), e.api);
+  assert.equal(e.paths.length, 1);
+  const missing = setup({ valid: false });
+  assert.equal(missing.getLyric(), null);
+  assert.equal(missing.getLyric(), null);
+  assert.equal(missing.warnings.length, 1);
+  assert.equal(setup({ platform: 'darwin' }).getLyric(), null);
 });
 test('packaged loading uses the Windows extraResources destination', () => {
   const e = setup({ packaged: true });

@@ -156,3 +156,35 @@ test('new main snapshot integration sanitizes and forwards state without an extr
   api.syncNowPlayingSnapshot({ playback: null });
   assert.equal(states[2], null);
 });
+
+test('hidden taskbar window receives no playback pushes and resumes with the latest paused track', () => {
+  const bar = new EventEmitter();
+  const messages = [];
+  let visible = false;
+  bar.isDestroyed = () => false;
+  bar.isVisible = () => visible;
+  bar.webContents = { isDestroyed: () => false, send: (...args) => messages.push(args) };
+  const api = load('../src/main/nowPlaying.ts', {
+    electron: { BrowserWindow: { getAllWindows: () => [bar] } },
+    './ipc/registry': {},
+    './window': { getMainWindow: () => null },
+    './storage/settings': {},
+    '../shared/nowPlaying': load('../src/shared/nowPlaying.ts', {}),
+    '../shared/playback': load('../src/shared/playback.ts', {}),
+    '../shared/opencc': load('../src/shared/opencc.ts', {}),
+    './taskbarThumbnail': { isCoverPreviewEnabled: () => true },
+    './taskbarProgress': {},
+    './thumbar': { updateThumbarPlayback() {} },
+  });
+  api.bindVisibleNowPlayingWindow(bar);
+  api.syncNowPlayingSnapshot({ playback });
+  api.syncNowPlayingSnapshot({ playback: { ...playback, trackId: 'next', isPlaying: false } });
+  assert.equal(messages.length, 0);
+  visible = true;
+  bar.emit('show');
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0][1].playback.trackId, 'next');
+  assert.equal(messages[0][1].playback.isPlaying, false);
+  api.syncNowPlayingSnapshot({ appearance: { isDark: true } });
+  assert.equal(messages.length, 2);
+});

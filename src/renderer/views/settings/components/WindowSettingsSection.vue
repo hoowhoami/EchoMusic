@@ -1,93 +1,25 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
-import { useWindowZoom } from '@/composables/useWindowZoom';
-const { percent, zoomIn, zoomOut, reset, canZoomIn, canZoomOut } = useWindowZoom();
+import { computed } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import type { CloseBehavior } from '../../../../shared/app';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
 import { Icon } from '@iconify/vue';
 import SettingsSectionShell from './SettingsSectionShell.vue';
-import { closeBehaviorOptions, sectionTitles } from '../constants';
+import { closeBehaviorOptions } from '../constants';
+import { iconPictureInPicture, iconSettings, iconPlayerPlay } from '@/icons';
 
 const settingStore = useSettingStore();
 const platform = window.electron?.platform;
 const isMac = computed(() => platform === 'darwin');
 const isWindows = computed(() => platform === 'win32');
-const supportsCustomWindowControls = computed(() => platform === 'win32' || platform === 'linux');
-const barEnabled = ref(false);
-const barBusy = ref(false);
-const barMessage = ref('');
-onMounted(async () => {
-  if (!isWindows.value) return;
-  try {
-    barEnabled.value = Boolean(
-      (await window.electron.ipcRenderer.invoke('taskbar-player:get-state')).enabled,
-    );
-  } catch {
-    barMessage.value = '读取失败，可点击重新显示重试';
-  }
-});
-const setBar = async (value: boolean) => {
-  if (barBusy.value) return;
-  barBusy.value = true;
-  barMessage.value = '';
-  try {
-    const state = await window.electron.ipcRenderer.invoke('taskbar-player:set-enabled', value);
-    barEnabled.value = Boolean(state.enabled);
-    if (state.enabled && !state.visible) barMessage.value = '已开启；全屏时暂时隐藏';
-  } catch (error) {
-    barMessage.value = `打开失败：${error instanceof Error ? error.message : String(error)}`;
-  } finally {
-    barBusy.value = false;
-  }
-};
 </script>
 
 <template>
-  <SettingsSectionShell id="window" :title="sectionTitles.window.label">
+  <SettingsSectionShell id="window" title="窗口行为">
     <template #icon>
-      <Icon
-        v-if="sectionTitles.window.icon"
-        :icon="sectionTitles.window.icon"
-        width="20"
-        height="20"
-        class="text-primary-text"
-      />
+      <Icon :icon="iconPictureInPicture" width="20" height="20" class="text-primary-text" />
     </template>
-
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">界面缩放</h3>
-        <p class="text-sm text-text-secondary">
-          立即调整整个界面并自动保存。{{ platform === 'darwin' ? '⌘' : 'Ctrl' }} + 加号 /
-          减号缩放，0 重置
-        </p>
-      </div>
-      <div class="flex items-center gap-3 shrink-0" role="group" aria-label="界面缩放">
-        <button
-          type="button"
-          class="settings-action w-8"
-          aria-label="缩小界面"
-          :disabled="!canZoomOut"
-          @click="zoomOut"
-        >
-          −
-        </button>
-        <output class="min-w-12 text-center" aria-live="polite">{{ percent }}%</output>
-        <button
-          type="button"
-          class="settings-action w-8"
-          aria-label="放大界面"
-          :disabled="!canZoomIn"
-          @click="zoomIn"
-        >
-          +
-        </button>
-        <button class="settings-action" type="button" @click="reset">重置</button>
-      </div>
-    </div>
-    <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">记住窗口大小</h3>
@@ -95,42 +27,35 @@ const setBar = async (value: boolean) => {
       </div>
       <Switch v-model="settingStore.rememberWindowSize" />
     </div>
-    <template v-if="supportsCustomWindowControls">
-      <div class="settings-divider"></div>
-      <div class="settings-item">
-        <div class="space-y-1">
-          <h3 class="font-semibold">全屏按钮</h3>
-          <p class="text-sm text-text-secondary">在标题栏显示全屏按钮</p>
-        </div>
-        <Switch v-model="settingStore.showFullscreenButton" />
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">关闭行为</h3>
+        <p class="text-sm text-text-secondary">点击窗口关闭按钮时的应用行为</p>
       </div>
+      <Select
+        class="shrink-0 w-45"
+        aria-label="关闭行为"
+        :model-value="settingStore.closeBehavior"
+        :options="closeBehaviorOptions"
+        @update:model-value="
+          settingStore.closeBehavior = $event as CloseBehavior;
+          settingStore.syncCloseBehavior();
+        "
+      />
+    </div>
+  </SettingsSectionShell>
+  <SettingsSectionShell v-if="isWindows || isMac" id="systemIntegration" title="系统集成">
+    <template #icon>
+      <Icon :icon="iconSettings" width="20" height="20" class="text-primary-text" />
     </template>
     <template v-if="isWindows">
-      <div class="settings-divider"></div>
-      <div class="settings-item">
-        <div class="space-y-1">
-          <h3 class="font-semibold">任务栏快捷播控（独立横条）</h3>
-          <p class="text-sm text-text-secondary">
-            在任务栏空闲区显示，可拖出小窗；空间不足时移至任务栏旁。不影响悬停播控。
-          </p>
-          <p v-if="barMessage" role="status" class="text-sm text-text-secondary">
-            {{ barMessage }}
-          </p>
-          <button class="settings-action" :disabled="barBusy" @click="setBar(true)">
-            重新显示
-          </button>
-        </div>
-        <Switch
-          :model-value="barEnabled"
-          :disabled="barBusy"
-          @update:model-value="setBar(Boolean($event))"
-        />
-      </div>
-      <div class="settings-divider"></div>
       <div class="settings-item">
         <div class="space-y-1">
           <h3 class="font-semibold">任务栏封面预览</h3>
-          <p class="text-sm text-text-secondary">在任务栏窗口以及后台窗口显示封面和歌曲标题</p>
+          <p class="text-sm text-text-secondary">
+            悬停任务栏图标时显示专辑封面；无封面时显示 EchoMusic 图标
+          </p>
         </div>
         <Switch
           :model-value="settingStore.taskbarCoverPreview"
@@ -155,33 +80,19 @@ const setBar = async (value: boolean) => {
         />
       </div>
     </template>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">关闭行为</h3>
-        <p class="text-sm text-text-secondary">点击窗口关闭按钮时的应用行为</p>
-      </div>
-      <Select
-        class="shrink-0 w-45"
-        aria-label="关闭行为"
-        :model-value="settingStore.closeBehavior"
-        :options="closeBehaviorOptions"
-        @update:model-value="
-          settingStore.closeBehavior = $event as CloseBehavior;
-          settingStore.syncCloseBehavior();
-        "
-      />
-    </div>
-    <template v-if="isMac && settingStore.closeBehavior === 'tray'">
-      <div class="settings-divider"></div>
+    <template v-if="isMac">
       <div class="settings-item">
-        <div class="space-y-1">
+        <div class="space-y-1" :class="{ 'opacity-60': settingStore.closeBehavior !== 'tray' }">
           <h3 class="font-semibold">后台运行时在 Dock 栏中隐藏</h3>
-          <p class="text-sm text-text-secondary">关闭窗口后隐藏 Dock 图标，恢复窗口时重新显示</p>
+          <p id="background-dock-description" class="text-sm text-text-secondary">
+            关闭窗口后隐藏 Dock 图标，恢复窗口时重新显示；仅在「最小化到托盘」时生效
+          </p>
         </div>
         <Switch
           :model-value="settingStore.hideDockInBackground"
+          :disabled="settingStore.closeBehavior !== 'tray'"
           aria-label="后台运行时在 Dock 栏中隐藏"
+          aria-describedby="background-dock-description"
           @update:model-value="
             settingStore.hideDockInBackground = Boolean($event);
             settingStore.syncCloseBehavior();
@@ -190,13 +101,17 @@ const setBar = async (value: boolean) => {
       </div>
       <div class="settings-divider"></div>
       <div class="settings-item">
-        <div class="space-y-1">
+        <div class="space-y-1" :class="{ 'opacity-60': settingStore.closeBehavior !== 'tray' }">
           <h3 class="font-semibold">后台运行时在菜单栏中隐藏</h3>
-          <p class="text-sm text-text-secondary">关闭窗口后隐藏菜单栏图标，恢复窗口时重新显示</p>
+          <p id="background-menu-description" class="text-sm text-text-secondary">
+            关闭窗口后隐藏菜单栏图标，恢复窗口时重新显示；仅在「最小化到托盘」时生效
+          </p>
         </div>
         <Switch
           :model-value="settingStore.hideMenuBarInBackground"
+          :disabled="settingStore.closeBehavior !== 'tray'"
           aria-label="后台运行时在菜单栏中隐藏"
+          aria-describedby="background-menu-description"
           @update:model-value="
             settingStore.hideMenuBarInBackground = Boolean($event);
             settingStore.syncCloseBehavior();
@@ -207,10 +122,14 @@ const setBar = async (value: boolean) => {
         v-if="settingStore.hideDockInBackground && settingStore.hideMenuBarInBackground"
         class="text-sm text-text-secondary"
       >
-        两个图标均隐藏时，可通过 Finder、Spotlight 或显示窗口全局快捷键恢复。
+        最小化到托盘且两个图标均隐藏时，可通过 Finder、Spotlight 或显示窗口全局快捷键恢复。
       </p>
     </template>
-    <div class="settings-divider"></div>
+  </SettingsSectionShell>
+  <SettingsSectionShell id="startup" title="启动行为">
+    <template #icon>
+      <Icon :icon="iconPlayerPlay" width="20" height="20" class="text-primary-text" />
+    </template>
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">开机自启动</h3>

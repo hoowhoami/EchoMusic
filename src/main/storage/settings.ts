@@ -6,6 +6,11 @@ import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../shared/desktopLyric';
 import type { LogSettings } from '../../shared/logging';
 import { DEFAULT_LOG_SETTINGS } from '../../shared/logging';
 import { getKvStorage } from './kv';
+import {
+  DEFAULT_TASKBAR_LYRIC_SETTINGS,
+  normalizeTaskbarLyricSettings,
+  type TaskbarLyricSettings,
+} from '../../shared/taskbar';
 
 export type MainWindowState = {
   width: number;
@@ -38,6 +43,7 @@ export type MainAppSettings = ClosePreferences & {
   taskbarCoverPreview: boolean;
   taskbarProgress: boolean;
   taskbarPlayerEnabled: boolean;
+  taskbarLyric: TaskbarLyricSettings;
   windowState: MainWindowState;
   miniPlayerWindowState: MiniPlayerWindowState;
 };
@@ -71,6 +77,7 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   taskbarCoverPreview: false,
   taskbarProgress: true,
   taskbarPlayerEnabled: false,
+  taskbarLyric: { ...DEFAULT_TASKBAR_LYRIC_SETTINGS },
   windowState: {
     ...MAIN_WINDOW_DEFAULT_SIZE,
     isMaximized: false,
@@ -106,6 +113,7 @@ export const getMainAppSettings = (): MainAppSettings => {
   return {
     ...merged,
     ...normalizeClosePreferences(merged),
+    taskbarLyric: normalizeTaskbarLyricSettings(saved?.taskbarLyric),
     windowState: {
       ...DEFAULT_MAIN_APP_SETTINGS.windowState,
       ...(saved?.windowState ?? {}),

@@ -311,7 +311,7 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 本项目受到以下优秀开源项目的启发：
 
 - [KuGouMusicApi](https://github.com/MakcRe/KuGouMusicApi) - 酷狗音乐 NodeJS 版 API
-- [SPlayer](https://github.com/imsyy/SPlayer) - 一个简约的音乐播放器
+- [SPlayer-Next](https://github.com/SPlayer-Dev/SPlayer-Next) - 一个简约的音乐播放器
 - [ffmpeg-audio](https://github.com/apoint123/ffmpeg-audio) - 基于 FFmpeg 的 Rust 音频解码库
 - [soundtouch-rs](https://github.com/apoint123/soundtouch-rs) - Rust 音频变速处理库
 - [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKoeMusic) - 一款开源简洁高颜值的酷狗第三方客户端

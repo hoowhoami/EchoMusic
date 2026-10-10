@@ -584,8 +584,8 @@ test('round12: App ordinary profile updates do not reset collections or blacklis
   const f = fixture(t),
     scope = vue.effectScope();
   t.after(() => scope.stop());
-  const source = read('../src/renderer/App.vue');
-  const statement = source.match(/watchUserSession\(\s*userStore,[\s\S]*?\n\);/)[0];
+  const source = read('../src/renderer/app/useAppUserSession.ts');
+  const statement = source.match(/watchUserSession\(\s*userStore,[\s\S]*?\n\s*\);/)[0];
   const code = transformSync(statement, { loader: 'ts' }).code;
   let resets = 0;
   scope.run(() =>

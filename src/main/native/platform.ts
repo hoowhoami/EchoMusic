@@ -2,6 +2,7 @@ import { app } from 'electron';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import log from '../logger';
+import type { NativeTaskbarLayout } from '../../shared/taskbar';
 
 export interface NativePlatform {
   getWindowCompositionDiagnostics?(handle: string): {
@@ -21,11 +22,9 @@ export interface NativePlatform {
   setWindowComposition(handle: string, mode: number, keepOnBlur?: boolean, tint?: number): boolean;
   /** 失焦保持毛玻璃：WCA_FORCE_ACTIVEWINDOW_APPEARANCE(15)，旧版原生模块可能缺失。 */
   setWindowForceActiveAppearance?(handle: string, enabled: boolean): boolean;
-  taskbarEnableIconic(handle: string): void;
-  taskbarDisableIconic(handle: string): void;
-  taskbarInvalidate(handle: string): void;
-  taskbarSetThumbnail(handle: string, image: Buffer, maxWidth: number, maxHeight: number): void;
-  taskbarSetLivePreview(handle: string, image: Buffer, maxWidth: number, maxHeight: number): void;
+  taskbarThumbnailEnable(handle: string, image: Buffer, width: number, height: number): void;
+  taskbarThumbnailDisable(): void;
+  taskbarThumbnailSetCover(image: Buffer, width: number, height: number): void;
 }
 
 let native: NativePlatform | null | undefined;
@@ -105,11 +104,9 @@ export function getNativePlatform(): NativePlatform | null {
     const candidate = loadAddon();
     const methods: (keyof NativePlatform)[] = [
       'setWindowComposition',
-      'taskbarEnableIconic',
-      'taskbarDisableIconic',
-      'taskbarInvalidate',
-      'taskbarSetThumbnail',
-      'taskbarSetLivePreview',
+      'taskbarThumbnailEnable',
+      'taskbarThumbnailDisable',
+      'taskbarThumbnailSetCover',
     ];
     if (!methods.every((method) => typeof candidate[method] === 'function')) {
       throw new Error('echo-platform-adaptor native API mismatch');
@@ -119,4 +116,31 @@ export function getNativePlatform(): NativePlatform | null {
     log.warn('[NativePlatform] Native addon unavailable; using system window fallback:', error);
   }
   return native ?? null;
+}
+
+export interface NativeTaskbarLyricSession {
+  update(width: number): void;
+  stop(): void;
+}
+interface NativeTaskbarLyric {
+  TaskbarLyricSession: new (
+    handle: string,
+    width: number,
+    callback: (layout: NativeTaskbarLayout) => void,
+  ) => NativeTaskbarLyricSession;
+}
+let taskbarLyric: NativeTaskbarLyric | null | undefined;
+export function getNativeTaskbarLyric(): NativeTaskbarLyric | null {
+  if (taskbarLyric !== undefined) return taskbarLyric;
+  taskbarLyric = null;
+  if (process.platform !== 'win32') return null;
+  try {
+    const candidate = loadAddon();
+    if (typeof candidate.TaskbarLyricSession !== 'function')
+      throw new Error('Rebuild echo-platform-adaptor for taskbar lyrics');
+    taskbarLyric = candidate;
+  } catch (error) {
+    log.warn('[NativePlatform] Taskbar lyric unavailable:', error);
+  }
+  return taskbarLyric ?? null;
 }

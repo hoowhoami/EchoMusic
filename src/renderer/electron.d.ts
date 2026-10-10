@@ -15,6 +15,7 @@ import type {
 import type { PlayMode } from '../shared/playback';
 import type { PlayerRuntimeSession, PlayerSessionRestore } from '../shared/playerSession';
 import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
+import type { TaskbarLyricSettings, TaskbarLyricState } from '../shared/taskbar';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
@@ -407,6 +408,14 @@ export interface IElectronAPI {
     command: (command: NowPlayingCommand) => void;
     invokeCommand: (command: NowPlayingCommand) => Promise<boolean>;
     onCommand: (func: (command: NowPlayingCommand) => void) => () => void;
+  };
+  taskbarLyric: {
+    getState: () => Promise<TaskbarLyricState>;
+    setEnabled: (enabled: boolean) => Promise<TaskbarLyricState>;
+    setSettings: (settings: Partial<TaskbarLyricSettings>) => Promise<TaskbarLyricState>;
+    setContentWidth: (width: number) => void;
+    showMain: () => void;
+    onStateChange: (callback: (state: TaskbarLyricState) => void) => () => void;
   };
   miniPlayer: {
     getSnapshot: () => Promise<MiniPlayerSnapshot>;

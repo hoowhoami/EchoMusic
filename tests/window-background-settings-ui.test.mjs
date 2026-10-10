@@ -56,9 +56,7 @@ function setup(platform = 'darwin', closeBehavior = 'tray') {
     platform,
     isMac: platform === 'darwin',
     isWindows: platform === 'win32',
-    supportsCustomWindowControls: platform === 'win32' || platform === 'linux',
     SettingsSectionShell: { name: 'SettingsSectionShell' },
-    WindowAppearanceSettings: { name: 'WindowAppearanceSettings' },
     Select: { name: 'Select' },
     Switch: { name: 'Switch' },
     Icon: { name: 'Icon' },
@@ -103,13 +101,17 @@ test('close behavior offers tray and exit on every platform', () => {
   }
 });
 
-test('background icon switches appear only for macOS tray behavior', () => {
+test('macOS background icon switches stay visible and are disabled for exit behavior', () => {
   for (const platform of ['darwin', 'win32', 'linux']) {
     for (const closeBehavior of ['tray', 'exit']) {
       const ui = setup(platform, closeBehavior);
-      const expected = platform === 'darwin' && closeBehavior === 'tray';
+      const expected = platform === 'darwin';
       assert.equal(Boolean(ui.control(dockLabel)), expected);
       assert.equal(Boolean(ui.control(menuBarLabel)), expected);
+      if (expected) {
+        assert.equal(ui.control(dockLabel).props.disabled, closeBehavior !== 'tray');
+        assert.equal(ui.control(menuBarLabel).props.disabled, closeBehavior !== 'tray');
+      }
     }
   }
 });
@@ -135,13 +137,15 @@ test('each icon switch syncs independently and selecting exit preserves both pre
   });
 
   ui.control('关闭行为').props['onUpdate:modelValue']('exit');
-  assert.equal(ui.control(dockLabel), undefined);
-  assert.equal(ui.control(menuBarLabel), undefined);
+  assert.equal(ui.control(dockLabel).props.disabled, true);
+  assert.equal(ui.control(menuBarLabel).props.disabled, true);
   assert.equal(ui.store.hideDockInBackground, false);
   assert.equal(ui.store.hideMenuBarInBackground, true);
   assert.equal(ui.synced.at(-1).closeBehavior, 'exit');
 
   ui.control('关闭行为').props['onUpdate:modelValue']('tray');
+  assert.equal(ui.control(dockLabel).props.disabled, false);
+  assert.equal(ui.control(menuBarLabel).props.disabled, false);
   assert.equal(ui.control(dockLabel).props['model-value'], false);
   assert.equal(ui.control(menuBarLabel).props['model-value'], true);
   assert.equal(ui.synced.length, 5);
@@ -157,5 +161,25 @@ test('alternate recovery hint appears only when both background icon switches ar
     }
   }
   ui.store.closeBehavior = 'exit';
-  assert.equal(ui.hasRecoveryHint(), false);
+  assert.equal(ui.hasRecoveryHint(), true);
+});
+
+test('changing close behavior preserves the system card, rows and recovery hint', () => {
+  const ui = setup();
+  ui.store.hideDockInBackground = true;
+  ui.store.hideMenuBarInBackground = true;
+  const layout = () => ({
+    cards: ui
+      .nodes()
+      .filter((node) => node.type?.name === 'SettingsSectionShell')
+      .map((node) => node.props.id),
+    rows: ui.nodes().filter((node) => node.props?.class === 'settings-item').length,
+    recoveryHint: ui.hasRecoveryHint(),
+  });
+  const before = layout();
+  assert.ok(before.cards.includes('systemIntegration'));
+  ui.control('关闭行为').props['onUpdate:modelValue']('exit');
+  assert.deepEqual(layout(), before);
+  ui.control('关闭行为').props['onUpdate:modelValue']('tray');
+  assert.deepEqual(layout(), before);
 });

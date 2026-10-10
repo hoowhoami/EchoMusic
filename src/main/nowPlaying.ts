@@ -28,6 +28,17 @@ let snapshot: NowPlayingSnapshot = {
   updatedAt: Date.now(),
 };
 
+const visibleOnlyWindows = new WeakSet<BrowserWindow>();
+/** 独立歌词窗口隐藏时停止高频推送，显示时补发最新状态（包含暂停期间的换歌）。 */
+export function bindVisibleNowPlayingWindow(win: BrowserWindow): void {
+  visibleOnlyWindows.add(win);
+  win.on('show', () => {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send('now-playing:snapshot', snapshot);
+    }
+  });
+}
+
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
@@ -217,6 +228,7 @@ const sendSnapshot = () => {
   for (const win of BrowserWindow.getAllWindows()) {
     try {
       if (win.isDestroyed() || win.webContents.isDestroyed()) continue;
+      if (visibleOnlyWindows.has(win) && !win.isVisible()) continue;
       win.webContents.send('now-playing:snapshot', snapshot);
     } catch {
       // ignore windows that are closing while broadcasting

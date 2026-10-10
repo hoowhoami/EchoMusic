@@ -3,137 +3,108 @@ import { join } from 'node:path';
 import { ipcRegistry } from './ipc/registry';
 import { getMainWindow, showMainWindow } from './window';
 import { getMainAppSettings, setMainAppSetting } from './storage/settings';
-import { bindWindowBoundsPersistenceEvents } from './windowBoundsPersistence';
-import { calculateTaskbarDock, type TaskbarDockPlacement } from './taskbarDock';
+import { getNativeTaskbarLyric, type NativeTaskbarLyricSession } from './native/platform';
 import {
-  getTaskbarShellLayout,
-  refreshTaskbarShellLayout,
-  setTaskbarProbeWindow,
-} from './taskbarShell';
+  DEFAULT_TASKBAR_LYRIC_SETTINGS,
+  normalizeTaskbarLyricSettings,
+  resolveTaskbarLyricRegion,
+  type NativeTaskbarLayout,
+  type TaskbarLyricSettings,
+} from '../shared/taskbar';
 import log from './logger';
+import { bindVisibleNowPlayingWindow } from './nowPlaying';
 
 let win: BrowserWindow | null = null;
 let creating: Promise<void> | null = null;
+let session: NativeTaskbarLyricSession | null = null;
 let enabled = false;
-let detached = false;
 let quitting = false;
-let ready = false;
-let placement: TaskbarDockPlacement | null = null;
+let layout: NativeTaskbarLayout | null = null;
+let region: ReturnType<typeof resolveTaskbarLyricRegion> = null;
+let contentWidth = 160;
 let disposeSystem: (() => void) | null = null;
+let settings = { ...DEFAULT_TASKBAR_LYRIC_SETTINGS };
+let settingsLoaded = false;
+const nativeWidth = () => (settings.position === 'left' ? 0 : settings.maxWidth);
+function loadSettings(): void {
+  if (settingsLoaded) return;
+  settings = getMainAppSettings().taskbarLyric;
+  settingsLoaded = true;
+}
 const usable = (value: BrowserWindow | null): value is BrowserWindow =>
   Boolean(value && !value.isDestroyed());
-const display = () => {
+const state = () => ({
+  enabled,
+  visible: usable(win) && win.isVisible(),
+  isDark: layout?.isDark ?? nativeTheme.shouldUseDarkColorsForSystemIntegratedUI,
+  anchor: region?.anchor ?? 'left',
+  maxWidth: region?.bounds.width ?? settings.maxWidth,
+  settings,
+});
+function broadcastState(): void {
+  const value = state();
+  if (usable(win)) win.webContents.send('taskbar-player:state', value);
   const main = getMainWindow();
-  return usable(main) ? screen.getDisplayMatching(main.getBounds()) : screen.getPrimaryDisplay();
-};
-const resolvePlacement = () =>
-  calculateTaskbarDock(display(), placement?.edge, getTaskbarShellLayout(display().id));
-
-function present(force = false): void {
-  if (!usable(win) || !ready) return;
-  const shell = getTaskbarShellLayout(display().id);
-  if (
-    !enabled ||
-    quitting ||
-    (!detached && (shell?.foregroundFullscreen || getMainWindow()?.isFullScreen()))
-  ) {
-    win.hide();
-    return;
-  }
-  if (!detached) {
-    placement = resolvePlacement();
+  if (usable(main)) main.webContents.send('taskbar-player:state', value);
+}
+function applyShape(): void {
+  if (!usable(win) || !region) return;
+  const width = Math.min(region.bounds.width, Math.max(160, Math.ceil(contentWidth)));
+  win.setShape([
+    {
+      x: region.anchor === 'right' ? region.bounds.width - width : 0,
+      y: 0,
+      width,
+      height: region.bounds.height,
+    },
+  ]);
+}
+function present(): void {
+  if (!usable(win)) return;
+  region = layout ? resolveTaskbarLyricRegion(layout, settings) : null;
+  if (!enabled || quitting || !region || getMainWindow()?.isFullScreen()) {
+    if (win.isVisible()) win.hide();
+  } else {
     const before = win.getBounds();
     if (
-      (['x', 'y', 'width', 'height'] as const).some(
-        (key) => Math.abs(before[key] - placement!.bounds[key]) > 1,
-      )
+      (['x', 'y', 'width', 'height'] as const).some((key) => before[key] !== region!.bounds[key])
     ) {
-      win.setBounds(placement.bounds, false);
+      win.setBounds(region.bounds, false);
     }
+    applyShape();
+    if (!win.isVisible()) win.showInactive();
   }
-  const level = !detached && placement?.mode === 'taskbar' ? 'pop-up-menu' : 'floating';
-  win.setAlwaysOnTop(true, level);
-  if (
-    force ||
-    !win.isVisible() ||
-    (!detached && (shell?.playerVisible === false || shell?.shellAbovePlayer === true))
-  ) {
-    win.showInactive();
-    win.moveTop();
-    win.webContents.invalidate();
-  }
-  win.webContents.send('taskbar-player:state', {
-    detached,
-    mode: detached ? 'detached' : placement?.mode,
-    // Windows can use a dark taskbar with light apps (or the reverse).
-    isDark: nativeTheme.shouldUseDarkColorsForSystemIntegratedUI,
-  });
+  broadcastState();
 }
-
-async function refresh(): Promise<void> {
-  if (!enabled || quitting) return;
-  await refreshTaskbarShellLayout();
-  if (!quitting) present();
+function release(): void {
+  disposeSystem?.();
+  disposeSystem = null;
+  session?.stop();
+  session = null;
+  layout = null;
+  region = null;
 }
-
-function installSystemListeners(): void {
-  if (disposeSystem) return;
-  const tick = () => {
-    void refresh();
-  };
-  const recoverDisplay = () => {
-    if (detached && usable(win)) {
-      const b = win.getBounds();
-      if (
-        !screen
-          .getAllDisplays()
-          .some(
-            ({ workArea: a }) =>
-              Math.min(b.x + b.width, a.x + a.width) - Math.max(b.x, a.x) >= 80 &&
-              Math.min(b.y + b.height, a.y + a.height) - Math.max(b.y, a.y) >= 24,
-          )
-      )
-        detached = false;
-    }
-    tick();
-  };
-  const theme = () => present();
-  const main = getMainWindow();
-  const poll = setInterval(tick, 2000);
-  poll.unref();
-  screen.on('display-metrics-changed', recoverDisplay);
-  screen.on('display-added', recoverDisplay);
-  screen.on('display-removed', recoverDisplay);
-  nativeTheme.on('updated', theme);
-  main?.on('enter-full-screen', theme);
-  main?.on('leave-full-screen', tick);
-  disposeSystem = () => {
-    clearInterval(poll);
-    screen.off('display-metrics-changed', recoverDisplay);
-    screen.off('display-added', recoverDisplay);
-    screen.off('display-removed', recoverDisplay);
-    nativeTheme.off('updated', theme);
-    main?.off('enter-full-screen', theme);
-    main?.off('leave-full-screen', tick);
-    disposeSystem = null;
-  };
-}
-
 async function createBar(): Promise<void> {
-  await refreshTaskbarShellLayout();
-  if (!enabled || quitting || usable(win)) return;
-  placement = resolvePlacement();
+  const native = getNativeTaskbarLyric();
+  if (!native) throw new Error('任务栏原生组件不可用，请重新构建 echo-platform-adaptor');
+  if (!enabled || quitting) return;
+  // 嵌入后 Chromium 的透明合成表面只能可靠缩小；初始大小覆盖可用的整个主屏。
+  const display = screen.getPrimaryDisplay();
   const candidate = new BrowserWindow({
-    ...placement.bounds,
-    title: 'EchoMusic 任务栏快捷播控',
+    width: Math.max(display.bounds.width, 800),
+    height: 200,
+    minWidth: 0,
+    minHeight: 0,
+    title: 'EchoMusic 任务栏歌词',
+    type: 'toolbar',
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
     show: false,
     resizable: false,
+    movable: false,
     hasShadow: false,
     skipTaskbar: true,
-    alwaysOnTop: true,
     fullscreenable: false,
     maximizable: false,
     minimizable: false,
@@ -143,59 +114,45 @@ async function createBar(): Promise<void> {
       nodeIntegration: false,
       sandbox: false,
       backgroundThrottling: true,
+      zoomFactor: 1,
+      disableDialogs: true,
     },
   });
   win = candidate;
-  ready = false;
-  setTaskbarProbeWindow(candidate.getNativeWindowHandle());
-  // Reuse upstream's manual-move gate. Async setBounds events cannot detach the bar.
-  bindWindowBoundsPersistenceEvents(candidate, () => {
-    const b = candidate.getBounds(),
-      dock = resolvePlacement().bounds;
-    detached = Math.abs(b.x - dock.x) > 72 || Math.abs(b.y - dock.y) > 28;
-    present();
-  });
+  let recoverOnClose = true;
+  bindVisibleNowPlayingWindow(candidate);
+  contentWidth = settings.maxWidth;
   candidate.on('closed', () => {
-    if (win === candidate) {
-      win = null;
-      ready = false;
-      setTaskbarProbeWindow();
+    if (win !== candidate) return;
+    release();
+    win = null;
+    broadcastState();
+    // Explorer 销毁父窗口时可能一并关闭子窗口；重新建立任务栏嵌入。
+    if (recoverOnClose && enabled && !quitting && !creating) {
+      void setTaskbarPlayerEnabled(true).catch((error) =>
+        log.error('[TaskbarLyric] Recovery failed:', error),
+      );
     }
   });
   candidate.on('page-title-updated', (event) => event.preventDefault());
   candidate.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   candidate.webContents.on('will-navigate', (event) => event.preventDefault());
   candidate.webContents.on('render-process-gone', (_event, details) => {
-    log.error('[TaskbarMediaBar] Renderer exited; use show to reopen', details);
+    recoverOnClose = false;
+    log.error('[TaskbarLyric] Renderer exited:', details);
     if (usable(candidate)) candidate.destroy();
   });
   candidate.webContents.on('context-menu', () => {
     Menu.buildFromTemplate([
-      { label: '打开主窗口', click: () => showMainWindow() },
       {
-        label: '贴回任务栏',
+        label: '打开 EchoMusic',
         click: () => {
-          detached = false;
-          present(true);
-        },
-      },
-      {
-        label: '展开为小窗',
-        click: () => {
-          detached = true;
-          const area = display().workArea;
-          candidate.setBounds({
-            x: area.x + 16,
-            y: area.y + area.height - 80,
-            width: 420,
-            height: 54,
-          });
-          present(true);
+          void showMainWindow();
         },
       },
       { type: 'separator' },
       {
-        label: '关闭快捷播控',
+        label: '关闭任务栏歌词',
         click: () => {
           void setTaskbarPlayerEnabled(false);
         },
@@ -206,70 +163,120 @@ async function createBar(): Promise<void> {
     const dev = process.env.VITE_DEV_SERVER_URL;
     if (dev) await candidate.loadURL(new URL('taskbar-player.html', dev).href);
     else await candidate.loadFile(join(__dirname, '../../dist/taskbar-player.html'));
-    if (win !== candidate || !usable(candidate)) return;
-    ready = true;
-    await refreshTaskbarShellLayout();
-    present(true);
+    if (win !== candidate || !usable(candidate) || !enabled || quitting) return;
+    const handle = candidate.getNativeWindowHandle();
+    const hwnd =
+      handle.length >= 8 ? handle.readBigUInt64LE().toString() : String(handle.readUInt32LE());
+    session = new native.TaskbarLyricSession(hwnd, nativeWidth(), (value) => {
+      if (win !== candidate || !usable(candidate) || !enabled || quitting) return;
+      layout = value;
+      present();
+    });
+    const refresh = () => session?.update(nativeWidth());
+    const main = getMainWindow();
+    screen.on('display-metrics-changed', refresh);
+    screen.on('display-added', refresh);
+    screen.on('display-removed', refresh);
+    nativeTheme.on('updated', refresh);
+    main?.on('enter-full-screen', present);
+    main?.on('leave-full-screen', refresh);
+    disposeSystem = () => {
+      screen.off('display-metrics-changed', refresh);
+      screen.off('display-added', refresh);
+      screen.off('display-removed', refresh);
+      nativeTheme.off('updated', refresh);
+      main?.off('enter-full-screen', present);
+      main?.off('leave-full-screen', refresh);
+    };
+    broadcastState();
   } catch (error) {
     if (usable(candidate)) candidate.destroy();
     throw error;
   }
 }
-
-export async function setTaskbarPlayerEnabled(
-  value: boolean,
-): Promise<{ enabled: boolean; visible: boolean }> {
-  if (process.platform !== 'win32') throw new Error('任务栏快捷播控仅支持 Windows');
+export async function setTaskbarPlayerEnabled(value: boolean): Promise<ReturnType<typeof state>> {
+  if (process.platform !== 'win32') throw new Error('任务栏歌词仅支持 Windows');
+  loadSettings();
   enabled = value;
-  setMainAppSetting('taskbarPlayerEnabled', value);
-  // A shared attempt can finish without a window after a concurrent disable.
-  // Reconcile the latest intent after every await, including attempts whose
-  // BrowserWindow exists but whose page has not finished loading yet.
-  while (enabled && !quitting && (creating || !usable(win))) {
-    if (!creating)
-      creating = createBar().finally(() => {
-        creating = null;
-      });
-    await creating;
+  if (!enabled) {
+    if (usable(win)) win.destroy();
+    else release();
   }
-  present(true);
-  if (!enabled || quitting) disposeSystem?.();
-  else installSystemListeners();
-  return { enabled, visible: usable(win) && win.isVisible() };
+  try {
+    while (enabled && !quitting && (creating || !usable(win))) {
+      if (!creating)
+        creating = createBar().finally(() => {
+          creating = null;
+        });
+      await creating;
+    }
+  } catch (error) {
+    enabled = false;
+    setMainAppSetting('taskbarPlayerEnabled', false);
+    broadcastState();
+    throw error;
+  }
+  if (!quitting) setMainAppSetting('taskbarPlayerEnabled', enabled);
+  present();
+  broadcastState();
+  return state();
 }
-
+function isSender(senderId: number): boolean {
+  const main = getMainWindow();
+  return (
+    (usable(main) && senderId === main.webContents.id) ||
+    (usable(win) && senderId === win.webContents.id)
+  );
+}
 export function registerTaskbarPlayerHandlers(): void {
   ipcRegistry.registerHandler('taskbar-player:set-enabled', (event, value: boolean) => {
-    const main = getMainWindow();
-    if (
-      (!usable(main) || event.sender.id !== main.webContents.id) &&
-      (!usable(win) || event.sender.id !== win.webContents.id)
-    )
-      throw new Error('Invalid taskbar sender');
+    if (!isSender(event.sender.id)) throw new Error('Invalid taskbar sender');
     if (typeof value !== 'boolean') throw new Error('Invalid taskbar state');
     return setTaskbarPlayerEnabled(value);
   });
-  ipcRegistry.registerHandler('taskbar-player:get-state', () => ({
-    enabled,
-    visible: usable(win) && win.isVisible(),
-    isDark: nativeTheme.shouldUseDarkColorsForSystemIntegratedUI,
-  }));
+  ipcRegistry.registerHandler('taskbar-player:get-state', () => {
+    loadSettings();
+    return state();
+  });
+  ipcRegistry.registerHandler(
+    'taskbar-player:set-settings',
+    (event, value: Partial<TaskbarLyricSettings>) => {
+      if (!isSender(event.sender.id)) throw new Error('Invalid taskbar sender');
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        throw new Error('Invalid taskbar settings');
+      loadSettings();
+      settings = normalizeTaskbarLyricSettings({ ...settings, ...value });
+      setMainAppSetting('taskbarLyric', settings);
+      session?.update(nativeWidth());
+      present();
+      return state();
+    },
+  );
+  ipcRegistry.registerListener('taskbar-player:content-width', (event, width: number) => {
+    if (
+      !usable(win) ||
+      event.sender.id !== win.webContents.id ||
+      !Number.isFinite(width) ||
+      width <= 0
+    )
+      return;
+    contentWidth = Math.min(settings.maxWidth, width);
+    applyShape();
+  });
   ipcRegistry.registerListener('taskbar-player:show-main', (event) => {
     if (usable(win) && event.sender.id === win.webContents.id) showMainWindow();
   });
 }
-
 export function restoreTaskbarPlayer(): void {
   quitting = false;
   if (process.platform === 'win32' && getMainAppSettings().taskbarPlayerEnabled) {
     void setTaskbarPlayerEnabled(true).catch((error) =>
-      log.error('[TaskbarMediaBar] Restore failed:', error),
+      log.error('[TaskbarLyric] Restore failed:', error),
     );
   }
 }
-
 export function cleanupTaskbarPlayer(): void {
   quitting = true;
-  disposeSystem?.();
+  release();
   if (usable(win)) win.destroy();
 }

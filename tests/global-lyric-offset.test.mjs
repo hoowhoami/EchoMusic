@@ -10,6 +10,8 @@ import * as persistence from '../src/shared/storePersistence.ts';
 import * as lyrics from '../src/shared/lyrics.ts';
 import * as desktopLyric from '../src/shared/desktopLyric.ts';
 import * as nowPlaying from '../src/shared/nowPlaying.ts';
+import * as miniPlayer from '../src/shared/miniPlayer.ts';
+import * as accentPalette from '../src/shared/accentPalette.ts';
 import * as lruMap from '../src/renderer/utils/lruMap.ts';
 import { parse, compileScript } from '@vue/compiler-sfc';
 
@@ -240,6 +242,10 @@ test('paused global calibration reaches now-playing/taskbar, Mini and desktop sn
     '../../shared/nowPlaying': nowPlaying,
     '../../shared/lyrics': lyrics,
     '../../shared/desktopLyric': desktopLyric,
+    '../../shared/miniPlayer': miniPlayer,
+    '../../shared/lyricColor': compile('../src/shared/lyricColor.ts', {
+      './accentPalette': accentPalette,
+    }),
   };
   for (const [file, init] of [
     ['nowPlaying', 'initNowPlayingSync'],

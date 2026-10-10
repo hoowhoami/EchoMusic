@@ -258,10 +258,8 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
         return;
       }
 
-      // 任务栏 DWM 缩略图需要及时响应系统请求，不能被 SMTC 的异步元数据更新挡住。
-      // 仅在有可用封面时才更新为真实封面；切歌瞬间若新封面尚未就绪，
-      // 保留上一张封面，避免 DWM 回退到实时窗口捕获而显示黑窗。
-      // 无真实封面时传 null，由 taskbarThumbnail 内部兜底封面机制负责回退。
+      // DWM 的有界位图缓存先更新，避免被 SMTC 的异步元数据更新挡住。
+      // 无封面时显示本地图标，不能继续沿用上一首歌的封面。
       setTaskbarCover(coverData);
 
       try {

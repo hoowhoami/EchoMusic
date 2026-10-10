@@ -4,11 +4,14 @@ Windows and macOS desktop window integration. This addon owns HWND/DWM behavior 
 local AppKit mouse observation; it has no
 SMTC/MPRIS/Now Playing lifecycle or audio dependencies.
 
-- `src/window_composition.rs`: DWM alpha clear and optional Accent BlurBehind backends.
-- `src/taskbar.rs`: iconic thumbnail and Aero Peek cover previews, moved from
-  `echo-media-controls` without changing their API or image processing.
+- `src/lib.rs`: platform-gated module entry point.
+- `src/windows/window_composition.rs`: DWM alpha clear and optional Accent BlurBehind backends.
+- `src/windows/double_click.rs`: native window double-click observation.
+- `src/windows/taskbar/thumbnail.rs`: DWM thumbnail and Aero Peek previews with bounded BGRA / GDI caches.
+- `src/windows/taskbar/lyric.rs`: primary-taskbar embedding and event-driven shell layout.
+- `src/windows/taskbar/geometry.rs`: platform-independent bitmap fitting and occupied-area subtraction.
 - `src/main/native/platform.ts` in the application: shared loader and API validation.
-- `src/window_pointer.rs`: macOS local mouse-down monitor for the main window. It
+- `src/macos/window_pointer.rs`: macOS local mouse-down monitor for the main window. It
   returns every event unchanged so native dragging and double-click behavior remain
   intact. It does not observe other applications or require Accessibility permission.
 
@@ -33,7 +36,8 @@ cargo check --manifest-path native/echo-platform-adaptor/Cargo.toml --target x86
 
 ## Ownership and fallback
 
-Only the main process calls this addon, synchronously on the HWND's UI thread.
+Only the main process calls this addon. Composition and thumbnail operations run
+on the HWND's UI thread; taskbar lyric UIA scanning runs on a separate COM thread.
 No window handles or Accent state values are accepted directly from a renderer.
 Media controls remain in `echo-media-controls`; enabling/disabling media controls
 does not initialize or tear down this addon.
@@ -157,3 +161,51 @@ on transparent windows and therefore never enters a size modal loop.
 Both clear and frost now have production implementations, but Windows 10 visual
 regression is still required. Clear uses Electron transparency; frost uses Accent
 Acrylic. The reported working Windows 11 22H2+ native composition path is unchanged.
+
+
+## Taskbar integration
+
+The architecture follows the native embedding / cover-preview approach examined in
+`../SPlayer-Next`: EchoMusic implements its own session and bitmap ownership inside
+this addon, and uses its existing now-playing clock, theme tokens and Tabler icons.
+No upstream native source or artwork is vendored.
+
+The lyric window is a child of the primary `Shell_TrayWnd`. Win11 uses UIA structure
+notifications and WinEvent location changes to find free intervals; Win10 reserves
+and restores space in the native task list. `TaskbarCreated`, display and theme
+messages trigger reattachment/layout updates. Events are coalesced; there is no
+periodic shell probe or C# helper. Unknown, vertical, crowded and full-screen layouts
+hide the child instead of moving a floating window onto the desktop. Secondary
+monitor taskbars are currently outside the supported surface.
+
+Coordinates sent to Electron are parent-client physical pixels plus the taskbar's
+DPI. Content uses `setShape` to release unused hit-test space without moving the
+HWND on each line. Hidden windows stop receiving playback snapshots and stop RAF;
+showing sends the latest snapshot even when playback is paused. Stop restores the
+Win10 task list, removes callbacks/hooks/timers and releases COM state.
+
+Thumbnail setup installs the native subclass and a prepared bitmap before enabling
+iconic flags. Each cover is decoded once in main, bounded to 512px, and passed as
+premultiplied BGRA. Only one cover, one requested thumbnail and one Peek bitmap are
+cached. No-cover uses the bundled EchoMusic icon; closing or disabling releases all
+native bitmaps. DWM enable errors roll back to the live window preview.
+
+API constraints are documented in Microsoft's
+[SetParent reference](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setparent)
+and [DWM thumbnail reference](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmseticonicthumbnail).
+SetParent style changes are rolled back on failure, including DPI-mode failures.
+
+Run the relevant JavaScript tests under `tests/taskbar-*.test.mjs`, plus
+`tests/native-platform-loader.test.mjs`. Pure native geometry tests can run on macOS:
+
+```sh
+rustc --test native/echo-platform-adaptor/src/windows/taskbar/geometry.rs -o /tmp/echo-taskbar-geometry-tests
+/tmp/echo-taskbar-geometry-tests
+```
+
+Windows acceptance still requires the rebuilt `.node` file and a real desktop:
+check 100/125/150/200% DPI, left/center taskbar alignment, adding/removing taskbar
+buttons, auto-hide, Explorer restart, full-screen entry/exit, hover/keyboard controls,
+and DWM thumbnail/Peek after toggling, switching to a track without a cover, and
+recreating the main window. Cross-target `cargo check` and browser fixtures cannot
+establish native z-order, DPI or compositor behavior.

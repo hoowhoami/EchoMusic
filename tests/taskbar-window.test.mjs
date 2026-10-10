@@ -5,8 +5,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { transformSync } from 'esbuild';
 import { join } from 'node:path';
-
-const load = (file, mocks, globals = {}) => {
+const load = (file, mocks, extras = {}) => {
   const module = { exports: {} };
   runInNewContext(
     transformSync(readFileSync(new URL(file, import.meta.url), 'utf8'), {
@@ -15,69 +14,61 @@ const load = (file, mocks, globals = {}) => {
     }).code,
     {
       module,
+      Buffer,
       process: { platform: 'win32', env: {} },
-      __dirname: 'test',
+      __dirname: '/test',
       require: (id) => {
-        if (id in mocks) return mocks[id];
-        throw new Error(`Unexpected dependency ${id}`);
+        assert.ok(id in mocks, id);
+        return mocks[id];
       },
-      ...globals,
+      ...extras,
     },
   );
   return module.exports;
 };
-
-function setup({ refresh = async () => {}, loadPage = async () => {} } = {}) {
+const shared = load('../src/shared/taskbar.ts', {});
+const layout = () => ({
+  left: { x: 0, y: 0, width: 600, height: 48 },
+  right: { x: 1300, y: 0, width: 400, height: 48 },
+  scaleFactor: 1,
+  centered: true,
+  isDark: true,
+  available: true,
+});
+function setup({ page = async () => {}, available = true } = {}) {
   const windows = [],
-    timers = new Set(),
-    handlers = new Map();
-  const monitor = {
-    id: 1,
-    bounds: { x: 0, y: 0, width: 1920, height: 1080 },
-    workArea: { x: 0, y: 0, width: 1920, height: 1032 },
-  };
-  const shell = { foregroundFullscreen: false, shellAbovePlayer: false };
+    sessions = [],
+    handlers = new Map(),
+    listeners = new Map(),
+    settings = {
+      taskbarLyric: { ...shared.DEFAULT_TASKBAR_LYRIC_SETTINGS },
+      taskbarPlayerEnabled: false,
+    };
   const main = Object.assign(new EventEmitter(), {
     isDestroyed: () => false,
-    getBounds: () => monitor.bounds,
     isFullScreen: () => false,
-    webContents: { id: 1 },
-  });
-  const screen = Object.assign(new EventEmitter(), {
-    getDisplayMatching: () => monitor,
-    getPrimaryDisplay: () => monitor,
-    getAllDisplays: () => [monitor],
+    webContents: { id: 1, send() {} },
   });
   const theme = Object.assign(new EventEmitter(), {
-    shouldUseDarkColors: false,
-    shouldUseDarkColorsForSystemIntegratedUI: false,
+    shouldUseDarkColorsForSystemIntegratedUI: true,
   });
-  let failLoad = false,
-    saved = false;
+  const screen = Object.assign(new EventEmitter(), {
+    getPrimaryDisplay: () => ({ bounds: { width: 1920, height: 1080 } }),
+  });
   class Window extends EventEmitter {
     constructor(options) {
       super();
       this.options = options;
-      this.bounds = { x: options.x, y: options.y, width: options.width, height: options.height };
+      this.bounds = { x: 0, y: 0, width: options.width, height: options.height };
       this.visible = false;
       this.dead = false;
-      this.presentations = 0;
-      this.levels = [];
       this.sent = [];
       this.webContents = Object.assign(new EventEmitter(), {
         id: windows.length + 2,
         setWindowOpenHandler() {},
-        invalidate() {},
         send: (...args) => this.sent.push(args),
       });
       windows.push(this);
-    }
-    getBounds() {
-      return this.bounds;
-    }
-    setBounds(value) {
-      this.bounds = { ...value };
-      this.emit('moved');
     }
     isDestroyed() {
       return this.dead;
@@ -85,19 +76,25 @@ function setup({ refresh = async () => {}, loadPage = async () => {} } = {}) {
     isVisible() {
       return this.visible;
     }
-    getNativeWindowHandle() {
-      return Buffer.alloc(8);
+    getBounds() {
+      return this.bounds;
     }
-    setAlwaysOnTop(value, level) {
-      this.levels.push(level);
+    setBounds(b) {
+      this.bounds = { ...b };
+    }
+    setShape(shape) {
+      this.shape = shape;
     }
     showInactive() {
       this.visible = true;
-      this.presentations++;
     }
-    moveTop() {}
     hide() {
       this.visible = false;
+    }
+    getNativeWindowHandle() {
+      const h = Buffer.alloc(8);
+      h.writeBigUInt64LE(BigInt(this.webContents.id));
+      return h;
     }
     destroy() {
       this.dead = true;
@@ -105,269 +102,187 @@ function setup({ refresh = async () => {}, loadPage = async () => {} } = {}) {
       this.emit('closed');
     }
     async loadFile() {
-      if (failLoad) throw new Error('test load failed');
-      await loadPage(this);
+      await page(this);
     }
   }
-  const boundsGate = load('../src/main/windowBoundsPersistence.ts', {});
-  const api = load(
-    '../src/main/taskbarMediaBar.ts',
-    {
-      electron: {
-        BrowserWindow: Window,
-        Menu: { buildFromTemplate: () => ({ popup() {} }) },
-        nativeTheme: theme,
-        screen,
-      },
-      'node:path': { join },
-      './ipc/registry': {
-        ipcRegistry: {
-          registerHandler: (key, fn) => handlers.set(key, fn),
-          registerListener() {},
-        },
-      },
-      './window': { getMainWindow: () => main, showMainWindow() {} },
-      './storage/settings': {
-        getMainAppSettings: () => ({ taskbarPlayerEnabled: saved }),
-        setMainAppSetting: (_key, value) => {
-          saved = value;
-        },
-      },
-      './windowBoundsPersistence': boundsGate,
-      './taskbarDock': {
-        calculateTaskbarDock: () => ({
-          mode: 'taskbar',
-          edge: 'bottom',
-          bounds: { x: 640, y: 1033, width: 360, height: 46 },
-        }),
-      },
-      './taskbarShell': {
-        getTaskbarShellLayout: () => shell,
-        refreshTaskbarShellLayout: refresh,
-        setTaskbarProbeWindow() {},
-      },
-      './logger': { __esModule: true, default: { error() {} } },
+  class Session {
+    constructor(handle, width, callback) {
+      this.handle = handle;
+      this.width = width;
+      this.callback = callback;
+      this.stopped = false;
+      sessions.push(this);
+    }
+    update(width) {
+      this.width = width;
+    }
+    stop() {
+      this.stopped = true;
+    }
+    emit(value = layout()) {
+      this.callback(value);
+    }
+  }
+  const api = load('../src/main/taskbarMediaBar.ts', {
+    electron: {
+      BrowserWindow: Window,
+      Menu: { buildFromTemplate: () => ({ popup() {} }) },
+      nativeTheme: theme,
+      screen,
     },
-    {
-      setInterval: (callback) => {
-        const timer = { callback, unref() {} };
-        timers.add(timer);
-        return timer;
+    'node:path': { join },
+    './ipc/registry': {
+      ipcRegistry: {
+        registerHandler: (key, fn) => handlers.set(key, fn),
+        registerListener: (key, fn) => listeners.set(key, fn),
       },
-      clearInterval: (timer) => timers.delete(timer),
     },
-  );
+    './window': { getMainWindow: () => main, showMainWindow() {} },
+    './storage/settings': {
+      getMainAppSettings: () => settings,
+      setMainAppSetting: (key, value) => (settings[key] = value),
+    },
+    './native/platform': {
+      getNativeTaskbarLyric: () => (available ? { TaskbarLyricSession: Session } : null),
+    },
+    './nowPlaying': { bindVisibleNowPlayingWindow() {} },
+    '../shared/taskbar': shared,
+    './logger': { __esModule: true, default: { error() {} } },
+  });
   api.registerTaskbarPlayerHandlers();
-  return {
-    api,
-    windows,
-    shell,
-    screen,
-    theme,
-    timers,
-    handlers,
-    fail: (value) => {
-      failLoad = value;
-    },
-  };
+  return { api, windows, sessions, handlers, listeners, settings, screen, theme, main };
 }
-
-test('enable retries when it joins a creation that already bailed out while disabled', async () => {
-  let finishProbe;
-  let probes = 0;
-  const env = setup({
-    refresh: () =>
-      ++probes === 1
-        ? {
-            then: (resolve) => {
-              finishProbe = resolve;
-            },
-          }
-        : undefined,
-  });
-  const first = env.api.setTaskbarPlayerEnabled(true);
-  await new Promise(setImmediate);
-  await env.api.setTaskbarPlayerEnabled(false);
-  finishProbe();
-  // createBar sees disabled and returns; its shared promise has not settled yet.
-  await Promise.resolve();
-  assert.equal(env.windows.length, 0);
-  const reopened = env.api.setTaskbarPlayerEnabled(true);
-  env.api.restoreTaskbarPlayer();
-  const results = await Promise.all([first, reopened]);
-  assert.equal(env.windows.length, 1);
-  assert.ok(results.every((result) => result.enabled && result.visible));
-  assert.equal(env.timers.size, 1);
-  env.api.cleanupTaskbarPlayer();
-});
-
-test('concurrent enable waits for the existing window to finish loading', async () => {
-  const page = Promise.withResolvers();
-  const env = setup({ loadPage: () => page.promise });
-  const first = env.api.setTaskbarPlayerEnabled(true);
-  await new Promise(setImmediate);
-  assert.equal(env.windows.length, 1);
-  let settled = false;
-  const second = env.api.setTaskbarPlayerEnabled(true).then((result) => {
-    settled = true;
-    return result;
-  });
-  await new Promise(setImmediate);
-  assert.equal(settled, false);
-  page.resolve();
-  const results = await Promise.all([first, second]);
-  assert.ok(results.every((result) => result.visible));
-  assert.equal(env.windows.length, 1);
-  env.api.cleanupTaskbarPlayer();
-});
-
-test('disable during page load wins without reinstalling system listeners', async () => {
-  const page = Promise.withResolvers();
-  const env = setup({ loadPage: () => page.promise });
-  const pending = env.api.setTaskbarPlayerEnabled(true);
-  await new Promise(setImmediate);
-  await env.api.setTaskbarPlayerEnabled(false);
-  page.resolve();
-  const state = await pending;
-  assert.equal(state.enabled, false);
-  assert.equal(state.visible, false);
-  assert.equal(env.timers.size, 0);
-  assert.equal(env.screen.listenerCount('display-added'), 0);
-  env.api.cleanupTaskbarPlayer();
-});
-
-test('cleanup during a pending shell probe does not recreate windows or listeners', async () => {
-  const probe = Promise.withResolvers();
-  const env = setup({ refresh: () => probe.promise });
-  const pending = env.api.setTaskbarPlayerEnabled(true);
-  env.api.cleanupTaskbarPlayer();
-  probe.resolve();
-  assert.equal((await pending).visible, false);
-  assert.equal(env.windows.length, 0);
-  assert.equal(env.timers.size, 0);
-  assert.equal(env.screen.listenerCount('display-added'), 0);
-});
-
-test('concurrent show requests create one isolated window and explicit reopening restores presentation', async () => {
-  const env = setup();
-  await Promise.all([env.api.setTaskbarPlayerEnabled(true), env.api.setTaskbarPlayerEnabled(true)]);
-  assert.equal(env.windows.length, 1);
-  const win = env.windows[0];
-  assert.equal(win.options.skipTaskbar, true);
+test('concurrent enable creates one hidden window, then shows only after a valid native layout', async () => {
+  const f = setup();
+  await Promise.all([f.api.setTaskbarPlayerEnabled(true), f.api.setTaskbarPlayerEnabled(true)]);
+  assert.equal(f.windows.length, 1);
+  assert.equal(f.sessions.length, 1);
+  const win = f.windows[0];
+  assert.equal(win.visible, false);
+  assert.equal(win.options.alwaysOnTop, undefined);
+  assert.equal(win.options.movable, false);
   assert.equal(win.options.webPreferences.nodeIntegration, false);
-  assert.equal(win.options.webPreferences.webSecurity, undefined);
-  assert.equal(win.levels.at(-1), 'pop-up-menu');
-  const before = win.presentations;
-  await env.api.setTaskbarPlayerEnabled(true);
-  assert.ok(win.presentations > before);
-  assert.equal(env.timers.size, 1);
-  env.api.cleanupTaskbarPlayer();
-  assert.equal(env.timers.size, 0);
+  f.sessions[0].emit();
+  assert.equal(win.visible, true);
+  assert.equal(win.bounds.width, 400);
+  assert.equal(win.bounds.x, 8);
+  f.api.cleanupTaskbarPlayer();
+  assert.equal(f.sessions[0].stopped, true);
+  assert.equal(f.screen.listenerCount('display-added'), 0);
 });
-
-test('programmatic moved events keep docking; a real manual move detaches', async () => {
-  const env = setup();
-  await env.api.setTaskbarPlayerEnabled(true);
-  const win = env.windows[0];
-  win.setBounds({ x: 100, y: 100, width: 360, height: 46 });
-  await env.api.setTaskbarPlayerEnabled(true);
-  assert.equal(win.bounds.y, 1033);
-  win.emit('will-move');
-  win.setBounds({ x: 100, y: 100, width: 360, height: 46 });
-  assert.equal(win.bounds.y, 100);
-  assert.equal(win.levels.at(-1), 'floating');
-  env.api.cleanupTaskbarPlayer();
+test('disable during page load destroys the candidate and prevents native session startup', async () => {
+  const page = Promise.withResolvers();
+  const f = setup({ page: () => page.promise });
+  const pending = f.api.setTaskbarPlayerEnabled(true);
+  await new Promise(setImmediate);
+  await f.api.setTaskbarPlayerEnabled(false);
+  page.resolve();
+  assert.equal((await pending).enabled, false);
+  assert.equal(f.sessions.length, 0);
+  assert.equal(f.windows[0].dead, true);
 });
-
-test('fullscreen hides and restores; disabled stays hidden; crashed renderer can reopen', async () => {
-  const env = setup();
-  await env.api.setTaskbarPlayerEnabled(true);
-  const win = env.windows[0];
-  env.shell.foregroundFullscreen = true;
-  assert.equal((await env.api.setTaskbarPlayerEnabled(true)).visible, false);
-  env.shell.foregroundFullscreen = false;
-  assert.equal((await env.api.setTaskbarPlayerEnabled(true)).visible, true);
-  await env.api.setTaskbarPlayerEnabled(false);
-  env.theme.emit('updated');
+test('cleanup during creation neither recreates a window nor overwrites persisted visibility', async () => {
+  const page = Promise.withResolvers();
+  const f = setup({ page: () => page.promise });
+  const pending = f.api.setTaskbarPlayerEnabled(true);
+  f.api.cleanupTaskbarPlayer();
+  page.resolve();
+  assert.equal((await pending).visible, false);
+  assert.equal(f.sessions.length, 0);
+});
+test('crowded, fullscreen and failed layouts hide, valid space restores without raising over shell', async () => {
+  const f = setup();
+  await f.api.setTaskbarPlayerEnabled(true);
+  const win = f.windows[0],
+    s = f.sessions[0];
+  s.emit();
+  assert.equal(win.visible, true);
+  s.emit({ ...layout(), available: false });
   assert.equal(win.visible, false);
-  assert.equal(env.timers.size, 0);
-  await env.api.setTaskbarPlayerEnabled(true);
-  win.webContents.emit('render-process-gone', {}, { reason: 'crashed' });
-  assert.equal(win.dead, true);
-  await env.api.setTaskbarPlayerEnabled(true);
-  assert.equal(env.windows.length, 2);
-  assert.equal(env.windows[1].visible, true);
-  env.api.cleanupTaskbarPlayer();
+  s.emit({
+    ...layout(),
+    left: { x: 0, y: 0, width: 100, height: 48 },
+    right: { x: 0, y: 0, width: 100, height: 48 },
+  });
+  assert.equal(win.visible, false);
+  s.emit();
+  assert.equal(win.visible, true);
+  f.main.isFullScreen = () => true;
+  f.main.emit('enter-full-screen');
+  assert.equal(win.visible, false);
+  f.api.cleanupTaskbarPlayer();
 });
-
-test('failed page load rejects rather than reporting shown, and retry is possible', async () => {
-  const env = setup();
-  env.fail(true);
-  await assert.rejects(env.api.setTaskbarPlayerEnabled(true), /test load failed/);
-  assert.equal(env.windows[0].dead, true);
-  env.fail(false);
-  assert.equal((await env.api.setTaskbarPlayerEnabled(true)).visible, true);
-  env.api.cleanupTaskbarPlayer();
+test('stale callbacks from a destroyed session cannot move or show the replacement', async () => {
+  const f = setup();
+  await f.api.setTaskbarPlayerEnabled(true);
+  const old = f.sessions[0];
+  await f.api.setTaskbarPlayerEnabled(false);
+  await f.api.setTaskbarPlayerEnabled(true);
+  const win = f.windows[1];
+  old.emit();
+  assert.equal(win.visible, false);
+  f.sessions[1].emit();
+  assert.equal(win.visible, true);
+  f.api.cleanupTaskbarPlayer();
 });
-
-test('only main or the bar can change its visibility', async () => {
-  const env = setup();
-  const change = env.handlers.get('taskbar-player:set-enabled');
-  assert.throws(() => change({ sender: { id: 999 } }, true), /Invalid taskbar sender/);
-  assert.throws(() => change({ sender: { id: 1 } }, 'true'), /Invalid taskbar state/);
-  await change({ sender: { id: 1 } }, true);
-  await change({ sender: { id: env.windows[0].webContents.id } }, false);
-  assert.equal(env.windows[0].visible, false);
-  env.api.cleanupTaskbarPlayer();
+test('content clipping leaves unused region clickable and honors right anchoring without moving HWND', async () => {
+  const f = setup();
+  await f.api.setTaskbarPlayerEnabled(true);
+  const win = f.windows[0];
+  f.handlers.get('taskbar-player:set-settings')({ sender: { id: 1 } }, { position: 'right' });
+  f.sessions[0].emit();
+  const before = { ...win.bounds };
+  f.listeners.get('taskbar-player:content-width')({ sender: { id: win.webContents.id } }, 190);
+  assert.deepEqual(win.bounds, before);
+  assert.equal(win.shape[0].width, 190);
+  assert.equal(win.shape[0].x, win.bounds.width - 190);
+  f.listeners.get('taskbar-player:content-width')({ sender: { id: 999 } }, 300);
+  assert.equal(win.shape[0].width, 190);
+  f.api.cleanupTaskbarPlayer();
 });
-
-test('periodic native hidden/occluded evidence restores an Electron-visible docked window', async () => {
-  const env = setup();
-  await env.api.setTaskbarPlayerEnabled(true);
-  const win = env.windows[0];
-  const tick = async () => {
-    [...env.timers][0].callback();
-    await new Promise(setImmediate);
-  };
-  let before = win.presentations;
-  await tick();
-  assert.equal(win.presentations, before, 'unknown native state must not repeatedly raise the bar');
-  env.shell.playerVisible = false;
-  await tick();
-  assert.ok(
-    win.presentations > before,
-    'actual hidden HWND must be restored even if Electron says visible',
+test('settings persist, clamp malformed inputs, and all mutations reject foreign senders', async () => {
+  const f = setup();
+  const set = f.handlers.get('taskbar-player:set-settings');
+  assert.throws(() => set({ sender: { id: 999 } }, { maxWidth: 200 }), /sender/);
+  const s = set({ sender: { id: 1 } }, { maxWidth: Infinity, fontSize: 999, showCover: false });
+  assert.equal(s.settings.maxWidth, 400);
+  assert.equal(s.settings.fontSize, 22);
+  assert.equal(f.settings.taskbarLyric.showCover, false);
+  assert.throws(
+    () => f.handlers.get('taskbar-player:set-enabled')({ sender: { id: 1 } }, 'yes'),
+    /state/,
   );
-  before = win.presentations;
-  env.shell.playerVisible = true;
-  env.shell.shellAbovePlayer = true;
-  await tick();
-  assert.ok(win.presentations > before, 'Explorer occlusion must restore z-order');
-  before = win.presentations;
-  env.shell.foregroundFullscreen = true;
-  env.shell.playerVisible = false;
-  await tick();
-  assert.equal(win.visible, false);
-  assert.equal(win.presentations, before, 'fullscreen suppression must win over recovery');
-  env.api.cleanupTaskbarPlayer();
 });
-
-test('initial and live bar theme follows Windows shell, not the independently selected app theme', async () => {
-  for (const systemDark of [false, true]) {
-    for (const appDark of [false, true]) {
-      const env = setup();
-      env.theme.shouldUseDarkColors = appDark;
-      env.theme.shouldUseDarkColorsForSystemIntegratedUI = systemDark;
-      const getState = env.handlers.get('taskbar-player:get-state');
-      assert.equal(getState().isDark, systemDark);
-      await env.api.setTaskbarPlayerEnabled(true);
-      const win = env.windows[0];
-      assert.equal(win.sent.at(-1)[1].isDark, systemDark);
-      env.theme.shouldUseDarkColorsForSystemIntegratedUI = !systemDark;
-      env.theme.emit('updated');
-      assert.equal(win.sent.at(-1)[1].isDark, !systemDark);
-      assert.equal(getState().isDark, !systemDark);
-      env.api.cleanupTaskbarPlayer();
-    }
+test('native failure and page failure reject honestly and reset persisted enable state', async () => {
+  for (const options of [
+    { available: false },
+    {
+      page: async () => {
+        throw Error('page failed');
+      },
+    },
+  ]) {
+    const f = setup(options);
+    await assert.rejects(f.api.setTaskbarPlayerEnabled(true));
+    assert.equal(f.settings.taskbarPlayerEnabled, false);
+    assert.equal(f.handlers.get('taskbar-player:get-state')().enabled, false);
   }
+});
+test('DPI conversion uses parent-client coordinates and explicit position never steals the other side', () => {
+  const settings = shared.DEFAULT_TASKBAR_LYRIC_SETTINGS;
+  const r = shared.resolveTaskbarLyricRegion(
+    { ...layout(), scaleFactor: 1.5, left: { x: 30, y: 0, width: 900, height: 72 } },
+    settings,
+  );
+  assert.equal(r.bounds.x, 28);
+  assert.equal(r.bounds.height, 48);
+  assert.equal(r.bounds.width, 400);
+  assert.equal(
+    shared.resolveTaskbarLyricRegion(
+      { ...layout(), left: { x: 0, y: 0, width: 40, height: 48 } },
+      { ...settings, position: 'left' },
+    ),
+    null,
+  );
+  assert.equal(shared.resolveTaskbarLyricRegion({ ...layout(), scaleFactor: NaN }, settings), null);
 });

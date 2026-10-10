@@ -280,8 +280,11 @@ test('catalog refresh after uninstall removes completed update feedback', async 
 });
 
 test('startup checker is registered independently of plugin activation', () => {
-  const app = readFileSync(new URL('../src/renderer/App.vue', import.meta.url), 'utf8');
-  const registration = app.indexOf('disposePluginUpdateCheck = setupStartupPluginUpdateCheck();');
+  const app = readFileSync(
+    new URL('../src/renderer/app/useAppRuntime.ts', import.meta.url),
+    'utf8',
+  );
+  const registration = app.indexOf('lifetime.add(setupStartupPluginUpdateCheck());');
   assert.ok(registration > 0);
   assert.ok(app.indexOf('void refreshPlugins();', registration) > registration);
   assert.equal(app.includes('refreshPlugins().then('), false);

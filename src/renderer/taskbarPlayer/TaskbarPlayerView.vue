@@ -2,159 +2,272 @@
 import '@/theme/sliders.css';
 import { neutralThemePalette, DEFAULT_THEME_ACCENT } from '../../shared/themePalette';
 import { createAccentPaletteFromPrimary } from '../../shared/accentPalette';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import {
+  DEFAULT_TASKBAR_LYRIC_SETTINGS,
+  normalizeTaskbarLyricSettings,
+  type TaskbarLyricState,
+} from '../../shared/taskbar';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { Icon } from '@iconify/vue';
+import {
+  iconHeart,
+  iconHeartFilled,
+  iconMusic,
+  iconPause,
+  iconPlay,
+  iconSkipBack,
+  iconSkipForward,
+} from '@/icons';
 import { SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import SliderRoot from '@/components/ui/SliderRoot.vue';
-import type { NowPlayingCommand, NowPlayingSnapshot } from '../../shared/nowPlaying';
+import TaskbarLyricLine from './TaskbarLyricLine.vue';
+import type { NowPlayingCommand } from '../../shared/nowPlaying';
 import { useTaskbarSeek } from './useTaskbarSeek';
-
-const snapshot = ref<NowPlayingSnapshot | null>(null);
-const dark = ref(false);
+import { useTaskbarLyrics } from './useTaskbarLyrics';
+const { snapshot, playback, lyric, line, nextLine, timeMs, error } = useTaskbarLyrics();
+const settings = ref({ ...DEFAULT_TASKBAR_LYRIC_SETTINGS });
+const dark = ref(true);
+const anchor = ref('left');
+const maxWidth = ref(400);
+const hovered = ref(false);
+const focused = ref(false);
+const width = ref(160);
+const primaryWidth = ref(0);
+const secondaryWidth = ref(0);
+const coverFailed = ref('');
+const root = ref<HTMLElement>();
 const colors = computed(() => {
   const palette = neutralThemePalette(dark.value);
+  const accent = snapshot.value?.appearance.accentColor || DEFAULT_THEME_ACCENT;
   return {
     '--fg': palette.text,
     '--muted': palette.secondary,
     '--bg': palette.main,
-    '--accent': snapshot.value?.appearance.accentColor || DEFAULT_THEME_ACCENT,
-    '--accent-text': createAccentPaletteFromPrimary(
-      snapshot.value?.appearance.accentColor || DEFAULT_THEME_ACCENT,
-      dark.value,
-      [palette.main],
-    ).primaryText,
+    '--accent': accent,
+    '--accent-text': createAccentPaletteFromPrimary(accent, dark.value, [palette.main]).primaryText,
+    '--font-size': `${settings.value.fontSize}px`,
+    '--lyric-unplayed': palette.secondary,
+    fontFamily:
+      snapshot.value?.appearance.fontFamily || '"Segoe UI", "Microsoft YaHei", sans-serif',
   };
 });
-const coverFailed = ref('');
-const error = ref('');
-const playback = computed(() => snapshot.value?.playback);
-const lyric = computed(() => {
-  const l = snapshot.value?.lyric;
-  if (!l || l.trackId !== (playback.value?.lyricHash || playback.value?.trackId)) return '';
-  return l.lines[l.currentIndex]?.text || '';
+const title = computed(() => playback.value?.title || 'EchoMusic');
+const primary = computed(() => error.value || line.value?.text || title.value);
+const secondary = computed(() => {
+  if (error.value) return '';
+  if (line.value) {
+    if (settings.value.showTranslation && line.value.translated) return line.value.translated;
+    if (lyric.value?.wantRomanization && line.value.romanized) return line.value.romanized;
+    return nextLine.value?.text || playback.value?.artist || '';
+  }
+  return playback.value?.artist || '双击打开主窗口';
 });
-const title = computed(() =>
-  playback.value ? `${playback.value.title} - ${playback.value.artist}` : '未在播放',
-);
 const seek = useTaskbarSeek(
   () => playback.value,
   (value) => window.electron?.nowPlaying.command({ type: 'seek', value }),
 );
-const { progressValue, duration } = seek;
+const { progressValue, duration, isDragging } = seek;
+const expanded = computed(() =>
+  Boolean(playback.value && (hovered.value || focused.value || isDragging.value)),
+);
+let hoverLeaveTimer: ReturnType<typeof setTimeout> | undefined;
+const setHovered = (value: boolean) => {
+  clearTimeout(hoverLeaveTimer);
+  if (value) hovered.value = true;
+  else
+    hoverLeaveTimer = setTimeout(() => {
+      hovered.value = false;
+    }, 60);
+};
 const command = (value: NowPlayingCommand) => {
   if (playback.value) window.electron?.nowPlaying.command(value);
 };
-const showMain = () => window.electron?.ipcRenderer.send('taskbar-player:show-main');
-let disposeSnapshot: (() => void) | undefined;
+const showMain = () => window.electron?.taskbarLyric?.showMain();
+let lastWidth = 0;
 let alive = true;
-let received = false;
-const stateListener = (state: unknown) => {
-  if (state && typeof state === 'object' && 'isDark' in state) dark.value = Boolean(state.isDark);
+let receivedState = false;
+let disposeState: (() => void) | undefined;
+const reportWidth = async () => {
+  await nextTick();
+  if (!alive) return;
+  const element = root.value;
+  if (!element) return;
+  const style = getComputedStyle(element);
+  const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  const coverWidth = settings.value.showCover
+    ? (element.querySelector('.cover')?.getBoundingClientRect().width ?? 0) +
+      parseFloat(style.columnGap)
+    : 0;
+  const naturalWidth = Math.ceil(
+    Math.max(primaryWidth.value, secondaryWidth.value) + coverWidth + padding + 8,
+  );
+  width.value = Math.min(
+    maxWidth.value,
+    expanded.value ? maxWidth.value : Math.max(160, naturalWidth),
+  );
+  if (lastWidth === width.value) return;
+  lastWidth = width.value;
+  window.electron?.taskbarLyric?.setContentWidth(width.value);
+};
+watch([expanded, maxWidth, primaryWidth, secondaryWidth, settings], reportWidth, { deep: true });
+watch(secondary, (value) => {
+  if (!value) secondaryWidth.value = 0;
+});
+const focusOut = (event: FocusEvent) => {
+  if (!root.value?.contains(event.relatedTarget as Node | null)) focused.value = false;
+};
+const stateListener = (raw: unknown) => {
+  if (!raw || typeof raw !== 'object') return;
+  const value = raw as TaskbarLyricState;
+  receivedState = true;
+  dark.value = Boolean(value.isDark);
+  anchor.value = value.anchor === 'right' ? 'right' : 'left';
+  maxWidth.value = Number(value.maxWidth) || 400;
+  settings.value = normalizeTaskbarLyricSettings(value.settings);
 };
 onMounted(async () => {
-  const api = window.electron;
+  const api = window.electron?.taskbarLyric;
   if (!api) {
-    error.value = '连接不可用，请重新打开快捷播控';
+    error.value = '连接不可用，请重新打开任务栏歌词';
     return;
   }
-  disposeSnapshot = api.nowPlaying.onSnapshot((value) => {
-    received = true;
-    snapshot.value = value;
-    error.value = '';
-  });
-  api.ipcRenderer.on('taskbar-player:state', stateListener);
+  disposeState = api.onStateChange(stateListener);
   try {
-    const value = await api.nowPlaying.getSnapshot();
-    if (alive && !received) snapshot.value = value;
-    const state = await api.ipcRenderer.invoke('taskbar-player:get-state');
-    if (alive) stateListener(state);
+    const value = await api.getState();
+    if (alive && !receivedState) stateListener(value);
   } catch {
-    if (alive) error.value = '连接失败，请重新打开快捷播控';
+    if (alive) error.value = '连接失败，请重新打开任务栏歌词';
   }
+  void reportWidth();
 });
 onUnmounted(() => {
   alive = false;
-  disposeSnapshot?.();
-  window.electron?.ipcRenderer.off('taskbar-player:state', stateListener);
+  clearTimeout(hoverLeaveTimer);
+  disposeState?.();
 });
 </script>
-
 <template>
-  <section class="bar" :class="{ dark }" :style="colors" aria-label="任务栏快捷播控">
+  <section
+    class="taskbar"
+    :class="{ dark, right: anchor === 'right' }"
+    :style="colors"
+    aria-label="任务栏歌词"
+  >
     <div
-      class="metadata"
-      :aria-label="`${title}（拖动可移出任务栏，双击打开主窗口）`"
+      ref="root"
+      class="content"
+      role="group"
+      tabindex="0"
+      :aria-label="primary"
+      :class="{ expanded }"
+      :style="{ width: `${width}px` }"
+      @mouseenter="setHovered(true)"
+      @mouseleave="setHovered(false)"
+      @focusin="focused = ($event.target as HTMLElement).matches(':focus-visible')"
+      @focusout="focusOut"
       @dblclick="showMain"
     >
-      <img
-        v-if="playback?.coverUrl && coverFailed !== playback.coverUrl"
+      <button
+        v-if="settings.showCover"
+        type="button"
         class="cover"
-        :src="playback.coverUrl"
-        alt=""
-        @error="coverFailed = playback?.coverUrl || ''"
-      />
-      <span v-else class="cover empty" aria-hidden="true">♫</span>
-      <div class="copy">
-        <div class="title">{{ title }}</div>
-        <div class="lyric">
-          {{ error || lyric || playback?.artist || '打开主窗口，选择一首歌' }}
+        aria-label="打开 EchoMusic"
+        @click="showMain"
+      >
+        <img
+          v-if="playback?.coverUrl && coverFailed !== playback.coverUrl"
+          :src="playback.coverUrl"
+          alt=""
+          draggable="false"
+          decoding="async"
+          @error="coverFailed = playback?.coverUrl || ''"
+        />
+        <Icon v-else :icon="iconMusic" width="14" />
+      </button>
+      <div class="body">
+        <div
+          v-if="playback"
+          class="controls"
+          :inert="!expanded"
+          :aria-hidden="!expanded"
+          @dblclick.stop
+        >
+          <button type="button" aria-label="上一曲" @click="command('previousTrack')">
+            <Icon :icon="iconSkipBack" width="14" />
+          </button>
+          <button
+            type="button"
+            class="play"
+            :aria-label="playback.isPlaying ? '暂停' : '播放'"
+            @click="command('togglePlayback')"
+          >
+            <Icon :icon="playback.isPlaying ? iconPause : iconPlay" width="14" />
+          </button>
+          <button type="button" aria-label="下一曲" @click="command('nextTrack')">
+            <Icon :icon="iconSkipForward" width="14" />
+          </button>
+          <button
+            type="button"
+            class="favorite"
+            :class="{ active: playback.isFavorite }"
+            :aria-label="playback.isFavorite ? '取消收藏' : '收藏'"
+            :aria-pressed="playback.isFavorite"
+            @click="command('toggleFavorite')"
+          >
+            <Icon :icon="playback.isFavorite ? iconHeartFilled : iconHeart" width="14" />
+          </button>
+        </div>
+        <div class="details" :class="{ 'has-progress': playback && duration }">
+          <div class="copy" :aria-hidden="expanded">
+            <TaskbarLyricLine
+              class="primary"
+              :text="primary"
+              :line="line"
+              :time-ms="timeMs"
+              :end-time-ms="nextLine ? nextLine.time * 1000 : undefined"
+              :word-by-word="settings.wordByWord"
+              @width="primaryWidth = $event"
+            />
+            <TaskbarLyricLine
+              v-if="secondary"
+              class="secondary"
+              :text="secondary"
+              :time-ms="timeMs"
+              @width="secondaryWidth = $event"
+            />
+          </div>
+          <div class="song-info" :aria-hidden="!expanded">
+            <div class="song-title" :title="title">{{ title }}</div>
+            <div class="song-artist" :title="playback?.artist">{{ playback?.artist }}</div>
+          </div>
+          <SliderRoot
+            v-if="playback && duration"
+            class="progress echo-slider echo-slider-progress"
+            :data-dragging="isDragging"
+            :inert="!expanded"
+            :min="0"
+            :max="duration"
+            :model-value="progressValue"
+            :step="0.1"
+            @pointerdown.capture="seek.handleStart"
+            @keydown.capture="seek.handleKeydown"
+            @keyup="seek.handleEnd"
+            @update:model-value="seek.handleValueUpdate"
+            @value-commit="seek.handleCommit"
+            @pointerup="seek.handleEnd"
+            @pointercancel="seek.handleCancel"
+            @blur.capture="seek.handleCancel"
+          >
+            <SliderTrack class="progress-track echo-slider-track"
+              ><SliderRange class="progress-range echo-slider-range"
+            /></SliderTrack>
+            <SliderThumb class="echo-slider-thumb" aria-label="播放进度" />
+          </SliderRoot>
         </div>
       </div>
     </div>
-    <div class="controls">
-      <button aria-label="上一曲" :disabled="!playback" @click="command('previousTrack')">
-        <svg viewBox="0 0 24 24"><path d="M5 5h3v14H5zM20 5v14L9 12z" /></svg>
-      </button>
-      <button
-        class="play"
-        :aria-label="playback?.isPlaying ? '暂停' : '播放'"
-        :disabled="!playback"
-        @click="command('togglePlayback')"
-      >
-        <svg viewBox="0 0 24 24">
-          <path v-if="playback?.isPlaying" d="M6 4h4v16H6zM14 4h4v16h-4z" />
-          <path v-else d="M7 3v18l15-9z" />
-        </svg>
-      </button>
-      <button aria-label="下一曲" :disabled="!playback" @click="command('nextTrack')">
-        <svg viewBox="0 0 24 24"><path d="M16 5h3v14h-3zM4 5v14l11-7z" /></svg>
-      </button>
-      <button
-        class="favorite"
-        :class="{ active: playback?.isFavorite }"
-        :aria-label="playback?.isFavorite ? '取消收藏' : '收藏'"
-        :aria-pressed="Boolean(playback?.isFavorite)"
-        :disabled="!playback"
-        @click="command('toggleFavorite')"
-      >
-        <svg viewBox="0 0 24 24">
-          <path d="M12 21C7 17 2 13 2 8a5 5 0 0 1 10-1A5 5 0 0 1 22 8c0 5-5 9-10 13Z" />
-        </svg>
-      </button>
-    </div>
-    <SliderRoot
-      class="progress echo-slider"
-      :min="0"
-      :max="duration || 1"
-      :model-value="progressValue"
-      :step="0.1"
-      :disabled="!duration"
-      @pointerdown.capture="seek.handleStart"
-      @keydown.capture="seek.handleKeydown"
-      @keyup="seek.handleEnd"
-      @update:model-value="seek.handleValueUpdate"
-      @value-commit="seek.handleCommit"
-      @pointerup="seek.handleEnd"
-      @pointercancel="seek.handleCancel"
-      @blur.capture="seek.handleCancel"
-    >
-      <SliderTrack class="progress-track echo-slider-track"
-        ><SliderRange class="progress-range echo-slider-range"
-      /></SliderTrack>
-      <SliderThumb class="progress-thumb echo-slider-thumb" aria-label="播放进度" />
-    </SliderRoot>
   </section>
 </template>
-
 <style>
 html,
 body,
@@ -168,181 +281,267 @@ body,
 * {
   box-sizing: border-box;
 }
-.bar {
+.taskbar {
+  height: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 100%;
-  padding: 4px 10px 6px;
-  background: var(--bg);
   color: var(--fg);
-  font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
   user-select: none;
 }
-.metadata {
-  -webkit-app-region: drag;
+.taskbar.right {
+  justify-content: flex-end;
+}
+.content {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
+  height: calc(100% - 8px);
+  padding: 0 4px;
+  min-width: 0;
+  border-radius: 8px;
+  transition: background-color 180ms ease;
+}
+.content.expanded {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.expanded .cover {
+  width: min(calc(100vh - 16px), calc((100vw - 112px) / 5));
+  height: min(calc(100vh - 16px), calc((100vw - 112px) / 5));
+}
+.cover {
+  width: calc(100vh - 16px);
+  height: calc(100vh - 16px);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: inherit;
+}
+.cover svg {
+  max-width: 100%;
+  max-height: 100%;
+}
+.copy {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  line-height: 1.2;
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+.expanded .copy {
+  opacity: 0;
+}
+.body {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+.details {
+  --song-font-size: min(var(--font-size), max(11px, calc((100vh - 21px) / 1.9)));
+  position: relative;
   flex: 1;
   min-width: 0;
   height: 100%;
-}
-.cover {
-  width: clamp(18px, calc(100vh - 14px), 42px);
-  height: clamp(18px, calc(100vh - 14px), 42px);
-  flex-shrink: 0;
-  object-fit: cover;
-  border-radius: 4px;
-}
-.cover.empty {
-  display: grid;
-  place-items: center;
-  background: #8882;
-}
-.copy {
-  min-width: 0;
-  font-size: clamp(10px, 24vh, 13px);
-  line-height: 1.35;
-}
-.title,
-.lyric {
-  white-space: nowrap;
+  margin: 0 4px;
   overflow: hidden;
+}
+.song-info {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  line-height: 1.04;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+.expanded .has-progress .song-info {
+  bottom: 12px;
+}
+.expanded .song-info {
+  opacity: 1;
+  transition-delay: 80ms;
+}
+.song-title,
+.song-artist {
+  overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
-.lyric {
+.song-title {
+  font-size: var(--song-font-size);
+}
+.song-artist {
+  font-size: calc(var(--song-font-size) * 0.82);
+  color: var(--muted);
+}
+.primary {
+  font-size: min(var(--font-size), max(11px, calc((100vh - 10px) / 2.3)));
+  font-weight: 400;
+}
+.secondary {
+  font-size: calc(min(var(--font-size), max(11px, calc((100vh - 10px) / 2.3))) * 0.82);
   color: var(--muted);
 }
 .controls {
+  --control-size: min(calc(100vh - 16px), calc((100vw - 112px) / 5));
   display: flex;
-  align-items: center;
-  gap: clamp(3px, 1.6vw, 13px);
   flex-shrink: 0;
+  height: 100%;
+  max-width: 0;
+  overflow: hidden;
+  gap: 4px;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    max-width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease;
+}
+.expanded .controls {
+  max-width: calc(4 * var(--control-size) + 20px);
+  padding: 4px;
+  opacity: 1;
+  pointer-events: auto;
 }
 button {
-  -webkit-app-region: no-drag;
-  border: 0;
-  padding: 4px;
   display: grid;
   place-items: center;
-  width: clamp(22px, 65vh, 32px);
-  height: clamp(22px, 65vh, 32px);
-  border-radius: 50%;
+  padding: 0;
+  border: 0;
   background: transparent;
-  color: color-mix(in srgb, var(--fg) 80%, transparent);
+  color: inherit;
   cursor: pointer;
 }
-button:hover {
+.controls button {
+  width: var(--control-size);
+  height: var(--control-size);
+  flex-shrink: 0;
+  border-radius: 6px;
+  transition:
+    background-color 180ms ease,
+    transform 180ms ease;
+}
+.controls svg {
+  width: 14px;
+  height: 14px;
+  max-width: 100%;
+  max-height: 100%;
+}
+.controls button:hover,
+.cover:hover {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+.controls .play {
   color: var(--accent-text);
-  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
-button:focus-visible {
-  outline: 2px solid var(--fg);
-  outline-offset: -2px;
+.controls .play:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
-button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-button svg {
-  width: 21px;
-  height: 21px;
-  fill: currentColor;
-}
-button.play {
-  width: clamp(30px, 100vh, 50px);
-  background: #8882;
-}
-.favorite svg {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
+.controls button:active {
+  transform: scale(0.94);
 }
 .favorite.active {
   color: #ef4444;
 }
-.favorite.active svg {
-  fill: currentColor;
+button:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--fg) 35%, transparent);
+  outline-offset: -1px;
 }
 .progress {
-  --slider-track-size: 3px;
-  -webkit-app-region: no-drag;
+  --slider-track-size: 2px;
+  --slider-thumb-size: 8px;
   position: absolute;
   bottom: 0;
   left: 0;
   width: 100%;
-  height: 16px;
+  height: 12px;
   display: flex;
   align-items: center;
-  touch-action: none;
-  margin: 0;
-  accent-color: var(--accent);
   opacity: 0;
+  pointer-events: none;
+  touch-action: none;
   cursor: pointer;
 }
-.bar:hover .progress,
-.progress:not([data-pointer-focus='true']):has(.echo-slider-thumb:focus-visible) {
+.progress .echo-slider-range,
+.progress .echo-slider-thumb {
+  background: var(--accent-text);
+}
+.expanded .progress {
   opacity: 1;
+  pointer-events: auto;
 }
 @media (max-width: 260px) {
-  .cover {
+  .expanded .cover {
     display: none;
-  }
-  .bar {
-    gap: 4px;
-    padding-left: 5px;
-    padding-right: 5px;
   }
   .controls {
-    gap: 3px;
+    --control-size: min(calc(100vh - 16px), calc((100vw - 80px) / 4));
   }
-}
-@media (max-height: 34px) {
-  .bar {
-    padding-top: 1px;
-    padding-bottom: 3px;
+  .expanded .details {
+    min-width: 32px;
   }
-  .lyric {
+  .song-info {
     display: none;
   }
-  button {
-    height: clamp(16px, calc(100vh - 6px), 26px);
-    padding: 2px;
+}
+@media (max-height: 44px) {
+  .song-artist {
+    display: none;
   }
-  button svg {
-    width: 100%;
-    height: 100%;
-    max-width: 17px;
-    max-height: 17px;
+  .details {
+    --song-font-size: min(var(--font-size), max(11px, calc(100vh - 22px)));
+  }
+}
+@media (max-height: 36px) {
+  .secondary {
+    display: none;
+  }
+  .primary {
+    font-size: min(var(--font-size), max(11px, calc(100vh - 16px)));
+  }
+}
+@media (max-height: 30px) {
+  .song-info {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .content,
+  .copy,
+  .song-info,
+  .controls,
+  .controls button {
+    transition: none;
   }
 }
 @media (forced-colors: active) {
-  .bar,
-  .bar.dark {
+  .taskbar {
     --fg: CanvasText !important;
     --muted: CanvasText !important;
     --bg: Canvas !important;
+    --accent-text: Highlight !important;
   }
-  button:hover {
-    color: ButtonText;
-  }
-  button.play {
-    background: ButtonFace;
-    color: ButtonText;
-  }
-  .favorite.active {
-    color: Highlight;
+  .content {
+    background: Canvas;
   }
   button:focus-visible {
     outline-color: Highlight;
-  }
-  .progress-track {
-    background: GrayText;
-  }
-  .progress-range,
-  .progress-thumb {
-    background: Highlight;
   }
 }
 </style>

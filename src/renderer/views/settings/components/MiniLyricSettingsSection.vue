@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { Icon } from '@iconify/vue';
-import { iconPictureInPicture } from '@/icons';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
 import Select from '@/components/ui/Select.vue';
@@ -10,7 +9,7 @@ import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
 import { resolveCoverLyricColor } from '../../../../shared/lyricColor';
 import { DEFAULT_MINI_LYRIC_STYLE, normalizeMiniLyricStyle } from '../../../../shared/miniPlayer';
-import { desktopLyricColorPresets } from '../constants';
+import { desktopLyricColorPresets, sectionTitles } from '../constants';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 
 const settingStore = useSettingStore();
@@ -130,9 +129,9 @@ const resetMiniStyle = () => {
 </script>
 
 <template>
-  <SettingsSectionShell id="miniLyric" title="Mini 歌词">
+  <SettingsSectionShell id="miniLyric" :title="sectionTitles.miniLyric.label">
     <template #icon>
-      <Icon :icon="iconPictureInPicture" width="20" height="20" class="text-primary-text" />
+      <Icon :icon="sectionTitles.miniLyric.icon" width="20" height="20" class="text-primary-text" />
     </template>
     <div class="settings-item items-start">
       <div class="space-y-1">

@@ -101,7 +101,10 @@ let settingsSearchCollapseTimer: number | null = null;
 
 const normalizeSearchText = (value: string) => value.toLocaleLowerCase().replace(/\s+/g, '');
 const normalizeSettingsSectionId = (section: string) =>
-  section === 'pageLyric' || section === 'desktopLyric' || section === 'miniLyric'
+  section === 'pageLyric' ||
+  section === 'desktopLyric' ||
+  section === 'miniLyric' ||
+  section === 'taskbarLyric'
     ? 'lyric'
     : section;
 
@@ -176,18 +179,34 @@ interface SettingsRenderSection {
 const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
   {
     id: 'interface',
-    label: '界面显示',
+    label: sectionTitles.interface.label,
     order: 100,
     component: InterfaceSettingsSection,
-    searchKeywords: ['深浅色模式', '跟随系统', '浅色', '深色', '搜索框默认推荐词', '动态专辑封面'],
+    searchKeywords: [
+      '深浅色模式',
+      '跟随系统',
+      '浅色',
+      '深色',
+      '界面缩放',
+      '放大界面',
+      '缩小界面',
+      '搜索框默认推荐词',
+      '专辑动态封面',
+      '动态专辑封面',
+      ...(currentPlatform === 'win32' || currentPlatform === 'linux' ? ['全屏按钮', '标题栏'] : []),
+    ],
   },
   {
     id: 'window',
-    label: '窗口与启动',
+    label: sectionTitles.window.label,
     order: 175,
     component: WindowSettingsSection,
     searchKeywords: [
+      '窗口行为',
+      '系统集成',
+      '启动行为',
       '记住窗口大小',
+      '窗口位置',
       '关闭行为',
       '最小化到托盘',
       '彻底退出程序',
@@ -196,8 +215,8 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       ...(currentPlatform === 'darwin'
         ? ['后台运行时在 Dock 栏中隐藏', '后台运行时在菜单栏中隐藏', '隐藏图标']
         : []),
-      ...(currentPlatform === 'win32' || currentPlatform === 'linux' ? ['全屏按钮'] : []),
-      ...(currentPlatform === 'win32' ? ['任务栏封面预览', '任务栏播放进度条'] : []),
+      ...(currentPlatform === 'win32' ? ['任务栏封面预览'] : []),
+      ...(currentPlatform === 'win32' ? ['任务栏播放进度条'] : []),
     ],
   },
   {
@@ -281,7 +300,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
   },
   {
     id: 'player',
-    label: '播放器设置',
+    label: sectionTitles.player.label,
     order: 350,
     component: PlayerSettingsSection,
     searchKeywords: [
@@ -388,6 +407,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '翻译与音译字号',
       '歌词行间距',
       '文字字重',
+      ...(currentPlatform === 'win32' ? ['任务栏歌词', '歌词位置', '最大宽度', '逐字高亮'] : []),
     ],
   },
   {

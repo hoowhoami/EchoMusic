@@ -6,6 +6,7 @@ import type { AppInfoResult, UpdateDownloadResult, UpdateState } from '../shared
 import type { PlayMode } from '../shared/playback';
 import type { PlayerRuntimeSession, PlayerSessionRestore } from '../shared/playerSession';
 import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
+import type { TaskbarLyricSettings, TaskbarLyricState } from '../shared/taskbar';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
@@ -616,6 +617,21 @@ contextBridge.exposeInMainWorld('electron', {
         func(command);
       ipcRenderer.on('now-playing:command', listener);
       return () => ipcRenderer.removeListener('now-playing:command', listener);
+    },
+  },
+  taskbarLyric: {
+    getState: () => invokeWithPlainPayload<TaskbarLyricState>('taskbar-player:get-state'),
+    setEnabled: (enabled: boolean) =>
+      invokeWithPlainPayload<TaskbarLyricState>('taskbar-player:set-enabled', enabled),
+    setSettings: (settings: Partial<TaskbarLyricSettings>) =>
+      invokeWithPlainPayload<TaskbarLyricState>('taskbar-player:set-settings', settings),
+    setContentWidth: (width: number) => ipcRenderer.send('taskbar-player:content-width', width),
+    showMain: () => ipcRenderer.send('taskbar-player:show-main'),
+    onStateChange: (callback: (state: TaskbarLyricState) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: TaskbarLyricState) =>
+        callback(state);
+      ipcRenderer.on('taskbar-player:state', listener);
+      return () => ipcRenderer.removeListener('taskbar-player:state', listener);
     },
   },
   miniPlayer: {
