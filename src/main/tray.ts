@@ -10,7 +10,12 @@ import { registerMacTrayVisibility } from './macBackgroundMode';
 
 interface TrayContext {
   getMainWindow: () => Electron.BrowserWindow | null;
-  restoreWindow: () => void | Promise<void>;
+  /** 恢复上次所在的窗口模式（托盘左键用）。 */
+  restoreWindow: () => unknown;
+  /** 显式打开主窗口（托盘菜单「打开主窗口」）。 */
+  showMainWindow: () => unknown;
+  /** 显式打开 Mini 窗口（托盘菜单「打开 Mini 窗口」）。 */
+  showMiniPlayer: () => unknown;
   getDesktopLyricSnapshot: () => DesktopLyricSnapshot;
   toggleDesktopLyricLock: () => DesktopLyricSnapshot | Promise<DesktopLyricSnapshot>;
 }
@@ -174,8 +179,12 @@ const createDesktopLyricMenuItems = (): MenuItemConstructorOptions[] => {
 const createTrayMenu = () => {
   return Menu.buildFromTemplate([
     {
-      label: '显示窗口',
-      click: () => void trayContext?.restoreWindow(),
+      label: '打开主窗口',
+      click: () => void trayContext?.showMainWindow(),
+    },
+    {
+      label: '打开 Mini 窗口',
+      click: () => void trayContext?.showMiniPlayer(),
     },
     { type: 'separator' },
     ...createPlaybackMenuItems(),

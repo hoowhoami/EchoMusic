@@ -39,6 +39,8 @@ function setup(
   const diagnostics = [];
   let dockVisible = true;
   let restoreCount = 0;
+  let mainWindowCount = 0;
+  let miniPlayerCount = 0;
   let quitCount = 0;
   const lyrics = { settings: { enabled: true, locked: false } };
   const dock = {
@@ -180,6 +182,8 @@ function setup(
       webContents: { send: (...args) => sent.push(args) },
     }),
     restoreWindow: () => restoreCount++,
+    showMainWindow: () => mainWindowCount++,
+    showMiniPlayer: () => miniPlayerCount++,
     getDesktopLyricSnapshot: () => lyrics,
     toggleDesktopLyricLock: () => {
       lyrics.settings.locked = !lyrics.settings.locked;
@@ -208,6 +212,12 @@ function setup(
     },
     get restoreCount() {
       return restoreCount;
+    },
+    get mainWindowCount() {
+      return mainWindowCount;
+    },
+    get miniPlayerCount() {
+      return miniPlayerCount;
     },
     get quitCount() {
       return quitCount;
@@ -475,8 +485,11 @@ test('restored tray keeps current playback, lyric controls, window recovery and 
   item('解锁桌面歌词').click();
   assert.equal(e.lyrics.settings.locked, false);
   restored.emit('click');
-  item('显示窗口').click();
-  assert.equal(e.restoreCount, 2);
+  assert.equal(e.restoreCount, 1);
+  item('打开主窗口').click();
+  assert.equal(e.mainWindowCount, 1);
+  item('打开 Mini 窗口').click();
+  assert.equal(e.miniPlayerCount, 1);
   item('退出').click();
   assert.equal(e.quitCount, 1);
 });
@@ -495,7 +508,8 @@ test('normal tray configurations retain the existing Electron menu path', () => 
     });
     const icon = e.loadTray().initTray(e.context);
     icon.emit('right-click');
-    assert.ok(icon.menu.some((item) => item.label === '显示窗口'));
+    assert.ok(icon.menu.some((item) => item.label === '打开主窗口'));
+    assert.ok(icon.menu.some((item) => item.label === '打开 Mini 窗口'));
     assert.equal(e.diagnostics.length, 0);
   }
 });
@@ -543,7 +557,7 @@ test('diagnostic collection failure cannot prevent the Electron menu from openin
   };
   const icon = e.loadTray().initTray(e.context);
   icon.emit('right-click');
-  assert.ok(icon.menu.some((item) => item.label === '显示窗口'));
+  assert.ok(icon.menu.some((item) => item.label === '打开主窗口'));
   assert.ok(e.warnings.some(([message]) => message.includes('Snapshot failed')));
 });
 

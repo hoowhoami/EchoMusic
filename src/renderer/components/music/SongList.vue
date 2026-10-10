@@ -12,7 +12,7 @@ import { useSettingStore } from '@/stores/setting';
 import { isTransientPlaybackQueue, usePlaylistStore } from '@/stores/playlist';
 import { useToastStore } from '@/stores/toast';
 import { buildSongListGridTemplate } from './songListLayout';
-import { isPlayableSong } from '@/utils/song';
+import { isPlayableSong, formatSongInfoText } from '@/utils/song';
 import {
   playSongInContext,
   queueAndPlaySong,
@@ -741,11 +741,7 @@ const ctxShareSong = async () => {
   }
 };
 
-const formatSongInfo = (song: Song) => {
-  const title = readString(song.title || song.name).trim();
-  const artist = readString(song.artist).trim();
-  return [title, artist].filter(Boolean).join(' - ');
-};
+const formatSongInfo = (song: Song) => formatSongInfoText(song);
 
 const ctxCopySongInfo = async () => {
   const song = contextMenuTarget.value;

@@ -323,3 +323,49 @@ export const splitValidSongs = (songs: Song[]): { songs: Song[]; filteredCount: 
     filteredCount,
   };
 };
+
+/**
+ * 歌曲显示名。
+ *
+ * `name` 是 mapper 经 `processSongTitle` 剥离歌手前缀后的显示名，`title` 是接口
+ * 原始名（云盘/歌单里常为「歌手 - 歌名.mp3」）。凡是面向用户的标题都必须优先取
+ * `name`；`name` 缺失回落到 `title` 时还要再剥一次歌手前缀，否则标题会带上
+ * 与 `artist` 字段重复的歌手信息。
+ */
+const songArtistNames = (song: Pick<Song, 'artist' | 'artists' | 'singers'>): string[] => {
+  const names = [String(song.artist ?? '').trim()];
+  for (const artist of song.artists ?? song.singers ?? []) {
+    names.push(String(artist?.name ?? '').trim());
+  }
+  return names.filter(Boolean);
+};
+
+const stripArtistPrefix = (title: string, names: string[]): string => {
+  for (const name of names) {
+    const prefix = `${name} - `;
+    if (prefix.length > 3 && title.startsWith(prefix)) return title.slice(prefix.length).trim();
+  }
+  return title;
+};
+
+export const getSongDisplayTitle = (
+  song: Pick<Song, 'name' | 'title' | 'artist' | 'artists' | 'singers'>,
+): string => {
+  const name = String(song.name ?? '').trim();
+  if (name) return name;
+  return stripArtistPrefix(String(song.title ?? '').trim(), songArtistNames(song));
+};
+
+/**
+ * 「歌名 - 歌手」形式的歌曲信息文本，供复制到剪贴板使用。
+ *
+ * 原始名可能已带「歌手 - 」前缀（接口把 `songname` 直接填成 `歌手 - 歌名`），
+ * 直接与 `artist` 拼接会得到「歌手 - 歌名 - 歌手」，所以标题一律走
+ * {@link getSongDisplayTitle} 剥离。
+ */
+export const formatSongInfoText = (song: Song): string => {
+  const artist = String(song.artist ?? '').trim();
+  const title = getSongDisplayTitle(song);
+  if (!title) return artist;
+  return artist ? `${title} - ${artist}` : title;
+};
