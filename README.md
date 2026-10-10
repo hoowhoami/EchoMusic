@@ -306,14 +306,21 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 - QQ1群: 1036693403
 - QQ2群: 491694809
 
-## 💡 灵感来源
+## 🙏 鸣谢
 
-本项目受到以下优秀开源项目的启发：
+感谢以下开源项目及其贡献者提供的支持：
 
 - [KuGouMusicApi](https://github.com/MakcRe/KuGouMusicApi) - 酷狗音乐 NodeJS 版 API
-- [SPlayer-Next](https://github.com/SPlayer-Dev/SPlayer-Next) - 一个简约的音乐播放器
+- [AMLL（Apple Music-like Lyrics）](https://github.com/amll-dev/applemusic-like-lyrics) - 歌词渲染组件
 - [ffmpeg-audio](https://github.com/apoint123/ffmpeg-audio) - 基于 FFmpeg 的 Rust 音频解码库
 - [soundtouch-rs](https://github.com/apoint123/soundtouch-rs) - Rust 音频变速处理库
+
+## 💡 灵感来源
+
+本项目的设计与交互受到以下开源项目的启发：
+
+- [SPlayer](https://github.com/imsyy/SPlayer) - 一个简约的音乐播放器
+- [SPlayer-Next](https://github.com/SPlayer-Dev/SPlayer-Next) - 一个简约的音乐播放器
 - [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKoeMusic) - 一款开源简洁高颜值的酷狗第三方客户端
 
 ## 📄 免责声明
