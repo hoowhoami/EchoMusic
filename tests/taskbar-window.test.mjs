@@ -268,7 +268,7 @@ test('native failure and page failure reject honestly and reset persisted enable
     assert.equal(f.handlers.get('taskbar-player:get-state')().enabled, false);
   }
 });
-test('DPI conversion uses parent-client coordinates and explicit position never steals the other side', () => {
+test('DPI conversion uses parent-client coordinates and falls back only to another safe side', () => {
   const settings = shared.DEFAULT_TASKBAR_LYRIC_SETTINGS;
   const r = shared.resolveTaskbarLyricRegion(
     { ...layout(), scaleFactor: 1.5, left: { x: 30, y: 0, width: 900, height: 72 } },
@@ -277,12 +277,41 @@ test('DPI conversion uses parent-client coordinates and explicit position never 
   assert.equal(r.bounds.x, 28);
   assert.equal(r.bounds.height, 48);
   assert.equal(r.bounds.width, 400);
+  const fallback = shared.resolveTaskbarLyricRegion(
+    { ...layout(), left: { x: 0, y: 0, width: 40, height: 48 } },
+    { ...settings, position: 'left' },
+  );
+  assert.equal(fallback.anchor, 'right');
+  assert.equal(fallback.bounds.x, 1308);
+  assert.equal(fallback.bounds.width, 384);
   assert.equal(
     shared.resolveTaskbarLyricRegion(
-      { ...layout(), left: { x: 0, y: 0, width: 40, height: 48 } },
+      {
+        ...layout(),
+        left: { x: 0, y: 0, width: 40, height: 48 },
+        right: { x: 1300, y: 0, width: 170, height: 48 },
+      },
       { ...settings, position: 'left' },
     ),
     null,
   );
   assert.equal(shared.resolveTaskbarLyricRegion({ ...layout(), scaleFactor: NaN }, settings), null);
+});
+test('left preference retains native space reservation and restores into the safe right-only region', async () => {
+  const f = setup();
+  f.handlers.get('taskbar-player:set-settings')({ sender: { id: 1 } }, { position: 'left' });
+  await f.api.setTaskbarPlayerEnabled(true);
+  const session = f.sessions[0];
+  assert.equal(session.width, 400);
+  session.emit({ ...layout(), left: { x: 0, y: 0, width: 0, height: 48 } });
+  assert.equal(f.windows[0].visible, true);
+  assert.equal(f.windows[0].bounds.x, 1308);
+  assert.equal(f.handlers.get('taskbar-player:get-state')().anchor, 'right');
+  const set = f.handlers.get('taskbar-player:set-settings');
+  set({ sender: { id: 1 } }, { position: 'right', maxWidth: 300 });
+  assert.equal(session.width, 300);
+  session.emit({ ...layout(), right: { x: 1800, y: 0, width: 80, height: 48 } });
+  assert.equal(f.windows[0].bounds.x, 8);
+  assert.equal(f.handlers.get('taskbar-player:get-state')().anchor, 'left');
+  f.api.cleanupTaskbarPlayer();
 });

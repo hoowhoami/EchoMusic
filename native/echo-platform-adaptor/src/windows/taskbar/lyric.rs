@@ -44,7 +44,10 @@ use windows::{
         },
     },
 };
-use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+use winreg::{
+    enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE},
+    RegKey,
+};
 
 static WORKER_LOCK: Mutex<()> = Mutex::new(());
 const CHANGE: u32 = WM_APP + 41;
@@ -362,14 +365,38 @@ unsafe fn attach(
         SetWindowLongPtrW(child, GWL_EXSTYLE, original_ex);
         return None;
     }
-    let rebar = FindWindowExW(Some(hwnd), None, w!("ReBarWindow32"), None).ok();
+    // Win11 可能仍保留旧式 tasklist HWND，存在不代表它承载当前图标；优先使用实际的 XAML 桥。
+    let has_xaml = FindWindowExW(
+        Some(hwnd),
+        None,
+        w!("Windows.UI.Composition.DesktopWindowContentBridge"),
+        None,
+    )
+    .is_ok();
+    let build = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion")
+        .and_then(|key| key.get_value::<String, _>("CurrentBuild"))
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok());
+    // Win10 的小组件也可能使用 XAML；已知 Win10 仍由可见的旧 tasklist 预留空间。
+    let rebar = if has_xaml && build.map(|value| value >= 22000).unwrap_or(true) {
+        None
+    } else {
+        FindWindowExW(Some(hwnd), None, w!("ReBarWindow32"), None).ok()
+    };
     let list = rebar.and_then(|rebar| {
         FindWindowExW(Some(rebar), None, w!("MSTaskSwWClass"), None)
             .ok()
             .or_else(|| FindWindowExW(Some(rebar), None, w!("MSTaskListWClass"), None).ok())
     });
     let tasklist = list.and_then(|list| {
+        if !IsWindowVisible(list).as_bool() {
+            return None;
+        }
         let mut r = rect(list)?;
+        if r.right <= r.left || r.bottom <= r.top {
+            return None;
+        }
         let parent = GetParent(list).ok()?;
         let mut points = [
             windows::Win32::Foundation::POINT {
@@ -508,6 +535,7 @@ impl Shell {
         // 只扫描 XAML 桥，避免把自己的歌词子窗口纳入占用区域。
         let mut occupied: Vec<(i32, i32)> = Vec::new();
         let mut has_start = false;
+        let mut content: Option<(i32, i32)> = None;
         let mut previous = None;
         while let Ok(bridge) = FindWindowExW(
             Some(self.hwnd),
@@ -519,7 +547,12 @@ impl Shell {
             let root = self.automation.ElementFromHandle(bridge).ok()?;
             let condition = self.automation.CreateTrueCondition().ok()?;
             let elements = root.FindAll(TreeScope_Descendants, &condition).ok()?;
-            for index in 0..elements.Length().ok()?.min(1024) {
+            let count = elements.Length().ok()?;
+            // 扫描不完整就不能声称剩余区域安全，避免漏掉后面的应用图标。
+            if count > 2048 {
+                return None;
+            }
+            for index in 0..count {
                 let element = elements.GetElement(index).ok()?;
                 if element
                     .CurrentIsOffscreen()
@@ -538,23 +571,28 @@ impl Shell {
                     .ok()
                     .map(|v| v.to_string())
                     .unwrap_or_default();
-                if id == "StartButton" {
-                    has_start = true;
-                }
-                let is_button = element
-                    .CurrentControlType()
-                    .map(|v| v.0 == 50000)
-                    .unwrap_or(false);
-                if is_button
-                    || class.contains("TaskListButton")
+                let is_button = element.CurrentControlType().ok()?.0 == 50000;
+                let is_content = class.contains("TaskListButton")
                     || matches!(
                         id.as_str(),
-                        "StartButton" | "SearchBoxTextBlock" | "WidgetsButton"
-                    )
-                {
-                    if let Ok(r) = element.CurrentBoundingRectangle() {
-                        if r.right > r.left && r.bottom > r.top {
-                            occupied.push((r.left - bar.left, r.right - bar.left));
+                        "StartButton" | "SearchButton" | "SearchBoxTextBlock" | "TaskViewButton"
+                    );
+                if is_button || is_content || id == "WidgetsButton" {
+                    let r = element.CurrentBoundingRectangle().ok()?;
+                    if r.right > r.left && r.bottom > r.top {
+                        let bounds = (
+                            (r.left - bar.left).clamp(0, bar_width),
+                            (r.right - bar.left).clamp(0, bar_width),
+                        );
+                        occupied.push(bounds);
+                        if is_content {
+                            content = Some(match content {
+                                Some((start, end)) => (start.min(bounds.0), end.max(bounds.1)),
+                                None => bounds,
+                            });
+                        }
+                        if id == "StartButton" {
+                            has_start = true;
                         }
                     }
                 }
@@ -569,23 +607,15 @@ impl Shell {
         } else {
             return None;
         }
-        let gaps = super::geometry::free_intervals(bar_width, occupied);
-        let middle = bar_width / 2;
-        for (x, width) in gaps {
-            let space = TaskbarRect {
-                x,
-                y: 0,
-                width,
-                height,
-            };
-            if x + width / 2 < middle {
-                if width > layout.left.width {
-                    layout.left = space;
-                }
-            } else if width > layout.right.width {
-                layout.right = space;
-            }
-        }
+        let (left, right) = super::geometry::taskbar_spaces(bar_width, content?, occupied);
+        let space = |(x, width)| TaskbarRect {
+            x,
+            y: 0,
+            width,
+            height,
+        };
+        layout.left = space(left);
+        layout.right = space(right);
         layout.available = true;
         Some(layout)
     }

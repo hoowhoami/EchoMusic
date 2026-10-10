@@ -25,7 +25,7 @@ let contentWidth = 160;
 let disposeSystem: (() => void) | null = null;
 let settings = { ...DEFAULT_TASKBAR_LYRIC_SETTINGS };
 let settingsLoaded = false;
-const nativeWidth = () => (settings.position === 'left' ? 0 : settings.maxWidth);
+const nativeWidth = () => settings.maxWidth;
 function loadSettings(): void {
   if (settingsLoaded) return;
   settings = getMainAppSettings().taskbarLyric;

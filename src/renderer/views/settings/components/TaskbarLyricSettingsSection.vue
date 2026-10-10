@@ -22,6 +22,11 @@ const barPositionOptions = [
   { label: '左侧', value: 'left' },
   { label: '右侧', value: 'right' },
 ];
+const barPositionDescription = computed(() =>
+  barSettings.value.position === 'auto'
+    ? '自动选择任务栏空闲的一侧'
+    : `优先显示在${barSettings.value.position === 'left' ? '左侧' : '右侧'}，空间不足时使用另一侧`,
+);
 let alive = true;
 let receivedState = false;
 let disposeBarState: (() => void) | undefined;
@@ -89,9 +94,16 @@ const setBarSettings = async (patch: Partial<TaskbarLyricSettings>) => {
       />
     </template>
     <div class="settings-item">
-      <div class="space-y-1">
+      <div class="min-w-0 flex-1 space-y-1">
         <h3 class="font-semibold">启用任务栏歌词</h3>
-        <p class="text-sm text-text-secondary">在 Windows 主任务栏显示歌词，悬停时显示播放控制</p>
+        <p
+          id="taskbar-lyric-status"
+          role="status"
+          aria-live="polite"
+          class="text-sm text-text-secondary"
+        >
+          {{ barMessage || '在 Windows 主任务栏显示歌词，悬停时显示播放控制' }}
+        </p>
       </div>
       <div class="flex items-center gap-3 shrink-0">
         <button
@@ -105,20 +117,18 @@ const setBarSettings = async (patch: Partial<TaskbarLyricSettings>) => {
         </button>
         <Switch
           aria-label="启用任务栏歌词"
+          aria-describedby="taskbar-lyric-status"
           :model-value="barEnabled"
           :disabled="barBusy"
           @update:model-value="setBar(Boolean($event))"
         />
       </div>
     </div>
-    <p v-if="barMessage" role="status" class="text-sm text-text-secondary">
-      {{ barMessage }}
-    </p>
     <template v-if="barEnabled">
       <div class="settings-item">
         <div class="space-y-1">
           <h3 class="font-semibold">歌词位置</h3>
-          <p class="text-sm text-text-secondary">自动选择任务栏空闲的一侧</p>
+          <p class="text-sm text-text-secondary">{{ barPositionDescription }}</p>
         </div>
         <Select
           class="shrink-0 w-45"

@@ -70,19 +70,23 @@ export function resolveTaskbarLyricRegion(
         ? 'left'
         : 'right'
       : settings.position;
-  const rect = layout[side];
-  if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) return null;
-  const scale = layout.scaleFactor;
-  const width = Math.floor(Math.min(settings.maxWidth, rect.width / scale - 16));
-  const height = Math.floor(rect.height / scale);
-  if (width < 160 || height < 28 || height > 100) return null;
-  return {
-    anchor: side,
-    bounds: {
-      x: Math.round(rect.x / scale + (side === 'right' ? rect.width / scale - width - 8 : 8)),
-      y: Math.round(rect.y / scale),
-      width,
-      height,
-    },
+  const resolveSide = (anchor: 'left' | 'right') => {
+    const rect = layout[anchor];
+    if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) return null;
+    const scale = layout.scaleFactor;
+    const width = Math.floor(Math.min(settings.maxWidth, rect.width / scale - 16));
+    const height = Math.floor(rect.height / scale);
+    if (width < 160 || height < 28 || height > 100) return null;
+    return {
+      anchor,
+      bounds: {
+        x: Math.round(rect.x / scale + (anchor === 'right' ? rect.width / scale - width - 8 : 8)),
+        y: Math.round(rect.y / scale),
+        width,
+        height,
+      },
+    };
   };
+  // 与 SPlayer-Next 一致：指定侧作为首选；没有安全空间时使用另一侧，两侧都不足才隐藏。
+  return resolveSide(side) ?? resolveSide(side === 'left' ? 'right' : 'left');
 }

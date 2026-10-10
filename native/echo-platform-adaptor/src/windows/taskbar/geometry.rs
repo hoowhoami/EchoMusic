@@ -35,6 +35,30 @@ pub fn free_intervals(width: i32, mut occupied: Vec<(i32, i32)>) -> Vec<(i32, i3
     gaps
 }
 
+/// 左右以实际开始菜单 / 应用图标区为界，不能把图标之间或屏幕中线附近的空隙当作歌词区。
+pub fn taskbar_spaces(
+    width: i32,
+    content: (i32, i32),
+    occupied: Vec<(i32, i32)>,
+) -> ((i32, i32), (i32, i32)) {
+    let (start, end) = content;
+    if start < 0 || end <= start || end > width {
+        return ((0, 0), (0, 0));
+    }
+    let mut occupied = occupied;
+    occupied.push(content);
+    let mut left = (0, 0);
+    let mut right = (0, 0);
+    for (x, size) in free_intervals(width, occupied) {
+        if x + size <= start && size > left.1 {
+            left = (x, size);
+        } else if x >= end && size > right.1 {
+            right = (x, size);
+        }
+    }
+    (left, right)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,5 +95,46 @@ mod tests {
         );
         assert!(free_intervals(100, vec![(0, 100)]).is_empty());
         assert!(free_intervals(0, vec![(1, 10)]).is_empty());
+    }
+    #[test]
+    fn left_aligned_apps_only_leave_space_after_the_last_icon() {
+        assert_eq!(
+            taskbar_spaces(
+                1054,
+                (0, 420),
+                vec![(0, 48), (56, 96), (136, 180), (376, 420), (900, 1054)]
+            ),
+            ((0, 0), (426, 468))
+        );
+    }
+    #[test]
+    fn centered_apps_leave_two_spaces_between_widgets_and_tray() {
+        assert_eq!(
+            taskbar_spaces(1920, (680, 1100), vec![(0, 160), (1600, 1920)]),
+            ((166, 508), (1106, 488))
+        );
+    }
+    #[test]
+    fn icon_group_gaps_are_not_lyric_regions() {
+        assert_eq!(
+            taskbar_spaces(
+                1920,
+                (450, 1050),
+                vec![(450, 490), (1000, 1050), (1700, 1920)]
+            ),
+            ((0, 444), (1056, 638))
+        );
+    }
+    #[test]
+    fn other_shell_buttons_are_excluded_and_invalid_content_hides() {
+        assert_eq!(
+            taskbar_spaces(
+                1440,
+                (810, 1010),
+                vec![(0, 140), (1120, 1240), (1300, 1440)]
+            ),
+            ((146, 658), (1016, 98))
+        );
+        assert_eq!(taskbar_spaces(1440, (10, 1500), vec![]), ((0, 0), (0, 0)));
     }
 }
