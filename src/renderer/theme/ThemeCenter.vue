@@ -557,9 +557,10 @@ watch(
 </template>
 <style scoped>
 .theme-center {
+  --theme-page-inline-padding: 32px;
   box-sizing: border-box;
   height: 100%;
-  padding: 26px 32px 20px;
+  padding: 26px var(--theme-page-inline-padding) 20px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -595,13 +596,13 @@ watch(
   border-radius: 50%;
 }
 .theme-workbench {
-  /* Extend the scroll clip into page padding without shifting the card grid. */
+  /* Keep the shadow gutter on the left and align the scrollbar with the page edge. */
   --theme-gallery-bleed: 14px;
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
   min-height: 0;
-  margin-inline: calc(-1 * var(--theme-gallery-bleed));
+  margin-inline: calc(-1 * var(--theme-gallery-bleed)) calc(-1 * var(--theme-page-inline-padding));
   overflow: hidden;
 }
 .theme-gallery-scroll {
@@ -611,7 +612,8 @@ watch(
 }
 .theme-gallery {
   /* Leave room for preview shadows and keyboard focus outside the cards. */
-  padding: 2px calc(2px + var(--theme-gallery-bleed)) 12px;
+  padding: 2px calc(2px + var(--theme-page-inline-padding)) 12px
+    calc(2px + var(--theme-gallery-bleed));
   container-type: inline-size;
 }
 .theme-browse-tabs {
@@ -823,7 +825,8 @@ watch(
 }
 @media (max-width: 700px) {
   .theme-center {
-    padding: 20px;
+    --theme-page-inline-padding: 20px;
+    padding-block: 20px;
   }
   .theme-center-heading {
     align-items: flex-start;

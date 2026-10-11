@@ -165,6 +165,11 @@ Acrylic. The reported working Windows 11 22H2+ native composition path is unchan
 
 ## Taskbar integration
 
+Explorer restart diagnostics and the verified Electron-version difference are
+documented in [the investigation](../../docs/taskbar-explorer-investigation.md).
+The isolated Windows probe records session messages synchronously and captures
+the process exit code outside Electron; it does not alter shutdown handling.
+
 The architecture follows the native embedding / cover-preview approach examined in
 `../SPlayer-Next`: EchoMusic implements its own session and bitmap ownership inside
 this addon, and uses its existing now-playing clock, theme tokens and Tabler icons.
@@ -188,6 +193,15 @@ DPI. Content uses `setShape` to release unused hit-test space without moving the
 HWND on each line. Hidden windows stop receiving playback snapshots and stop RAF;
 showing sends the latest snapshot even when playback is paused. Stop restores the
 Win10 task list, removes callbacks/hooks/timers and releases COM state.
+
+Foreground events include this process: returning from a full-screen capture overlay
+to EchoMusic must refresh visibility. Hide/destroy/cloak events for the last foreground
+window, and external mouse-capture completion, also refresh layout; hidden, minimized and cloaked windows do not count as
+full-screen blockers. Foreground and explicit refresh requests resend unchanged geometry
+so an externally hidden window can be restored. `WM_DESTROY` invalidates the Electron
+host before `closed`; layout and playback pushes stop accessing it, and a replacement
+is created on the next event-loop turn. Disable/quit cancel pending replacements.
+The Windows tray provides redisplay while the feature is enabled.
 
 Thumbnail setup installs the native subclass and a prepared bitmap before enabling
 iconic flags. Each cover is decoded once in main, bounded to 512px, and passed as

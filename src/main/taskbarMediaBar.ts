@@ -25,6 +25,8 @@ let contentWidth = 160;
 let disposeSystem: (() => void) | null = null;
 let settings = { ...DEFAULT_TASKBAR_LYRIC_SETTINGS };
 let settingsLoaded = false;
+const destroyedNativeWindows = new WeakSet<BrowserWindow>();
+let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
 const nativeWidth = () => settings.maxWidth;
 function loadSettings(): void {
   if (settingsLoaded) return;
@@ -32,7 +34,7 @@ function loadSettings(): void {
   settingsLoaded = true;
 }
 const usable = (value: BrowserWindow | null): value is BrowserWindow =>
-  Boolean(value && !value.isDestroyed());
+  Boolean(value && !destroyedNativeWindows.has(value) && !value.isDestroyed());
 const state = () => ({
   enabled,
   visible: usable(win) && win.isVisible(),
@@ -88,6 +90,10 @@ function release(): void {
   layout = null;
   region = null;
 }
+function cancelRecovery(): void {
+  clearTimeout(recoveryTimer);
+  recoveryTimer = undefined;
+}
 async function createBar(): Promise<void> {
   const native = getNativeTaskbarLyric();
   if (!native) throw new Error('任务栏原生组件不可用，请重新构建 echo-platform-adaptor');
@@ -125,7 +131,13 @@ async function createBar(): Promise<void> {
   });
   win = candidate;
   let recoverOnClose = true;
-  bindVisibleNowPlayingWindow(candidate);
+  // 外部父窗口销毁 HWND 时，closed 之前还有一段 Chromium 清理期。
+  // 期间禁止布局和播放推送再访问已经失效的窗口宿主。
+  candidate.hookWindowMessage(0x0002 /* WM_DESTROY */, () => {
+    destroyedNativeWindows.add(candidate);
+    if (enabled && !quitting) log.warn('[TaskbarLyric] Native window destroyed by shell');
+  });
+  bindVisibleNowPlayingWindow(candidate, () => usable(candidate));
   contentWidth = settings.maxWidth;
   candidate.on('closed', () => {
     if (win !== candidate) return;
@@ -134,9 +146,15 @@ async function createBar(): Promise<void> {
     broadcastState();
     // Explorer 销毁父窗口时可能一并关闭子窗口；重新建立任务栏嵌入。
     if (recoverOnClose && enabled && !quitting && !creating) {
-      void setTaskbarPlayerEnabled(true).catch((error) =>
-        log.error('[TaskbarLyric] Recovery failed:', error),
-      );
+      // 不在 WM_DESTROY / closed 的同步调用栈里创建新 Chromium 窗口。
+      cancelRecovery();
+      recoveryTimer = setTimeout(() => {
+        recoveryTimer = undefined;
+        if (!enabled || quitting || win || creating) return;
+        void setTaskbarPlayerEnabled(true).catch((error) =>
+          log.error('[TaskbarLyric] Recovery failed:', error),
+        );
+      }, 0);
     }
   });
   candidate.on('page-title-updated', (event) => event.preventDefault());
@@ -216,6 +234,7 @@ export async function setTaskbarPlayerEnabled(value: boolean): Promise<ReturnTyp
   loadSettings();
   enabled = value;
   if (!enabled) {
+    cancelRecovery();
     if (usable(win)) win.destroy();
     else release();
   }
@@ -234,8 +253,14 @@ export async function setTaskbarPlayerEnabled(value: boolean): Promise<ReturnTyp
     throw error;
   }
   if (!quitting) setMainAppSetting('taskbarPlayerEnabled', enabled);
+  // 已经启用时也重新请求原生布局，让设置页 / 托盘的「重新显示」确实刷新隐藏状态。
+  if (enabled) session?.update(nativeWidth());
   present();
   broadcastState();
+  return state();
+}
+export function getTaskbarPlayerState(): ReturnType<typeof state> {
+  loadSettings();
   return state();
 }
 function isSender(senderId: number): boolean {
@@ -252,8 +277,7 @@ export function registerTaskbarPlayerHandlers(): void {
     return setTaskbarPlayerEnabled(value);
   });
   ipcRegistry.registerHandler('taskbar-player:get-state', () => {
-    loadSettings();
-    return state();
+    return getTaskbarPlayerState();
   });
   ipcRegistry.registerHandler(
     'taskbar-player:set-settings',
@@ -294,6 +318,7 @@ export function restoreTaskbarPlayer(): void {
 }
 export function cleanupTaskbarPlayer(): void {
   quitting = true;
+  cancelRecovery();
   release();
   if (usable(win)) win.destroy();
 }

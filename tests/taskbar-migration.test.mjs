@@ -188,3 +188,34 @@ test('hidden taskbar window receives no playback pushes and resumes with the lat
   api.syncNowPlayingSnapshot({ appearance: { isDark: true } });
   assert.equal(messages.length, 2);
 });
+test('invalidated native window receives no playback pushes or visibility calls before closed', () => {
+  let alive = true;
+  const messages = [];
+  const bar = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    isVisible: () => {
+      assert.equal(alive, true);
+      return true;
+    },
+    webContents: { isDestroyed: () => false, send: (...args) => messages.push(args) },
+  });
+  const api = load('../src/main/nowPlaying.ts', {
+    electron: { BrowserWindow: { getAllWindows: () => [bar] } },
+    './ipc/registry': {},
+    './window': { getMainWindow: () => null },
+    './storage/settings': {},
+    '../shared/nowPlaying': load('../src/shared/nowPlaying.ts', {}),
+    '../shared/playback': load('../src/shared/playback.ts', {}),
+    '../shared/opencc': load('../src/shared/opencc.ts', {}),
+    './taskbarThumbnail': { isCoverPreviewEnabled: () => true },
+    './taskbarProgress': {},
+    './thumbar': { updateThumbarPlayback() {} },
+  });
+  api.bindVisibleNowPlayingWindow(bar, () => alive);
+  api.syncNowPlayingSnapshot({ playback });
+  assert.equal(messages.length, 1);
+  alive = false;
+  api.syncNowPlayingSnapshot({ playback: { ...playback, currentTime: 51 } });
+  bar.emit('show');
+  assert.equal(messages.length, 1);
+});

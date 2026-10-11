@@ -17,6 +17,8 @@ const load = (file, mocks, extras = {}) => {
       Buffer,
       process: { platform: 'win32', env: {} },
       __dirname: '/test',
+      setTimeout,
+      clearTimeout,
       require: (id) => {
         assert.ok(id in mocks, id);
         return mocks[id];
@@ -36,6 +38,9 @@ const layout = () => ({
   available: true,
 });
 function setup({ page = async () => {}, available = true, autoReady = true } = {}) {
+  const scheduled = new Map();
+  let timerId = 0;
+  let isBarAvailable;
   const windows = [],
     sessions = [],
     handlers = new Map(),
@@ -62,6 +67,8 @@ function setup({ page = async () => {}, available = true, autoReady = true } = {
       this.bounds = { x: 0, y: 0, width: options.width, height: options.height };
       this.visible = false;
       this.dead = false;
+      this.nativeDead = false;
+      this.hooks = new Map();
       this.sent = [];
       this.webContents = Object.assign(new EventEmitter(), {
         id: windows.length + 2,
@@ -74,9 +81,11 @@ function setup({ page = async () => {}, available = true, autoReady = true } = {
       return this.dead;
     }
     isVisible() {
+      assert.equal(this.nativeDead, false, 'native host must be alive');
       return this.visible;
     }
     getBounds() {
+      assert.equal(this.nativeDead, false, 'native host must be alive');
       return this.bounds;
     }
     setBounds(b) {
@@ -96,7 +105,12 @@ function setup({ page = async () => {}, available = true, autoReady = true } = {
       h.writeBigUInt64LE(BigInt(this.webContents.id));
       return h;
     }
+    hookWindowMessage(message, callback) {
+      this.hooks.set(message, callback);
+    }
     destroy() {
+      this.nativeDead = true;
+      this.hooks.get(0x0002)?.();
       this.dead = true;
       this.visible = false;
       this.emit('closed');
@@ -116,6 +130,7 @@ function setup({ page = async () => {}, available = true, autoReady = true } = {
     }
     update(width) {
       this.width = width;
+      this.updates = (this.updates || 0) + 1;
     }
     stop() {
       this.stopped = true;
@@ -124,34 +139,64 @@ function setup({ page = async () => {}, available = true, autoReady = true } = {
       this.callback(value);
     }
   }
-  const api = load('../src/main/taskbarMediaBar.ts', {
-    electron: {
-      BrowserWindow: Window,
-      Menu: { buildFromTemplate: () => ({ popup() {} }) },
-      nativeTheme: theme,
-      screen,
-    },
-    'node:path': { join },
-    './ipc/registry': {
-      ipcRegistry: {
-        registerHandler: (key, fn) => handlers.set(key, fn),
-        registerListener: (key, fn) => listeners.set(key, fn),
+  const api = load(
+    '../src/main/taskbarMediaBar.ts',
+    {
+      electron: {
+        BrowserWindow: Window,
+        Menu: { buildFromTemplate: () => ({ popup() {} }) },
+        nativeTheme: theme,
+        screen,
       },
+      'node:path': { join },
+      './ipc/registry': {
+        ipcRegistry: {
+          registerHandler: (key, fn) => handlers.set(key, fn),
+          registerListener: (key, fn) => listeners.set(key, fn),
+        },
+      },
+      './window': { getMainWindow: () => main, showMainWindow() {} },
+      './storage/settings': {
+        getMainAppSettings: () => settings,
+        setMainAppSetting: (key, value) => (settings[key] = value),
+      },
+      './native/platform': {
+        getNativeTaskbarLyric: () => (available ? { TaskbarLyricSession: Session } : null),
+      },
+      './nowPlaying': {
+        bindVisibleNowPlayingWindow(_win, available) {
+          isBarAvailable = available;
+        },
+      },
+      '../shared/taskbar': shared,
+      './logger': { __esModule: true, default: { error() {}, warn() {} } },
     },
-    './window': { getMainWindow: () => main, showMainWindow() {} },
-    './storage/settings': {
-      getMainAppSettings: () => settings,
-      setMainAppSetting: (key, value) => (settings[key] = value),
+    {
+      setTimeout: (fn) => {
+        scheduled.set(++timerId, fn);
+        return timerId;
+      },
+      clearTimeout: (id) => scheduled.delete(id),
     },
-    './native/platform': {
-      getNativeTaskbarLyric: () => (available ? { TaskbarLyricSession: Session } : null),
-    },
-    './nowPlaying': { bindVisibleNowPlayingWindow() {} },
-    '../shared/taskbar': shared,
-    './logger': { __esModule: true, default: { error() {} } },
-  });
+  );
   api.registerTaskbarPlayerHandlers();
-  return { api, windows, sessions, handlers, listeners, settings, screen, theme, main };
+  return {
+    api,
+    windows,
+    sessions,
+    handlers,
+    listeners,
+    settings,
+    screen,
+    theme,
+    main,
+    isBarAvailable: () => isBarAvailable?.(),
+    runScheduled: () => {
+      const tasks = Array.from(scheduled.values());
+      scheduled.clear();
+      tasks.forEach((fn) => fn());
+    },
+  };
 }
 test('concurrent enable creates one hidden window, then shows only after a valid native layout', async () => {
   const f = setup();
@@ -276,6 +321,59 @@ test('settings persist, clamp malformed inputs, and all mutations reject foreign
     () => f.handlers.get('taskbar-player:set-enabled')({ sender: { id: 1 } }, 'yes'),
     /state/,
   );
+});
+test('redisplay requests a fresh native layout even if the existing window is enabled', async () => {
+  const f = setup();
+  await f.api.setTaskbarPlayerEnabled(true);
+  const session = f.sessions[0];
+  session.emit({ ...layout(), available: false });
+  assert.equal(f.windows[0].visible, false);
+  const before = session.updates;
+  await f.api.setTaskbarPlayerEnabled(true);
+  assert.equal(session.updates, before + 1);
+  assert.equal(f.windows.length, 1);
+  session.emit();
+  assert.equal(f.windows[0].visible, true);
+  f.api.cleanupTaskbarPlayer();
+});
+test('external HWND destruction blocks late layout/visibility access and defers one replacement', async () => {
+  const f = setup();
+  await f.api.setTaskbarPlayerEnabled(true);
+  const oldWindow = f.windows[0],
+    oldSession = f.sessions[0];
+  oldSession.emit();
+  oldWindow.nativeDead = true;
+  oldWindow.hooks.get(0x0002)();
+  assert.equal(oldWindow.isDestroyed(), false); // Chromium 的 closed 尚未到达。
+  assert.equal(f.isBarAvailable(), false);
+  oldSession.emit();
+  assert.equal(f.api.getTaskbarPlayerState().visible, false);
+  oldWindow.destroy();
+  assert.equal(oldSession.stopped, true);
+  assert.equal(f.windows.length, 1, 'no new BrowserWindow inside native destruction');
+  f.runScheduled();
+  await new Promise(setImmediate);
+  assert.equal(f.windows.length, 2);
+  assert.equal(f.sessions.length, 2);
+  assert.equal(f.isBarAvailable(), true);
+  oldSession.emit();
+  assert.equal(f.windows[1].visible, false);
+  f.sessions[1].emit();
+  assert.equal(f.windows[1].visible, true);
+  f.api.cleanupTaskbarPlayer();
+});
+test('disable or application cleanup cancels a queued Explorer replacement', async () => {
+  for (const quit of [false, true]) {
+    const f = setup();
+    await f.api.setTaskbarPlayerEnabled(true);
+    f.windows[0].destroy();
+    if (quit) f.api.cleanupTaskbarPlayer();
+    else await f.api.setTaskbarPlayerEnabled(false);
+    f.runScheduled();
+    await new Promise(setImmediate);
+    assert.equal(f.windows.length, 1);
+    assert.equal(f.sessions.length, 1);
+  }
 });
 test('native failure and page failure reject honestly and reset persisted enable state', async () => {
   for (const options of [

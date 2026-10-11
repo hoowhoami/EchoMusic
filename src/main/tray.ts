@@ -7,6 +7,7 @@ import type { TrayCommand, TrayPlaybackPayload } from '../shared/tray';
 import log, { isDiagnosticModeActive } from './logger';
 import { resolveTrayIconPath } from './appIcons';
 import { registerMacTrayVisibility } from './macBackgroundMode';
+import { getTaskbarPlayerState, setTaskbarPlayerEnabled } from './taskbarMediaBar';
 
 interface TrayContext {
   getMainWindow: () => Electron.BrowserWindow | null;
@@ -190,6 +191,18 @@ const createTrayMenu = () => {
     ...createPlaybackMenuItems(),
     { type: 'separator' },
     ...createDesktopLyricMenuItems(),
+    ...(process.platform === 'win32' && getTaskbarPlayerState().enabled
+      ? [
+          {
+            label: '重新显示任务栏歌词',
+            click: () => {
+              void setTaskbarPlayerEnabled(true).catch((error) =>
+                log.error('[Tray] Failed to redisplay taskbar lyric:', error),
+              );
+            },
+          },
+        ]
+      : []),
     { type: 'separator' },
     {
       label: '退出',

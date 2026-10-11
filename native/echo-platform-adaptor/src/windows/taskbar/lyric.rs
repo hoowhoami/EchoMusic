@@ -20,9 +20,12 @@ use windows::{
     core::{implement, w, Ref},
     Win32::{
         Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
-        Graphics::Gdi::{
-            GetMonitorInfoW, MapWindowPoints, MonitorFromWindow, MONITORINFO,
-            MONITOR_DEFAULTTONEAREST,
+        Graphics::{
+            Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED},
+            Gdi::{
+                GetMonitorInfoW, MapWindowPoints, MonitorFromWindow, MONITORINFO,
+                MONITOR_DEFAULTTONEAREST,
+            },
         },
         System::{
             Com::{
@@ -56,6 +59,7 @@ thread_local! {
     static SHELL_PID: Cell<u32> = const { Cell::new(0) };
     static SHELL_HWND: Cell<isize> = const { Cell::new(0) };
     static CREATED: Cell<u32> = const { Cell::new(0) };
+    static FOREGROUND_HWND: Cell<isize> = const { Cell::new(0) };
 }
 #[napi(object)]
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -131,7 +135,7 @@ impl TaskbarLyricSession {
         let id = self.thread_id.load(Ordering::Acquire);
         if id != 0 {
             unsafe {
-                let _ = PostThreadMessageW(id, CHANGE, WPARAM(0), LPARAM(0));
+                let _ = PostThreadMessageW(id, CHANGE, WPARAM(2), LPARAM(0));
             }
         }
     }
@@ -165,18 +169,43 @@ unsafe extern "system" fn shell_event(
     _: HWINEVENTHOOK,
     event: u32,
     hwnd: HWND,
-    _: i32,
+    object: i32,
     _: i32,
     _: u32,
     _: u32,
 ) {
+    if event == EVENT_SYSTEM_FOREGROUND {
+        FOREGROUND_HWND.with(|value| value.set(hwnd.0 as isize));
+        let _ = PostThreadMessageW(GetCurrentThreadId(), CHANGE, WPARAM(2), LPARAM(0));
+        return;
+    }
+    // 截图工具结束选区时可能只释放鼠标捕获，不发生前台切换。
+    if event == EVENT_SYSTEM_CAPTUREEND {
+        let _ = PostThreadMessageW(GetCurrentThreadId(), CHANGE, WPARAM(2), LPARAM(0));
+        return;
+    }
+    // 截图遮罩可能只隐藏 / 销毁而不切换前台；结束时仍需重新检查全屏状态。
+    let foreground_ended = FOREGROUND_HWND.with(|value| value.get() == hwnd.0 as isize)
+        && matches!(
+            event,
+            EVENT_OBJECT_HIDE
+                | EVENT_OBJECT_DESTROY
+                | EVENT_OBJECT_CLOAKED
+                | EVENT_OBJECT_UNCLOAKED
+        );
     let mut pid = 0;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
-    if event == 3
+    // 销毁事件发生时 GetAncestor/GetWindowThreadProcessId 可能已失败，先比较已记录的 HWND。
+    let shell_changed = SHELL_HWND.with(|value| value.get() == hwnd.0 as isize)
         || (SHELL_PID.with(|p| p.get() == pid && pid != 0)
-            && SHELL_HWND.with(|value| value.get() == GetAncestor(hwnd, GA_ROOT).0 as isize))
-    {
-        let _ = PostThreadMessageW(GetCurrentThreadId(), CHANGE, WPARAM(0), LPARAM(0));
+            && SHELL_HWND.with(|value| value.get() == GetAncestor(hwnd, GA_ROOT).0 as isize));
+    if shell_changed || (object == OBJID_WINDOW.0 && foreground_ended) {
+        let _ = PostThreadMessageW(
+            GetCurrentThreadId(),
+            CHANGE,
+            WPARAM(if foreground_ended { 2 } else { 0 }),
+            LPARAM(0),
+        );
     }
 }
 unsafe extern "system" fn watcher_proc(
@@ -475,8 +504,18 @@ impl Shell {
         let foreground = GetForegroundWindow();
         let mut foreground_pid = 0;
         GetWindowThreadProcessId(foreground, Some(&mut foreground_pid));
+        let mut cloaked: u32 = 0;
+        let _ = DwmGetWindowAttribute(
+            foreground,
+            DWMWA_CLOAKED,
+            &mut cloaked as *mut _ as *mut c_void,
+            size_of::<u32>() as u32,
+        );
         if foreground != self.hwnd
             && foreground != self.child
+            && IsWindowVisible(foreground).as_bool()
+            && !IsIconic(foreground).as_bool()
+            && cloaked == 0
             && SHELL_PID.with(|value| value.get() != foreground_pid)
         {
             if let Some(r) = rect(foreground) {
@@ -681,16 +720,31 @@ unsafe fn run(
         window,
         hooks: Vec::new(),
     };
-    for (first, last) in [(3, 3), (0x8000, 0x800c)] {
-        let hook = SetWinEventHook(
-            first,
-            last,
-            None,
-            Some(shell_event),
-            0,
-            0,
+    FOREGROUND_HWND.with(|value| value.set(GetForegroundWindow().0 as isize));
+    // 前台回到 EchoMusic 也是恢复截图隐藏的必要事件，不能跳过自己的进程。
+    for (first, last, flags) in [
+        (
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            WINEVENT_OUTOFCONTEXT,
+        ),
+        (
+            EVENT_OBJECT_CREATE,
+            EVENT_OBJECT_NAMECHANGE,
             WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
-        );
+        ),
+        (
+            EVENT_SYSTEM_CAPTUREEND,
+            EVENT_SYSTEM_CAPTUREEND,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+        ),
+        (
+            EVENT_OBJECT_CLOAKED,
+            EVENT_OBJECT_UNCLOAKED,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+        ),
+    ] {
+        let hook = SetWinEventHook(first, last, None, Some(shell_event), 0, 0, flags);
         if !hook.0.is_null() {
             watchers.hooks.push(hook);
         }
@@ -705,6 +759,9 @@ unsafe fn run(
         if message.message == CHANGE {
             if message.wParam.0 == 1 {
                 shell.take();
+                last_layout = None;
+            } else if message.wParam.0 == 2 {
+                // 前台恢复 / 手动重新显示时，几何未变也要重发，恢复被系统隐藏的窗口。
                 last_layout = None;
             }
             if !scheduled {

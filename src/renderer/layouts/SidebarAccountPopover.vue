@@ -131,7 +131,12 @@ const logout = () => {
         aria-haspopup="dialog"
         :aria-expanded="open"
       >
-        <Icon :icon="iconChevronDown" :width="18" :height="18" :class="{ 'is-open': open }" />
+        <Icon
+          :icon="iconChevronDown"
+          :width="compact ? 14 : 18"
+          :height="compact ? 14 : 18"
+          :class="{ 'is-open': open }"
+        />
       </button>
     </template>
     <section class="account-panel" aria-label="账号信息">
@@ -223,8 +228,17 @@ const logout = () => {
   color: var(--color-text-main);
 }
 .account-trigger-compact {
-  width: 18px;
+  width: 22px;
   height: 42px;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+.account-trigger-compact:hover,
+.account-trigger-compact[aria-expanded='true'] {
+  background: var(--control-hover-bg);
+}
+.account-trigger:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 .account-trigger svg {
   transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
