@@ -9,6 +9,7 @@ SMTC/MPRIS/Now Playing lifecycle or audio dependencies.
 - `src/windows/double_click.rs`: native window double-click observation.
 - `src/windows/taskbar/thumbnail.rs`: DWM thumbnail and Aero Peek previews with bounded BGRA / GDI caches.
 - `src/windows/taskbar/lyric.rs`: primary-taskbar embedding and event-driven shell layout.
+- `src/windows/taskbar/window_lifecycle.rs`: HWND destruction ordering for foreign shell parents.
 - `src/windows/taskbar/geometry.rs`: platform-independent bitmap fitting and occupied-area subtraction.
 - `src/main/native/platform.ts` in the application: shared loader and API validation.
 - `src/macos/window_pointer.rs`: macOS local mouse-down monitor for the main window. It
@@ -165,7 +166,7 @@ Acrylic. The reported working Windows 11 22H2+ native composition path is unchan
 
 ## Taskbar integration
 
-Explorer restart diagnostics and the verified Electron-version difference are
+Explorer restart diagnostics and the symbolicated crash analysis are
 documented in [the investigation](../../docs/taskbar-explorer-investigation.md).
 The isolated Windows probe records session messages synchronously and captures
 the process exit code outside Electron; it does not alter shutdown handling.
@@ -202,6 +203,16 @@ so an externally hidden window can be restored. `WM_DESTROY` invalidates the Ele
 host before `closed`; layout and playback pushes stop accessing it, and a replacement
 is created on the next event-loop turn. Disable/quit cancel pending replacements.
 The Windows tray provides redisplay while the feature is enabled.
+
+`window_lifecycle.rs` installs a subclass on the lyric HWND's UI thread before
+embedding. The reported Explorer restart delivered `WM_NCDESTROY` without
+`WM_DESTROY`; Electron's native-theme observer was still registered when the host
+was deleted, triggering Chromium's destructor CHECK. The subclass synchronously
+delivers the missing `WM_DESTROY` cleanup phase through the window's normal
+message chain before forwarding `WM_NCDESTROY`. Normal destruction is forwarded
+without duplication. Its state belongs to the HWND and survives session stop;
+the subclass removes itself at final destruction. Shutdown/session messages are
+unchanged. This correction needs a Windows rebuild and restart retest.
 
 Thumbnail setup installs the native subclass and a prepared bitmap before enabling
 iconic flags. Each cover is decoded once in main, bounded to 512px, and passed as

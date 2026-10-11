@@ -111,6 +111,9 @@ impl TaskbarLyricSession {
         let callback: Callback = callback
             .build_threadsafe_function::<TaskbarLyricLayout>()
             .build_callback(|ctx| Ok(ctx.value))?;
+        // Install on Electron's UI thread, before the worker can SetParent.
+        // A foreign shell parent can otherwise skip Electron's WM_DESTROY cleanup.
+        unsafe { super::window_lifecycle::install(HWND(child as *mut c_void))? };
         let session = Self {
             stopped: Arc::new(AtomicBool::new(false)),
             thread_id: Arc::new(AtomicU32::new(0)),
