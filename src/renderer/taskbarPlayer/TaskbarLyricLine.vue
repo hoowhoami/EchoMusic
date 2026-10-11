@@ -19,29 +19,38 @@ const chars = computed(() =>
     ? props.line.characters
     : [],
 );
-const offset = computed(() => {
+const scrollDistance = computed(() => {
   if (!overflow.value) return 0;
   if (!chars.value.length) {
     const start = (props.line?.time ?? 0) * 1000;
     const duration = (props.endTimeMs ?? start) - start;
-    const leftOffset =
-      duration > 0
-        ? -Math.round(overflow.value * Math.min(1, Math.max(0, (props.timeMs - start) / duration)))
-        : 0;
-    return leftOffset + (props.anchor === 'right' ? overflow.value : 0);
+    if (duration <= 0) return 0;
+    // 切行前留出阅读尾句的时间；短句按比例保留，避免一开始就滚到底。
+    const scrollDuration = duration - Math.min(2000, duration * 0.25);
+    const progress = Math.min(1, Math.max(0, (props.timeMs - start) / scrollDuration));
+    return overflow.value * progress;
   }
   // 随当前播放字平移，暂停时保持位置，不启动独立的无限跑马灯。
   const active = chars.value.findIndex((char) => char.endTime > props.timeMs);
   const ratio = active < 0 ? 1 : active / Math.max(1, chars.value.length - 1);
-  return -Math.round(overflow.value * ratio) + (props.anchor === 'right' ? overflow.value : 0);
+  return overflow.value * ratio;
 });
+const offset = computed(
+  () => (props.anchor === 'right' ? overflow.value : 0) - scrollDistance.value,
+);
+// 只淡出尚被裁切的一端；滚到末尾后右边缘必须完全不透明。
+const fade = computed(() => ({
+  '--fade-left': `${Math.min(12, scrollDistance.value)}px`,
+  '--fade-right': `${Math.min(12, overflow.value - scrollDistance.value)}px`,
+}));
 let observer: ResizeObserver | undefined;
 let alive = true;
 let measureFrame = 0;
 let lastWidth = -1;
 const measure = () => {
-  const width = content.value?.scrollWidth ?? 0;
-  overflow.value = Math.max(0, width - (viewport.value?.clientWidth ?? 0));
+  // 保留小数像素，避免缩放后滚动距离少于文本的实际溢出宽度。
+  const width = content.value?.getBoundingClientRect().width ?? 0;
+  overflow.value = Math.max(0, width - (viewport.value?.getBoundingClientRect().width ?? 0));
   if (width !== lastWidth) {
     lastWidth = width;
     emit('width', width);
@@ -82,6 +91,7 @@ onUnmounted(() => {
     ref="viewport"
     class="lyric-line"
     :class="{ overflow: overflow > 0, right: anchor === 'right' }"
+    :style="fade"
     :title="text"
   >
     <span ref="content" class="line-content" :style="{ transform: `translateX(${offset}px)` }">
@@ -112,7 +122,13 @@ onUnmounted(() => {
   white-space: pre;
 }
 .lyric-line.overflow {
-  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 12px), transparent);
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--fade-left),
+    #000 calc(100% - var(--fade-right)),
+    transparent
+  );
 }
 .lyric-line.right {
   justify-content: flex-end;

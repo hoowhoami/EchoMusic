@@ -67,6 +67,12 @@ const seek = useTaskbarSeek(
   (value) => window.electron?.nowPlaying.command({ type: 'seek', value }),
 );
 const { progressValue, duration, isDragging } = seek;
+const lineEndTimeMs = computed(() => {
+  if (!line.value) return undefined;
+  if (nextLine.value) return nextLine.value.time * 1000;
+  const durationMs = playback.value?.clock?.durationMs ?? (playback.value?.duration ?? 0) * 1000;
+  return durationMs > 0 ? durationMs + (lyric.value?.timeOffset ?? 0) : undefined;
+});
 const expanded = computed(() =>
   Boolean(playback.value && (hovered.value || focused.value || isDragging.value)),
 );
@@ -224,7 +230,7 @@ onUnmounted(() => {
               :text="primary"
               :line="line"
               :time-ms="timeMs"
-              :end-time-ms="nextLine ? nextLine.time * 1000 : undefined"
+              :end-time-ms="lineEndTimeMs"
               :word-by-word="settings.wordByWord"
               :anchor="anchor"
               @width="primaryWidth = $event"
