@@ -297,14 +297,47 @@ const chromiumFetch = async (input: URL | Request | string): Promise<Response> =
     throw createCodedError('Unknown Chromium transport request context', 'ERR_BAD_OPTION');
 
   const { config, networkSession } = context;
-  const signal = fetchRequest.signal;
-  if (signal.aborted) throw getAbortReason(signal);
+  return requestWithSession(fetchRequest, networkSession, {
+    redirectLimit: getRedirectLimit(config),
+    redirectMode: config.maxRedirects === 0 ? 'manual' : fetchRequest.redirect,
+    maxBodyLength: config.maxBodyLength ?? -1,
+    maxContentLength: config.maxContentLength ?? -1,
+    // Preserve Axios's opt-in cookie behavior while allowing proxy authentication.
+    credentials: fetchRequest.credentials === 'include' ? 'include' : undefined,
+  });
+};
 
-  const redirectLimit = getRedirectLimit(config);
-  const requestedRedirectMode = fetchRequest.redirect;
-  const redirectMode = config.maxRedirects === 0 ? 'manual' : requestedRedirectMode;
-  const maxBodyLength = config.maxBodyLength ?? -1;
-  const maxContentLength = config.maxContentLength ?? -1;
+// Unlike Session.fetch, this exposes a manual redirect as a Response before aborting
+// the Chromium request, so download callers can validate each hop themselves.
+export const fetchWithElectronSession = (
+  input: URL | Request | string,
+  init: RequestInit | undefined,
+  networkSession: Session,
+): Promise<Response> => {
+  const fetchRequest = new Request(input, init);
+  return requestWithSession(fetchRequest, networkSession, {
+    redirectLimit: DEFAULT_MAX_REDIRECTS,
+    redirectMode: fetchRequest.redirect,
+    maxBodyLength: -1,
+    maxContentLength: -1,
+    credentials: fetchRequest.credentials === 'same-origin' ? undefined : fetchRequest.credentials,
+  });
+};
+
+const requestWithSession = (
+  fetchRequest: Request,
+  networkSession: Session,
+  options: {
+    redirectLimit: number;
+    redirectMode: RequestRedirect;
+    maxBodyLength: number;
+    maxContentLength: number;
+    credentials?: 'include' | 'omit';
+  },
+): Promise<Response> => {
+  const signal = fetchRequest.signal;
+  if (signal.aborted) return Promise.reject(getAbortReason(signal));
+  const { redirectLimit, redirectMode, maxBodyLength, maxContentLength, credentials } = options;
 
   return new Promise<Response>((resolve, reject) => {
     let settled = false;
@@ -333,16 +366,13 @@ const chromiumFetch = async (input: URL | Request | string): Promise<Response> =
 
     try {
       const headers = getRequestHeaders(fetchRequest);
-      headers[CAPTURE_REQUEST_HEADER] = captureToken;
       request = net.request({
         url: fetchRequest.url,
         method: currentMethod,
         headers,
         session: networkSession,
         redirect: 'manual',
-        // Omitting credentials matches Node Axios: proxy auth remains available while the
-        // Chromium cookie jar is used only when the caller explicitly opts in.
-        credentials: fetchRequest.credentials === 'include' ? 'include' : undefined,
+        credentials,
       });
     } catch (error) {
       rejectOnce(error);

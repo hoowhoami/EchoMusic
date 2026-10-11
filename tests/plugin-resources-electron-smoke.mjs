@@ -50,6 +50,7 @@ import assert from 'node:assert/strict';
 import {PluginResources,getPluginResources} from './src/main/plugins/resources';
 import {registerPluginResourceHandlers} from './src/main/ipc/pluginResources';
 import {getManagedNetworkSession,initializeNetworkPolicy} from './src/main/networkPolicy';
+import {fetchWithElectronSession} from './src/main/electronAxiosAdapter';
 import {DEFAULT_NETWORK_SETTINGS} from './src/shared/network';
 protocol.registerSchemesAsPrivileged([{scheme:'echo-plugin-media',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}}]);
 const root=${JSON.stringify(directory)};
@@ -57,17 +58,17 @@ app.setPath('userData',path.join(root,'userdata'));
 (async()=>{
   await app.whenReady();
   app.on('window-all-closed',()=>{});
-  const bytes=Buffer.alloc(10*1024*1024,27);const requests=[];
-  const proxy=http.createServer((req,res)=>{requests.push(req.url);res.writeHead(200,{'Content-Length':bytes.length});res.end(bytes);});
+  const bytes=Buffer.alloc(10*1024*1024,27);const requests=[];const cdnHeaders=[];
+  const proxy=http.createServer((req,res)=>{requests.push(req.url);const url=new URL(req.url);if(url.hostname==='resource.invalid'){const status=Number(url.searchParams.get('status')||302);res.writeHead(status,{Location:'http://cdn.invalid'+url.pathname});res.end();return;}cdnHeaders.push(req.headers);res.writeHead(200,{'Content-Length':bytes.length});res.end(bytes);});
   await new Promise(resolve=>proxy.listen(0,'127.0.0.1',resolve));
   await initializeNetworkPolicy({...DEFAULT_NETWORK_SETTINGS,proxyMode:'fixed_servers',proxyRules:'http=127.0.0.1:'+proxy.address().port,proxyBypassRules:'<-loopback>'});
   const plugin={id:'smoke',name:'Smoke',directory:path.join(root,'plugins','smoke'),manifest:{capabilities:{localFiles:true,downloads:true}},enabled:true};
-  const service=new PluginResources({root,find:()=>plugin,current:p=>p===plugin,fetch:async(url,init)=>(await getManagedNetworkSession('echo-plugin-downloads')).fetch(url,init),selectDirectory:async()=>undefined,selectFiles:async()=>[]});
+  const service=new PluginResources({root,find:()=>plugin,current:p=>p===plugin,fetch:async(url,init)=>fetchWithElectronSession(url,init,await getManagedNetworkSession('echo-plugin-downloads')),selectDirectory:async()=>undefined,selectFiles:async()=>[]});
   const dir=await service.call('smoke','getPrivateDirectory',{kind:'data'});
   const task=await service.call('smoke','download',{url:'http://resource.invalid/large.bin',target:{directoryId:dir.id,relativePath:'large.bin'}});
   const owner=(await service.capture('smoke')).owner;await service.downloads.wait(owner,task.id);
   assert.deepEqual(await fs.readFile(path.join(dir.displayPath,'large.bin')),bytes);
-  assert.deepEqual(requests,['http://resource.invalid/large.bin']);
+  assert.deepEqual(requests,['http://resource.invalid/large.bin','http://cdn.invalid/large.bin']);
   const file={kind:'directory-file',directoryId:dir.id,relativePath:'video.mp4'};
   await service.call('smoke','writeFile',{ref:file,data:'0123456789'});
   const lease=await service.call('smoke','openMedia',{ref:file});
@@ -88,6 +89,25 @@ app.setPath('userData',path.join(root,'userdata'));
   const bridged=await bridgeWin.webContents.executeJavaScript('(async()=>{const disposables=[];const api=ResourceSmoke.createPluginResourceApi("smoke",fn=>disposables.push(fn));globalThis.resourceSmokeApi=api;const d=await api.files.getPrivateDirectory({kind:"data"});const task=await api.download({url:"http://resource.invalid/bridge.bin",target:{directoryId:d.id,relativePath:"bridge.bin"}});const result=await task.wait();const media=await api.files.openMedia(result.file);const r=await fetch(media.url,{headers:{Range:"bytes=0-3"}});const bytes=Array.from(new Uint8Array(await r.arrayBuffer()));await api.call("releaseMedia",{id:media.id});return {size:result.bytes,status:r.status,bytes};})()');
   assert.deepEqual(bridged,{size:10*1024*1024,status:206,bytes:[27,27,27,27]});
   const resourceService=getPluginResources();
+  for(const status of [301,302,303,307,308]){
+    const destination=path.join(root,'package-'+status+'.zip');
+    await resourceService.downloadPackage('http://resource.invalid/package.zip?status='+status,'smoke',destination,bytes.length);
+    assert.deepEqual(await fs.readFile(destination),bytes);
+  }
+  const sensitive=await service.call('smoke','download',{url:'http://resource.invalid/private.bin',headers:{Authorization:'Bearer secret',Cookie:'secret','X-Custom-Key':'secret'},target:{directoryId:dir.id,relativePath:'private.bin'}});
+  await service.downloads.wait(owner,sensitive.id);
+  assert.equal(cdnHeaders.at(-1).authorization,undefined);assert.equal(cdnHeaders.at(-1).cookie,undefined);assert.equal(cdnHeaders.at(-1)['x-custom-key'],undefined);
+  await initializeNetworkPolicy({...DEFAULT_NETWORK_SETTINGS,proxyMode:'direct'});
+  const direct=http.createServer((req,res)=>{if(req.url==='/redirect'){res.writeHead(302,{Location:'http://localhost:'+direct.address().port+'/file'});res.end();return;}res.end('direct package');});
+  await new Promise(resolve=>direct.listen(0,resolve));
+  try{
+    for(const endpoint of ['file','redirect']){
+      const destination=path.join(root,'direct-'+endpoint+'.zip');
+      await resourceService.downloadPackage('http://127.0.0.1:'+direct.address().port+'/'+endpoint,'smoke',destination,1024);
+      assert.equal(await fs.readFile(destination,'utf8'),'direct package');
+    }
+  }finally{direct.closeAllConnections();await new Promise(resolve=>direct.close(resolve));}
+  await initializeNetworkPolicy({...DEFAULT_NETWORK_SETTINGS,proxyMode:'fixed_servers',proxyRules:'http=127.0.0.1:'+proxy.address().port,proxyBypassRules:'<-loopback>'});
   const managedOwner=(await resourceService.capture('smoke')).owner;
   const grant=await resourceService.grants.create(managedOwner,path.join(dir.displayPath,'video.mp4'),'read',true,true);
   const managed=await bridgeWin.webContents.executeJavaScript('window.electron.plugins.manageGrants()');
@@ -111,7 +131,7 @@ app.setPath('userData',path.join(root,'userdata'));
   plugin.enabled=false;await globalThis.smokeRevoke(['smoke']);
   const code=await bridgeWin.webContents.executeJavaScript('resourceSmokeApi.downloads.list().then(()=>"unexpected",e=>e.code)');assert.equal(code,'PLUGIN_UNAVAILABLE');
   bridgeWin.destroy();await getPluginResources().downloads.shutdown();await service.downloads.shutdown();proxy.closeAllConnections();await new Promise(resolve=>proxy.close(resolve));
-  console.log('PASS Electron '+process.versions.electron+': managed proxy download 10 MiB; renderer controlled media Range 206; lease revocation 404; sandbox preload/IPC/runtime download and generation revocation; unified grant listing/revocation/reauthorization/removal, canceled selection, active-record rejection, file preservation');app.exit(0);
+  console.log('PASS Electron '+process.versions.electron+': direct 200/cross-host 302 package downloads; managed proxy download 10 MiB; cross-host 301/302/303/307/308 package downloads and stripped sensitive headers; renderer controlled media Range 206; lease revocation 404; sandbox preload/IPC/runtime download and generation revocation; unified grant listing/revocation/reauthorization/removal, canceled selection, active-record rejection, file preservation');app.exit(0);
 })().catch(error=>{console.error(error);app.exit(1)});
 `,
   },

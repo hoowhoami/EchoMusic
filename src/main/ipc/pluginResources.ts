@@ -6,6 +6,7 @@ import { PluginResources, setPluginResources } from '../plugins/resources';
 import { getPluginDescriptor, isPluginAccessCurrent, onPluginAccessRevoked } from '../plugins';
 import { resourceError, ResourceError } from '../downloads/files';
 import { getManagedNetworkSession } from '../networkPolicy';
+import { fetchWithElectronSession } from '../electronAxiosAdapter';
 import type { EchoPluginDescriptor } from '../../shared/plugins';
 
 export function registerPluginResourceHandlers(context: IpcContext) {
@@ -14,7 +15,7 @@ export function registerPluginResourceHandlers(context: IpcContext) {
     find: getPluginDescriptor,
     current: isPluginAccessCurrent,
     fetch: async (url, init) =>
-      (await getManagedNetworkSession('echo-plugin-downloads')).fetch(url, init),
+      fetchWithElectronSession(url, init, await getManagedNetworkSession('echo-plugin-downloads')),
     selectDirectory: async (plugin, request) => {
       const options: Electron.OpenDialogOptions = {
         title: `${plugin.name} · ${request.access === 'read' ? '读取目录' : '读写目录'} · ${request.purpose}`,

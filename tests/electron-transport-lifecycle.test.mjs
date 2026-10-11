@@ -97,7 +97,55 @@ function fixture(onEnd = () => {}) {
       },
       ...customRuntime,
     })({ url: 'http://example.test', headers: axios.AxiosHeaders.from({}), ...options });
-  return { requests, client, raw };
+  const fetch = (url, init) => mod.exports.fetchWithElectronSession(url, init, session);
+  return { requests, client, raw, fetch };
+}
+
+for (const status of [301, 302, 303, 307, 308]) {
+  test(`manual Electron fetch returns ${status} headers before cancelling the redirect`, async () => {
+    const f = fixture((request) => {
+      request.emit('redirect', status, 'GET', 'https://cdn.example.test/file', {
+        location: ['https://cdn.example.test/file'],
+      });
+      if (!request.aborted) request.emit('error', new Error('Redirect was cancelled'));
+    });
+    const response = await bounded(
+      f.fetch('https://example.test/file', { redirect: 'manual', credentials: 'omit' }),
+    );
+    assert.equal(response.status, status);
+    assert.equal(response.headers.get('location'), 'https://cdn.example.test/file');
+    assert.equal(response.body, null);
+    assert.equal(f.requests[0].aborted, true);
+    assert.equal(f.requests[0].options.credentials, 'omit');
+  });
+}
+
+test('Electron fetch abort cancels the response stream after headers', async () => {
+  const f = fixture((request) => request.respond().write('partial'));
+  const controller = new AbortController();
+  const response = await bounded(f.fetch('http://example.test', { signal: controller.signal }));
+  const reader = response.body.getReader();
+  assert.equal((await bounded(reader.read())).done, false);
+  const pending = reader.read();
+  controller.abort(new Error('download canceled'));
+  await assert.rejects(bounded(pending), /download canceled/);
+  assert.equal(f.requests[0].aborted, true);
+});
+
+for (const consumed of [false, true]) {
+  test(`Electron fetch response cancellation aborts Chromium (consumed=${consumed})`, async () => {
+    const f = fixture((request) => {
+      const source = request.respond();
+      if (consumed) source.write('partial');
+    });
+    const response = await bounded(f.fetch('http://example.test'));
+    const reader = response.body.getReader();
+    if (consumed) assert.equal((await bounded(reader.read())).done, false);
+    await bounded(reader.cancel());
+    await turn();
+    assert.equal(f.requests[0].response.destroyed, true);
+    assert.equal(f.requests[0].aborted, true);
+  });
 }
 
 test('bounded responses propagate source errors instead of hanging the Axios reader', async () => {
