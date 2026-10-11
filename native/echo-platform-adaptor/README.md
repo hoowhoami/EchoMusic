@@ -170,7 +170,12 @@ The architecture follows the native embedding / cover-preview approach examined 
 this addon, and uses its existing now-playing clock, theme tokens and Tabler icons.
 No upstream native source or artwork is vendored.
 
-The lyric window is a child of the primary `Shell_TrayWnd`. Win11 uses UIA structure
+After its first paint (`ready-to-show`), the lyric window is reparented to the primary
+`Shell_TrayWnd`. As in SPlayer-Next, embedding preserves Electron's window type,
+strips native decorations, and adds layered/tool-window/no-activate flags instead
+of changing an initialized Chromium window to `WS_CHILD`. Hover is observed on the
+whole renderer viewport; `setShape([])` restores the full region during expansion.
+Win11 uses UIA structure
 notifications and WinEvent location changes to find free intervals; Win10 reserves
 and restores space in the native task list. `TaskbarCreated`, display and theme
 messages trigger reattachment/layout updates. Events are coalesced; there is no
@@ -193,7 +198,7 @@ native bitmaps. DWM enable errors roll back to the live window preview.
 API constraints are documented in Microsoft's
 [SetParent reference](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setparent)
 and [DWM thumbnail reference](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmseticonicthumbnail).
-SetParent style changes are rolled back on failure, including DPI-mode failures.
+Window styles are changed only after SetParent succeeds, including its DPI-mode checks.
 
 Run the relevant JavaScript tests under `tests/taskbar-*.test.mjs`, plus
 `tests/native-platform-loader.test.mjs`. Pure native geometry tests can run on macOS:

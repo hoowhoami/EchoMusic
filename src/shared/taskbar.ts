@@ -70,8 +70,10 @@ export function resolveTaskbarLyricRegion(
         ? 'left'
         : 'right'
       : settings.position;
-  const resolveSide = (anchor: 'left' | 'right') => {
-    const rect = layout[anchor];
+  const resolveSide = (regionSide: 'left' | 'right') => {
+    const rect = layout[regionSide];
+    // 可用区域与内容锚定分开：回退到另一块空闲区时仍保留用户选择的对齐方向。
+    const anchor = settings.position === 'auto' ? regionSide : settings.position;
     if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) return null;
     const scale = layout.scaleFactor;
     const width = Math.floor(Math.min(settings.maxWidth, rect.width / scale - 16));
@@ -87,6 +89,6 @@ export function resolveTaskbarLyricRegion(
       },
     };
   };
-  // 与 SPlayer-Next 一致：指定侧作为首选；没有安全空间时使用另一侧，两侧都不足才隐藏。
+  // 指定侧作为首选；没有安全空间时使用另一侧，两侧都不足才隐藏。
   return resolveSide(side) ?? resolveSide(side === 'left' ? 'right' : 'left');
 }

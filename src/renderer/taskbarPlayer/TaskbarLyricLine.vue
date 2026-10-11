@@ -8,6 +8,7 @@ const props = defineProps<{
   timeMs: number;
   endTimeMs?: number;
   wordByWord?: boolean;
+  anchor?: 'left' | 'right';
 }>();
 const emit = defineEmits<{ width: [number] }>();
 const viewport = ref<HTMLElement>();
@@ -23,14 +24,16 @@ const offset = computed(() => {
   if (!chars.value.length) {
     const start = (props.line?.time ?? 0) * 1000;
     const duration = (props.endTimeMs ?? start) - start;
-    return duration > 0
-      ? -Math.round(overflow.value * Math.min(1, Math.max(0, (props.timeMs - start) / duration)))
-      : 0;
+    const leftOffset =
+      duration > 0
+        ? -Math.round(overflow.value * Math.min(1, Math.max(0, (props.timeMs - start) / duration)))
+        : 0;
+    return leftOffset + (props.anchor === 'right' ? overflow.value : 0);
   }
   // 随当前播放字平移，暂停时保持位置，不启动独立的无限跑马灯。
   const active = chars.value.findIndex((char) => char.endTime > props.timeMs);
   const ratio = active < 0 ? 1 : active / Math.max(1, chars.value.length - 1);
-  return -Math.round(overflow.value * ratio);
+  return -Math.round(overflow.value * ratio) + (props.anchor === 'right' ? overflow.value : 0);
 });
 let observer: ResizeObserver | undefined;
 let alive = true;
@@ -75,7 +78,12 @@ onUnmounted(() => {
 });
 </script>
 <template>
-  <div ref="viewport" class="lyric-line" :class="{ overflow: overflow > 0 }" :title="text">
+  <div
+    ref="viewport"
+    class="lyric-line"
+    :class="{ overflow: overflow > 0, right: anchor === 'right' }"
+    :title="text"
+  >
     <span ref="content" class="line-content" :style="{ transform: `translateX(${offset}px)` }">
       <template v-if="chars.length">
         <span
@@ -98,6 +106,7 @@ onUnmounted(() => {
 </template>
 <style scoped>
 .lyric-line {
+  display: flex;
   min-width: 0;
   overflow: hidden;
   white-space: pre;
@@ -105,8 +114,13 @@ onUnmounted(() => {
 .lyric-line.overflow {
   mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 12px), transparent);
 }
+.lyric-line.right {
+  justify-content: flex-end;
+  text-align: right;
+}
 .line-content {
   display: inline-block;
+  flex-shrink: 0;
   transition: transform 160ms linear;
 }
 .character {

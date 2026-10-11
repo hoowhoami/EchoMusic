@@ -50,6 +50,10 @@ function broadcastState(): void {
 function applyShape(): void {
   if (!usable(win) || !region) return;
   const width = Math.min(region.bounds.width, Math.max(160, Math.ceil(contentWidth)));
+  if (width === region.bounds.width) {
+    win.setShape([]);
+    return;
+  }
   win.setShape([
     {
       x: region.anchor === 'right' ? region.bounds.width - width : 0,
@@ -98,6 +102,7 @@ async function createBar(): Promise<void> {
     title: 'EchoMusic 任务栏歌词',
     type: 'toolbar',
     frame: false,
+    thickFrame: false,
     transparent: true,
     backgroundColor: '#00000000',
     show: false,
@@ -159,10 +164,19 @@ async function createBar(): Promise<void> {
       },
     ]).popup({ window: candidate });
   });
+  // loadFile 完成不代表透明合成表面已绘制；与 SPlayer-Next 一样等首帧后再嵌入。
+  // 关闭同样结束等待，避免切换开关或退出时把 creating 永久挂住。
+  let finishReady!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    finishReady = resolve;
+  });
+  candidate.once('ready-to-show', finishReady);
+  candidate.once('closed', finishReady);
   try {
     const dev = process.env.VITE_DEV_SERVER_URL;
     if (dev) await candidate.loadURL(new URL('taskbar-player.html', dev).href);
     else await candidate.loadFile(join(__dirname, '../../dist/taskbar-player.html'));
+    await ready;
     if (win !== candidate || !usable(candidate) || !enabled || quitting) return;
     const handle = candidate.getNativeWindowHandle();
     const hwnd =
@@ -192,6 +206,9 @@ async function createBar(): Promise<void> {
   } catch (error) {
     if (usable(candidate)) candidate.destroy();
     throw error;
+  } finally {
+    candidate.off('ready-to-show', finishReady);
+    candidate.off('closed', finishReady);
   }
 }
 export async function setTaskbarPlayerEnabled(value: boolean): Promise<ReturnType<typeof state>> {

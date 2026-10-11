@@ -349,22 +349,21 @@ unsafe fn attach(
     SHELL_HWND.with(|value| value.set(hwnd.0 as isize));
     let original_style = GetWindowLongPtrW(child, GWL_STYLE);
     let original_ex = GetWindowLongPtrW(child, GWL_EXSTYLE);
-    // SetParent 不会自动调整 WS_CHILD / WS_POPUP；失败必须恢复窗口样式。
-    SetWindowLongPtrW(
-        child,
-        GWL_STYLE,
-        (original_style & !(WS_POPUP.0 as isize)) | WS_CHILD.0 as isize,
-    );
+    if SetParent(child, Some(hwnd)).is_err() {
+        return None;
+    }
+    // 与 SPlayer-Next 一致，保留 Electron 创建时的窗口类型，只剥离装饰位。
+    // 不把已初始化的 Chromium 顶层窗口强改为 WS_CHILD，避免与其窗口宿主状态不一致。
+    let decorations = WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
+    SetWindowLongPtrW(child, GWL_STYLE, original_style & !(decorations.0 as isize));
     SetWindowLongPtrW(
         child,
         GWL_EXSTYLE,
-        original_ex | WS_EX_NOACTIVATE.0 as isize | WS_EX_TOOLWINDOW.0 as isize,
+        original_ex
+            | WS_EX_LAYERED.0 as isize
+            | WS_EX_NOACTIVATE.0 as isize
+            | WS_EX_TOOLWINDOW.0 as isize,
     );
-    if SetParent(child, Some(hwnd)).is_err() {
-        SetWindowLongPtrW(child, GWL_STYLE, original_style);
-        SetWindowLongPtrW(child, GWL_EXSTYLE, original_ex);
-        return None;
-    }
     // Win11 可能仍保留旧式 tasklist HWND，存在不代表它承载当前图标；优先使用实际的 XAML 桥。
     let has_xaml = FindWindowExW(
         Some(hwnd),

@@ -27,7 +27,7 @@ import { useTaskbarLyrics } from './useTaskbarLyrics';
 const { snapshot, playback, lyric, line, nextLine, timeMs, error } = useTaskbarLyrics();
 const settings = ref({ ...DEFAULT_TASKBAR_LYRIC_SETTINGS });
 const dark = ref(true);
-const anchor = ref('left');
+const anchor = ref<'left' | 'right'>('left');
 const maxWidth = ref(400);
 const hovered = ref(false);
 const focused = ref(false);
@@ -152,6 +152,9 @@ onUnmounted(() => {
     :class="{ dark, right: anchor === 'right' }"
     :style="colors"
     aria-label="任务栏歌词"
+    @mouseenter="setHovered(true)"
+    @mouseleave="setHovered(false)"
+    @dblclick="showMain"
   >
     <div
       ref="root"
@@ -161,11 +164,8 @@ onUnmounted(() => {
       :aria-label="primary"
       :class="{ expanded }"
       :style="{ width: `${width}px` }"
-      @mouseenter="setHovered(true)"
-      @mouseleave="setHovered(false)"
       @focusin="focused = ($event.target as HTMLElement).matches(':focus-visible')"
       @focusout="focusOut"
-      @dblclick="showMain"
     >
       <button
         v-if="settings.showCover"
@@ -226,6 +226,7 @@ onUnmounted(() => {
               :time-ms="timeMs"
               :end-time-ms="nextLine ? nextLine.time * 1000 : undefined"
               :word-by-word="settings.wordByWord"
+              :anchor="anchor"
               @width="primaryWidth = $event"
             />
             <TaskbarLyricLine
@@ -233,6 +234,7 @@ onUnmounted(() => {
               class="secondary"
               :text="secondary"
               :time-ms="timeMs"
+              :anchor="anchor"
               @width="secondaryWidth = $event"
             />
           </div>
@@ -282,14 +284,23 @@ body,
   box-sizing: border-box;
 }
 .taskbar {
+  width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   color: var(--fg);
   user-select: none;
+  pointer-events: auto;
 }
 .taskbar.right {
   justify-content: flex-end;
+}
+.taskbar.right .content,
+.taskbar.right .body {
+  flex-direction: row-reverse;
+}
+.taskbar.right .song-info {
+  text-align: right;
 }
 .content {
   position: relative;
@@ -300,6 +311,8 @@ body,
   padding: 0 4px;
   min-width: 0;
   border-radius: 8px;
+  background: transparent;
+  pointer-events: none;
   transition: background-color 180ms ease;
 }
 .content.expanded {
@@ -310,6 +323,7 @@ body,
   height: min(calc(100vh - 16px), calc((100vw - 112px) / 5));
 }
 .cover {
+  pointer-events: auto;
   width: calc(100vh - 16px);
   height: calc(100vh - 16px);
   border-radius: 6px;
@@ -318,6 +332,7 @@ body,
   background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 .cover img {
+  pointer-events: none;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -375,6 +390,10 @@ body,
 .expanded .song-info {
   opacity: 1;
   transition-delay: 80ms;
+}
+.expanded .song-title,
+.expanded .song-artist {
+  pointer-events: auto;
 }
 .song-title,
 .song-artist {

@@ -25,7 +25,7 @@ const barPositionOptions = [
 const barPositionDescription = computed(() =>
   barSettings.value.position === 'auto'
     ? '自动选择任务栏空闲的一侧'
-    : `优先显示在${barSettings.value.position === 'left' ? '左侧' : '右侧'}，空间不足时使用另一侧`,
+    : `优先使用${barSettings.value.position === 'left' ? '左侧' : '右侧'}空闲区，回退时保持${barSettings.value.position === 'left' ? '左' : '右'}对齐`,
 );
 let alive = true;
 let receivedState = false;

@@ -35,7 +35,7 @@ const layout = () => ({
   isDark: true,
   available: true,
 });
-function setup({ page = async () => {}, available = true } = {}) {
+function setup({ page = async () => {}, available = true, autoReady = true } = {}) {
   const windows = [],
     sessions = [],
     handlers = new Map(),
@@ -103,6 +103,7 @@ function setup({ page = async () => {}, available = true } = {}) {
     }
     async loadFile() {
       await page(this);
+      if (autoReady && !this.dead) this.emit('ready-to-show');
     }
   }
   class Session {
@@ -161,6 +162,7 @@ test('concurrent enable creates one hidden window, then shows only after a valid
   assert.equal(win.visible, false);
   assert.equal(win.options.alwaysOnTop, undefined);
   assert.equal(win.options.movable, false);
+  assert.equal(win.options.thickFrame, false);
   assert.equal(win.options.webPreferences.nodeIntegration, false);
   f.sessions[0].emit();
   assert.equal(win.visible, true);
@@ -169,6 +171,28 @@ test('concurrent enable creates one hidden window, then shows only after a valid
   f.api.cleanupTaskbarPlayer();
   assert.equal(f.sessions[0].stopped, true);
   assert.equal(f.screen.listenerCount('display-added'), 0);
+});
+test('embedding waits for the first painted frame, even after page load completes', async () => {
+  const f = setup({ autoReady: false });
+  const pending = f.api.setTaskbarPlayerEnabled(true);
+  await new Promise(setImmediate);
+  const win = f.windows[0];
+  assert.equal(f.sessions.length, 0);
+  assert.equal(win.visible, false);
+  win.emit('ready-to-show');
+  await pending;
+  assert.equal(f.sessions.length, 1);
+  assert.equal(win.listenerCount('ready-to-show'), 0);
+  f.api.cleanupTaskbarPlayer();
+});
+test('disable before the first frame cancels startup without waiting for a paint event', async () => {
+  const f = setup({ autoReady: false });
+  const pending = f.api.setTaskbarPlayerEnabled(true);
+  await new Promise(setImmediate);
+  await f.api.setTaskbarPlayerEnabled(false);
+  assert.equal((await pending).enabled, false);
+  assert.equal(f.sessions.length, 0);
+  assert.equal(f.windows[0].listenerCount('ready-to-show'), 0);
 });
 test('disable during page load destroys the candidate and prevents native session startup', async () => {
   const page = Promise.withResolvers();
@@ -281,7 +305,7 @@ test('DPI conversion uses parent-client coordinates and falls back only to anoth
     { ...layout(), left: { x: 0, y: 0, width: 40, height: 48 } },
     { ...settings, position: 'left' },
   );
-  assert.equal(fallback.anchor, 'right');
+  assert.equal(fallback.anchor, 'left');
   assert.equal(fallback.bounds.x, 1308);
   assert.equal(fallback.bounds.width, 384);
   assert.equal(
@@ -306,12 +330,45 @@ test('left preference retains native space reservation and restores into the saf
   session.emit({ ...layout(), left: { x: 0, y: 0, width: 0, height: 48 } });
   assert.equal(f.windows[0].visible, true);
   assert.equal(f.windows[0].bounds.x, 1308);
-  assert.equal(f.handlers.get('taskbar-player:get-state')().anchor, 'right');
+  assert.equal(f.handlers.get('taskbar-player:get-state')().anchor, 'left');
   const set = f.handlers.get('taskbar-player:set-settings');
   set({ sender: { id: 1 } }, { position: 'right', maxWidth: 300 });
   assert.equal(session.width, 300);
   session.emit({ ...layout(), right: { x: 1800, y: 0, width: 80, height: 48 } });
-  assert.equal(f.windows[0].bounds.x, 8);
+  assert.equal(f.windows[0].bounds.x, 292);
+  assert.equal(f.handlers.get('taskbar-player:get-state')().anchor, 'right');
+  f.api.cleanupTaskbarPlayer();
+});
+test('left and right preferences keep distinct alignment even when only one safe region exists', async () => {
+  const f = setup();
+  await f.api.setTaskbarPlayerEnabled(true);
+  const set = f.handlers.get('taskbar-player:set-settings');
+  const available = {
+    ...layout(),
+    centered: false,
+    left: { x: 0, y: 0, width: 0, height: 48 },
+    right: { x: 600, y: 0, width: 1000, height: 48 },
+  };
+  f.sessions[0].emit(available);
+  const win = f.windows[0];
+  f.listeners.get('taskbar-player:content-width')({ sender: { id: win.webContents.id } }, 180);
+  assert.equal(win.bounds.x, 1192);
+  assert.equal(win.shape[0].x, 220);
+  set({ sender: { id: 1 } }, { position: 'left' });
+  assert.equal(win.bounds.x, 608);
+  assert.equal(win.shape[0].x, 0);
   assert.equal(f.handlers.get('taskbar-player:get-state')().anchor, 'left');
+  set({ sender: { id: 1 } }, { position: 'right' });
+  assert.equal(win.bounds.x, 1192);
+  assert.equal(win.shape[0].x, 220);
+  assert.equal(f.handlers.get('taskbar-player:get-state')().anchor, 'right');
+  // hover 展开只扩展有效裁切，不移动窗口，也不会超出已确认的空闲区域。
+  f.listeners.get('taskbar-player:content-width')({ sender: { id: win.webContents.id } }, 400);
+  assert.equal(win.bounds.x, 1192);
+  assert.equal(win.shape.length, 0);
+  // 离开 hover 后重新裁切，空白区域恢复穿透。
+  f.listeners.get('taskbar-player:content-width')({ sender: { id: win.webContents.id } }, 180);
+  assert.equal(win.shape[0].x, 220);
+  assert.equal(win.shape[0].width, 180);
   f.api.cleanupTaskbarPlayer();
 });
