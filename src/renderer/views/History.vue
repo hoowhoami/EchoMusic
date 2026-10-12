@@ -481,8 +481,8 @@ const createStatsCaptureStage = (shareText: ReturnType<typeof buildHistoryStatsS
     zIndex: '2147483647',
     width: `${Math.min(1180, Math.max(760, window.innerWidth - 32))}px`,
     padding: '16px',
-    borderRadius: '12px',
-    background: 'var(--color-bg-main)',
+    // 导出背景独立于窗口透明度；主题底色即使带 alpha，也有实色底板承接。
+    background: `linear-gradient(var(--surface-main-base), var(--surface-main-base)), ${themeStore.isDark ? '#18181b' : '#ffffff'}`,
     pointerEvents: 'none',
     transformOrigin: 'top left',
     visibility: 'hidden',
@@ -548,11 +548,10 @@ const captureStageToClipboard = async (stage: HTMLElement) => {
   await waitForPaint();
 
   const rect = stage.getBoundingClientRect();
-  const padding = 8;
-  const x = Math.max(0, Math.floor(rect.left - padding));
-  const y = Math.max(0, Math.floor(rect.top - padding));
-  const width = Math.max(1, Math.min(viewportWidth - x, Math.ceil(rect.width + padding * 2)));
-  const height = Math.max(1, Math.min(viewportHeight - y, Math.ceil(rect.height + padding * 2)));
+  const x = Math.max(0, Math.ceil(rect.left));
+  const y = Math.max(0, Math.ceil(rect.top));
+  const width = Math.max(1, Math.min(viewportWidth - x, Math.floor(rect.right) - x));
+  const height = Math.max(1, Math.min(viewportHeight - y, Math.floor(rect.bottom) - y));
 
   return capture({ x, y, width, height });
 };

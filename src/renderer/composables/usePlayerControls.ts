@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
+import { useRouter, useRoute, isNavigationFailure, NavigationFailureType } from 'vue-router';
 import { usePlayerStore } from '@/stores/player';
 import {
   usePlaylistStore,
@@ -412,7 +412,7 @@ export function usePlayerControls() {
     if (player.isPlaying) {
       await player.togglePlay();
     }
-    router.push({
+    const failure = await router.push({
       name: 'mv-detail',
       params: { id: String(albumAudioId) },
       query: {
@@ -427,6 +427,9 @@ export function usePlayerControls() {
         from: route.fullPath,
       },
     });
+    if (!failure || isNavigationFailure(failure, NavigationFailureType.duplicated)) {
+      player.toggleLyricView(false);
+    }
   };
 
   // ── 分享 ──
