@@ -18,8 +18,6 @@ import { useLoginDeviceStore } from '@/stores/loginDevices';
 import { getAccountVipStatus } from '@/utils/accountVip';
 import { formatListeningDuration, getGradeProgress } from '../../shared/profileStats';
 
-defineProps<{ compact?: boolean }>();
-
 const user = useUserStore();
 const devices = useLoginDeviceStore();
 const router = useRouter();
@@ -126,16 +124,17 @@ const logout = () => {
       <button
         type="button"
         class="action-icon account-trigger"
-        :class="{ 'account-trigger-compact': compact }"
         aria-label="个人信息与账号切换"
         aria-haspopup="dialog"
         :aria-expanded="open"
       >
         <Icon
           :icon="iconChevronDown"
-          :width="compact ? 14 : 18"
-          :height="compact ? 14 : 18"
+          :width="18"
+          :height="18"
+          class="account-trigger-chevron"
           :class="{ 'is-open': open }"
+          aria-hidden="true"
         />
       </button>
     </template>
@@ -227,20 +226,11 @@ const logout = () => {
 .account-trigger:hover {
   color: var(--color-text-main);
 }
-.account-trigger-compact {
-  width: 22px;
-  height: 42px;
-  border-radius: 0 var(--radius-control) var(--radius-control) 0;
-}
-.account-trigger-compact:hover,
-.account-trigger-compact[aria-expanded='true'] {
-  background: var(--control-hover-bg);
-}
 .account-trigger:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
-.account-trigger svg {
+.account-trigger-chevron {
   transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .account-trigger .is-open {
@@ -406,7 +396,7 @@ const logout = () => {
   color: var(--color-text-secondary);
 }
 @media (prefers-reduced-motion: reduce) {
-  .account-trigger svg {
+  .account-trigger-chevron {
     transition: none;
   }
 }

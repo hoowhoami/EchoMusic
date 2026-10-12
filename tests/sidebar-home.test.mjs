@@ -1,4 +1,5 @@
 import { userSessionWatch } from './helpers/user-session.mjs';
+import { userIdentity } from './helpers/user-identity.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -166,6 +167,7 @@ function component(path, deps, hookVue = vue, inlineTemplate = true) {
     new Proxy(
       {
         vue: hookVue,
+        '@/utils/userIdentity': userIdentity,
         'vue-router': {
           useRouter: () => ({ push() {}, replace() {} }),
           useRoute: () =>

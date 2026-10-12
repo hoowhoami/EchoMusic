@@ -801,31 +801,28 @@ watch(
     <template v-if="collapsed">
       <div class="sidebar-rail flex flex-col flex-1 min-h-0 no-drag">
         <div class="sidebar-rail-top">
-          <div class="sidebar-rail-account">
-            <Tooltip
-              :content="isLoggedIn ? userInfo?.nickname || '个人主页' : '点击登录账号'"
-              side="right"
-            >
-              <template #trigger>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  class="sidebar-rail-avatar-btn"
-                  :aria-label="isLoggedIn ? userInfo?.nickname || '个人主页' : '点击登录账号'"
-                  @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
-                >
-                  <UserAvatar
-                    :src="isLoggedIn ? userInfo?.pic : ''"
-                    :identity-icon="userIdentity.avatarIcon"
-                    :identity-label="userIdentity.avatarLabel"
-                    class="w-9 h-9 rounded-full"
-                    error-class="opacity-30"
-                  />
-                </Button>
-              </template>
-            </Tooltip>
-            <SidebarAccountPopover compact />
-          </div>
+          <Tooltip
+            :content="isLoggedIn ? userInfo?.nickname || '个人中心' : '点击登录账号'"
+            side="right"
+          >
+            <template #trigger>
+              <Button
+                variant="unstyled"
+                size="none"
+                class="sidebar-rail-avatar-btn"
+                :aria-label="isLoggedIn ? '个人中心' : '点击登录账号'"
+                @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
+              >
+                <UserAvatar
+                  :src="isLoggedIn ? userInfo?.pic : ''"
+                  :size="32"
+                  :identity-icon="userIdentity.avatarIcon"
+                  :identity-label="userIdentity.avatarLabel"
+                  error-class="opacity-30"
+                />
+              </Button>
+            </template>
+          </Tooltip>
         </div>
 
         <Scrollbar
@@ -1583,28 +1580,20 @@ watch(
   padding-bottom: 8px;
 }
 
-.sidebar-rail-account {
-  display: flex;
-  align-items: center;
-  flex: none;
-  border-radius: var(--radius-control);
-  background: var(--control-bg);
-}
-
 .sidebar-rail-avatar-btn {
+  display: grid;
+  place-items: center;
   width: 42px;
   height: 42px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-control);
-  background: transparent;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--control-muted-bg);
   box-shadow: none;
 }
 
 .sidebar-rail-avatar-btn:hover {
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  box-shadow: none;
+  background: var(--control-hover-bg);
 }
 
 .sidebar-rail-nav,
