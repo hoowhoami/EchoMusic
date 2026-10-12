@@ -41,7 +41,7 @@ test('all seven qualities are available when viper qualities are enabled', () =>
   }
 });
 
-test('one feature switch removes all viper candidates without affecting resource tags', () => {
+test('one feature switch removes all viper candidates without affecting ordinary quality tags', () => {
   assert.deepEqual(getAvailableSongQualities(song, false), ['128', '320', 'flac', 'high']);
   for (const quality of ['viper_clear', 'viper_tape', 'viper_atmos'] as const) {
     assert.equal(clampPreferredAudioQuality(quality, false), 'high');
@@ -54,7 +54,7 @@ test('one feature switch removes all viper candidates without affecting resource
     ]);
     assert.deepEqual(getSongQualityCandidates(quality, false, false), ['high']);
   }
-  assert.ok(getSongQualityTags(song.relateGoods).includes('母带'));
+  assert.deepEqual(getSongQualityTags(song.relateGoods), ['HQ', 'SQ', 'Hi-Res']);
 });
 
 test('compatibility fallback follows the supported quality order', () => {
@@ -93,17 +93,21 @@ test('special qualities with level zero or a shared hash are matched by quality'
   assert.equal(doesRelateGoodMatchQuality({ level: 1 }, '128'), true);
 });
 
-test('song card badge omits master tape while detail quality tags retain it', () => {
-  assert.deepEqual(getSongQualityTags(song.relateGoods), [
-    'HQ',
-    'SQ',
-    'Hi-Res',
-    '超清',
-    '母带',
-    '全景声',
-  ]);
+test('song badges omit all viper qualities and fall back to ordinary supported qualities', () => {
+  assert.deepEqual(getSongQualityTags(song.relateGoods), ['HQ', 'SQ', 'Hi-Res']);
   assert.deepEqual(getSongEffectTags(song.relateGoods), []);
-  assert.equal(getSongQualityTag(song), '全景声');
-  assert.equal(getSongQualityTag({ relateGoods: [{ quality: 'viper_clear', level: 0 }] }), '超清');
+  assert.equal(getSongQualityTag(song), 'Hi-Res');
+  for (const quality of ['viper_tape', 'viper_clear', 'viper_atmos']) {
+    assert.equal(getSongQualityTag({ relateGoods: [{ quality, level: 6 }] }), '');
+    assert.deepEqual(getSongQualityTags([{ quality, level: 6 }]), []);
+    assert.equal(
+      getSongQualityTag({ relateGoods: [{ quality }, { quality: 'flac', level: 5 }] }),
+      'SQ',
+    );
+    assert.equal(
+      getSongQualityTag({ relateGoods: [{ quality }, { quality: '320', level: 4 }] }),
+      'HQ',
+    );
+  }
   assert.equal(getSongQualityTag({ qualityMap: 1 << 24 }), '');
 });

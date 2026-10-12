@@ -139,9 +139,6 @@ test('joins complete quality records by hash and retains distinct qualities shar
     'HQ',
     'SQ',
     'Hi-Res',
-    '全景声',
-    '母带',
-    '超清',
   ]);
   assert.equal(songQualities.resolveEffectiveSongQuality(enriched.song, 'high'), 'high');
   assert.equal(

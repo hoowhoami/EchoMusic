@@ -16,6 +16,7 @@ import Button from '@/components/ui/Button.vue';
 import { iconArrowLeft, iconHome, iconRefreshCw, iconShare, iconTriangleAlert } from '@/icons';
 import { extractFirstObject } from '@/utils/extractors';
 import { mapAlbumDetailMeta, mapArtistDetailMeta, mapPlaylistMeta } from '@/utils/mappers';
+import { readPositiveId } from '@/utils/mappers/shared';
 import { isSongHashId, readShareDetailQuery } from '@/utils/share';
 import { mapListenTogetherRoom } from '@/utils/listenTogether';
 import { logger } from '@/utils/logger';
@@ -105,14 +106,6 @@ const readFirstText = (...values: unknown[]) => {
   return '';
 };
 
-const readPositiveId = (...values: unknown[]) => {
-  const text = readFirstText(...values);
-  if (!text) return '';
-  const parsed = Number.parseInt(text, 10);
-  if (Number.isNaN(parsed) || parsed <= 0) return '';
-  return String(parsed);
-};
-
 const normalizeCover = (value: string) => {
   if (!value) return '';
   const resolved = value.replaceAll('{size}', '400');
@@ -189,11 +182,12 @@ const buildSongDetailQuery = (hash: string, record: Record<string, unknown>) => 
 
   const mixSongId = readPositiveId(
     query.mixSongId,
+    query.albumAudioId,
     base.mixsongid,
     base.album_audio_id,
-    base.audio_id,
     record.mixsongid,
     record.album_audio_id,
+    base.audio_id,
     record.audio_id,
   );
   const title = readFirstText(
@@ -213,7 +207,7 @@ const buildSongDetailQuery = (hash: string, record: Record<string, unknown>) => 
     record.album_name,
     record.albumname,
   );
-  const albumId = readFirstText(
+  const albumId = readPositiveId(
     query.albumId,
     base.album_id,
     base.albumid,
@@ -221,6 +215,13 @@ const buildSongDetailQuery = (hash: string, record: Record<string, unknown>) => 
     albumInfo.albumid,
     record.album_id,
     record.albumid,
+  );
+  const albumAudioId = readPositiveId(
+    query.albumAudioId,
+    base.album_audio_id,
+    record.album_audio_id,
+    base.mixsongid,
+    record.mixsongid,
   );
   const cover = normalizeCover(
     readFirstText(
@@ -241,9 +242,10 @@ const buildSongDetailQuery = (hash: string, record: Record<string, unknown>) => 
     hash,
     ...(processedTitle ? { title: processedTitle } : {}),
     ...(artists.length > 0 ? { artist: artists.map((item) => item.name).join(', ') } : {}),
-    ...(firstArtist?.id ? { artistId: firstArtist.id } : {}),
+    artistId: readPositiveId(query.artistId, firstArtist?.id),
     ...(album ? { album } : {}),
-    ...(albumId ? { albumId } : {}),
+    albumId,
+    ...(albumAudioId ? { albumAudioId } : {}),
     ...(cover ? { cover } : {}),
     ...(mixSongId ? { mixSongId } : {}),
   };

@@ -2,6 +2,7 @@ import type { Router } from 'vue-router';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { useUserStore } from '@/stores/user';
+import { readPositiveId } from '@/utils/mappers/shared';
 import type { PluginMarketplacePlugin } from '../../shared/plugins';
 import {
   buildShareText,
@@ -88,7 +89,10 @@ export const createSongShareTarget = (song: Song): ShareTarget | null => {
   const title = song.name || '';
   const hash = cleanId(song.hash);
   if (!isSongHashId(hash)) return null;
-  return createShareTarget('song', hash, title);
+  return createShareTarget('song', hash, title, {
+    albumId: readPositiveId(song.albumId),
+    albumAudioId: readPositiveId(song.albumAudioId, song.mixSongId),
+  });
 };
 
 export const resolvePlaylistShareId = (

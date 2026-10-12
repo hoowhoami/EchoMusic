@@ -20,9 +20,6 @@ export interface SongDerivedState {
 }
 
 const QUALITY_LABEL_MAP: Record<string, string> = {
-  viper_tape: '母带',
-  viper_clear: '超清',
-  viper_atmos: '全景声',
   high: 'Hi-Res',
   flac: 'SQ',
   '320': 'HQ',
@@ -116,14 +113,19 @@ export const getSongUnavailableMessage = (song: Song): string | null => {
 export const getSongQualityTag = (song: Pick<Song, 'relateGoods' | 'qualityMap'>): string => {
   const goods = song.relateGoods ?? [];
   // 新版云歌单用位图返回音质能力，没有各音质的 hash；保留给标签展示使用。
-  // 320/flac/high 分别为 bit 4/5/6；母带能力不展示为歌曲徽标。
+  // 320/flac/high 分别为 bit 4/5/6；蝰蛇音质不展示为歌曲徽标。
   const qualityMap = goods.length ? 0 : (song.qualityMap ?? 0);
   const hasQuality = (quality: string, level: number) =>
-    goods.some((item: SongRelateGood) => item.quality === quality || item.level === level) ||
-    Boolean(qualityMap & (1 << level));
+    goods.some(
+      (item: SongRelateGood) =>
+        !isViperAudioQuality(
+          String(item.quality ?? '')
+            .trim()
+            .toLowerCase(),
+        ) &&
+        (item.quality === quality || item.level === level),
+    ) || Boolean(qualityMap & (1 << level));
 
-  if (goods.some((item) => item.quality === 'viper_atmos')) return '全景声';
-  if (goods.some((item) => item.quality === 'viper_clear')) return '超清';
   if (hasQuality('high', 6)) return 'Hi-Res';
   if (hasQuality('flac', 5)) return 'SQ';
   if (hasQuality('320', 4)) return 'HQ';

@@ -19,6 +19,9 @@ import { mapCommentItem } from '@/utils/mappers';
 import { enrichCommentsWithYoungVip } from '@/utils/commentVipCache';
 import type { Comment } from '@/models/comment';
 import type { Song } from '@/models/song';
+import { completeSongMetadata } from '@/services/songMetadata';
+import { needsSongMetadata } from '@/utils/mappers/songMetadata';
+import { readPositiveId } from '@/utils/mappers/shared';
 import { getSongEffectTags, getSongQualityTags } from '@/utils/song';
 import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
@@ -69,15 +72,15 @@ const isPlaylistLoading = ref(false);
 const songTitle = computed(
   () => String(route.query.title ?? '').trim() || detailSong.value?.name?.trim() || '',
 );
-const songArtist = computed(() => String(route.query.artist ?? detailSong.value?.artist ?? ''));
-const songAlbum = computed(() => String(route.query.album ?? detailSong.value?.album ?? ''));
+const songArtist = computed(() => readText(route.query.artist, detailSong.value?.artist));
+const songAlbum = computed(() => readText(route.query.album, detailSong.value?.album));
 const songHash = computed(() =>
   String(route.query.hash ?? detailSong.value?.hash ?? (isSongHashId(id) ? id : '')),
 );
 const songArtistIdFromQuery = computed(() =>
-  String(route.query.artistId ?? detailSong.value?.artists?.[0]?.id ?? ''),
+  readPositiveId(route.query.artistId, detailSong.value?.artists?.[0]?.id),
 );
-const songAlbumId = computed(() => String(route.query.albumId ?? detailSong.value?.albumId ?? ''));
+const songAlbumId = computed(() => readPositiveId(route.query.albumId, detailSong.value?.albumId));
 const songMixSongId = computed(() =>
   String(route.query.mixSongId ?? detailSong.value?.mixSongId ?? (isSongHashId(id) ? '' : id)),
 );
@@ -90,7 +93,7 @@ const resourceTitle = computed(() => songTitle.value || String(route.query.title
 //   }
 //   return String(route.query.artist ?? route.query.subtitle ?? '');
 // });
-const resourceCover = computed(() => String(route.query.cover ?? detailSong.value?.coverUrl ?? ''));
+const resourceCover = computed(() => readText(route.query.cover, detailSong.value?.coverUrl));
 const headerTypeLabel = computed(() => {
   switch (type) {
     case 'music':
@@ -282,6 +285,7 @@ const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
   const base = readRecord(record, 'base') ?? {};
   const audioInfo = readRecord(record, 'audio_info') ?? {};
   const albumInfo = readRecord(record, 'album_info') ?? {};
+  const info = readRecord(record, 'info') ?? {};
   const transParam = readRecord(record, 'trans_param') ?? {};
   const artists = buildArtistsFromPrivilege(record);
   const artistName = artists.map((item) => item.name).join(', ') || readText(route.query.artist);
@@ -291,18 +295,20 @@ const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
       record.pic,
       record.img,
       audioInfo.img,
+      info.image,
       albumInfo.sizable_cover,
       albumInfo.cover,
       transParam.union_cover,
     ),
   );
-  const rawTargetId = readText(
+  const rawTargetId = readPositiveId(
     route.query.mixSongId,
+    route.query.albumAudioId,
     base.mixsongid,
     base.album_audio_id,
-    base.audio_id,
     record.mixsongid,
     record.album_audio_id,
+    base.audio_id,
     record.audio_id,
     isSongHashId(id) ? '' : id,
   );
@@ -324,7 +330,7 @@ const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
     record.album_name,
     record.albumname,
   );
-  const albumId = readText(
+  const albumId = readPositiveId(
     route.query.albumId,
     base.album_id,
     base.albumid,
@@ -344,8 +350,21 @@ const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
     album: albumName,
     albumName,
     albumId,
+    albumAudioId: readPositiveId(
+      route.query.albumAudioId,
+      base.album_audio_id,
+      record.album_audio_id,
+      base.mixsongid,
+      record.mixsongid,
+    ),
     duration: normalizeDuration(
-      readNumber(audioInfo.duration, audioInfo.duration_128, record.timelength, record.duration),
+      readNumber(
+        audioInfo.duration,
+        audioInfo.duration_128,
+        info.duration,
+        record.timelength,
+        record.duration,
+      ),
     ),
     coverUrl: cover,
     cover,
@@ -689,12 +708,7 @@ const relateGoods = computed(() =>
   ),
 );
 
-const qualityTagOrder = ['母带', '超清', '全景声'];
-const qualityTags = computed(() =>
-  getSongQualityTags(relateGoods.value).sort(
-    (left, right) => qualityTagOrder.indexOf(left) - qualityTagOrder.indexOf(right),
-  ),
-);
+const qualityTags = computed(() => getSongQualityTags(relateGoods.value));
 
 const effectTags = computed(() => getSongEffectTags(relateGoods.value));
 
@@ -1178,6 +1192,19 @@ const fetchDetailData = async () => {
           } else {
             privilegeData.value = item;
             detailSong.value = song;
+            if (needsSongMetadata(song)) {
+              // hash 详情可能只有合并的歌手名；按专辑歌曲 ID 取完整作者列表，避免按名字猜 ID。
+              const [completed] = await completeSongMetadata(
+                [{ ...song, artists: [], singers: [] }],
+                isCurrent,
+              );
+              if (!isCurrent()) return;
+              detailSong.value = {
+                ...completed,
+                artists: completed.artists?.length ? completed.artists : song.artists,
+                singers: completed.singers?.length ? completed.singers : song.singers,
+              };
+            }
           }
         }
       } catch {
