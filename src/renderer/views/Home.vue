@@ -13,7 +13,7 @@ import { mapPlaylistMeta, mapTopSong } from '@/utils/mappers';
 import { extractList } from '@/utils/extractors';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
-import { iconPlay, iconSlidersHorizontal, iconSparkles } from '@/icons';
+import { iconPlay, iconTags, iconSparkles } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import UserAgreementDialog from '@/components/app/UserAgreementDialog.vue';
@@ -427,7 +427,7 @@ const handleRejectAgreement = () => {
         <div class="style-recommend-panel">
           <div class="style-category-row">
             <div class="style-panel-label">
-              <Icon :icon="iconSlidersHorizontal" width="14" height="14" />
+              <Icon :icon="iconTags" width="14" height="14" />
               <span>{{ styleSummary }}</span>
             </div>
             <CustomTabBar

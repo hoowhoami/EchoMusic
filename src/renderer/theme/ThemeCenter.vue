@@ -11,7 +11,7 @@ import {
 } from 'vue';
 import { useWindowSize } from '@vueuse/core';
 import { Icon } from '@iconify/vue';
-import { iconCheckMark, iconSlidersHorizontal, iconX } from '@/icons';
+import { iconCheckMark, iconPalette, iconX } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import SelectionBadge from '@/components/ui/SelectionBadge.vue';
 import Drawer from '@/components/ui/Drawer.vue';
@@ -339,7 +339,7 @@ watch(
           :aria-expanded="showAdjustments"
           @click="showAdjustments = true"
         >
-          <Icon :icon="iconSlidersHorizontal" :width="16" />外观调整
+          <Icon :icon="iconPalette" :width="16" />外观调整
         </button>
       </div>
     </header>

@@ -15,7 +15,7 @@ import SleepTimerPopover from '@/components/player/SleepTimerPopover.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
 import PlayerBarActionIcon from './PlayerBarActionIcon.vue';
-import { iconChevronLeft, iconDots, iconSlidersHorizontal } from '@/icons';
+import { iconChevronLeft, iconDots, iconLayoutBottombar } from '@/icons';
 import { useSettingStore } from '@/stores/setting';
 import {
   emptyPlayerBarLayout,
@@ -336,7 +336,7 @@ onBeforeUnmount(() => {
                 aria-label="编辑播放栏布局"
                 @click="editMode = true"
               >
-                <Icon :icon="iconSlidersHorizontal" width="16" height="16" />
+                <Icon :icon="iconLayoutBottombar" width="16" height="16" />
               </button>
             </template>
           </Tooltip>

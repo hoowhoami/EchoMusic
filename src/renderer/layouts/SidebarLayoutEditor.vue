@@ -5,7 +5,7 @@ import Sortable from 'sortablejs';
 import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Popover from '@/components/ui/Popover.vue';
-import { iconEye, iconEyeOff, iconSlidersHorizontal, iconPlaylistAdd } from '@/icons';
+import { iconEye, iconEyeOff, iconLayoutSidebar, iconPlaylistAdd } from '@/icons';
 import PluginIcon from '@/plugins/PluginIcon.vue';
 import type { PluginIcon as PluginIconValue } from '@/plugins/registry';
 import { useSettingStore } from '@/stores/setting';
@@ -194,7 +194,7 @@ onBeforeUnmount(destroySortables);
         tooltip="编辑侧边栏"
         tooltip-side="top"
       >
-        <Icon :icon="iconSlidersHorizontal" width="18" height="18" />
+        <Icon :icon="iconLayoutSidebar" width="18" height="18" />
       </Button>
     </template>
 
