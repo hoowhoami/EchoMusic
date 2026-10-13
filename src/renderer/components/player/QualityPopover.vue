@@ -17,6 +17,7 @@ const {
   isAudioSourceSwitching,
   isResolvedCloudSource,
   hasCloudAudioSourceOption,
+  cloudFileSizeText,
   hasCatalogAudioSourceOption,
   isAudioQualityDisabled,
   isAudioQualityHidden,
@@ -205,7 +206,12 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
         :aria-pressed="isResolvedCloudSource"
         @click="setCloudAudioSource"
       >
-        <span class="pm-label">云盘文件</span>
+        <span class="pm-label">
+          <span>云盘文件</span>
+          <span class="pm-detail" :aria-hidden="!cloudFileSizeText || undefined">
+            {{ cloudFileSizeText || '\u00a0' }}
+          </span>
+        </span>
         <Tag class="pm-tag" color="#0EA5E9">CLD</Tag>
         <span
           class="pm-check"
