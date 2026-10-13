@@ -17,6 +17,28 @@
 !macroend
 
 !macro customInstall
+  ; Electron checks sandbox access before the main-process code can run.
+  ; Grant Program Files-equivalent access after extraction and before launch,
+  ; including silent upgrades. Use the SID so this works on every Windows locale.
+  ; /grant adds RX without replacing existing permissions; OI/CI cover child files.
+  Push $0
+  Push $1
+  nsExec::ExecToStack '"$SYSDIR\icacls.exe" "$INSTDIR" /grant "*S-1-15-2-1:(OI)(CI)(RX)"'
+  Pop $0
+  Pop $1
+  ${If} $0 != "0"
+    SetDetailsPrint both
+    DetailPrint "Failed to grant sandbox read/execute access to $INSTDIR (icacls: $0)."
+    DetailPrint "$1"
+    MessageBox MB_OK|MB_ICONSTOP 'Unable to grant Windows sandbox access to "$INSTDIR" (icacls: $0).$\r$\n$\r$\nRun the installer as administrator, or grant access manually and reinstall:$\r$\nicacls "$INSTDIR" /grant "*S-1-15-2-1:(OI)(CI)(RX)"' /SD IDOK
+    Pop $1
+    Pop $0
+    SetErrorLevel 2
+    Abort
+  ${EndIf}
+  Pop $1
+  Pop $0
+
   ; 清理历史版本可能遗留的旧卸载程序
   Delete "$INSTDIR\Uninstall ${PRODUCT_NAME}.exe.old"
 
