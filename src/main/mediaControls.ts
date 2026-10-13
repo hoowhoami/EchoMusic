@@ -127,7 +127,10 @@ async function downloadCoverImage(url: string, signal?: AbortSignal): Promise<Bu
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          Accept: 'image/jpeg,image/png,image/webp,*/*;q=0.8',
+          // 刻意不声明 image/webp：CDN 会按 Accept 协商格式，声明了就回 WebP，
+          // 而 Electron nativeImage 在 Windows 上解不了 WebP（走 GDI+/WIC），
+          // 结果任务栏封面预览只能退回应用图标。不要把 webp 加回来。
+          Accept: 'image/jpeg,image/png,*/*;q=0.8',
           Referer: 'https://www.kugou.com/',
         },
       });

@@ -91,6 +91,12 @@ export function setTaskbarCover(value: Buffer | null): void {
   if (next) {
     const image = nativeImage.createFromBuffer(next);
     if (!image.isEmpty()) cover = scaled(image);
+    // 解码失败会静默退回应用图标，这里留一条日志便于事后定位编码格式。
+    else
+      log.warn('[TaskbarThumbnail] Cover could not be decoded, using app icon', {
+        bytes: next.length,
+        magic: next.subarray(0, 12).toString('hex'),
+      });
   }
   apply();
 }
