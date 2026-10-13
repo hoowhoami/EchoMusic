@@ -7,7 +7,7 @@ const source = readFileSync(
   new URL('../src/renderer/layouts/playerBarActions.ts', import.meta.url),
   'utf8',
 )
-  .replace(/^import type .*;\n/gm, '')
+  .replace(/^import type [^\n]*\r?\n/gm, '')
   .replace(/^export /gm, '');
 
 const { code } = transformSync(
