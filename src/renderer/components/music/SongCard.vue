@@ -10,8 +10,14 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
-import { iconMessageCircle, iconHeart, iconHeartFilled, iconPlay, iconPause } from '@/icons';
-import MvIcon from '@/components/ui/MvIcon.vue';
+import {
+  iconMessageCircle,
+  iconHeart,
+  iconHeartFilled,
+  iconPlay,
+  iconPause,
+  iconBrandYoutube,
+} from '@/icons';
 import { playSongInContext, queueAndPlaySong, replaceQueueAndPlay } from '@/utils/playback';
 import { getSongDerivedState } from '@/utils/song';
 
@@ -384,7 +390,7 @@ const handleFavorite = () => {
         tooltip="播放 MV"
         @click.stop="goToMvDetail"
       >
-        <MvIcon class="w-4 h-4" />
+        <Icon :icon="iconBrandYoutube" width="16" height="16" />
       </Button>
       <Button
         variant="unstyled"

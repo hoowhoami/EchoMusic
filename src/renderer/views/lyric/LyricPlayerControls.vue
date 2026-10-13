@@ -20,7 +20,6 @@ import { useToastStore } from '@/stores/toast';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
 import { getPlayerBarBadgeTone } from '@/layouts/playerBarActions';
-import MvIcon from '@/components/ui/MvIcon.vue';
 import BarrageIcon from '@/components/ui/BarrageIcon.vue';
 import PlayerBarActionIcon from '@/layouts/PlayerBarActionIcon.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
@@ -62,6 +61,7 @@ import {
   iconSpeedometer,
   iconSlidersHorizontal,
   iconCast,
+  iconBrandYoutube,
 } from '@/icons';
 
 const emit = defineEmits<{
@@ -332,7 +332,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'mv',
     title: '播放 MV',
-    iconComponent: markRaw(MvIcon),
+    icon: iconBrandYoutube,
     defaultPlacement: 'left',
     order: 30,
     visible: hasCurrentTrackMv.value,

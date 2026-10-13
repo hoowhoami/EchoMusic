@@ -24,7 +24,6 @@ import Button from '@/components/ui/Button.vue';
 import { useDeferredSeek } from '@/composables/useDeferredSeek';
 import { useLyricPagePreload } from '@/composables/useLyricPagePreload';
 import { usePlaybackProgressStatus } from '@/composables/usePlaybackProgressStatus';
-import MvIcon from '@/components/ui/MvIcon.vue';
 import PlayerBarActionIcon from './PlayerBarActionIcon.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import VolumeIcon from '@/components/player/VolumeIcon.vue';
@@ -48,6 +47,7 @@ import {
   iconSpeedometer,
   iconSlidersHorizontal,
   iconCast,
+  iconBrandYoutube,
 } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import {
@@ -341,7 +341,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'mv',
     title: '播放 MV',
-    iconComponent: markRaw(MvIcon),
+    icon: iconBrandYoutube,
     defaultPlacement: 'left',
     order: 30,
     visible: hasCurrentTrackMv.value,
