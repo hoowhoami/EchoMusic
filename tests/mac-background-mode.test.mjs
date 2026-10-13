@@ -153,6 +153,10 @@ function setup(
     './window': { quitApplication: () => quitCount++ },
     '../shared/playback': { DEFAULT_PLAYER_VOLUME: 75 },
     './appIcons': { resolveTrayIconPath: () => '/mock/tray.png' },
+    './taskbarMediaBar': {
+      getTaskbarPlayerState: () => ({ enabled: false }),
+      setTaskbarPlayerEnabled: async () => {},
+    },
   };
   const load = (code) => {
     const module = { exports: {} };
