@@ -2,6 +2,10 @@ packages:
   - .
   - server
 
+allowBuilds:
+  electron-winstaller: true
+  esbuild: true
+
 ignoredBuiltDependencies:
   - electron
   - electron-winstaller

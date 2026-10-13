@@ -39,7 +39,12 @@ export function normalizeTaskbarLyricSettings(input: unknown = {}): TaskbarLyric
   };
 }
 
-/** 原生布局使用任务栏客户区内的物理像素，不能当作屏幕上的 DIP。 */
+/**
+ * 原生布局使用任务栏客户区内的物理像素，不能当作屏幕上的 DIP。
+ *
+ * left/right 相对任务栏客户区 —— 歌词窗口是任务栏的子窗口，setBounds
+ * 按父窗口相对坐标解释。
+ */
 export interface NativeTaskbarLayout {
   left: { x: number; y: number; width: number; height: number };
   right: { x: number; y: number; width: number; height: number };

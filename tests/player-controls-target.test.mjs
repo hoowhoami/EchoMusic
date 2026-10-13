@@ -37,6 +37,7 @@ function makeControls(player, playlist = {}, router = {}) {
     '@/utils/songQualityAccess': {},
     '@/utils/song': {},
     '@/utils/share': {},
+    '@/utils/format': { formatCompactBytes: () => '' },
     '@/services/cloudAudioIndex': {},
     '@/icons': {},
   };

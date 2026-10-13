@@ -29,6 +29,7 @@ const load = (file, mocks, extras = {}) => {
   return module.exports;
 };
 const shared = load('../src/shared/taskbar.ts', {});
+// 歌词是任务栏的子窗口，left/right 已经是相对任务栏客户区的偏移。
 const layout = () => ({
   left: { x: 0, y: 0, width: 600, height: 48 },
   right: { x: 1300, y: 0, width: 400, height: 48 },
@@ -37,9 +38,18 @@ const layout = () => ({
   isDark: true,
   available: true,
 });
-function setup({ page = async () => {}, available = true, autoReady = true } = {}) {
+function setup({
+  page = async () => {},
+  available = true,
+  autoReady = true,
+  mountedTaskbar: initialTaskbar = 0,
+} = {}) {
+  let mountedTaskbar = initialTaskbar;
   const scheduled = new Map();
   let timerId = 0;
+  let clockNow = 1_000_000;
+  const logs = [];
+  const intervals = new Set();
   let isBarAvailable;
   const windows = [],
     sessions = [],
@@ -161,7 +171,13 @@ function setup({ page = async () => {}, available = true, autoReady = true } = {
         setMainAppSetting: (key, value) => (settings[key] = value),
       },
       './native/platform': {
-        getNativeTaskbarLyric: () => (available ? { TaskbarLyricSession: Session } : null),
+        getNativeTaskbarLyric: () =>
+          available
+            ? {
+                TaskbarLyricSession: Session,
+                taskbarLyricMountedTaskbar: () => mountedTaskbar,
+              }
+            : null,
       },
       './nowPlaying': {
         bindVisibleNowPlayingWindow(_win, available) {
@@ -169,7 +185,17 @@ function setup({ page = async () => {}, available = true, autoReady = true } = {
         },
       },
       '../shared/taskbar': shared,
-      './logger': { __esModule: true, default: { error() {}, warn() {} } },
+      './logger': {
+        __esModule: true,
+        default: {
+          error(...args) {
+            logs.push(args);
+          },
+          warn(...args) {
+            logs.push(args);
+          },
+        },
+      },
     },
     {
       setTimeout: (fn) => {
@@ -177,9 +203,22 @@ function setup({ page = async () => {}, available = true, autoReady = true } = {
         return timerId;
       },
       clearTimeout: (id) => scheduled.delete(id),
+      // 心跳是常驻定时器：真实 setInterval 会自我重复，这里记录 fn 以便反复触发。
+      setInterval: (fn) => {
+        intervals.add(fn);
+        return fn;
+      },
+      clearInterval: (fn) => intervals.delete(fn),
+      Date: { now: () => clockNow },
+      log: { error() {}, warn() {} },
     },
   );
   api.registerTaskbarPlayerHandlers();
+  const runScheduled = () => {
+    const tasks = Array.from(scheduled.values());
+    scheduled.clear();
+    tasks.forEach((fn) => fn());
+  };
   return {
     api,
     windows,
@@ -191,10 +230,20 @@ function setup({ page = async () => {}, available = true, autoReady = true } = {
     theme,
     main,
     isBarAvailable: () => isBarAvailable?.(),
-    runScheduled: () => {
-      const tasks = Array.from(scheduled.values());
-      scheduled.clear();
-      tasks.forEach((fn) => fn());
+    advanceClock: (ms) => {
+      clockNow += ms;
+    },
+    setMountedTaskbar: (value) => {
+      mountedTaskbar = value;
+    },
+    runScheduled,
+    logs,
+    // 心跳是常驻定时器，与一次性任务队列分开驱动。
+    runHeartbeat: (ticks = 1) => {
+      for (let i = 0; i < ticks; i += 1) {
+        for (const fn of Array.from(intervals)) fn();
+        runScheduled();
+      }
     },
   };
 }
@@ -418,6 +467,105 @@ test('DPI conversion uses parent-client coordinates and falls back only to anoth
     null,
   );
   assert.equal(shared.resolveTaskbarLyricRegion({ ...layout(), scaleFactor: NaN }, settings), null);
+});
+test('the lyric is a taskbar child window, so bounds stay relative to the bar', () => {
+  const settings = shared.DEFAULT_TASKBAR_LYRIC_SETTINGS;
+  // 歌词是 Shell_TrayWnd 的子窗口，setBounds 按父窗口客户区解释，
+  // 因此直接使用 left/right 的相对偏移，不再叠加任务栏屏幕原点。
+  const bottom = shared.resolveTaskbarLyricRegion(layout(), settings);
+  assert.equal(bottom.bounds.x, 8);
+  assert.equal(bottom.bounds.y, 0);
+
+  // 相对偏移按缩放比折算成 DIP，不能混用物理像素。
+  const scaled = shared.resolveTaskbarLyricRegion(
+    {
+      ...layout(),
+      scaleFactor: 2,
+      left: { x: 60, y: 4, width: 1200, height: 96 },
+    },
+    settings,
+  );
+  assert.equal(scaled.bounds.x, 38);
+  assert.equal(scaled.bounds.y, 2);
+
+  // 首选侧高度不足 28 DIP 时回退到另一侧，两侧都不够才隐藏。
+  const short = { x: 0, y: 0, width: 400, height: 40 };
+  assert.equal(
+    shared.resolveTaskbarLyricRegion(
+      { ...layout(), scaleFactor: 2, left: short, right: short },
+      settings,
+    ),
+    null,
+  );
+
+  // 区域坐标非有限时回退到另一侧，两侧都不可信才隐藏。
+  const broken = { x: NaN, y: 0, width: 400, height: 48 };
+  const fallback = shared.resolveTaskbarLyricRegion(
+    { ...layout(), left: broken },
+    settings,
+  );
+  assert.equal(fallback.anchor, 'right');
+  assert.equal(
+    shared.resolveTaskbarLyricRegion({ ...layout(), left: broken, right: broken }, settings),
+    null,
+  );
+});
+test('a native session that stops answering is rebuilt instead of leaving a stranded window', async () => {
+  // Explorer 打开快速设置等 XAML 弹层时会销毁并重建 Shell_TrayWnd，原生工作线程
+  // 可能正好在任务栏缺席的窗口期静默退出。此时 JS 侧仍持有一个"有效"会话，
+  // update() 发给死线程，窗口再也收不到布局，会停在初始尺寸上。
+  const f = setup();
+  await f.api.setTaskbarPlayerEnabled(true);
+  const win = f.windows[0];
+  f.sessions[0].emit();
+  assert.equal(win.visible, true);
+
+  // 会话仍在产出布局：每次心跳前推进一个间隔，并让会话回报，心跳不该重建窗口。
+  for (let i = 0; i < 3; i += 1) {
+    f.advanceClock(2000);
+    f.sessions[0].emit();
+    f.runHeartbeat(1);
+  }
+  assert.equal(win.dead, false, 'a responsive session must not be rebuilt');
+
+  // 会话停止响应：连续超过容忍窗口没有布局，就应重建。
+  for (let i = 0; i < 4; i += 1) {
+    f.advanceClock(2000);
+    f.runHeartbeat(1);
+  }
+  assert.equal(win.dead, true, 'a dead session must destroy the stranded window');
+
+  // 重建要经过 destroy -> closed -> 恢复定时器 -> createBar(含 await)，逐级推进。
+  for (let i = 0; i < 30 && f.sessions.length < 2; i += 1) {
+    f.runHeartbeat(1);
+    f.runScheduled();
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(f.sessions.length, 2, 'the window is recreated after the dead session');
+  f.sessions[1].emit();
+  assert.equal(f.windows[1].visible, true);
+});
+test('a rebuilt taskbar is not mistaken for a dead session', async () => {
+  // Explorer 打开快速设置等弹层时会销毁并重建 Shell_TrayWnd，这期间拿不到布局
+  // 是预期的，native 侧会自行重新挂载。此时若重建 Chromium 窗口，新窗口又会
+  // 落进下一个重建空窗，形成死循环 —— 歌词就会一直闪/消失。
+  const f = setup({ mountedTaskbar: 1000 });
+  await f.api.setTaskbarPlayerEnabled(true);
+  const win = f.windows[0];
+  f.sessions[0].emit();
+
+  // 任务栏句柄变了 + 长时间无响应：应当只等待，不重建窗口。
+  f.setMountedTaskbar(2000);
+  for (let i = 0; i < 5; i += 1) {
+    f.advanceClock(2000);
+    f.runHeartbeat(1);
+  }
+  assert.equal(win.dead, false, 'a rebuilt taskbar must not destroy the window');
+  assert.equal(f.windows.length, 1);
+
+  // 任务栏稳定下来后，native 重新挂载并恢复回调。
+  f.sessions[0].emit();
+  assert.equal(win.visible, true);
 });
 test('left preference retains native space reservation and restores into the safe right-only region', async () => {
   const f = setup();

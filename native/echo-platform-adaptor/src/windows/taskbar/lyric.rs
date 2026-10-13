@@ -11,10 +11,11 @@ use std::{
     ffi::c_void,
     sync::Mutex,
     sync::{
-        atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicIsize, AtomicU32, Ordering},
         Arc,
     },
     thread,
+    time::Instant,
 };
 use windows::{
     core::{implement, w, Ref},
@@ -55,6 +56,30 @@ use winreg::{
 static WORKER_LOCK: Mutex<()> = Mutex::new(());
 const CHANGE: u32 = WM_APP + 41;
 const TIMER: usize = 41;
+/// 挂载中的任务栏句柄，供 JS 侧读取（SHELL_HWND 是工作线程的 thread_local，
+/// JS 线程读不到，必须另有一份跨线程可见的副本）。
+static MOUNTED_TASKBAR: AtomicIsize = AtomicIsize::new(0);
+
+/// Explorer 重排任务栏后的探测冷却截止时刻。
+///
+/// 冷却期内不做同步 UIA 探测，避免与正在重排的 shell 互相等待 —— 这正是
+/// AF-Media-Bar 在 Explorer 连续重排时观察到并规避的死锁。
+static PROBE_COOLDOWN_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
+/// 冷却时长。需覆盖 Explorer 销毁 + 重建任务栏的整个窗口期。
+const PROBE_COOLDOWN_MS: u64 = 1200;
+
+fn probe_cooling_down() -> bool {
+    match PROBE_COOLDOWN_UNTIL.lock() {
+        Ok(guard) => guard.is_some_and(|until| Instant::now() < until),
+        Err(_) => false,
+    }
+}
+
+fn start_probe_cooldown() {
+    if let Ok(mut guard) = PROBE_COOLDOWN_UNTIL.lock() {
+        *guard = Some(Instant::now() + std::time::Duration::from_millis(PROBE_COOLDOWN_MS));
+    }
+}
 thread_local! {
     static SHELL_PID: Cell<u32> = const { Cell::new(0) };
     static SHELL_HWND: Cell<isize> = const { Cell::new(0) };
@@ -82,12 +107,61 @@ pub struct TaskbarLyricLayout {
 type Callback =
     ThreadsafeFunction<TaskbarLyricLayout, UnknownReturnValue, TaskbarLyricLayout, Status, false>;
 
+/// 当前会话实际挂载到的任务栏窗口句柄（0 = 尚未成功挂载 / 任务栏当前不存在）。
+///
+/// 供 JS 区分两种「拿不到布局」：
+///   · 句柄变了 ⇒ Explorer 重建了任务栏，native 侧会自动重新挂载，此时**不该**
+///     销毁重建 Chromium 窗口，否则窗口重建又落在下一个重建空窗里，形成死循环；
+///   · 句柄没变却长时间无响应 ⇒ 工作线程确实死了，才需要 JS 重建窗口。
+#[napi]
+pub fn taskbar_lyric_mounted_taskbar() -> i64 {
+    MOUNTED_TASKBAR.load(Ordering::Acquire) as i64
+}
+
+/// 把歌词窗口提到 topmost 顶端。
+///
+/// 歌词嵌入任务栏后与任务栏在同一父子层级，绘制顺序由父窗口决定，本就不需要
+/// 争抢 z-order —— 这正是选择子窗口方案的原因（顶层窗口方案需要常驻置顶线程，
+/// 且仍会被快速设置这类 XAML 弹层盖住）。
+///
+/// 因此这里只在**尚未挂载**（仍是顶层窗口）时兜底提一次，避免窗口在
+/// SetParent 之前的窗口期闪到任务栏之外。
+fn raise_lyric(child: HWND) {
+    unsafe {
+        // GetAncestor(GA_PARENT) 才是真正的父窗口判断：对 WS_POPUP 窗口
+        // GetParent 返回的是 owner。这里要的是「已挂载就别动」，挂载后
+        // 父窗口一定是 Shell_TrayWnd，两者都能判对，但保持一致更稳妥。
+        if GetAncestor(child, GA_PARENT).0 as isize != 0 {
+            return;
+        }
+        // 歌词窗口属于 Electron 的 UI 线程，而这里可能从工作线程调用。
+        // 不加 SWP_ASYNCWINDOWPOS 时 SetWindowPos 会同步等目标线程处理，
+        // 主进程一忙工作线程就被挂住；加上之后只投递请求，立即返回。
+        let _ = SetWindowPos(
+            child,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+        );
+    }
+}
+
+/// 常驻置顶定时器的消息 id（与一次性布局用的 TIMER 区分，不会被 KillTimer 取消）。
+/// SetTimer/KillTimer 收 usize，消息比对收 u32，两边各留一份常量。
+/// 任务栏长期不可用时的低频重试间隔（快速重试耗尽后使用）。
+const RETRY_IDLE_MS: u32 = 500;
+
 #[napi]
 pub struct TaskbarLyricSession {
     stopped: Arc<AtomicBool>,
     thread_id: Arc<AtomicU32>,
     width: Arc<AtomicI32>,
     restore: Arc<Mutex<Option<LegacyArea>>>,
+    /// 歌词窗口句柄。解挂必须在 Electron 的 UI 线程上同步完成（见 `stop`）。
+    child: usize,
 }
 #[napi]
 impl TaskbarLyricSession {
@@ -119,6 +193,7 @@ impl TaskbarLyricSession {
             thread_id: Arc::new(AtomicU32::new(0)),
             width: Arc::new(AtomicI32::new(width.clamp(0, 1000))),
             restore: Arc::new(Mutex::new(None)),
+            child,
         };
         let stopped = session.stopped.clone();
         let thread_id = session.thread_id.clone();
@@ -154,6 +229,15 @@ impl TaskbarLyricSession {
                 area.restore();
             }
         }
+        // 必须在通知工作线程退出**之前**同步解挂，且必须在调用方的线程上做。
+        //
+        // 调用方是 Electron 的 UI 线程，也就是该 HWND 自己的线程：
+        //   · 放在这里做，Chromium 窗口销毁时已在自己的进程与线程内，
+        //     WM_DESTROY → WM_NCDESTROY 序列完整，不再有跨进程销毁；
+        //   · 交给工作线程做要跨线程 SetParent，会同步等 Electron 处理；
+        //   · 等到工作线程退出后再做就太晚了 —— JS 侧紧接着就
+        //     `win.destroy()`，窗口在被解挂之前就跨进程销毁了。
+        unsafe { detach(HWND(self.child as *mut c_void)) };
         let id = self.thread_id.load(Ordering::Acquire);
         if id != 0 {
             unsafe {
@@ -221,6 +305,11 @@ unsafe extern "system" fn watcher_proc(
         || matches!(msg, WM_SETTINGCHANGE | WM_DISPLAYCHANGE | WM_THEMECHANGED)
     {
         let restart = CREATED.with(|value| value.get() == msg);
+        // Explorer 打开快速设置 / 通知中心这类 XAML 弹层时会销毁并重建任务栏。
+        // 该窗口期内任务栏的 UIA 树处于半成品状态，同步探测会被编组到 explorer 线程，
+        // 而 explorer 此刻正忙着重排 —— 双方互相等待，工作线程就此卡死，JS 侧却仍
+        // 以为会话有效，歌词窗口最终停在初始位置。冷却期内一律不做同步探测。
+        start_probe_cooldown();
         let _ = PostThreadMessageW(
             GetCurrentThreadId(),
             CHANGE,
@@ -300,13 +389,15 @@ impl LegacyArea {
                     return;
                 }
             }
-            let _ = MoveWindow(
+            // 同样是 explorer 的窗口，必须异步投递，见 Shell::layout 里的说明。
+            let _ = SetWindowPos(
                 list,
+                None,
                 bounds.left,
                 bounds.top,
                 (bounds.right - bounds.left).max(0),
                 (bounds.bottom - bounds.top).max(0),
-                true,
+                SWP_ASYNCWINDOWPOS | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
             );
         }
     }
@@ -335,6 +426,40 @@ unsafe fn rect(hwnd: HWND) -> Option<RECT> {
     GetWindowRect(hwnd, &mut value).ok()?;
     Some(value)
 }
+
+/// 判断窗口是否属于 shell 自身的弹出面板（快速设置、通知中心、日历、开始菜单等）。
+///
+/// 这些面板由 ShellExperienceHost / StartMenuExperienceHost 承载，不在 explorer.exe 里，
+/// 会被下面的全屏检测误判成「有全屏程序在跑」而隐藏歌词。用窗口类名识别，
+/// 限定在已知的 shell 弹层类，避免放过第三方窗口。
+fn is_shell_flyout(hwnd: HWND, pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    let mut buffer = [0u16; 128];
+    let len = unsafe { GetClassNameW(hwnd, &mut buffer) };
+    if len <= 0 {
+        return false;
+    }
+    let class = String::from_utf16_lossy(&buffer[..len as usize]);
+    matches!(
+        class.as_str(),
+        // Win11 快速设置 / 通知中心 / 日历等 XAML 弹层
+        "Windows.UI.Core.CoreWindow"
+            | "Xaml_WindowedPopupClass"
+            | "Windows.UI.Composition.CopFlyout"
+            | "ShellExperienceHostWindow"
+            // 托盘溢出面板（Win10 / Win11）
+            | "NotifyIconOverflowWindow"
+            | "Shell_SecondaryTrayWnd"
+            | "TrayNotifyWnd"
+            // 任务栏自身的 XAML 宿主与气泡
+            | "Windows.UI.Composition.DesktopWindowContentBridge"
+            | "Shell_TrayWnd"
+            | "NotifyIconOverflow"
+            | "TaskListThumbnail"
+    )
+}
 fn registry_bool(path: &str, name: &str, default: bool) -> bool {
     RegKey::predef(HKEY_CURRENT_USER)
         .open_subkey(path)
@@ -362,6 +487,35 @@ impl IUIAutomationStructureChangedEventHandler_Impl for StructureHandler_Impl {
         Ok(())
     }
 }
+
+/// 把歌词窗口从任务栏解挂，恢复为顶层窗口。
+///
+/// 跨进程的父子关系只应在会话存活期间存在。会话结束时若不解除，Chromium 窗口的
+/// 销毁就会跨进程执行 —— Explorer 销毁它时只发 `WM_NCDESTROY`，Chromium 的
+/// `NativeThemeObserver` 析构 CHECK 失败；而由我们补发 `WM_DESTROY` 又等于在
+/// explorer 线程上跑 Chromium 宿主，直接拖垮 shell。做法参考 AF-Media-Bar 的
+/// `UndockWindow`。
+///
+/// 只在仍确实是任务栏子窗口时动手，避免误改 Electron 自己的父子关系。
+///
+/// 用 GetAncestor(GA_PARENT) 判断：对 WS_POPUP 窗口 GetParent 返回的是 owner，
+/// 不是真正的父窗口。
+unsafe fn detach(child: HWND) {
+    if GetAncestor(child, GA_PARENT).0.is_null() {
+        return;
+    }
+    let style = GetWindowLongPtrW(child, GWL_STYLE);
+    let ex = GetWindowLongPtrW(child, GWL_EXSTYLE);
+    let _ = SetParent(child, None);
+    // 与 attach() 对称还原：加回装饰位，去掉挂载时补的三个扩展样式。
+    let decorations = WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
+    SetWindowLongPtrW(child, GWL_STYLE, style | (decorations.0 as isize));
+    SetWindowLongPtrW(
+        child,
+        GWL_EXSTYLE,
+        ex & !((WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW).0 as isize),
+    );
+}
 unsafe fn attach(
     child: HWND,
     automation: &IUIAutomation,
@@ -379,13 +533,39 @@ unsafe fn attach(
     }
     SHELL_PID.with(|pid| pid.set(owner));
     SHELL_HWND.with(|value| value.set(hwnd.0 as isize));
+    MOUNTED_TASKBAR.store(hwnd.0 as isize, Ordering::Release);
+    // 嵌入为任务栏子窗口：歌词天然位于任务栏之上，无需与 shell 争抢 z-order，
+    // 也不会被弹出的 XAML 面板（快速设置 / 通知中心）遮挡。
+    //
+    // 跨进程父子关系的风险由三处兜底：
+    //   1. window_lifecycle 吞掉 WM_GETOBJECT，避免 Chromium 的无障碍实现在
+    //      explorer 线程上运行（做法参考 AF-Media-Bar 的
+    //      TaskbarHostMessagePolicy.ShouldSuppressPropagation）；
+    //   2. 销毁阶段补齐缺失的 WM_DESTROY，Chromium 的 NativeThemeObserver 在那里
+    //      注销，缺失才会 CHECK 失败；
+    //   3. 会话停止时先解除父子关系（detach），不带着跨进程父子关系退出 ——
+    //      做法同样取自 AF-Media-Bar 的 UndockWindow。
     let original_style = GetWindowLongPtrW(child, GWL_STYLE);
     let original_ex = GetWindowLongPtrW(child, GWL_EXSTYLE);
+    // 顺序与 upstream（SPlayer-Next）一致：**先 SetParent，再改样式**。
+    //
+    // 之前我照 AF-Media-Bar 的顺序（先样式后 SetParent）来做，但那是给纯原生
+    // 窗口的建议。实测结果：先样式后 SetParent 时歌词能显示、不遮挡、Explorer
+    // 也不崩，但 Chromium 收到鼠标消息后不转发给渲染进程，hover 完全失效；
+    // 而 upstream 的「先 SetParent 再补 WS_EX_LAYERED」版本 hover 是好的。
+    // WS_EX_LAYERED 给窗口自己的输入 / 合成表面，是鼠标能否到达的决定因素，
+    // 必须在已经挂进任务栏之后再加。
     if SetParent(child, Some(hwnd)).is_err() {
         return None;
     }
+    // 挂载成功后复核一次真实父窗口。GetParent 对 WS_POPUP 窗口返回的是 owner
+    // 而不是 parent，必须用 GetAncestor(GA_PARENT)。
+    if GetAncestor(child, GA_PARENT) != hwnd {
+        let _ = SetParent(child, None);
+        return None;
+    }
     // 与 SPlayer-Next 一致，保留 Electron 创建时的窗口类型，只剥离装饰位。
-    // 不把已初始化的 Chromium 顶层窗口强改为 WS_CHILD，避免与其窗口宿主状态不一致。
+    // 不把已初始化的 Chromium 顶层窗口强改 WS_CHILD，避免与其窗口宿主状态不一致。
     let decorations = WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
     SetWindowLongPtrW(child, GWL_STYLE, original_style & !(decorations.0 as isize));
     SetWindowLongPtrW(
@@ -520,6 +700,9 @@ impl Shell {
             && !IsIconic(foreground).as_bool()
             && cloaked == 0
             && SHELL_PID.with(|value| value.get() != foreground_pid)
+            // shell 自身的弹出面板不算「全屏窗口」：快速设置/通知中心/日历这些
+            // 面板会短暂占据前台并覆盖任务栏区域，不该因此让歌词消失。
+            && !is_shell_flyout(foreground, foreground_pid)
         {
             if let Some(r) = rect(foreground) {
                 let monitor = MonitorFromWindow(self.hwnd, MONITOR_DEFAULTTONEAREST);
@@ -553,13 +736,16 @@ impl Shell {
             if current.right - current.left != reserved
                 || current.bottom - current.top != original.bottom - original.top
             {
-                MoveWindow(
+                // SWP_ASYNCWINDOWPOS：任务列表归 explorer 所有，跨线程 MoveWindow 会
+                // 同步等它回消息，shell 一忙就卡住整个歌词会话。异步投递不阻塞。
+                SetWindowPos(
                     list,
+                    None,
                     original.left,
                     original.top,
                     reserved,
                     original.bottom - original.top,
-                    true,
+                    SWP_ASYNCWINDOWPOS | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
                 )
                 .ok()?;
             }
@@ -670,7 +856,9 @@ unsafe fn run(
     callback: Callback,
 ) {
     // 串行交接 shell，确保旧窗口先恢复 Win10 按钮区，再让新窗口预留空间。
-    let Ok(_exclusive) = WORKER_LOCK.lock() else {
+    // 用 try_lock 而非 lock：持锁线程一旦卡在跨进程 UIA 调用上，阻塞式加锁会让
+    // 每次开关都永久挂起，表现为应用无响应。抢不到锁就直接放弃本次会话。
+    let Ok(_exclusive) = WORKER_LOCK.try_lock() else {
         return;
     };
     if stopped.load(Ordering::Acquire) {
@@ -757,6 +945,7 @@ unsafe fn run(
     let mut scheduled = false;
     let mut retry = 0;
     let mut last_layout = None;
+    // 兜底置顶在整个会话期间常驻，不随布局定时器取消。
     let _ = PostThreadMessageW(GetCurrentThreadId(), CHANGE, WPARAM(0), LPARAM(0));
     while !stopped.load(Ordering::Acquire) && GetMessageW(&mut message, None, 0, 0).0 > 0 {
         if message.message == CHANGE {
@@ -767,6 +956,9 @@ unsafe fn run(
                 // 前台恢复 / 手动重新显示时，几何未变也要重发，恢复被系统隐藏的窗口。
                 last_layout = None;
             }
+            // 已是任务栏子窗口时这里是空操作；挂载前才需要抢一次置顶，
+            // 否则窗口在 SetParent 之前会闪到任务栏之外。
+            raise_lyric(child);
             if !scheduled {
                 SetTimer(Some(window), TIMER, 120, None);
                 scheduled = true;
@@ -777,20 +969,30 @@ unsafe fn run(
             if !IsWindow(Some(child)).as_bool() {
                 break;
             }
-            if shell
+            let stale_shell = shell
                 .as_ref()
                 .map(|s| !IsWindow(Some(s.hwnd)).as_bool())
-                .unwrap_or(true)
-            {
-                shell.take();
-                shell = attach(child, &automation, &stopped);
-                if let Ok(mut value) = restore.lock() {
-                    *value = shell.as_ref().and_then(|s| s.tasklist);
+                .unwrap_or(true);
+            if stale_shell || shell.is_none() {
+                // 冷却期内不重新挂载：此时 Explorer 正忙着重排任务栏，
+                // attach() 里的同步 UIA 调用会被编组到 explorer 线程并互相等待，
+                // 把工作线程和整个 shell 一起拖死。等冷却结束再重挂。
+                if !probe_cooling_down() {
+                    shell.take();
+                    shell = attach(child, &automation, &stopped);
+                    if let Ok(mut value) = restore.lock() {
+                        *value = shell.as_ref().and_then(|s| s.tasklist);
+                    }
                 }
             }
-            let layout = shell
-                .as_ref()
-                .and_then(|s| s.layout(width.load(Ordering::Acquire)));
+            // 冷却期内也跳过同步探测，沿用上一份布局。
+            let layout = if probe_cooling_down() {
+                last_layout.clone()
+            } else {
+                shell
+                    .as_ref()
+                    .and_then(|s| s.layout(width.load(Ordering::Acquire)))
+            };
             let failed = layout.is_none();
             let value = layout.unwrap_or(TaskbarLyricLayout {
                 left: TaskbarRect::default(),
@@ -809,11 +1011,21 @@ unsafe fn run(
                 last_layout = Some(value.clone());
                 callback.call(value, ThreadsafeFunctionCallMode::NonBlocking);
             }
-            if failed && retry < 5 {
+            if failed {
                 retry += 1;
-                SetTimer(Some(window), TIMER, 250 * retry, None);
+                // 先用递增间隔快速重试（应对任务栏重建的短暂空窗）。
+                // 超过上限后**仍要保持低频重试**：Explorer 打开快速设置 / 通知中心
+                // 这类 XAML 弹层时会销毁并重建 Shell_TrayWnd，重建窗口期通常长于
+                // 快速重试的总时长。若此时停止安排定时器，attach() 再也不会被调用，
+                // 歌词窗口就永久停在初始位置（表现为「窗口消失」）。
+                let delay = if retry <= 5 {
+                    250 * retry
+                } else {
+                    RETRY_IDLE_MS
+                };
+                SetTimer(Some(window), TIMER, delay, None);
                 scheduled = true;
-            } else if !failed {
+            } else {
                 retry = 0;
             }
         } else {
@@ -825,5 +1037,13 @@ unsafe fn run(
     drop(shell);
     drop(watchers);
     drop(automation);
+    // 解挂：不让跨进程的父子关系活到进程退出。
+    //
+    // Chromium 窗口随后会在 Electron 自己的线程上被销毁并收到完整的
+    // WM_DESTROY → WM_NCDESTROY 序列；若此时它仍是 explorer 的子窗口，销毁流程
+    // 就会跨进程执行，两边都可能崩。做法参考 AF-Media-Bar 的 UndockWindow。
+    unsafe { detach(child) };
     thread_id.store(0, Ordering::Release);
+    // 工作线程退出即视为会话失效，JS 心跳据此判定需要重建窗口。
+    MOUNTED_TASKBAR.store(0, Ordering::Release);
 }

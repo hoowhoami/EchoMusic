@@ -37,6 +37,25 @@ export function formatDuration(seconds: number | undefined): string {
 }
 
 /**
+ * 紧凑文件大小文本（如 `59.3M`）
+ *
+ * 与音质面板里服务端下发的 `size_text` 保持同一风格：单字母单位、无空格、
+ * 非字节档保留一位小数。无法解析时返回空串，由调用方决定占位。
+ */
+export function formatCompactBytes(value: number | undefined | null): string {
+  const bytes = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '';
+  const units = ['B', 'K', 'M', 'G', 'T'];
+  let size = bytes;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size.toFixed(unitIndex === 0 ? 0 : 1)}${units[unitIndex]}`;
+}
+
+/**
  * 格式化播放次数
  */
 export function formatPlayCount(count: number | undefined): string {

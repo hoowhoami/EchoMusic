@@ -128,6 +128,8 @@ interface NativeTaskbarLyric {
     width: number,
     callback: (layout: NativeTaskbarLayout) => void,
   ) => NativeTaskbarLyricSession;
+  /** 当前会话挂载到的任务栏句柄（0 = 未挂载 / 任务栏当前不存在）。 */
+  taskbarLyricMountedTaskbar?: () => number;
 }
 let taskbarLyric: NativeTaskbarLyric | null | undefined;
 export function getNativeTaskbarLyric(): NativeTaskbarLyric | null {

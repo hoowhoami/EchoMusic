@@ -330,15 +330,5 @@
       ]
     },
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "electron-winstaller"
-    ],
-    "ignoredBuiltDependencies": [
-      "esbuild",
-      "vue-demi"
-    ]
   }
 }

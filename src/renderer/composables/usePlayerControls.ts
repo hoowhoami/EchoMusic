@@ -18,6 +18,7 @@ import type { AudioEffectValue, AudioQualityValue, PlayMode } from '@/types';
 import { hasSongQuality, isViperAudioQuality, resolveEffectiveSongQuality } from '@/utils/song';
 import { copyShareTarget, createSongShareTarget, isSongHashId } from '@/utils/share';
 import { getCloudAudioSourceForSong } from '@/services/cloudAudioIndex';
+import { formatCompactBytes } from '@/utils/format';
 import {
   iconRepeat,
   iconRepeatOff,
@@ -155,6 +156,16 @@ export function usePlayerControls() {
     if (!track || track.source === 'cloud' || track.cloudAudioSource?.hash) return '';
     return `${track.id}:${track.albumAudioId ?? track.mixSongId ?? ''}:${track.fileId ?? track.songId ?? ''}:${track.hash ?? ''}`;
   });
+  /**
+   * 云盘文件大小，取 /user/cloud 列表下发的 size（字节）。
+   *
+   * 非云盘歌曲的 cloudAudioSource 由 cloudAudioIndex 懒加载，面板打开时
+   * 才补齐，所以查询完成前这里为空字符串。size 缺失时 /user/cloud/url 的
+   * fileSize 是同值的字符串形态，可作为后续兜底。
+   */
+  const cloudFileSizeText = computed(() =>
+    formatCompactBytes(currentTrack.value?.cloudAudioSource?.size),
+  );
   const cloudAudioSourceLoadingKey = ref('');
   let cloudAudioSourceFetchSeq = 0;
   const isAudioEffectPresetSelectionDisabled = computed(
@@ -564,6 +575,7 @@ export function usePlayerControls() {
     isAudioSourceSwitching,
     isResolvedCloudSource,
     hasCloudAudioSourceOption,
+    cloudFileSizeText,
     hasCatalogAudioSourceOption,
     isAudioEffectPresetSelectionDisabled,
     isAudioQualityDisabled,
