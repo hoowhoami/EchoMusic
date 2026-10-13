@@ -16,6 +16,18 @@ function harness() {
       listeners.get(type)?.delete(fn);
     },
   };
+  // 提交后的 seek 有确认兜底定时器，沙箱里必须提供，否则 clearTimeout 直接抛错。
+  // 定时器不自动触发：用例靠显式触发来验证超时兜底。
+  const timers = new Map();
+  let nextTimerId = 1;
+  const setTimeoutStub = (fn) => {
+    const id = nextTimerId++;
+    timers.set(id, fn);
+    return id;
+  };
+  const clearTimeoutStub = (id) => {
+    timers.delete(id);
+  };
   function load(path, mocks) {
     const module = { exports: {} };
     runInNewContext(
@@ -27,6 +39,8 @@ function harness() {
         module,
         window,
         queueMicrotask,
+        setTimeout: setTimeoutStub,
+        clearTimeout: clearTimeoutStub,
         require: (name) => {
           if (!(name in mocks)) throw new Error(`Unexpected dependency: ${name}`);
           return mocks[name];
@@ -58,6 +72,13 @@ function harness() {
     emit: (type) => {
       for (const fn of listeners.get(type) || []) fn();
     },
+    /** 触发所有挂起的确认超时定时器，模拟「上游迟迟不确认」。 */
+    flushTimers: () => {
+      const pending = [...timers.values()];
+      timers.clear();
+      for (const fn of pending) fn();
+    },
+    pendingTimers: () => timers.size,
   };
 }
 
@@ -165,5 +186,70 @@ test('keyboard at an unchanged boundary releases preview on keyup', async () => 
   h.playback.value.currentTime = 1;
   assert.equal(h.seek.progressValue.value[0], 1);
   assert.deepEqual(h.sent, []);
+  h.scope.stop();
+});
+
+test('a committed seek keeps showing the target until playback confirms it', () => {
+  const h = harness();
+  h.seek.handleStart();
+  h.seek.handleValueUpdate([65]);
+  h.seek.handleCommit([65]);
+
+  // 上游经 IPC 往返期间 getCurrentTime() 仍是旧值。直接 reset 会让进度条
+  // 闪回旧位置再跳到目标，这是独立窗口里最刺眼的抖动。
+  h.playback.value = { ...h.playback.value, currentTime: 12 };
+  assert.equal(h.seek.progressValue.value[0], 65);
+
+  // 向前 seek：播放头从旧位置一路爬向目标，爬过目标才交回实际进度。
+  // 爬到一半（64）仍在显示目标值，不能提前交回造成一次回跳。
+  h.playback.value = { ...h.playback.value, currentTime: 64 };
+  assert.equal(h.seek.progressValue.value[0], 65);
+  h.playback.value = { ...h.playback.value, currentTime: 65.2 };
+  assert.equal(h.seek.progressValue.value[0], 65.2);
+  h.scope.stop();
+});
+
+test('a backward seek hands control back once the playhead is at or below target', () => {
+  const h = harness();
+  h.playback.value = { ...h.playback.value, currentTime: 90 };
+  h.seek.handleStart();
+  h.seek.handleCommit([20]);
+
+  // 上游尚未更新，播放头仍在高位：必须继续显示目标，不能被 current 拉回去。
+  assert.equal(h.seek.progressValue.value[0], 20);
+  h.playback.value = { ...h.playback.value, currentTime: 30 };
+  assert.equal(h.seek.progressValue.value[0], 20);
+  h.playback.value = { ...h.playback.value, currentTime: 20 };
+  assert.equal(h.seek.progressValue.value[0], 20);
+  h.playback.value = { ...h.playback.value, currentTime: 19.8 };
+  assert.equal(h.seek.progressValue.value[0], 19.8);
+  h.scope.stop();
+});
+
+test('a seek that is never confirmed falls back to real playback', () => {
+  const h = harness();
+  h.seek.handleStart();
+  h.seek.handleValueUpdate([80]);
+  h.seek.handleCommit([80]);
+
+  // 上游可能一直不报告新位置（暂停、断流、IPC 丢失）。在超时之前必须一直显示
+  // 目标值，否则又会闪回旧位置。
+  h.playback.value = { ...h.playback.value, currentTime: 10 };
+  assert.equal(h.seek.progressValue.value[0], 80);
+  h.flushTimers();
+  assert.equal(h.seek.progressValue.value[0], 10);
+  // 超时兜底已生效，不该再留定时器。
+  assert.equal(h.pendingTimers(), 0);
+  h.scope.stop();
+});
+
+test('confirming a seek clears its timeout instead of leaving it armed', () => {
+  const h = harness();
+  h.seek.handleStart();
+  h.seek.handleCommit([30]);
+  assert.equal(h.pendingTimers(), 1);
+  h.playback.value = { ...h.playback.value, currentTime: 30.5 };
+  assert.equal(h.seek.progressValue.value[0], 30.5);
+  assert.equal(h.pendingTimers(), 0);
   h.scope.stop();
 });
