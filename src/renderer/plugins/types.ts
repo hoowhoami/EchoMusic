@@ -11,7 +11,11 @@ export interface EchoGlobalRuntime {
   executeCommand: (id: string, ...args: unknown[]) => unknown;
 }
 
-declare module '@vue/runtime-core' {
+// 扩充 'vue' 而不是 '@vue/runtime-core'：后者不是直接依赖，pnpm 的非提升
+// node_modules 布局下 TS 解析不到它，会报
+// "Invalid module name in augmentation, module '@vue/runtime-core' cannot be
+// found"。'vue' 是直接依赖且官方文档推荐的目标，vue-router / pinia 同样扩充它。
+declare module 'vue' {
   interface ComponentCustomProperties {
     $echo: EchoGlobalRuntime;
   }
