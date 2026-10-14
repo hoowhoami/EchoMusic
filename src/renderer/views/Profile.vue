@@ -1615,36 +1615,45 @@ onUnmounted(() => {
             </section>
 
             <section class="profile-details" aria-label="账号概况">
-              <dl class="profile-account-summary" aria-label="账号档案">
-                <div>
-                  <dt>用户 ID</dt>
-                  <dd>{{ userInfo.userid }}</dd>
-                </div>
-                <div>
-                  <dt>性别</dt>
-                  <dd>{{ gender }}</dd>
-                </div>
-                <div>
-                  <dt>乐龄</dt>
-                  <dd>{{ formatAccountAge(detail.rtime) }}</dd>
-                </div>
-                <div>
-                  <dt>所在地区</dt>
-                  <dd>{{ location }}</dd>
-                </div>
-                <div>
-                  <dt>累计听歌</dt>
-                  <dd>{{ listeningDuration }}</dd>
-                </div>
-                <div v-if="userIdentity.studentSchool">
-                  <dt>学生学校</dt>
-                  <dd>{{ userIdentity.studentSchool }}</dd>
-                </div>
-                <div v-if="userIdentity.studentExpireTime">
-                  <dt>学生认证到期</dt>
-                  <dd>{{ userIdentity.studentExpireTime }}</dd>
-                </div>
-              </dl>
+              <div class="profile-account-summary" role="group" aria-label="账号档案">
+                <dl class="profile-account-basics">
+                  <div>
+                    <dt>用户 ID</dt>
+                    <dd>{{ userInfo.userid }}</dd>
+                  </div>
+                  <div>
+                    <dt>性别</dt>
+                    <dd>{{ gender }}</dd>
+                  </div>
+                  <div class="profile-account-location">
+                    <dt>所在地区</dt>
+                    <dd>{{ location }}</dd>
+                  </div>
+                </dl>
+                <dl class="profile-account-times">
+                  <div>
+                    <dt>乐龄</dt>
+                    <dd>{{ formatAccountAge(detail.rtime) }}</dd>
+                  </div>
+                  <div>
+                    <dt>累计听歌</dt>
+                    <dd>{{ listeningDuration }}</dd>
+                  </div>
+                </dl>
+                <dl
+                  v-if="userIdentity.studentSchool || userIdentity.studentExpireTime"
+                  class="profile-account-student"
+                >
+                  <div v-if="userIdentity.studentSchool">
+                    <dt>学生学校</dt>
+                    <dd>{{ userIdentity.studentSchool }}</dd>
+                  </div>
+                  <div v-if="userIdentity.studentExpireTime">
+                    <dt>学生认证到期</dt>
+                    <dd>{{ userIdentity.studentExpireTime }}</dd>
+                  </div>
+                </dl>
+              </div>
               <section class="profile-memberships" aria-label="会员状态">
                 <article
                   v-for="membership in [
@@ -2369,15 +2378,24 @@ onUnmounted(() => {
 }
 .profile-account-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  align-content: start;
-  gap: 18px 24px;
-  margin: 0;
+  gap: 24px;
   min-width: 0;
   font-size: 13px;
   line-height: 1.5;
 }
-.profile-account-summary > div {
+.profile-account-summary dl {
+  display: grid;
+  align-content: start;
+  gap: 18px 24px;
+  min-width: 0;
+  margin: 0;
+}
+.profile-account-basics,
+.profile-account-times,
+.profile-account-student {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.profile-account-summary dl > div {
   display: grid;
   align-content: start;
   gap: 8px;
@@ -2487,9 +2505,6 @@ onUnmounted(() => {
   font-weight: 500;
 }
 @container profile-details (max-width: 680px) {
-  .profile-account-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
   .profile-membership {
     flex-direction: column;
     align-items: flex-start;
@@ -2502,9 +2517,14 @@ onUnmounted(() => {
   }
 }
 @container profile-details (max-width: 440px) {
-  .profile-account-summary,
+  .profile-account-basics,
+  .profile-account-times,
+  .profile-account-student,
   .profile-memberships {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .profile-account-location {
+    grid-column: 1 / -1;
   }
   .profile-membership {
     flex-direction: row;
@@ -2517,6 +2537,12 @@ onUnmounted(() => {
   }
   .profile-membership:nth-child(n + 3) {
     border-top: 1px solid var(--border-subtle);
+  }
+}
+@container profile-details (max-width: 360px) {
+  .profile-account-times,
+  .profile-account-student {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 600px) {
