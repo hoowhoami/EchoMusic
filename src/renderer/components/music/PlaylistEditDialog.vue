@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { vTooltip } from '@/components/ui/tooltip';
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { watchUserSession } from '@/utils/watchUserSession';
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -259,12 +259,10 @@ onBeforeUnmount(() => {
             >
               {{ selectingCover ? '正在读取…' : '更换封面' }}
             </Button>
-            <span
-              v-tooltip="{ content: selectedCover.name, overflowOnly: true }"
-              v-if="selectedCover"
-              class="edit-cover-name"
-              data-tooltip-label
-              >{{ selectedCover.name }}</span
+            <Tooltip :content="selectedCover.name" v-if="selectedCover"
+              ><span class="edit-cover-name" data-tooltip-label>{{
+                selectedCover.name
+              }}</span></Tooltip
             >
           </div>
         </div>

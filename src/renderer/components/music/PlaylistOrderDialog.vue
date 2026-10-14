@@ -521,13 +521,6 @@ watch(account, () => {
 </template>
 
 <style scoped>
-/* Match the shared close control position without adding a second close path. */
-:global(.dialog-content.playlist-order-dialog .dialog-header-actions) {
-  right: 16px;
-}
-:global(.dialog-content.playlist-order-dialog .dialog-header-with-actions) {
-  padding-right: 64px;
-}
 :global(.dialog-content.playlist-order-dialog .dialog-footer) {
   flex-wrap: wrap;
   align-items: center;

@@ -65,6 +65,10 @@ async function setup({
     },
   });
   class FakeWindow extends EventEmitter {
+    constructor(options) {
+      super();
+      this.options = options;
+    }
     visible = false;
     focused = false;
     minimized = false;
@@ -73,6 +77,7 @@ async function setup({
     skipTaskbar = false;
     fullscreenRequests = [];
     webContents = Object.assign(new EventEmitter(), {
+      mainFrame: {},
       isDestroyed: () => this.destroyed,
       send: noop,
       setWindowOpenHandler: noop,
@@ -226,7 +231,6 @@ async function setup({
       senderFrame: win.webContents.mainFrame,
     });
   if (finishStartup) {
-    win.emit('ready-to-show');
     mounted();
   }
   events.length = 0;
@@ -639,6 +643,7 @@ test('a pending fullscreen close applies the latest independent icon preferences
 
 test('startup waits for the mounted page before showing or restoring maximization', async () => {
   const e = await setup({ finishStartup: false, isMaximized: true });
+  assert.equal(e.win.options.paintWhenInitiallyHidden, false);
   assert.equal(e.win.isVisible(), false);
   e.win.emit('ready-to-show');
   assert.equal(e.win.isVisible(), false);
@@ -650,6 +655,8 @@ test('startup waits for the mounted page before showing or restoring maximizatio
 
 test('minimized startup stays hidden even with saved maximization until explicitly restored', async () => {
   const e = await setup({ startMinimized: true, isMaximized: true });
+  assert.equal(e.win.options.paintWhenInitiallyHidden, false);
+  assert.equal(e.win.options.webPreferences.backgroundThrottling, true);
   assert.equal(e.win.isVisible(), false);
   assert.equal(e.statePersistenceEnabled(), false);
   assert.deepEqual(e.events, []);

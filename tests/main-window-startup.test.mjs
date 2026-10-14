@@ -56,13 +56,13 @@ test('main startup adopts the saved theme and material, other windows stay untou
   assert.deepEqual(bootstrap({}).root.dataset, {});
 });
 
-test('Vue notifies the main process after mounting and painting the initial route', async () => {
+test('Vue notifies after flushing the mounted route without waiting for hidden animation frames', async () => {
   const source = readFileSync(new URL('../src/renderer/main.ts', import.meta.url), 'utf8');
   const code = source.slice(source.indexOf('const mountApplication ='));
   for (const routeName of ['loading', 'home', 'error']) {
     const failure = routeName === 'error';
     const calls = [];
-    const frames = [];
+    let flushDom;
     let resolve, reject;
     const ready = new Promise((yes, no) => {
       resolve = yes;
@@ -70,9 +70,12 @@ test('Vue notifies the main process after mounting and painting the initial rout
     });
     runInNewContext(code, {
       markStartup() {},
-      nextTick: (callback) => Promise.resolve().then(callback),
+      nextTick: (callback) =>
+        new Promise((resolve) => {
+          flushDom = () => resolve(callback());
+        }),
       app: { mount: () => calls.push('mount') },
-      requestAnimationFrame: (callback) => frames.push(callback),
+      requestAnimationFrame: () => assert.fail('hidden startup must not wait for a paint'),
       window: { electron: { notifyPageMounted: () => calls.push('notify') } },
       router: { isReady: () => ready, currentRoute: { value: { name: routeName } } },
     });
@@ -81,9 +84,7 @@ test('Vue notifies the main process after mounting and painting the initial rout
     else resolve();
     await new Promise((done) => setImmediate(done));
     assert.deepEqual(calls, ['mount']);
-    frames.shift()();
-    assert.deepEqual(calls, ['mount']);
-    frames.shift()();
+    flushDom();
     assert.deepEqual(calls, ['mount', 'notify']);
   }
 });
@@ -149,14 +150,13 @@ function startup() {
     },
   };
 }
-for (const first of ['native', 'page']) {
-  test(`window waits for both signals when ${first} is ready first, and only presents once`, async () => {
+for (const nativePaint of [false, true]) {
+  test(`trusted mounted page presents once with native first paint ${nativePaint ? 'already fired' : 'absent'}`, async () => {
     const e = startup();
-    if (first === 'native') e.win.emit('ready-to-show');
-    else e.mounted();
+    if (nativePaint) e.win.emit('ready-to-show');
     assert.equal(e.shows, 0);
-    if (first === 'native') e.mounted();
-    else e.win.emit('ready-to-show');
+    assert.equal(e.win.listenerCount('ready-to-show'), 0);
+    e.mounted();
     await e.ready;
     assert.equal(e.shows, 1);
     e.mounted();
@@ -167,7 +167,6 @@ for (const first of ['native', 'page']) {
 }
 test('another window or a subframe cannot reveal the main window', async () => {
   const e = startup();
-  e.win.emit('ready-to-show');
   e.mounted({ sender: {}, senderFrame: e.win.webContents.mainFrame });
   e.mounted({ sender: e.win.webContents, senderFrame: {} });
   assert.equal(e.shows, 0);
@@ -184,6 +183,16 @@ test('closing before mount cancels startup and removes all listeners', async () 
   assert.equal(e.shows, 0);
   assert.equal(e.ipcMain.listenerCount('main-window:page-mounted'), 0);
   assert.equal(e.win.listenerCount('ready-to-show'), 0);
+});
+
+test('a destroyed window cannot be presented by a late mounted notification', async () => {
+  const e = startup();
+  e.win.isDestroyed = () => true;
+  e.mounted();
+  assert.equal(e.shows, 0);
+  e.win.emit('closed');
+  await e.ready;
+  assert.equal(e.ipcMain.listenerCount('main-window:page-mounted'), 0);
 });
 
 test('clear window corners apply before Vue mounts, without masking system Acrylic', () => {

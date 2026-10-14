@@ -18,6 +18,7 @@ const compiled = {
   mode: compile('../src/main/window/mode.ts'),
   modeController: compile('../src/main/window/modeController.ts'),
   fullscreen: compile('../src/main/window/fullscreen.ts'),
+  startup: compile('../src/main/window/startup.ts'),
   background: compile('../src/main/macBackgroundMode.ts'),
   app: compile('../src/shared/app.ts'),
   zoom: compile('../src/shared/windowZoom.ts'),
@@ -64,6 +65,7 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
       this.focused = false;
       this.destroyed = false;
       this.webContents = Object.assign(new EventEmitter(), {
+        mainFrame: {},
         isDestroyed: () => this.destroyed,
         send: noop,
         setWindowOpenHandler: noop,
@@ -136,6 +138,7 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
     'node:os': { release: () => '25.0.0' },
     path: { join },
     electron: {
+      ipcMain: new EventEmitter(),
       app,
       BrowserWindow: FakeWindow,
       nativeTheme: new EventEmitter(),
@@ -205,6 +208,7 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
   mocks['../../shared/windowZoom'] = evaluate(compiled.zoom);
   mocks['../shared/miniPlayer'] = evaluate(compiled.miniDimensions);
   mocks['./fullscreen'] = evaluate(compiled.fullscreen);
+  mocks['./startup'] = evaluate(compiled.startup);
   const mode = evaluate(compiled.mode);
   mocks['./mode'] = mocks['./window/mode'] = mode;
   const background = evaluate(compiled.background);
@@ -215,7 +219,10 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
   mocks['../miniPlayer'] = miniApi;
   const modeController = evaluate(compiled.modeController);
   const main = await mainApi.createWindow();
-  main.emit('ready-to-show');
+  mocks.electron.ipcMain.emit('main-window:page-mounted', {
+    sender: main.webContents,
+    senderFrame: main.webContents.mainFrame,
+  });
   events.length = 0;
   return {
     mainApi,

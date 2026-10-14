@@ -16,6 +16,7 @@ import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import DatePicker from '@/components/ui/DatePicker.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Drawer from '@/components/ui/Drawer.vue';
+import DrawerHeader from '@/components/ui/DrawerHeader.vue';
 import Input from '@/components/ui/Input.vue';
 import Popover from '@/components/ui/Popover.vue';
 import Select from '@/components/ui/Select.vue';
@@ -60,7 +61,6 @@ import {
   iconSmartphone,
   iconUser,
   iconUsers,
-  iconX,
 } from '@/icons';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import {
@@ -1823,31 +1823,34 @@ onUnmounted(() => {
 
     <Drawer
       v-model:open="socialDrawerOpen"
+      :title="socialChatTarget?.nickname || activeSocialTabMeta.label"
       overlayClass="profile-social-drawer-overlay"
       panelClass="profile-social-drawer"
     >
       <div class="profile-social-shell">
-        <header class="profile-social-header">
-          <Button
-            v-if="socialChatTarget"
-            variant="unstyled"
-            size="icon"
-            class="action-icon profile-social-icon-btn"
-            tooltip="返回列表"
-            aria-label="返回列表"
-            @click="closeSocialChat"
+        <DrawerHeader class="profile-social-header" @close="socialDrawerOpen = false">
+          <template v-if="socialChatTarget" #leading
+            ><Button
+              variant="unstyled"
+              size="icon"
+              class="action-icon profile-social-icon-btn"
+              tooltip="返回列表"
+              aria-label="返回列表"
+              @click="closeSocialChat"
+              ><Icon :icon="iconChevronLeft" width="18" height="18" /></Button
+          ></template>
+          <template #title
+            ><div class="profile-social-title">
+              <h2>{{ socialChatTarget?.nickname || activeSocialTabMeta.label }}</h2>
+            </div></template
           >
-            <Icon :icon="iconChevronLeft" width="18" height="18" />
-          </Button>
-          <div class="profile-social-title">
-            <span class="profile-social-kicker">{{
+          <template #description
+            ><span class="profile-social-kicker">{{
               socialChatTarget ? '私信会话' : '个人互动'
-            }}</span>
-            <h2>{{ socialChatTarget?.nickname || activeSocialTabMeta.label }}</h2>
-          </div>
-          <div class="profile-social-header-actions">
-            <Button
-              v-if="!socialChatTarget"
+            }}</span></template
+          >
+          <template v-if="!socialChatTarget" #actions
+            ><Button
               variant="unstyled"
               size="icon"
               class="action-icon profile-social-icon-btn"
@@ -1855,26 +1858,13 @@ onUnmounted(() => {
               aria-label="刷新列表"
               :disabled="isSocialBusy"
               @click="refreshSocialList"
-            >
-              <Icon
+              ><Icon
                 :icon="iconRefreshCw"
                 width="16"
                 height="16"
-                :class="isSocialBusy ? 'animate-spin' : ''"
-              />
-            </Button>
-            <Button
-              variant="unstyled"
-              size="icon"
-              class="action-icon profile-social-icon-btn"
-              tooltip="关闭"
-              aria-label="关闭"
-              @click="socialDrawerOpen = false"
-            >
-              <Icon :icon="iconX" width="17" height="17" />
-            </Button>
-          </div>
-        </header>
+                :class="isSocialBusy ? 'animate-spin' : ''" /></Button
+          ></template>
+        </DrawerHeader>
 
         <template v-if="!socialChatTarget">
           <CustomTabBar
@@ -2593,11 +2583,6 @@ onUnmounted(() => {
   flex-direction: column;
 }
 .profile-social-header {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 16px 12px;
   border-bottom: 1px solid var(--border-subtle);
 }
 .profile-social-title {
@@ -2619,12 +2604,6 @@ onUnmounted(() => {
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.profile-social-header-actions {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 8px;
 }
 .profile-social-icon-btn {
   display: inline-flex;

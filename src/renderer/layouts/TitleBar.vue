@@ -21,16 +21,10 @@ import { extractHotCategories } from '@/views/search/searchHelpers';
 import type { SearchHotCategory } from '@/views/search/types';
 import { getSearchSuggest, getSearchDefault, getSearchHot } from '@/api/search';
 import { useSettingStore } from '@/stores/setting';
-import {
-  dismissTaskEntry,
-  getTaskStatusLabel,
-  isManuallyDismissibleTask,
-  taskPanelEntries,
-  taskPanelOpen,
-} from '@/plugins/taskPanel';
+import { taskPanelEntries, taskPanelOpen } from '@/plugins/taskPanel';
 import Button from '@/components/ui/Button.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
-import Dialog from '@/components/ui/Dialog.vue';
+import TaskPanelDialog from '@/components/tasks/TaskPanelDialog.vue';
 import {
   iconChevronLeft,
   iconChevronRight,
@@ -199,12 +193,6 @@ const registerBuiltinActions = () => {
       await router.push({ name: 'plugin-management' });
     },
   });
-};
-
-// 进度条宽度钳制在 [0, 100]，防止插件注册的任务传入越界 percent
-const clampPercent = (percent: number | undefined): number => {
-  if (typeof percent !== 'number' || Number.isNaN(percent)) return 0;
-  return Math.min(100, Math.max(0, percent));
 };
 
 const updateNavState = () => {
@@ -829,99 +817,7 @@ onUnmounted(() => {
     </div>
   </header>
 
-  <!-- 任务中心弹窗 -->
-  <Dialog v-model:open="taskPanelOpen" content-class="task-panel-dialog" show-close>
-    <template #title>任务中心 </template>
-
-    <div
-      v-if="taskPanelEntries.length === 0"
-      class="py-2 text-[13px] text-text-secondary text-center"
-    >
-      空空如也~
-    </div>
-    <div v-else class="flex flex-col gap-3">
-      <div v-for="task in taskPanelEntries" :key="task.id" class="task-item">
-        <div class="task-item-header">
-          <div class="task-item-heading">
-            <span class="task-item-name">{{ task.name }}</span>
-            <span class="task-item-status">{{
-              task.progress?.label || getTaskStatusLabel(task.status)
-            }}</span>
-          </div>
-          <div
-            v-if="(task.actions && task.actions.length) || isManuallyDismissibleTask(task)"
-            class="task-item-actions"
-          >
-            <button
-              v-for="action in task.actions"
-              :key="action.id"
-              type="button"
-              class="task-text-action echo-button-sized echo-button-standard"
-              :class="{
-                'is-primary': action.variant === 'primary',
-                'soft-accent-action': action.variant === 'primary',
-                'soft-secondary-action': !['primary', 'danger'].includes(action.variant || ''),
-                'soft-danger-action': action.variant === 'danger',
-                'is-danger': action.variant === 'danger',
-              }"
-              :disabled="action.disabled"
-              @click="action.onClick()"
-            >
-              {{ action.label }}
-            </button>
-            <button
-              v-if="isManuallyDismissibleTask(task)"
-              type="button"
-              class="task-text-action soft-secondary-action echo-button-sized echo-button-standard"
-              @click="dismissTaskEntry(task.id, task.generation)"
-            >
-              关闭
-            </button>
-          </div>
-        </div>
-        <div v-if="task.progress && task.progress.percent != null" class="task-item-progress">
-          <div
-            class="task-item-progress-bar"
-            :style="{ width: `${clampPercent(task.progress.percent)}%` }"
-          />
-        </div>
-        <div v-if="task.items?.length" class="task-item-details">
-          <div v-for="item in task.items" :key="item.id" class="task-detail-row">
-            <div class="task-detail-text">
-              <div class="task-detail-name">{{ item.name }}</div>
-              <div v-if="item.description" class="task-detail-description">
-                {{ item.description }}
-              </div>
-              <div v-if="item.error" class="task-detail-error">{{ item.error }}</div>
-            </div>
-            <span v-if="item.statusLabel" class="task-detail-description">{{
-              item.statusLabel
-            }}</span>
-            <button
-              v-for="action in item.actions"
-              :key="action.id"
-              type="button"
-              class="task-text-action echo-button-sized echo-button-standard"
-              :class="{
-                'is-primary': action.variant === 'primary',
-                'soft-accent-action': action.variant === 'primary',
-                'soft-secondary-action': !['primary', 'danger'].includes(action.variant || ''),
-                'soft-danger-action': action.variant === 'danger',
-                'is-danger': action.variant === 'danger',
-              }"
-              :disabled="action.disabled"
-              @click="action.onClick()"
-            >
-              {{ action.label }}
-            </button>
-          </div>
-        </div>
-        <div v-if="task.error" class="task-item-error">
-          <span class="task-item-error-text">{{ task.error }}</span>
-        </div>
-      </div>
-    </div>
-  </Dialog>
+  <TaskPanelDialog />
 </template>
 
 <style scoped>
@@ -1257,131 +1153,6 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-:global(.dialog-content.task-panel-dialog) {
-  width: 420px;
-  max-width: calc(100vw - 48px);
-}
-
-/* 任务项 */
-.task-item {
-  padding: 8px 0;
-}
-
-.task-item-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.task-item-heading {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  overflow-wrap: anywhere;
-}
-
-.task-item-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-main);
-  flex: 1;
-  min-width: 0;
-}
-
-.task-item-status {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  flex-shrink: 0;
-}
-
-.task-item-progress {
-  margin-top: 8px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--control-muted-bg);
-  overflow: hidden;
-}
-
-.task-item-progress-bar {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--color-primary);
-  transition: width 0.3s ease;
-}
-
-.task-item-error {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.task-item-error-text {
-  font-size: 11px;
-  color: var(--color-danger, #ef4444);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-item-details {
-  margin-top: 10px;
-  max-height: 260px;
-  overflow-y: auto;
-}
-.task-detail-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 0;
-  border-top: 1px solid var(--control-muted-bg);
-}
-.task-detail-text {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.task-detail-name {
-  font-size: 12px;
-  color: var(--color-text-main);
-}
-.task-detail-description {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-.task-detail-error {
-  font-size: 11px;
-  color: var(--color-danger, #ef4444);
-}
-.task-item-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 4px 12px;
-  max-width: 55%;
-}
-.task-text-action {
-  appearance: none;
-  border: 0;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-  border-radius: var(--radius-control);
-}
-.task-text-action:focus-visible {
-  outline: 2px solid var(--color-primary-text);
-  outline-offset: 3px;
-}
-.task-text-action:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
 @container main-titlebar (max-width: 520px) {
   .nav-btn {
     display: none;

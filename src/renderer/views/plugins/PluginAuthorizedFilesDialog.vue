@@ -101,9 +101,6 @@ watch(
   </Dialog>
 </template>
 <style scoped>
-:global(.plugin-authorized-files-dialog .dialog-header) {
-  padding-right: 64px;
-}
 .grant-empty {
   display: flex;
   flex-direction: column;

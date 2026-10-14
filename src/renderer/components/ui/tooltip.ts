@@ -41,9 +41,10 @@ function track(owner: ComponentInternalInstance | null | undefined, binding: Bin
 }
 const elements = new WeakMap<HTMLElement, { binding: Binding; untrack: () => void }>();
 /**
- * Text hints bind to native elements: v-tooltip="label".
- * Truncated labels use { content: label, overflowOnly: true }.
- * Components use their tooltip prop or forwarded element; icon actions still need aria-label.
+ * Tooltip, Button and the native-element directive share the same automatic policy:
+ * complete repeated text stays quiet; clipped text, icon labels and explanations show.
+ * Mark the clipped child with data-tooltip-label when the trigger contains other content.
+ * Accessible names remain independent of tooltip visibility.
  */
 export const vTooltip: ObjectDirective<HTMLElement, TooltipValue> = {
   mounted(element, { value, instance }) {

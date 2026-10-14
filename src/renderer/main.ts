@@ -246,15 +246,12 @@ router.afterEach((to, _from, failure) => {
   if (!failure && to.path.startsWith('/main/')) markStartup('main-route-ready');
 });
 
-// Wait for the initial route and a painted Vue frame before presenting the main window.
+// Mount the initial route and flush Vue's DOM before presenting the main window.
+// requestAnimationFrame may pause indefinitely during initially-hidden startup.
 const mountApplication = () => {
   markStartup('initial-route-ready');
   app.mount('#app');
   markStartup('app-mounted');
-  void nextTick(() => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => window.electron?.notifyPageMounted());
-    });
-  });
+  void nextTick(() => window.electron?.notifyPageMounted());
 };
 void router.isReady().then(mountApplication, mountApplication);

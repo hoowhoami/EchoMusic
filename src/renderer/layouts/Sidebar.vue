@@ -832,14 +832,12 @@ watch(
             <template v-for="group in visibleRailMenuGroups" :key="group.id">
               <template v-for="item in group.items" :key="item.key">
                 <Tooltip v-if="item.railComponent" :content="item.title" side="right">
-                  <template #trigger>
-                    <component
-                      :is="item.railComponent"
-                      :item="item"
-                      :section="group"
-                      :collapsed="true"
-                    />
-                  </template>
+                  <component
+                    :is="item.railComponent"
+                    :item="item"
+                    :section="group"
+                    :collapsed="true"
+                  />
                 </Tooltip>
                 <Button
                   class="action-icon"
@@ -952,39 +950,40 @@ watch(
       <div class="sidebar-full-panel flex flex-col flex-1 min-h-0">
         <div class="sidebar-profile shrink-0 no-drag">
           <div class="user-info-card flex items-center transition-colors duration-200">
-            <button
-              v-tooltip="{ content: isLoggedIn ? userInfo?.nickname : '', overflowOnly: true }"
-              type="button"
-              class="sidebar-user-link"
-              @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
-            >
-              <div class="sidebar-profile-avatar">
-                <UserAvatar
-                  :src="isLoggedIn ? userInfo?.pic : ''"
-                  :identity-icon="userIdentity.avatarIcon"
-                  :identity-label="userIdentity.avatarLabel"
-                />
-              </div>
-              <div class="sidebar-profile-copy">
-                <span class="sidebar-profile-name" data-tooltip-label>
-                  {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
-                </span>
-                <span class="sidebar-profile-meta">
-                  <template v-if="isLoggedIn">
-                    <span class="sidebar-profile-level">Lv.{{ userInfo?.p_grade || 0 }}</span>
-                    <span
-                      v-if="vipBadge"
-                      class="sidebar-member-badge"
-                      :class="`is-${vipBadge.kind}`"
-                      >{{ vipBadge.label }}</span
-                    >
-                    <span v-else class="sidebar-member-badge">NOVIP</span>
-                  </template>
+            <Tooltip :content="isLoggedIn ? userInfo?.nickname : ''"
+              ><button
+                type="button"
+                class="sidebar-user-link"
+                @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
+              >
+                <div class="sidebar-profile-avatar">
+                  <UserAvatar
+                    :src="isLoggedIn ? userInfo?.pic : ''"
+                    :identity-icon="userIdentity.avatarIcon"
+                    :identity-label="userIdentity.avatarLabel"
+                  />
+                </div>
+                <div class="sidebar-profile-copy">
+                  <span class="sidebar-profile-name" data-tooltip-label>
+                    {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
+                  </span>
+                  <span class="sidebar-profile-meta">
+                    <template v-if="isLoggedIn">
+                      <span class="sidebar-profile-level">Lv.{{ userInfo?.p_grade || 0 }}</span>
+                      <span
+                        v-if="vipBadge"
+                        class="sidebar-member-badge"
+                        :class="`is-${vipBadge.kind}`"
+                        >{{ vipBadge.label }}</span
+                      >
+                      <span v-else class="sidebar-member-badge">NOVIP</span>
+                    </template>
 
-                  <span v-else>点击登录账号</span>
-                </span>
-              </div>
-            </button>
+                    <span v-else>点击登录账号</span>
+                  </span>
+                </div>
+              </button></Tooltip
+            >
             <span class="sidebar-account-divider" aria-hidden="true"></span>
             <SidebarAccountPopover />
           </div>

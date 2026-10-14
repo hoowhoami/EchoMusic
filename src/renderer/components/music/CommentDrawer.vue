@@ -3,11 +3,10 @@ import { onScopeDispose, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Drawer from '@/components/ui/Drawer.vue';
+import DrawerHeader from '@/components/ui/DrawerHeader.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import CommentComposer from '@/components/music/CommentComposer.vue';
 import CommentList from '@/components/music/CommentList.vue';
-import Button from '@/components/ui/Button.vue';
-import { iconX } from '@/icons';
 import { useComments, type CommentResourceType } from '@/composables/useComments';
 
 interface Props {
@@ -96,25 +95,18 @@ onScopeDispose(stop);
   <Drawer
     v-model:open="open"
     side="right"
+    :title="title"
     overlayClass="comment-drawer-overlay"
     panelClass="comment-drawer"
   >
-    <div class="comment-drawer-header">
-      <div class="comment-drawer-heading">
-        <div class="comment-drawer-title">{{ title }}</div>
-        <div v-if="total > 0" class="comment-drawer-meta">{{ total }} 条</div>
-      </div>
-      <Button
-        type="button"
-        class="action-icon comment-drawer-close"
-        variant="ghost"
-        size="icon"
-        tooltip="关闭"
-        @click="open = false"
+    <DrawerHeader class="comment-drawer-header" @close="open = false">
+      <template #title
+        ><div class="comment-drawer-heading">
+          <div class="comment-drawer-title">{{ title }}</div>
+          <div v-if="total > 0" class="comment-drawer-meta">{{ total }} 条</div>
+        </div></template
       >
-        <Icon :icon="iconX" width="20" height="20" />
-      </Button>
-    </div>
+    </DrawerHeader>
 
     <Scrollbar
       :hide-scrollbar="false"
@@ -206,12 +198,7 @@ onScopeDispose(stop);
 }
 
 .comment-drawer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 20px 14px;
   border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
 }
 
 .comment-drawer-heading {
@@ -230,20 +217,6 @@ onScopeDispose(stop);
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-secondary);
-}
-
-.comment-drawer-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--icon-main);
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-}
-
-.comment-drawer-close:hover {
-  color: var(--color-text-main);
 }
 
 .comment-drawer-body {

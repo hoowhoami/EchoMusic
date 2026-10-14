@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { vTooltip } from '@/components/ui/tooltip';
 import { computed } from 'vue';
 import { Icon } from '@iconify/vue';
@@ -31,9 +32,9 @@ const details = computed(
 
 <template>
   <span class="cast-device-info">
-    <span v-tooltip="{ content: name, overflowOnly: true }" class="cast-device-name">{{
-      name
-    }}</span>
+    <Tooltip :content="name"
+      ><span class="cast-device-name">{{ name }}</span></Tooltip
+    >
     <span v-if="connecting" class="cast-device-state" role="status">
       <Icon :icon="iconLoader2" width="12" height="12" class="animate-spin" />
       连接中
@@ -46,18 +47,22 @@ const details = computed(
       <Icon :icon="iconLock" width="11" height="11" aria-hidden="true" />
       <span>需验证</span>
     </span>
-    <span
-      v-tooltip="details"
+    <Tooltip
+      :content="details"
+      :description="model || address ? target.note : undefined"
       v-if="details"
-      class="cast-device-meta"
-      :class="{ 'has-model': model && address }"
+      ><span class="cast-device-meta" :class="{ 'has-model': model && address }">
+        <span
+          v-if="model || (!address && target.note)"
+          class="cast-device-model"
+          data-tooltip-label
+        >
+          {{ model || target.note }}
+        </span>
+        <span v-if="model && address" class="cast-device-separator" aria-hidden="true">·</span>
+        <span v-if="address" class="cast-device-address" data-tooltip-label>{{ address }}</span>
+      </span></Tooltip
     >
-      <span v-if="model || (!address && target.note)" class="cast-device-model">
-        {{ model || target.note }}
-      </span>
-      <span v-if="model && address" class="cast-device-separator" aria-hidden="true">·</span>
-      <span v-if="address" class="cast-device-address">{{ address }}</span>
-    </span>
   </span>
 </template>
 

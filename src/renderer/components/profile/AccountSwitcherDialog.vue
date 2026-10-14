@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { vTooltip } from '@/components/ui/tooltip';
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { watchUserSession } from '@/utils/watchUserSession';
 
 import { userSessionSources } from '@/utils/userSession';
@@ -174,12 +174,8 @@ const removeAccount = () => {
         />
         <div class="saved-account-info">
           <div class="saved-account-name">
-            <strong
-              v-tooltip="{
-                content: account.nickname || `账号 ${account.userid}`,
-                overflowOnly: true,
-              }"
-              >{{ account.nickname || `账号 ${account.userid}` }}</strong
+            <Tooltip :content="account.nickname || `账号 ${account.userid}`"
+              ><strong>{{ account.nickname || `账号 ${account.userid}` }}</strong></Tooltip
             >
             <span
               v-if="accountDisplay(account).membership"

@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { vTooltip } from '@/components/ui/tooltip';
+import Tooltip from '@/components/ui/Tooltip.vue';
 defineProps<{ name: string }>();
 </script>
 
 <template>
   <div class="plugin-source-info">
     <span class="plugin-source-label" v-text="'来源: '" />
-    <span
-      v-tooltip="{ content: name, overflowOnly: true }"
-      class="plugin-source-name"
-      v-text="name === '未记录来源' ? '未记录' : name === '未知来源' ? '未知' : name.trim()"
-    />
+    <Tooltip :content="name" mode="overflow"
+      ><span
+        class="plugin-source-name"
+        v-text="name === '未记录来源' ? '未记录' : name === '未知来源' ? '未知' : name.trim()"
+    /></Tooltip>
   </div>
 </template>
 

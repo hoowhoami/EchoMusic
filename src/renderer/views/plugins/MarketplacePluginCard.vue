@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { vTooltip } from '@/components/ui/tooltip';
 import { computed } from 'vue';
 import PluginCardOrigin from './PluginCardOrigin.vue';
@@ -90,15 +91,17 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       </div>
 
       <div class="plugin-card-header">
-        <h3 v-tooltip="{ content: plugin.name, overflowOnly: true }" class="plugin-card-name">
-          {{ plugin.name }}
-        </h3>
+        <Tooltip :content="plugin.name"
+          ><h3 class="plugin-card-name">
+            {{ plugin.name }}
+          </h3></Tooltip
+        >
         <Tag
           as-child
           v-if="plugin.updateAvailable || !plugin.compatibility.compatible"
           size="sm"
           class="plugin-status-badge is-warning"
-          ><span v-tooltip="statusTitle">
+          ><span v-tooltip="statusTitle !== statusLabel ? statusTitle : undefined">
             {{ statusLabel }}
           </span></Tag
         >
@@ -112,12 +115,11 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       </div>
     </div>
 
-    <p
-      v-tooltip="{ content: plugin.description || '暂无描述', overflowOnly: true }"
-      class="plugin-card-description"
+    <Tooltip :content="plugin.description || '暂无描述'"
+      ><p class="plugin-card-description">
+        {{ plugin.description || '暂无描述' }}
+      </p></Tooltip
     >
-      {{ plugin.description || '暂无描述' }}
-    </p>
 
     <div v-if="compatibilityMessage" class="plugin-card-error is-warning">
       <Icon :icon="iconTriangleAlert" width="14" height="14" />
@@ -179,7 +181,7 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
         variant="primary"
         size="default"
         class="marketplace-install-btn"
-        :tooltip="installTitle"
+        :tooltip="installTitle !== installLabel ? installTitle : undefined"
         :loading="busy"
         :disabled="!canInstall || updatingAll || busy"
         @click="emit('install', plugin)"

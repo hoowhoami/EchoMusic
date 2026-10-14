@@ -2,6 +2,8 @@ import { createVNode, render, type AppContext, type VNode } from 'vue';
 import TooltipHost from './tooltip/TooltipHost.vue';
 import { setTooltipOwner } from './tooltipOwnership';
 
+export type TooltipMode = 'auto' | 'overflow' | 'always';
+
 export interface TooltipOptions {
   content?: string;
   renderContent?: () => VNode[];
@@ -10,7 +12,7 @@ export interface TooltipOptions {
   sideOffset?: number;
   delayDuration?: number;
   disabled?: boolean;
-  overflowOnly?: boolean;
+  mode?: TooltipMode;
   ignoreNonKeyboardFocus?: boolean;
   contentClass?: string;
 }
@@ -42,6 +44,37 @@ export function createTooltipRuntime(doc: Document) {
   let lastClosedAt = -Infinity;
   let transit: { x: number; y: number; fromSurface: boolean } | undefined;
 
+  const labelOverflows = (label: HTMLElement) => {
+    if (label.scrollWidth > label.clientWidth || label.scrollHeight > label.clientHeight + 1)
+      return true;
+    // Input placeholders do not contribute to scrollWidth. Measure their visible text.
+    if (label.tagName !== 'INPUT' || label.clientWidth === 0) return false;
+    const input = label as HTMLInputElement;
+    const text = input.value || input.placeholder;
+    const style = doc.defaultView?.getComputedStyle(input);
+    const context = doc.createElement('canvas').getContext('2d');
+    if (!text || !style || !context) return false;
+    context.font = style.font;
+    const spacing = parseFloat(style.letterSpacing) || 0;
+    const textWidth = context.measureText(text).width + Math.max(0, [...text].length - 1) * spacing;
+    const availableWidth =
+      input.clientWidth -
+      (parseFloat(style.paddingLeft) || 0) -
+      (parseFloat(style.paddingRight) || 0) -
+      (parseFloat(style.textIndent) || 0);
+    return textWidth > availableWidth;
+  };
+
+  const textKey = (text: string) => text.replace(/\s+/g, '').trim();
+  const visibleLabelText = (label: HTMLElement) => {
+    if (!label.getClientRects().length) return '';
+    if (label.tagName === 'INPUT') {
+      const input = label as HTMLInputElement;
+      return input.value || input.placeholder;
+    }
+    return label.innerText || '';
+  };
+
   const eligible = (entry: TooltipEntry) => {
     const { element, options } = entry;
     if (
@@ -55,11 +88,17 @@ export function createTooltipRuntime(doc: Document) {
       return false;
     const style = doc.defaultView?.getComputedStyle(element);
     if (style?.visibility === 'hidden' || style?.display === 'none') return false;
-    if (!options.overflowOnly) return true;
+    if (options.mode === 'always' || options.renderContent) return true;
     const labels = element.querySelectorAll<HTMLElement>('[data-tooltip-label]');
-    return (labels.length ? Array.from(labels) : [element]).some(
-      (label) => label.scrollWidth > label.clientWidth || label.scrollHeight > label.clientHeight,
-    );
+    const textLabels = labels.length ? Array.from(labels) : [element];
+    if (options.mode !== 'overflow') {
+      const content = textKey(options.content || '');
+      const repeatsVisibleText = [element, ...textLabels].some(
+        (label) => textKey(visibleLabelText(label)) === content,
+      );
+      if (!repeatsVisibleText) return true;
+    }
+    return textLabels.some(labelOverflows);
   };
   const clearTimers = () => {
     clearTimeout(openTimer);

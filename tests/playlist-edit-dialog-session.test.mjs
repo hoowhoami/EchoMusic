@@ -33,6 +33,7 @@ function fixture(t, service = {}) {
     vue: { ...vue, onBeforeUnmount() {} },
     '@/utils/watchUserSession': userSessionWatch,
     '@/utils/playlistTags': tags,
+    '@/components/ui/tooltip': { vTooltip: {} },
     '@/stores/user': { useUserStore: () => user },
     '@/stores/playlist': { usePlaylistStore: () => playlists },
     '@/stores/playlistCovers': { usePlaylistCoversStore: () => ({ coverFor: () => '' }) },

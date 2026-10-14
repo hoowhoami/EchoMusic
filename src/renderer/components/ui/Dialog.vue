@@ -130,35 +130,34 @@ const handleInteractOutside = (event: Event) => {
           -->
           <span ref="presenceElement" hidden aria-hidden="true" />
 
-          <!-- 关闭按钮 -->
-          <DialogClose v-if="props.showClose" as-child>
-            <Button
-              class="action-icon dialog-close"
-              variant="ghost"
-              size="icon"
-              type="button"
-              aria-label="关闭"
-            >
-              <Icon :icon="iconX" width="14" height="14" />
-            </Button>
-          </DialogClose>
-
-          <!-- 固定头部：标题 -->
+          <!-- 标题、附属操作与关闭按钮共同参与布局，长标题不会与按钮重叠。 -->
           <div
-            v-if="hasTitle"
+            v-if="hasTitle || props.showClose || slots.headerActions"
             class="dialog-header shrink-0"
-            :class="{ 'dialog-header-with-actions': slots.headerActions }"
           >
-            <DialogTitle as-child>
+            <DialogTitle v-if="hasTitle" as-child>
               <h3 class="dialog-title">
                 <slot name="title">{{ props.title }}</slot>
               </h3>
             </DialogTitle>
-            <div v-if="slots.headerActions" class="dialog-header-actions">
-              <slot name="headerActions" />
+            <div v-if="slots.headerActions || props.showClose" class="dialog-header-controls">
+              <div v-if="slots.headerActions" class="dialog-header-actions">
+                <slot name="headerActions" />
+              </div>
+              <DialogClose v-if="props.showClose" as-child>
+                <Button
+                  class="action-icon dialog-close"
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  aria-label="关闭"
+                >
+                  <Icon :icon="iconX" width="14" height="14" />
+                </Button>
+              </DialogClose>
             </div>
           </div>
-          <VisuallyHidden v-else>
+          <VisuallyHidden v-if="!hasTitle">
             <DialogTitle>对话框</DialogTitle>
           </VisuallyHidden>
 
@@ -315,19 +314,25 @@ const handleInteractOutside = (event: Event) => {
 }
 
 .dialog-header {
-  @apply pb-2 pr-6; /* 标题与正文、页脚统一保留 24px 右侧留白。 */
+  @apply flex items-start gap-3 pb-2 pr-6;
 }
 
 .dialog-title {
-  @apply text-lg font-bold text-text-main;
+  @apply min-w-0 flex-1 text-lg font-bold text-text-main;
+  /* 28px 标题行高与 32px 控件的首行中心对齐。 */
+  padding-top: 2px;
+  overflow-wrap: anywhere;
 }
-.dialog-header-with-actions {
-  padding-right: 96px;
+.dialog-header-controls {
+  --button-height: var(--control-height-compact);
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--control-height-compact);
+  margin-left: auto;
 }
 .dialog-header-actions {
-  position: absolute;
-  top: 16px;
-  right: 56px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -350,6 +355,6 @@ const handleInteractOutside = (event: Event) => {
 }
 
 .dialog-close {
-  @apply absolute top-4 right-4 text-[var(--icon-main)] hover:text-text-main z-10;
+  @apply text-[var(--icon-main)] hover:text-text-main;
 }
 </style>

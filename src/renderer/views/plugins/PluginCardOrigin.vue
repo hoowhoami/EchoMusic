@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { vTooltip } from '@/components/ui/tooltip';
+import Tooltip from '@/components/ui/Tooltip.vue';
 import PluginSourceInfo from './PluginSourceInfo.vue';
 
 defineProps<{ id: string; sourceName: string }>();
@@ -7,7 +7,9 @@ defineProps<{ id: string; sourceName: string }>();
 
 <template>
   <div class="plugin-card-origin">
-    <div v-tooltip="{ content: id, overflowOnly: true }" class="plugin-card-id">ID: {{ id }}</div>
+    <Tooltip :content="`ID: ${id}`"
+      ><div class="plugin-card-id">ID: {{ id }}</div></Tooltip
+    >
     <PluginSourceInfo :name="sourceName" />
   </div>
 </template>

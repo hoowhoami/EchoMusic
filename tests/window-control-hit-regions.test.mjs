@@ -93,7 +93,7 @@ for (const platform of ['win32', 'linux']) {
           '@/plugins/taskPanel': { taskPanelEntries: vue.ref([]), taskPanelOpen: vue.ref(false) },
           '@/components/ui/Button.vue': { default: button },
           '@/components/ui/RefreshIcon.vue': { default: empty },
-          '@/components/ui/Dialog.vue': { default: empty },
+          '@/components/tasks/TaskPanelDialog.vue': { default: empty },
           '@/icons': {},
         },
         platform,

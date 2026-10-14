@@ -451,6 +451,9 @@ export async function createWindow() {
     minWidth: placement.minWidth,
     minHeight: placement.minHeight,
     show: false, // 初始不显示，防止白屏
+    // Never-shown tray/background windows must be hidden to Chromium as well.
+    // Startup waits for Vue's mounted DOM instead of a hidden first paint.
+    paintWhenInitiallyHidden: false,
     backgroundColor: windowBackground.enabled ? '#00000000' : initialBgColor,
     ...getMainWindowChrome(process.platform),
     // Electron's WS_THICKFRAME option is Windows-only, independent of materials.
@@ -551,15 +554,8 @@ export async function createWindow() {
   applyWindowAppIcon(win);
   await logMainMemory('createWindow:after window icon');
 
-  // Native readiness alone must not expose an empty document before Vue mounts.
-  win.once('ready-to-show', () => {
-    void logMainMemory('main window:ready-to-show');
-    // The native surface address is only reliable after the window has been
-    // created by the compositor; retry the selected blur mode at this point.
-    syncHyprlandBackground();
-  });
-  // Hide/show can recreate the Hyprland client property while the saved
-  // setting stays unchanged. Re-apply it after every map, without delaying show.
+  // The native surface address is reliable after mapping, not before first paint.
+  // Hide/show can also recreate its property; re-apply after every map.
   win.on('show', () => syncHyprlandBackground(true));
   win.on('leave-full-screen', () => {
     if (isMacBackgroundMode()) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { vTooltip } from '@/components/ui/tooltip';
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { computed } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
@@ -73,7 +73,9 @@ const canAdd = computed(() => Boolean(props.sourceUrl.trim()) && !props.adding);
               <strong>{{ source.name }}</strong>
               <span v-if="source.official">官方</span>
             </div>
-            <p v-tooltip="{ content: source.url, overflowOnly: true }">{{ source.url }}</p>
+            <Tooltip :content="source.url"
+              ><p>{{ source.url }}</p></Tooltip
+            >
             <small>
               {{ source.pluginCount }} 个插件
               <template v-if="source.lastFetchedAt">

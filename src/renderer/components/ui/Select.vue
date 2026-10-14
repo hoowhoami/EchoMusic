@@ -258,7 +258,8 @@ watch(open, (val) => {
       <div
         v-tooltip="{
           content: props.multiple ? selectedTags.map((tag) => tag.label).join('、') : selectedLabel,
-          overflowOnly: !props.multiple && !props.filterable,
+          mode: props.multiple && overflowCount > 0 ? 'always' : 'overflow',
+          disabled: props.filterable && !!searchTerm,
         }"
         ref="triggerRef"
         :class="[
@@ -288,7 +289,7 @@ watch(open, (val) => {
             tone="accent"
             size="sm"
           >
-            <span class="echo-select-tag-text">{{ tag.label }}</span>
+            <span class="echo-select-tag-text" data-tooltip-label>{{ tag.label }}</span>
             <span
               class="echo-select-tag-close motion-control-feedback"
               @click="removeTag(tag.value, $event)"
@@ -319,6 +320,7 @@ watch(open, (val) => {
             ref="inputRef"
             v-model="searchTerm"
             class="echo-select-input"
+            data-tooltip-label
             :disabled="props.disabled"
             :placeholder="selectedLabel || props.placeholder"
             @keydown.stop="handleSearchKeydown"
@@ -367,7 +369,7 @@ watch(open, (val) => {
             v-tooltip="{
               content: option.label,
               side: 'left',
-              overflowOnly: true,
+              mode: 'overflow',
               ignoreNonKeyboardFocus: true,
             }"
             v-for="option in visibleItems"

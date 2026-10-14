@@ -706,14 +706,14 @@ onBeforeUnmount(() => {
           <div class="queue-title-row">
             <span v-if="headerStatus" class="queue-status">{{ headerStatus }}</span>
             <div
-              v-tooltip="{ content: headerPresentation.title, overflowOnly: true }"
+              v-tooltip="{ content: headerPresentation.title, mode: 'overflow' }"
               class="queue-title"
             >
               {{ headerPresentation.title }}
             </div>
           </div>
           <div
-            v-tooltip="{ content: headerPresentation.subtitle, overflowOnly: true }"
+            v-tooltip="{ content: headerPresentation.subtitle, mode: 'overflow' }"
             v-if="headerPresentation.subtitle"
             class="queue-title-subtitle"
           >
@@ -725,7 +725,7 @@ onBeforeUnmount(() => {
           class="action-icon queue-icon-btn queue-close"
           variant="ghost"
           size="icon"
-          tooltip="关闭"
+          aria-label="关闭"
           @click="open = false"
         >
           <Icon :icon="iconX" width="20" height="20" />

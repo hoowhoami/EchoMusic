@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { vTooltip } from '@/components/ui/tooltip';
 import { watchUserSession } from '@/utils/watchUserSession';
 
@@ -636,17 +637,19 @@ onBeforeUnmount(() => {
               contentClass="rec-source-dropdown"
             >
               <template #trigger>
-                <button
-                  v-tooltip="{ content: currentSourceLabel, overflowOnly: true }"
-                  class="rec-source-toggle"
-                  :disabled="isActive"
-                >
-                  <Icon :icon="sourceIcon" width="14" height="14" />
-                  <span class="rec-source-toggle-label" data-tooltip-label>
-                    {{ currentSourceLabel }}
-                  </span>
-                  <Icon :icon="iconChevronDown" width="12" height="12" class="rec-source-arrow" />
-                </button>
+                <Tooltip :content="currentSourceLabel"
+                  ><button class="rec-source-toggle" :disabled="isActive">
+                    <Icon :icon="sourceIcon" width="14" height="14" />
+                    <span class="rec-source-toggle-label" data-tooltip-label>
+                      {{ currentSourceLabel }}
+                    </span>
+                    <Icon
+                      :icon="iconChevronDown"
+                      width="12"
+                      height="12"
+                      class="rec-source-arrow"
+                    /></button
+                ></Tooltip>
               </template>
 
               <div class="rec-source-menu">

@@ -50,6 +50,15 @@ test('tooltips preserve the rendered control, accessible label and disabled sema
     `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`
   );
   const render = (component) => renderToString(createSSRApp({ render: () => component }));
+  const overflowButton = await render(
+    h(Tooltip, { content: '音效名称' }, () =>
+      h(Button, { disabled: true, 'aria-label': '音效名称' }, () => '音效名称'),
+    ),
+  );
+  assert.equal((overflowButton.match(/<button\b/g) || []).length, 1);
+  assert.match(overflowButton, /aria-label="音效名称"/);
+  assert.match(overflowButton, /\bdisabled/);
+  assert.doesNotMatch(overflowButton, /<span|<div/);
   for (const tooltip of [undefined, '', '保存']) {
     const html = await render(
       h(Button, { tooltip, disabled: true, id: 'save', 'aria-label': '保存设置' }, () => '保存'),
@@ -80,23 +89,35 @@ test('tooltips preserve the rendered control, accessible label and disabled sema
     );
   }
   const fallback = await render(
-    h(Tooltip, { disabled: true }, { trigger: () => h('a', { href: '#test' }, '仍可操作') }),
+    h(Tooltip, { disabled: true }, { default: () => h('a', { href: '#test' }, '仍可操作') }),
   );
   assert.match(fallback, /<a href="#test">仍可操作<\/a>/);
   const explicitFallback = await render(
     h(
       Tooltip,
       { disabled: true },
-      { trigger: () => h('b', 'trigger'), fallback: () => h('span', 'fallback') },
+      { default: () => h('b', 'trigger'), fallback: () => h('span', 'fallback') },
     ),
   );
   assert.match(explicitFallback, /<span>fallback<\/span>/);
   assert.doesNotMatch(explicitFallback, /<b>/);
   // A plugin can mount a tooltip without inheriting the application provider.
   const standalone = await render(
-    h(Tooltip, { content: '插件提示' }, { trigger: () => h('button', '插件') }),
+    h(Tooltip, { content: '插件提示' }, { default: () => h('button', '插件') }),
   );
   assert.match(standalone, /<button\b/);
+  const rich = await render(
+    h(
+      Tooltip,
+      {},
+      {
+        default: () => h('button', '设置'),
+        content: () => h('strong', '额外说明'),
+      },
+    ),
+  );
+  assert.match(rich, /<button\b[^>]*>设置<\/button>/);
+  assert.doesNotMatch(rich, /<strong|额外说明/);
 });
 
 test('hover panels and the mini volume slider do not have redundant trigger tooltips', () => {
@@ -167,7 +188,7 @@ test('hover panels and the mini volume slider do not have redundant trigger tool
   assert.deepEqual(offenders, []);
 });
 
-test('plain text tooltips bind to native elements, and only component-slot tooltips remain wrapped', () => {
+test('direct hints bind to native elements; reusable tooltip wrappers delegate their trigger slot', () => {
   const offenders = [];
   for (const file of vueFiles('src/renderer')) {
     const ast = parse(readFileSync(file, 'utf8')).descriptor.template?.ast;
@@ -188,7 +209,7 @@ test('plain text tooltips bind to native elements, and only component-slot toolt
             ),
         );
         const child = trigger?.children.find((node) => node.type === 1);
-        if (child && /^[a-z]/.test(child.tag) && child.tag !== 'component')
+        if (child && /^[a-z]/.test(child.tag) && !['component', 'slot'].includes(child.tag))
           offenders.push(`${file}:${node.loc.start.line}: unnecessary wrapper`);
       }
       node.children?.forEach(visit);

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { vTooltip } from '@/components/ui/tooltip';
 import { computed, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
@@ -240,15 +241,11 @@ const orderedPlaylists = computed(() => {
             </span>
             <span class="add-to-name">
               <Icon class="add-to-queue-icon" :icon="iconList" width="16" height="16" />
-              <span
-                class="add-to-title"
-                v-tooltip="{
-                  content: getPlaybackQueuePresentation(queue).title,
-                  overflowOnly: true,
-                }"
+              <Tooltip :content="getPlaybackQueuePresentation(queue).title"
+                ><span class="add-to-title">
+                  {{ getPlaybackQueuePresentation(queue).title }}
+                </span></Tooltip
               >
-                {{ getPlaybackQueuePresentation(queue).title }}
-              </span>
             </span>
           </span>
           <span
@@ -307,9 +304,9 @@ const orderedPlaylists = computed(() => {
               height="14"
             />
           </span>
-          <span class="add-to-name" v-tooltip="{ content: entry.name, overflowOnly: true }">{{
-            entry.name
-          }}</span>
+          <Tooltip :content="entry.name"
+            ><span class="add-to-name">{{ entry.name }}</span></Tooltip
+          >
         </span>
         <span
           v-if="multiple && resultLabel(addTargetKey('playlist', entry.listid ?? entry.id))"
@@ -373,28 +370,11 @@ const orderedPlaylists = computed(() => {
 <style scoped>
 @reference "@/style.css";
 
-:global(.dialog-content.add-to-dialog .dialog-header) {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding-right: 64px;
-}
-
 :global(.dialog-content.add-to-dialog .dialog-title) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-:global(.dialog-content.add-to-dialog .dialog-header-actions) {
-  position: static;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-:global(.dialog-content.add-to-dialog .dialog-close) {
-  top: 22px;
 }
 
 .add-to-body {

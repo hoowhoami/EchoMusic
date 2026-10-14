@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { vTooltip } from '@/components/ui/tooltip';
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { watchUserSession } from '@/utils/watchUserSession';
 
 import { computed, nextTick, ref, useId, watch, onBeforeUnmount } from 'vue';
@@ -346,12 +346,11 @@ watch(activeTab, () => {
                       />
                     </div>
                     <div class="min-w-0 flex-1">
-                      <p
-                        v-tooltip="{ content: displayName(entry), overflowOnly: true }"
-                        class="truncate text-[12px] font-black"
+                      <Tooltip :content="displayName(entry)"
+                        ><p class="truncate text-[12px] font-black">
+                          {{ displayName(entry) }}
+                        </p></Tooltip
                       >
-                        {{ displayName(entry) }}
-                      </p>
                       <p
                         v-if="formatTime(entry.createdAt)"
                         class="mt-0.5 text-[10px] font-medium text-text-secondary"

@@ -27,6 +27,7 @@ function fixture(t) {
     clientWidth = 100;
     scrollHeight = 20;
     clientHeight = 20;
+    innerText = '';
     ownerDocument;
     constructor() {
       super();
@@ -57,6 +58,9 @@ function fixture(t) {
     }
     querySelectorAll() {
       return [];
+    }
+    getClientRects() {
+      return [{}];
     }
     closest() {
       let el = this;
@@ -180,7 +184,7 @@ test('many idle bindings create no hosts; only one tooltip opens and aria descri
 test('overflow-only, disabled and expanded controls do not open; clipping is measured when hovered', (t) => {
   const s = fixture(t),
     el = s.element(),
-    binding = s.bind(el, { content: '完整文本', overflowOnly: true });
+    binding = s.bind(el, { content: '完整文本', mode: 'overflow' });
   s.dispatch('pointerover', el);
   s.tick();
   assert.equal(s.mounts.length, 0);
@@ -198,6 +202,112 @@ test('overflow-only, disabled and expanded controls do not open; clipping is mea
   binding.update('完整文本');
   el.setAttribute('aria-expanded', 'true');
   s.dispatch('pointerover', el);
+  s.tick();
+  assert.equal(s.mounts.length, 1);
+});
+
+test('automatic hints suppress complete repeated text for pointer and keyboard, then show clipping', (t) => {
+  const s = fixture(t);
+  const el = s.element();
+  el.innerText = '  保存\n';
+  s.bind(el, '保存');
+  s.dispatch('pointerover', el);
+  s.tick();
+  s.dispatch('keydown', el, { key: 'Tab' });
+  s.dispatch('focusin', el);
+  s.tick();
+  assert.equal(s.mounts.length, 0);
+  el.scrollWidth = 200;
+  s.dispatch('pointerover', el);
+  s.tick();
+  assert.equal(s.mounts.length, 1);
+});
+
+test('automatic hints retain icon names, hidden labels and supplementary information', (t) => {
+  const s = fixture(t);
+  const icon = s.element();
+  s.bind(icon, '播放');
+  s.dispatch('pointerover', icon);
+  s.tick();
+  assert.equal(s.mounts.length, 1);
+  const hiddenLabel = s.element();
+  hiddenLabel.innerText = '播放';
+  hiddenLabel.getClientRects = () => [];
+  icon.querySelectorAll = () => [hiddenLabel];
+  s.dispatch('keydown', icon, { key: 'Escape' });
+  s.dispatch('pointerover', icon);
+  s.tick();
+  assert.equal(s.mounts.length, 2);
+  const button = s.element();
+  button.innerText = '设置';
+  s.bind(button, '启用插件后可读取设置项');
+  s.dispatch('pointerover', button);
+  s.tick();
+  assert.equal(s.mounts.length, 3);
+});
+
+test('automatic hints compare the visible label inside a composite control', (t) => {
+  const s = fixture(t);
+  const button = s.element();
+  const label = s.element();
+  button.innerText = '名称 耳机';
+  label.innerText = '名称';
+  button.querySelectorAll = () => [label];
+  s.bind(button, '名称');
+  s.dispatch('pointerover', button);
+  s.tick();
+  assert.equal(s.mounts.length, 0);
+  label.scrollWidth = 200;
+  s.dispatch('pointerover', button);
+  s.tick();
+  assert.equal(s.mounts.length, 1);
+});
+
+test('text clipping is measured on the label inside a button, independently of its icon', (t) => {
+  const s = fixture(t);
+  const button = s.element();
+  const label = s.element();
+  button.appendChild(label);
+  button.querySelectorAll = () => [label];
+  button.scrollWidth = 200;
+  label.scrollHeight = label.clientHeight + 1;
+  s.bind(button, { content: '音效名称', mode: 'overflow' });
+  s.dispatch('pointerover', button);
+  s.tick();
+  assert.equal(s.mounts.length, 0);
+  label.scrollWidth = 200;
+  s.dispatch('pointerover', button);
+  s.tick();
+  assert.equal(s.mounts.length, 1);
+});
+
+test('filterable selection measures the placeholder against the input content width', (t) => {
+  const s = fixture(t);
+  const input = s.element();
+  input.tagName = 'INPUT';
+  input.value = '';
+  input.placeholder = '短名称';
+  const createElement = s.doc.createElement;
+  s.doc.createElement = (tag) =>
+    tag === 'canvas'
+      ? { getContext: () => ({ measureText: (text) => ({ width: text.length * 10 }) }) }
+      : createElement(tag);
+  s.doc.defaultView.getComputedStyle = () => ({
+    visibility: 'visible',
+    display: 'block',
+    font: '14px sans-serif',
+    paddingLeft: '10px',
+    paddingRight: '10px',
+    letterSpacing: '1px',
+    textIndent: '0px',
+  });
+  const binding = s.bind(input, { content: input.placeholder, mode: 'overflow' });
+  s.dispatch('pointerover', input);
+  s.tick();
+  assert.equal(s.mounts.length, 0);
+  input.placeholder = '完整但显示不下的选项';
+  binding.update({ content: input.placeholder, mode: 'overflow' });
+  s.dispatch('pointerover', input);
   s.tick();
   assert.equal(s.mounts.length, 1);
 });
@@ -279,11 +389,11 @@ test('switching nested targets does not leave an ancestor hint open or dismiss o
 test('equivalent inline options do not dismiss a tooltip on every parent render', (t) => {
   const s = fixture(t),
     el = s.element();
-  const binding = s.bind(el, { content: '保持显示', overflowOnly: false });
+  const binding = s.bind(el, { content: '保持显示', mode: 'always' });
   s.dispatch('pointerover', el);
   s.tick();
   const id = el.getAttribute('aria-describedby');
-  binding.update({ content: '保持显示', overflowOnly: false });
+  binding.update({ content: '保持显示', mode: 'always' });
   assert.equal(el.getAttribute('aria-describedby'), id);
   binding.update({ content: '新提示' });
   assert.equal(el.getAttribute('aria-describedby'), null);

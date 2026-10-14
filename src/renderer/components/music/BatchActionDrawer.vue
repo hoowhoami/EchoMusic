@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Drawer from '@/components/ui/Drawer.vue';
+import DrawerHeader from '@/components/ui/DrawerHeader.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
@@ -15,7 +16,7 @@ import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import { isPlayableSong } from '@/utils/song';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
-import { iconPlay, iconPlus, iconTrash, iconX, iconList } from '@/icons';
+import { iconPlay, iconPlus, iconTrash, iconList } from '@/icons';
 import { isTransientPlaybackQueue, MANUAL_PLAYBACK_QUEUE_ID } from '@/stores/playlist';
 import { useVirtualList } from '@/composables/useVirtualList';
 
@@ -412,29 +413,16 @@ const confirmRemoveFromPlaylist = async () => {
   <Drawer
     v-model:open="open"
     side="right"
+    title="批量操作"
     overlayClass="batch-drawer-overlay"
     panelClass="batch-drawer"
   >
-    <div class="batch-header">
-      <div class="batch-heading">
-        <span class="batch-heading-icon"><Icon :icon="iconList" width="22" height="22" /></span>
-        <div>
-          <h2 class="batch-title">批量操作</h2>
-          <p class="batch-subtitle">共 {{ songs.length }} 首歌曲</p>
-        </div>
-      </div>
-      <Button
-        type="button"
-        class="action-icon batch-close"
-        variant="ghost"
-        size="icon"
-        aria-label="关闭"
-        :disabled="isBatchBusy"
-        @click="open = false"
-      >
-        <Icon :icon="iconX" width="14" height="14" />
-      </Button>
-    </div>
+    <DrawerHeader class="batch-header" :close-disabled="isBatchBusy" @close="open = false">
+      <template #leading
+        ><span class="batch-heading-icon"><Icon :icon="iconList" width="22" height="22" /></span
+      ></template>
+      <template #title><h2 class="batch-title">批量操作</h2></template>
+    </DrawerHeader>
 
     <div class="batch-selection">
       <label class="batch-select">
@@ -592,21 +580,10 @@ const confirmRemoveFromPlaylist = async () => {
 }
 
 .batch-header {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding: 22px 20px 18px;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.batch-heading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
 .batch-heading-icon {
   width: 42px;
   height: 42px;
@@ -616,11 +593,6 @@ const confirmRemoveFromPlaylist = async () => {
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   color: var(--color-primary-text);
-}
-.batch-subtitle {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--color-text-secondary);
 }
 .batch-title {
   margin: 0;
@@ -665,10 +637,6 @@ const confirmRemoveFromPlaylist = async () => {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
-}
-
-.batch-close {
-  @apply text-[var(--icon-main)] hover:text-text-main;
 }
 
 .batch-selection {
@@ -790,9 +758,6 @@ const confirmRemoveFromPlaylist = async () => {
     --drawer-bottom-gap: 8px;
     right: 8px;
     width: calc(100vw - 16px);
-  }
-  .batch-header {
-    padding: 18px 14px 14px;
   }
   .batch-footer {
     padding: 12px 14px;

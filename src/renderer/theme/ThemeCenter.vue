@@ -11,10 +11,11 @@ import {
 } from 'vue';
 import { useWindowSize } from '@vueuse/core';
 import { Icon } from '@iconify/vue';
-import { iconCheckMark, iconPalette, iconX } from '@/icons';
+import { iconCheckMark, iconPalette } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import SelectionBadge from '@/components/ui/SelectionBadge.vue';
 import Drawer from '@/components/ui/Drawer.vue';
+import DrawerHeader from '@/components/ui/DrawerHeader.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
@@ -71,10 +72,10 @@ const resetAppearance = async () => {
   }
 };
 const adjustmentsTrigger = ref<HTMLButtonElement | null>(null);
-const adjustmentsClose = ref<HTMLButtonElement | null>(null);
+const adjustmentsClose = ref<InstanceType<typeof DrawerHeader> | null>(null);
 watch(showAdjustments, async (open) => {
   await nextTick();
-  if (open) adjustmentsClose.value?.focus();
+  if (open) adjustmentsClose.value?.focusClose();
   else adjustmentsTrigger.value?.focus();
 });
 const imageInput = ref<HTMLInputElement | null>(null),
@@ -475,19 +476,13 @@ watch(
     panel-class="theme-adjustments-drawer"
     overlay-class="theme-adjustments-overlay"
   >
-    <header class="theme-drawer-heading">
-      <div>
-        <h2>外观调整</h2>
-      </div>
-      <button
-        ref="adjustmentsClose"
-        class="action-icon theme-drawer-close echo-button-sized echo-button-icon"
-        aria-label="关闭外观调整"
-        @click="showAdjustments = false"
-      >
-        <Icon :icon="iconX" :width="20" />
-      </button>
-    </header>
+    <DrawerHeader
+      ref="adjustmentsClose"
+      class="theme-drawer-heading"
+      close-label="关闭外观调整"
+      @close="showAdjustments = false"
+      ><template #title><h2>外观调整</h2></template></DrawerHeader
+    >
     <div class="theme-editor">
       <ThemeColorControls />
       <ThemeBackgroundControls />
@@ -737,24 +732,12 @@ watch(
   cursor: pointer;
 }
 .theme-drawer-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px 14px;
   border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
 }
 .theme-drawer-heading h2 {
   margin: 0;
   font-size: 17px;
   font-weight: 600;
-}
-.theme-drawer-close {
-  border-radius: var(--radius-control);
-  cursor: pointer;
-}
-.theme-drawer-close:hover {
-  background: var(--control-muted-bg);
 }
 .theme-editor {
   padding: 4px 24px 12px;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
 import { vTooltip } from '@/components/ui/tooltip';
 import Tag from '@/components/ui/Tag.vue';
 import SliderRoot from '@/components/ui/SliderRoot.vue';
@@ -332,7 +333,8 @@ const providerControls = computed<DspProviderControl[]>(() =>
 const providerPresets = computed(() => providerManifest.value?.presets ?? []);
 // The active graph's format is not an engine capability boundary. Selecting a
 // preset may rebuild the graph at one of the preset's declared sample rates.
-const providerPresetDescription = (preset: DspProviderPreset) => preset.description;
+const providerPresetDescription = (preset: DspProviderPreset) =>
+  preset.description !== preset.label ? preset.description : undefined;
 const providerDisplayName = computed(
   () =>
     providerManifest.value?.displayName?.trim() ||
@@ -1111,35 +1113,37 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                 :content-props="{ class: 'irs-scroll-wrap' }"
               >
                 <div v-if="group.files.length" class="effect-preset-grid">
-                  <Button
-                    :tooltip="
-                      impulseResponseSupport(file).reason ||
-                      getImpulseResponseDisplayName(file.name)
-                    "
+                  <Tooltip
                     v-for="file in group.files"
                     :key="file.id"
-                    type="button"
-                    size="none"
-                    :variant="
-                      file.id === settingStore.selectedImpulseResponseId && impulseResponseSelected
-                        ? 'soft-primary'
-                        : 'soft-secondary'
-                    "
-                    class="effect-preset-button irs-preset-item"
-                    :aria-pressed="
-                      file.id === settingStore.selectedImpulseResponseId && impulseResponseSelected
-                    "
-                    :aria-label="
-                      impulseResponseSupport(file).reason ||
-                      getImpulseResponseDisplayName(file.name)
-                    "
-                    :disabled="impulseResponseSupport(file).status !== 'supported'"
-                    @click="selectImpulseResponse(file.id)"
+                    :content="getImpulseResponseDisplayName(file.name)"
+                    :description="impulseResponseSupport(file).reason"
+                    ><Button
+                      type="button"
+                      size="none"
+                      :variant="
+                        file.id === settingStore.selectedImpulseResponseId &&
+                        impulseResponseSelected
+                          ? 'soft-primary'
+                          : 'soft-secondary'
+                      "
+                      class="effect-preset-button irs-preset-item"
+                      :aria-pressed="
+                        file.id === settingStore.selectedImpulseResponseId &&
+                        impulseResponseSelected
+                      "
+                      :aria-label="
+                        impulseResponseSupport(file).reason ||
+                        getImpulseResponseDisplayName(file.name)
+                      "
+                      :disabled="impulseResponseSupport(file).status !== 'supported'"
+                      @click="selectImpulseResponse(file.id)"
+                    >
+                      <span class="effect-preset-label irs-preset-label" data-tooltip-label>
+                        {{ getImpulseResponseDisplayName(file.name) }}
+                      </span>
+                    </Button></Tooltip
                   >
-                    <span class="effect-preset-label irs-preset-label">
-                      {{ getImpulseResponseDisplayName(file.name) }}
-                    </span>
-                  </Button>
                 </div>
                 <div v-else class="my-effect-empty">
                   <span>{{
@@ -1239,19 +1243,26 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                         !impulseResponseSelected && activeProviderPresetId === preset.id,
                     }"
                   >
-                    <button
-                      v-tooltip="providerPresetDescription(preset)"
-                      type="button"
-                      class="provider-preset-button soft-selection-trigger"
-                      :aria-pressed="
-                        !impulseResponseSelected && activeProviderPresetId === preset.id
-                      "
-                      :aria-label="providerPresetDescription(preset)"
-                      @click="setProviderPreset(preset.id)"
+                    <Tooltip
+                      :content="preset.label"
+                      :description="providerPresetDescription(preset)"
+                      ><button
+                        type="button"
+                        class="provider-preset-button soft-selection-trigger"
+                        :aria-pressed="
+                          !impulseResponseSelected && activeProviderPresetId === preset.id
+                        "
+                        :aria-label="preset.label"
+                        @click="setProviderPreset(preset.id)"
+                      >
+                        <span class="provider-preset-label" data-tooltip-label>{{
+                          preset.label
+                        }}</span>
+                        <Tag v-if="preset.recommendedDevice === 'headphone'" tone="accent"
+                          >耳机</Tag
+                        >
+                      </button></Tooltip
                     >
-                      <span class="provider-preset-label">{{ preset.label }}</span>
-                      <Tag v-if="preset.recommendedDevice === 'headphone'" tone="accent">耳机</Tag>
-                    </button>
                     <button
                       v-tooltip="`${preset.label}设置`"
                       v-if="configurablePresetControls(providerManifest, preset.id).length"
@@ -1308,9 +1319,9 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                   </span>
                 </div>
                 <div class="installed-provider-actions">
-                  <span v-tooltip="{ content: provider.originalFileName, overflowOnly: true }">{{
-                    provider.originalFileName
-                  }}</span>
+                  <Tooltip :content="provider.originalFileName"
+                    ><span>{{ provider.originalFileName }}</span></Tooltip
+                  >
                   <Button
                     variant="outline"
                     size="compact"

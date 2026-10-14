@@ -7,6 +7,7 @@
 import { computed } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import Drawer from '@/components/ui/Drawer.vue';
+import DrawerHeader from '@/components/ui/DrawerHeader.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import SelectionBadge from '@/components/ui/SelectionBadge.vue';
@@ -19,7 +20,7 @@ import {
   retryAndSelectLyricsPage,
 } from '@/plugins/lyricsPage';
 import type { LyricSkin } from '@/plugins/lyricsPage';
-import { iconChevronLeft, iconMusic, iconSettings, iconX } from '@/icons';
+import { iconChevronLeft, iconMusic, iconSettings } from '@/icons';
 
 type LyricViewMode = 'cover' | 'portrait' | 'lyric' | 'amll';
 
@@ -122,14 +123,16 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   >
     <div class="settings-drawer">
       <!-- 头部 -->
-      <div class="settings-header">
-        <div class="settings-title-group">
-          <h2 class="settings-title">{{ view === 'settings' ? '皮肤设置' : '换肤' }}</h2>
-          <p v-if="view === 'settings'" class="settings-subtitle">
+      <DrawerHeader class="settings-header" close-label="关闭皮肤设置" @close="close">
+        <template #title
+          ><h2 class="settings-title">{{ view === 'settings' ? '皮肤设置' : '换肤' }}</h2></template
+        >
+        <template v-if="view === 'settings'" #description
+          ><p class="settings-subtitle">
             {{ activeSkin ? skinDisplayTitle(activeSkin) : '当前皮肤' }}
-          </p>
-        </div>
-        <div class="settings-header-actions">
+          </p></template
+        >
+        <template #actions>
           <Button
             v-if="view === 'settings'"
             variant="unstyled"
@@ -138,9 +141,8 @@ const cardStyle = (skin: LyricSkin, index: number) => {
             tooltip="返回换肤"
             aria-label="返回换肤"
             @click="backToSkins"
-          >
-            <Icon :icon="iconChevronLeft" width="17" height="17" />
-          </Button>
+            ><Icon :icon="iconChevronLeft" width="17" height="17"
+          /></Button>
           <Button
             variant="unstyled"
             size="icon"
@@ -148,20 +150,10 @@ const cardStyle = (skin: LyricSkin, index: number) => {
             tooltip="全局设置"
             aria-label="全局设置"
             @click="emit('open-global-settings')"
-          >
-            <Icon :icon="iconSettings" width="17" height="17" />
-          </Button>
-          <Button
-            variant="unstyled"
-            size="icon"
-            class="action-icon settings-close-btn"
-            aria-label="关闭皮肤设置"
-            @click="close"
-          >
-            <Icon :icon="iconX" width="18" height="18" />
-          </Button>
-        </div>
-      </div>
+            ><Icon :icon="iconSettings" width="17" height="17"
+          /></Button>
+        </template>
+      </DrawerHeader>
 
       <!-- 内容 -->
       <Scrollbar class="settings-scrollbar">
@@ -299,20 +291,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 }
 
 .settings-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px;
   border-bottom: 1px solid var(--lyric-settings-divider-border);
-  flex-shrink: 0;
-  gap: 16px;
-}
-
-.settings-title-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
 }
 
 .settings-title {
@@ -327,20 +306,6 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   color: var(--color-text-secondary);
 }
 
-.settings-close-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-control);
-  color: var(--icon-main);
-}
-
-.settings-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .settings-header-action {
   display: flex;
   align-items: center;
@@ -350,11 +315,6 @@ const cardStyle = (skin: LyricSkin, index: number) => {
 }
 
 .settings-header-action:hover {
-  color: var(--color-primary-text);
-  background: var(--control-hover-bg);
-}
-
-.settings-close-btn:hover {
   color: var(--color-primary-text);
   background: var(--control-hover-bg);
 }
