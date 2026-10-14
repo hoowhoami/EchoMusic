@@ -188,7 +188,7 @@ watchUserSession(
             <div class="flex flex-wrap gap-2">
               <Button
                 variant="soft-primary"
-                size="none"
+                size="default"
                 class="free-listen-btn"
                 :disabled="displayedSongs.length === 0"
                 @click="handlePlayAll"
@@ -198,7 +198,7 @@ watchUserSession(
               </Button>
               <Button
                 variant="soft-secondary"
-                size="none"
+                size="default"
                 class="free-listen-btn"
                 :disabled="loading"
                 @click="refresh"
@@ -212,8 +212,8 @@ watchUserSession(
           <template #collapsed-actions>
             <Button
               variant="unstyled"
-              size="none"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
+              size="icon"
+              class="action-icon hover:bg-[var(--control-hover-bg)] text-primary-text"
               :disabled="displayedSongs.length === 0"
               @click="handlePlayAll"
             >
@@ -239,7 +239,7 @@ watchUserSession(
           <p class="free-listen-placeholder-desc">
             免费听来自概念版接口，返回空列表时通常是上游临时不可用，稍后重试即可。
           </p>
-          <Button variant="secondary" size="sm" class="mt-5" @click="loadSongs">刷新</Button>
+          <Button variant="secondary" size="default" class="mt-5" @click="loadSongs">刷新</Button>
         </div>
 
         <template v-else>
@@ -249,9 +249,9 @@ watchUserSession(
               <SongSearchInput v-model="searchQuery" />
               <Button
                 variant="unstyled"
-                size="none"
+                size="icon"
                 @click="handleLocate"
-                class="action-icon p-2"
+                class="action-icon"
                 tooltip="定位当前播放"
               >
                 <Icon :icon="iconCurrentLocation" width="16" height="16" />
@@ -290,7 +290,7 @@ watchUserSession(
 
 /* 与 DetailPageActionRow 的操作按钮保持同一视觉规格。 */
 .free-listen-btn {
-  @apply flex items-center gap-2 px-3 h-9 rounded-lg text-[12px] font-semibold transition-all active:scale-95 select-none;
+  @apply flex items-center gap-2 rounded-lg text-[12px] font-semibold transition-all active:scale-95 select-none;
 }
 
 .free-listen-spin {

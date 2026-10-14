@@ -1,0 +1,57 @@
+/* Playlist playback is the reference size for ordinary desktop actions.
+ * Window captions, playback controls, tabs, rows and field affixes use their
+ * own geometry; the login form keeps its explicit large button size. */
+:root {
+  --button-height: var(--control-height-default);
+  --button-padding-x: 12px;
+  --button-content-gap: 8px;
+  --button-font-size: 12px;
+  --button-font-weight: 600;
+}
+
+.echo-button-sized,
+.settings-action {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: var(--button-height);
+  min-height: var(--button-height);
+  gap: var(--button-content-gap);
+  border-radius: var(--radius-control);
+  font-size: var(--button-font-size);
+  font-weight: var(--button-font-weight);
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.echo-button-standard,
+.settings-action {
+  min-width: var(--button-height);
+  padding: 0 var(--button-padding-x);
+}
+
+.echo-button-icon {
+  width: var(--button-height);
+  min-width: var(--button-height);
+  padding: 0;
+}
+
+.echo-button-compact {
+  --button-height: var(--control-height-compact);
+  --button-padding-x: 10px;
+}
+
+.echo-button-small {
+  --button-height: var(--control-height-small);
+  --button-padding-x: 8px;
+  --button-content-gap: 6px;
+}
+
+.echo-button-large {
+  --button-height: var(--control-height-large);
+  --button-padding-x: 24px;
+  --button-font-size: 15px;
+  --button-font-weight: 900;
+}

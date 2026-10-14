@@ -695,9 +695,9 @@ const filteredArtistCards = computed(() => {
                 <SongSearchInput v-model="rankSearchQuery" />
                 <Button
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   @click="handleRankLocate"
-                  class="action-icon song-locate-btn p-2"
+                  class="action-icon song-locate-btn"
                   tooltip="定位当前播放"
                 >
                   <Icon :icon="iconCurrentLocation" width="16" height="16" />
@@ -808,9 +808,9 @@ const filteredArtistCards = computed(() => {
                 <SongSearchInput v-model="newSongSearchQuery" />
                 <Button
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   @click="handleNewSongLocate"
-                  class="action-icon song-locate-btn p-2"
+                  class="action-icon song-locate-btn"
                   tooltip="定位当前播放"
                 >
                   <Icon :icon="iconCurrentLocation" width="16" height="16" />

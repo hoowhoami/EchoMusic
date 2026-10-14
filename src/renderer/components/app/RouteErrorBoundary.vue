@@ -96,8 +96,8 @@ const goHome = () => {
           <pre>{{ errorDetailText }}</pre>
         </details>
         <div class="route-error-actions">
-          <Button variant="primary" size="sm" @click="retry">重试</Button>
-          <Button variant="secondary" size="sm" @click="goHome">回到首页</Button>
+          <Button variant="primary" size="default" @click="retry">重试</Button>
+          <Button variant="secondary" size="default" @click="goHome">回到首页</Button>
         </div>
       </div>
     </div>

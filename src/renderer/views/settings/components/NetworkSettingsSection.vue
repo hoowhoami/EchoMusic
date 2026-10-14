@@ -179,7 +179,6 @@ onMounted(async () => {
           :model-value="proxyPacScriptDraft"
           placeholder="https://example.com/proxy.pac"
           class="w-60! rounded-lg"
-          input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
           @update:model-value="proxyPacScriptDraft = String($event ?? '')"
           @clear="proxyPacScriptDraft = ''"
         />
@@ -198,7 +197,6 @@ onMounted(async () => {
           :model-value="proxyRulesDraft"
           placeholder="http://127.0.0.1:7890"
           class="w-60! rounded-lg"
-          input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
           @update:model-value="proxyRulesDraft = String($event ?? '')"
           @clear="proxyRulesDraft = ''"
         />
@@ -218,7 +216,6 @@ onMounted(async () => {
             :model-value="proxyUsernameDraft"
             placeholder="用户名（可选）"
             class="rounded-lg"
-            input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
             @update:model-value="proxyUsernameDraft = String($event ?? '')"
             @clear="proxyUsernameDraft = ''"
           />
@@ -228,13 +225,12 @@ onMounted(async () => {
               type="password"
               :placeholder="hasSavedProxyPassword ? '已安全保存，留空保持不变' : '密码（可选）'"
               class="min-w-0 flex-1 rounded-lg"
-              input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
               @update:model-value="updateProxyPasswordDraft"
               @clear="proxyPasswordDraft = ''"
             />
             <Button
               variant="unstyled"
-              size="none"
+              size="default"
               class="settings-action settings-action-danger"
               v-if="hasSavedProxyPassword"
               type="button"
@@ -259,7 +255,6 @@ onMounted(async () => {
           :model-value="proxyBypassRulesDraft"
           placeholder="<local>"
           class="w-60! rounded-lg"
-          input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
           @update:model-value="proxyBypassRulesDraft = String($event ?? '')"
           @clear="proxyBypassRulesDraft = ''"
         />
@@ -277,7 +272,6 @@ onMounted(async () => {
         v-model="settingStore.githubProxyUrl"
         placeholder="https://ghfast.top"
         class="w-60! rounded-lg"
-        input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
       />
     </div>
     <div class="settings-divider"></div>
@@ -324,7 +318,7 @@ onMounted(async () => {
       </div>
       <Button
         variant="primary"
-        size="none"
+        size="default"
         class="settings-action settings-action-primary"
         type="button"
         :loading="applyingProxy"

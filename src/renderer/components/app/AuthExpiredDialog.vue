@@ -40,7 +40,7 @@ const handleLogin = async () => {
       <Button
         class="auth-expired-btn auth-expired-btn--ghost"
         variant="outline"
-        size="sm"
+        size="default"
         @click="authStore.hideSessionExpiredDialog()"
       >
         稍后再说
@@ -48,7 +48,7 @@ const handleLogin = async () => {
       <Button
         class="auth-expired-btn auth-expired-btn--primary"
         variant="primary"
-        size="sm"
+        size="default"
         @click="handleLogin"
       >
         去登录
@@ -70,8 +70,5 @@ const handleLogin = async () => {
 
 .auth-expired-btn--ghost {
   @apply text-text-secondary hover:text-text-main;
-}
-
-.auth-expired-btn--primary {
 }
 </style>

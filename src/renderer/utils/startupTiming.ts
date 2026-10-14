@@ -18,14 +18,3 @@ export const markStartup = (stage: string) => {
     documentResponseEndMs: navigation ? Math.round(navigation.responseEnd) : undefined,
   });
 };
-
-// Reveal the initial Vue route once mounted, or expose startup errors immediately.
-export const finishStartup = () => {
-  document.getElementById('startup-placeholder')?.remove();
-  document.documentElement.removeAttribute('data-echo-starting');
-};
-
-export const updateStartupStatus = (message: string) => {
-  const status = document.querySelector('#startup-placeholder .startup-status');
-  if (status) status.textContent = message;
-};

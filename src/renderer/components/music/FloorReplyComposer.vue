@@ -91,7 +91,7 @@ async function submit() {
       >
       <Button
         variant="ghost"
-        size="none"
+        size="icon"
         class="action-icon floor-close"
         :disabled="busy"
         aria-label="取消回复"
@@ -118,7 +118,7 @@ async function submit() {
       >
       <Button
         type="submit"
-        size="xs"
+        size="default"
         :disabled="count > COMMENT_MAX_LENGTH || !send || !draft.trim() || busy || !user.isLoggedIn"
         >{{ busy ? '发送中…' : '发送回复' }}</Button
       >
@@ -149,7 +149,6 @@ strong {
   font-weight: 600;
 }
 .floor-close {
-  padding: 4px;
   border-radius: var(--radius-control);
 }
 blockquote {

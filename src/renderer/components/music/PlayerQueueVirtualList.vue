@@ -143,7 +143,7 @@ defineExpose({
                 type="button"
                 class="action-icon queue-play"
                 variant="ghost"
-                size="xs"
+                size="icon"
                 @click="emit('play', entry.data)"
               >
                 <Icon
@@ -189,7 +189,7 @@ defineExpose({
               type="button"
               class="action-icon queue-remove"
               variant="unstyled"
-              size="none"
+              size="icon"
               tooltip="从队列移除"
               @click="emit('remove', entry.data)"
             >
@@ -253,9 +253,6 @@ defineExpose({
   position: absolute;
   inset: 50% auto auto 50%;
   transform: translate(-50%, -50%);
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
   color: var(--color-primary-text);
   opacity: 0;
   background: transparent !important;
@@ -314,9 +311,6 @@ defineExpose({
 }
 
 .queue-remove {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

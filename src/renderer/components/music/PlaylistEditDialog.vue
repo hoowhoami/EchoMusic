@@ -252,7 +252,7 @@ onBeforeUnmount(() => {
           <div class="flex w-full min-w-0 items-center gap-2">
             <Button
               variant="secondary"
-              size="xs"
+              size="default"
               class="shrink-0"
               :disabled="selectingCover || saving"
               @click="coverInput?.click()"
@@ -289,14 +289,24 @@ onBeforeUnmount(() => {
     </fieldset>
     <p v-if="error" class="edit-error" role="alert">{{ error }}</p>
     <template #footer>
-      <Button v-if="error" variant="secondary" size="xs" :disabled="saving || loading" @click="load"
+      <Button
+        v-if="error"
+        variant="secondary"
+        size="default"
+        :disabled="saving || loading"
+        @click="load"
         >重新加载</Button
       >
       <div class="flex-1" />
-      <Button variant="secondary" size="xs" :disabled="saving" @click="close(false)">取消</Button>
-      <Button size="xs" :disabled="loading || saving || selectingCover || !dirty" @click="save">{{
-        saving ? '正在保存…' : '保存'
-      }}</Button>
+      <Button variant="secondary" size="default" :disabled="saving" @click="close(false)"
+        >取消</Button
+      >
+      <Button
+        size="default"
+        :disabled="loading || saving || selectingCover || !dirty"
+        @click="save"
+        >{{ saving ? '正在保存…' : '保存' }}</Button
+      >
     </template>
   </Dialog>
 </template>
@@ -317,12 +327,6 @@ onBeforeUnmount(() => {
   gap: 7px;
   font-size: 12px;
   color: var(--color-text-secondary);
-}
-.edit-field :deep(input:not(.tag-input-control)) {
-  height: 36px;
-  padding: 0 12px;
-  font-size: 13px;
-  border-radius: var(--radius-control);
 }
 .edit-field :deep(textarea) {
   min-height: 88px;

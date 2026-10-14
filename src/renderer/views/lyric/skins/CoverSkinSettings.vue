@@ -30,7 +30,7 @@ const dynamicAlbumCover = computed({
       <template #footer>
         <Button
           variant="secondary"
-          size="xs"
+          size="default"
           :disabled="!dynamicAlbumCover"
           @click="dynamicAlbumCover = false"
           >恢复封面默认</Button

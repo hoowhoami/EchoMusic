@@ -1,13 +1,13 @@
 <script setup lang="ts">
 defineOptions({ name: 'loading-page' });
-import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { iconTriangleAlert } from '@/icons';
 import { useDeviceStore } from '@/stores/device';
 import { useToastStore } from '@/stores/toast';
 import { ensureDevice } from '@/utils/device';
 import logger from '@/utils/logger';
-import { finishStartup, markStartup, updateStartupStatus } from '@/utils/startupTiming';
+import { markStartup } from '@/utils/startupTiming';
 import Button from '@/components/ui/Button.vue';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
 import type { ApiServerStatus } from '@/../shared/apiServer';
@@ -17,10 +17,6 @@ const deviceStore = useDeviceStore();
 const toastStore = useToastStore();
 const statusMessage = ref('正在初始化音乐引擎...');
 const hasError = ref(false);
-watch(statusMessage, updateStartupStatus, { immediate: true });
-watch(hasError, (failed) => {
-  if (failed) finishStartup();
-});
 const isDeviceReady = ref(false);
 const hasCompletedStartup = ref(false);
 const canForceEnter = ref(false);
@@ -82,7 +78,7 @@ const completeStartup = async () => {
       logger.error('Loading', 'player engine is not available');
       statusMessage.value = '播放引擎初始化失败';
       hasError.value = true;
-      allowForceEnter('仍然进入后可以打开主界面，但播放相关功能可能不可用。');
+      allowForceEnter('可继续进入，播放功能暂不可用。');
       hasCompletedStartup.value = false;
       return;
     }
@@ -91,7 +87,7 @@ const completeStartup = async () => {
     logger.error('Loading', 'player availability check failed:', error);
     statusMessage.value = '播放引擎检查失败';
     hasError.value = true;
-    allowForceEnter('仍然进入后可以打开主界面，但播放相关功能可能不可用。');
+    allowForceEnter('可继续进入，播放功能暂不可用。');
     hasCompletedStartup.value = false;
     return;
   }
@@ -112,9 +108,9 @@ const applyStatus = async (status: ApiServerStatus) => {
       const deviceReady = await ensureDeviceReady();
       if (!deviceReady) {
         logger.error('Loading', 'Device init failed: device register failed');
-        statusMessage.value = '设备注册失败，部分在线功能可能无法正常使用。';
+        statusMessage.value = '设备注册失败';
         hasError.value = true;
-        allowForceEnter('仍然进入后可以使用主界面，但推荐、搜索等在线功能可能受影响。');
+        allowForceEnter('可继续进入，部分在线功能受限。');
         return;
       }
       await completeStartup();
@@ -236,21 +232,23 @@ onUnmounted(() => {
         <div class="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-2">
           <Icon class="text-red-500" :icon="iconTriangleAlert" width="32" height="32" />
         </div>
-        <div class="text-center space-y-2">
+        <div class="w-full max-w-sm space-y-2 text-center">
           <h2 class="text-lg font-bold text-red-500/90">
             {{ canForceEnter ? '启动未完全就绪' : '启动失败' }}
           </h2>
-          <p class="text-sm text-text-secondary max-w-xs">{{ statusMessage }}</p>
-          <p v-if="forceEnterHint" class="text-xs leading-5 text-text-secondary max-w-xs">
+          <p class="text-sm font-medium leading-6 text-text-main wrap-anywhere">
+            {{ statusMessage }}
+          </p>
+          <p v-if="forceEnterHint" class="text-xs leading-5 text-text-secondary text-pretty">
             {{ forceEnterHint }}
           </p>
         </div>
         <div class="flex flex-wrap justify-center gap-4 pt-6 no-drag">
-          <Button v-if="canForceEnter" variant="primary" size="sm" @click="forceEnterApp">
+          <Button v-if="canForceEnter" variant="primary" size="default" @click="forceEnterApp">
             仍然进入
           </Button>
-          <Button variant="primary" size="sm" @click="retryStart"> 重试启动 </Button>
-          <Button variant="secondary" size="sm" @click="closeWindow"> 退出应用 </Button>
+          <Button variant="primary" size="default" @click="retryStart"> 重试启动 </Button>
+          <Button variant="secondary" size="default" @click="closeWindow"> 退出应用 </Button>
         </div>
       </div>
     </main>
@@ -258,3 +256,114 @@ onUnmounted(() => {
     <footer class="startup-footer">EchoMusic • 音为你而生</footer>
   </div>
 </template>
+
+<style scoped>
+.startup-main {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.startup-mark {
+  box-sizing: border-box;
+  width: 120px;
+  height: 120px;
+  margin-bottom: 60px;
+  border: 1px solid var(--border-subtle, #e5e5e8);
+  border-radius: 32px;
+  background: var(--color-bg-elevated, #fff);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
+}
+.startup-mark-echo {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1.25;
+}
+.startup-mark-music {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  line-height: 1.25;
+  text-transform: uppercase;
+  color: var(--color-primary-text, #0071e3);
+}
+.startup-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+.startup-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.startup-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary, #0071e3) 60%, transparent);
+  animation: startup-bounce 0.8s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
+}
+.startup-dots i:nth-child(1) {
+  animation-delay: -0.3s;
+}
+.startup-dots i:nth-child(2) {
+  animation-delay: -0.15s;
+}
+.startup-status {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--color-text-main, #1d1d1f) 60%, transparent);
+}
+.startup-footer {
+  position: absolute;
+  bottom: 40px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text-main, #1d1d1f) 40%, transparent);
+}
+:global(html.dark .startup-mark) {
+  background: var(--color-bg-elevated, #36363a);
+  border-color: var(--border-subtle, #48484b);
+}
+:global(html.dark .startup-mark-music) {
+  color: var(--color-primary-text, #61adf5);
+}
+:global(html.dark .startup-status) {
+  color: color-mix(in srgb, var(--color-text-main, #f5f5f7) 40%, transparent);
+}
+:global(html.dark .startup-footer) {
+  color: color-mix(in srgb, var(--color-text-main, #f5f5f7) 40%, transparent);
+}
+@keyframes startup-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .startup-dots i {
+    animation: none;
+  }
+}
+</style>

@@ -320,6 +320,7 @@ const isWayland = isWaylandWindowingBackend();
 contextBridge.exposeInMainWorld('electron', {
   platform: process.platform,
   isWayland,
+  notifyPageMounted: () => ipcRenderer.send('main-window:page-mounted'),
   ipcRenderer: {
     send: (channel: string, ...args: any[]) => sendWithPlainPayload(channel, ...args),
     invoke: (channel: string, ...args: any[]) => invokeWithPlainPayload(channel, ...args),

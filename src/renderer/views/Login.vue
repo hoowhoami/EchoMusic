@@ -742,7 +742,7 @@ onUnmounted(() => {
                     <Button
                       @click="loadQrCode"
                       variant="secondary"
-                      size="xs"
+                      size="default"
                       class="text-[13px] font-black"
                       >重新加载</Button
                     >
@@ -770,7 +770,7 @@ onUnmounted(() => {
                     }}
                   </span>
                   <button
-                    class="action-icon absolute right-0 w-7 h-7 flex items-center justify-center text-[var(--icon-main)] hover:text-primary-text hover:bg-primary/10 transition-all active:scale-90"
+                    class="action-icon absolute right-0 flex items-center justify-center text-[var(--icon-main)] hover:text-primary-text hover:bg-primary/10 transition-all active:scale-90 echo-button-sized echo-button-icon"
                     :disabled="isLoadingQr"
                     @click="loadQrCode"
                   >
@@ -793,6 +793,7 @@ onUnmounted(() => {
                   @submit.prevent="handleSmsLogin"
                 >
                   <Input
+                    size="large"
                     v-model="smsData.mobile"
                     type="tel"
                     placeholder="手机号码"
@@ -801,13 +802,14 @@ onUnmounted(() => {
                   />
                   <div class="flex gap-3 mb-1">
                     <Input
+                      size="large"
                       v-model="smsData.code"
                       placeholder="验证码"
                       class="flex-1"
-                      inputClass="pr-10"
                       :aria-describedby="smsData.error ? 'sms-login-error' : undefined"
                     />
                     <Button
+                      size="large"
                       variant="secondary"
                       type="button"
                       class="shrink-0 whitespace-nowrap"
@@ -827,7 +829,7 @@ onUnmounted(() => {
                       {{ smsData.error }}
                     </p>
                   </div>
-                  <Button type="submit" class="w-full" :loading="smsData.isSending">
+                  <Button size="large" type="submit" class="w-full" :loading="smsData.isSending">
                     立即登录
                   </Button>
                 </form>
@@ -887,6 +889,7 @@ onUnmounted(() => {
                 </div>
                 <form class="flex flex-col" @submit.prevent="handleAccountLogin">
                   <Input
+                    size="large"
                     v-model="accountData.username"
                     type="text"
                     placeholder="用户名"
@@ -894,6 +897,7 @@ onUnmounted(() => {
                     :aria-describedby="accountData.error ? 'account-login-error' : undefined"
                   />
                   <Input
+                    size="large"
                     v-model="accountData.password"
                     type="password"
                     placeholder="密码"
@@ -910,7 +914,12 @@ onUnmounted(() => {
                       {{ accountData.error }}
                     </p>
                   </div>
-                  <Button class="w-full" type="submit" :loading="accountData.isSubmitting">
+                  <Button
+                    size="large"
+                    class="w-full"
+                    type="submit"
+                    :loading="accountData.isSubmitting"
+                  >
                     立即登录
                   </Button>
                 </form>
@@ -949,7 +958,7 @@ onUnmounted(() => {
                     <Button
                       @click="loadQqQr"
                       variant="secondary"
-                      size="xs"
+                      size="default"
                       class="text-[13px] font-black"
                       >重新加载</Button
                     >
@@ -973,7 +982,7 @@ onUnmounted(() => {
                   <Tooltip content="刷新 QQ 二维码">
                     <template #trigger>
                       <button
-                        class="action-icon absolute right-0 w-7 h-7 flex items-center justify-center text-[var(--icon-main)] hover:text-[#12B7F5] hover:bg-[#12B7F5]/10 transition-all active:scale-90 disabled:opacity-40"
+                        class="action-icon absolute right-0 flex items-center justify-center text-[var(--icon-main)] hover:text-[#12B7F5] hover:bg-[#12B7F5]/10 transition-all active:scale-90 disabled:opacity-40 echo-button-sized echo-button-icon"
                         :disabled="qqQr.isLoading"
                         aria-label="刷新 QQ 二维码"
                         @click="loadQqQr"
@@ -1018,7 +1027,7 @@ onUnmounted(() => {
                     <Button
                       @click="loadWxQr"
                       variant="secondary"
-                      size="xs"
+                      size="default"
                       class="text-[13px] font-black"
                       >重新加载</Button
                     >
@@ -1046,7 +1055,7 @@ onUnmounted(() => {
                     }}
                   </span>
                   <button
-                    class="action-icon absolute right-0 w-7 h-7 flex items-center justify-center text-[var(--icon-main)] hover:text-[#07C160] hover:bg-[#07C160]/10 transition-all active:scale-90"
+                    class="action-icon absolute right-0 flex items-center justify-center text-[var(--icon-main)] hover:text-[#07C160] hover:bg-[#07C160]/10 transition-all active:scale-90 echo-button-sized echo-button-icon"
                     :disabled="wxQr.isLoading"
                     @click="loadWxQr"
                   >

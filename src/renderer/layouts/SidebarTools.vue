@@ -14,7 +14,7 @@ const router = useRouter();
     <Tooltip :content="collapsed ? '展开侧栏' : '折叠侧栏'"
       ><template #trigger
         ><button
-          class="action-icon sidebar-app-tool"
+          class="action-icon sidebar-app-tool echo-button-sized echo-button-icon"
           type="button"
           :aria-label="collapsed ? '展开侧栏' : '折叠侧栏'"
           @click="toggle"
@@ -29,7 +29,7 @@ const router = useRouter();
       <Tooltip content="设置"
         ><template #trigger
           ><button
-            class="action-icon sidebar-app-tool"
+            class="action-icon sidebar-app-tool echo-button-sized echo-button-icon"
             type="button"
             aria-label="设置"
             @click="router.push('/main/settings')"
@@ -39,7 +39,7 @@ const router = useRouter();
       <Tooltip content="主题中心"
         ><template #trigger
           ><button
-            class="action-icon sidebar-app-tool"
+            class="action-icon sidebar-app-tool echo-button-sized echo-button-icon"
             type="button"
             aria-label="主题中心"
             @click="router.push('/main/themes')"
@@ -61,8 +61,6 @@ const router = useRouter();
 .sidebar-app-tools :deep(.sidebar-app-tool) {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
   border-radius: var(--radius-control);
   cursor: pointer;
 }

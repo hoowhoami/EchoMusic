@@ -59,13 +59,8 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  min-height: 32px;
-  padding: 4px 8px;
   border: 0;
   border-radius: var(--radius-control);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 20px;
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
@@ -124,7 +119,12 @@
 }
 
 .settings-input {
-  @apply px-3 py-1.5 text-[12px] font-medium border-0 rounded-lg text-text-main transition-all;
+  @apply border-0 rounded-lg text-text-main transition-all;
+  box-sizing: border-box;
+  height: var(--control-height-default);
+  padding: 0 var(--field-padding-x);
+  font-size: var(--field-font-size);
+  font-weight: var(--field-font-weight);
   background: var(--field-bg);
 }
 
@@ -182,7 +182,12 @@
 }
 
 .shortcut-input {
-  @apply w-full px-3 py-1.5 text-[13px] font-medium border rounded-lg text-text-main text-center cursor-pointer transition-all tracking-wide;
+  @apply w-full border rounded-lg text-text-main text-center cursor-pointer transition-all tracking-wide;
+  box-sizing: border-box;
+  height: var(--control-height-default);
+  padding: 0 var(--field-padding-x);
+  font-size: var(--field-font-size);
+  font-weight: var(--field-font-weight);
   background: var(--control-muted-bg);
   border-color: var(--control-border);
 }

@@ -180,7 +180,7 @@ const logout = () => {
         <footer class="account-actions">
           <Button
             variant="secondary"
-            size="none"
+            size="default"
             class="account-action"
             @click="navigate('/main/profile')"
           >
@@ -188,12 +188,12 @@ const logout = () => {
           </Button>
           <Button
             variant="secondary"
-            size="none"
+            size="default"
             class="account-action"
             @click="requestAccountSwitch"
             >切换账号</Button
           >
-          <Button variant="secondary" size="none" class="account-action" @click="requestLogout"
+          <Button variant="secondary" size="default" class="account-action" @click="requestLogout"
             >退出登录</Button
           >
         </footer>
@@ -378,8 +378,6 @@ const logout = () => {
   justify-content: center;
   align-items: center;
   gap: 5px;
-  height: 34px;
-  padding: 0 10px;
   border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 500;

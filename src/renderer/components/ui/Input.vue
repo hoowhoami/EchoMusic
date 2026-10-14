@@ -3,6 +3,7 @@ import { computed, ref, useAttrs } from 'vue';
 import { useVModel } from '@vueuse/core';
 import { type PrimitiveProps } from 'reka-ui';
 import { iconX } from '@/icons';
+import type { ControlSize } from './controlSizes';
 
 defineOptions({ inheritAttrs: false });
 
@@ -12,6 +13,7 @@ interface Props extends PrimitiveProps {
   placeholder?: string;
   class?: string;
   inputClass?: string;
+  size?: ControlSize;
   showClear?: boolean;
   disabled?: boolean;
   readonly?: boolean;
@@ -21,6 +23,7 @@ const props = withDefaults(defineProps<Props>(), {
   as: 'input',
   type: 'text',
   showClear: true,
+  size: 'default',
 });
 
 const emits = defineEmits(['update:modelValue', 'clear']);
@@ -47,7 +50,7 @@ const handleClear = () => {
 </script>
 
 <template>
-  <div :class="['relative group w-full', props.class]">
+  <div :class="['echo-input-wrapper relative group w-full', `echo-field-${size}`, props.class]">
     <input
       ref="inputRef"
       v-model="value"
@@ -57,7 +60,8 @@ const handleClear = () => {
       :disabled="disabled"
       :readonly="readonly"
       :class="[
-        'echo-input-control w-full h-14 pl-6 pr-12 bg-[var(--field-bg)] border-0 rounded-control outline-none motion-control-feedback font-medium text-[15px] text-text-main placeholder:text-text-secondary placeholder:opacity-100',
+        'echo-input-control echo-field-sized w-full bg-[var(--field-bg)] border-0 rounded-control outline-none motion-control-feedback text-text-main placeholder:text-text-secondary placeholder:opacity-100',
+        { 'has-clear-action': showClear },
         props.inputClass,
       ]"
     />
@@ -67,7 +71,7 @@ const handleClear = () => {
       v-if="canClear"
       type="button"
       aria-label="清空输入"
-      class="action-icon absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center icon-action motion-control-feedback"
+      class="action-icon echo-input-clear absolute top-1/2 -translate-y-1/2 flex items-center justify-center icon-action motion-control-feedback"
       @click="handleClear"
     >
       <Icon :icon="iconX" width="14" height="14" />
@@ -76,6 +80,20 @@ const handleClear = () => {
 </template>
 
 <style scoped>
+.echo-input-control {
+  padding: 0 var(--field-padding-x);
+}
+
+.echo-input-control.has-clear-action {
+  padding-right: calc(var(--field-padding-x) + var(--field-clear-size));
+}
+
+.echo-input-clear {
+  right: var(--field-clear-right);
+  width: var(--field-clear-size);
+  height: var(--field-clear-size);
+}
+
 .echo-input-control:hover:not(:disabled):not(:focus) {
   background: var(--field-hover-bg);
 }

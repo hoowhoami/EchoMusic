@@ -38,7 +38,12 @@ const emit = defineEmits<{
     </div>
 
     <template #footer>
-      <Button class="legal-button" variant="primary" size="sm" @click="emit('update:open', false)">
+      <Button
+        class="legal-button"
+        variant="primary"
+        size="default"
+        @click="emit('update:open', false)"
+      >
         我知道了
       </Button>
     </template>

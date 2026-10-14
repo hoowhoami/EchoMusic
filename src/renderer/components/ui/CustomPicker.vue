@@ -103,7 +103,7 @@ watch(
           class="custom-picker-option"
           :aria-pressed="opt.id === props.selectedId"
           :variant="opt.id === props.selectedId ? 'soft-primary' : 'soft-secondary'"
-          size="xs"
+          size="default"
           @click="handleSelect(opt)"
         >
           {{ opt.name }}
@@ -138,6 +138,6 @@ watch(
 }
 
 .custom-picker-option {
-  @apply px-4 py-2 rounded-control text-[12px] font-semibold;
+  @apply rounded-control text-[12px] font-semibold;
 }
 </style>

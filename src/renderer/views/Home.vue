@@ -413,7 +413,7 @@ const handleRejectAgreement = () => {
           <div class="style-section-actions">
             <Button
               variant="soft-primary"
-              size="none"
+              size="default"
               class="style-play-btn"
               :disabled="styleSongs.length === 0"
               @click="playStyleSongs()"
@@ -696,8 +696,6 @@ const handleRejectAgreement = () => {
 }
 
 .style-play-btn {
-  height: 34px;
-  padding: 0 12px;
   border-radius: var(--radius-control);
   display: inline-flex;
   align-items: center;

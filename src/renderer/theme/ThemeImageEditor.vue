@@ -69,20 +69,22 @@ const apply = () => {
           <div v-else class="theme-image-editor-empty">
             <Icon :icon="iconImage" :width="32" />
             <h2>选择背景图片</h2>
-            <Button variant="secondary" size="sm" @click="emit('chooseImage')">选择本地图片</Button>
+            <Button variant="secondary" size="default" @click="emit('chooseImage')"
+              >选择本地图片</Button
+            >
             <p>或拖入 JPG、PNG、WebP 图片，不超过 20 MB</p>
           </div>
           <div v-if="hasImage" class="theme-image-editor-image-actions">
             <Button
               variant="secondary"
-              size="sm"
+              size="default"
               :disabled="importing || !image"
               @click="cropper?.selectWholeImage()"
               >选取整张图片</Button
             >
             <Button
               variant="secondary"
-              size="sm"
+              size="default"
               :disabled="importing"
               @click="emit('chooseImage')"
             >
@@ -145,15 +147,17 @@ const apply = () => {
       <div class="theme-image-editor-actions">
         <Button
           variant="secondary"
-          size="sm"
+          size="default"
           :disabled="importing || !canReset"
           @click="emit('reset')"
           >恢复默认</Button
         >
-        <Button variant="secondary" size="sm" :disabled="!canCancel" @click="emit('cancel')"
+        <Button variant="secondary" size="default" :disabled="!canCancel" @click="emit('cancel')"
           >还原</Button
         >
-        <Button size="sm" :disabled="importing || !image || !canApply" @click="apply">应用</Button>
+        <Button size="default" :disabled="importing || !image || !canApply" @click="apply"
+          >应用</Button
+        >
       </div>
     </footer>
   </section>

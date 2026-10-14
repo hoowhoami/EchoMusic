@@ -812,12 +812,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
           class="w-full"
           @update:model-value="setExistingListId"
         />
-        <Input
-          v-else
-          v-model="newScreenshotPlaylistName"
-          placeholder="请输入新歌单名称"
-          input-class="h-10 rounded-xl px-3 text-[13px]"
-        />
+        <Input v-else v-model="newScreenshotPlaylistName" placeholder="请输入新歌单名称" />
         <p class="import-hint">识别结果会添加到所选歌单，或写入新建歌单。</p>
       </template>
 
@@ -898,12 +893,12 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 
     <template #footer>
       <template v-if="step === 'input'">
-        <Button variant="secondary" size="sm" :disabled="isStarting" @click="open = false"
+        <Button variant="secondary" size="default" :disabled="isStarting" @click="open = false"
           >取消</Button
         >
         <Button
           variant="primary"
-          size="sm"
+          size="default"
           :loading="isStarting"
           :disabled="!canStart"
           @click="startImport"
@@ -927,13 +922,13 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
             {{ summary.failed }}</span
           >
         </div>
-        <Button v-if="isImporting" variant="secondary" size="sm" @click="stopMonitoring">{{
+        <Button v-if="isImporting" variant="secondary" size="default" @click="stopMonitoring">{{
           importTaskStore.phase === 'cloud' ? '停止查看' : '停止导入'
         }}</Button>
-        <Button v-if="isImporting" variant="primary" size="sm" @click="runInBackground"
+        <Button v-if="isImporting" variant="primary" size="default" @click="runInBackground"
           >后台运行</Button
         >
-        <Button v-else variant="primary" size="sm" @click="closeResult">完成</Button>
+        <Button v-else variant="primary" size="default" @click="closeResult">完成</Button>
       </template>
     </template>
   </Dialog>
@@ -952,7 +947,6 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
         v-model="duplicatePlaylistName"
         aria-label="新歌单名称"
         placeholder="请输入新歌单名称"
-        input-class="h-10 rounded-xl px-3 text-[13px]"
         @keydown.enter.prevent="finishDuplicateNameConfirm(true)"
       />
       <p class="text-[12px] text-text-secondary leading-relaxed">
@@ -964,10 +958,12 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
       </p>
     </div>
     <template #footer>
-      <Button variant="secondary" size="sm" @click="finishDuplicateNameConfirm(false)">取消</Button>
+      <Button variant="secondary" size="default" @click="finishDuplicateNameConfirm(false)"
+        >取消</Button
+      >
       <Button
         variant="primary"
-        size="sm"
+        size="default"
         :disabled="!duplicatePlaylistName.trim()"
         @click="finishDuplicateNameConfirm(true)"
       >
@@ -997,8 +993,10 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
       </label>
     </div>
     <template #footer>
-      <Button variant="secondary" size="sm" @click="showBackgroundConfirm = false">留在本页</Button>
-      <Button variant="primary" size="sm" @click="confirmBackgroundImport">我知道了</Button>
+      <Button variant="secondary" size="default" @click="showBackgroundConfirm = false"
+        >留在本页</Button
+      >
+      <Button variant="primary" size="default" @click="confirmBackgroundImport">我知道了</Button>
     </template>
   </Dialog>
 </template>

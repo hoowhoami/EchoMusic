@@ -852,7 +852,7 @@ watch(
                     class="action-icon"
                     v-else
                     variant="unstyled"
-                    size="none"
+                    size="icon"
                     :disabled="isMenuItemDisabled(item)"
                     :aria-label="item.title"
                     :class="[
@@ -893,7 +893,7 @@ watch(
                   <Button
                     class="action-icon"
                     variant="unstyled"
-                    size="none"
+                    size="icon"
                     aria-label="自建歌单"
                     :class="['sidebar-rail-tab', activePlaylistTab === 0 ? 'is-active' : '']"
                     @click="activePlaylistTab = 0"
@@ -907,7 +907,7 @@ watch(
                   <Button
                     class="action-icon"
                     variant="unstyled"
-                    size="none"
+                    size="icon"
                     aria-label="收藏歌单"
                     :class="['sidebar-rail-tab', activePlaylistTab === 1 ? 'is-active' : '']"
                     @click="activePlaylistTab = 1"
@@ -1132,7 +1132,7 @@ watch(
             <div class="flex items-center gap-0.5 shrink-0 pl-0.5">
               <Button
                 variant="unstyled"
-                size="none"
+                size="icon"
                 type="button"
                 class="action-icon sidebar-section-action sidebar-icon-btn"
                 tooltip="调整歌单顺序"
@@ -1143,7 +1143,7 @@ watch(
               </Button>
               <Button
                 variant="unstyled"
-                size="none"
+                size="icon"
                 type="button"
                 class="action-icon sidebar-section-action sidebar-icon-btn"
                 tooltip="刷新歌单"
@@ -1166,7 +1166,7 @@ watch(
                   <template #trigger>
                     <Button
                       variant="unstyled"
-                      size="none"
+                      size="icon"
                       type="button"
                       class="action-icon sidebar-section-action sidebar-icon-btn"
                       tooltip="添加歌单"
@@ -1295,7 +1295,7 @@ watch(
                 <Button
                   v-if="canRemovePlaylist(playlist)"
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   type="button"
                   class="action-icon sidebar-playlist-action"
                   :tooltip="isOwnerPlaylist(playlist) ? '删除歌单' : '取消收藏'"
@@ -1346,7 +1346,7 @@ watch(
                 <Button
                   v-if="canRemovePlaylist(playlist)"
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   type="button"
                   class="action-icon sidebar-playlist-action"
                   tooltip="取消收藏"
@@ -1389,7 +1389,7 @@ watch(
         v-model="newPlaylistName"
         placeholder="请输入歌单名称"
         :show-clear="!isCreatingPlaylist"
-        input-class="h-12 rounded-control px-4 pr-10 text-[14px] font-medium"
+        input-class="font-medium"
       />
       <div
         class="flex items-center justify-between rounded-card bg-[var(--control-muted-bg)] px-4 py-3"
@@ -1404,7 +1404,7 @@ watch(
     <template #footer>
       <Button
         variant="secondary"
-        size="sm"
+        size="default"
         :disabled="isCreatingPlaylist"
         @click="closeCreatePlaylistDialog"
       >
@@ -1412,7 +1412,7 @@ watch(
       </Button>
       <Button
         variant="primary"
-        size="sm"
+        size="default"
         :loading="isCreatingPlaylist"
         :disabled="!newPlaylistName.trim() || !currentUserIdNumber"
         @click="handleCreatePlaylist"
@@ -1433,7 +1433,7 @@ watch(
     <template #footer>
       <Button
         variant="secondary"
-        size="sm"
+        size="default"
         :disabled="isRemovingPlaylist"
         @click="closeRemovePlaylistDialog"
       >
@@ -1441,7 +1441,7 @@ watch(
       </Button>
       <Button
         variant="danger"
-        size="sm"
+        size="default"
         :loading="isRemovingPlaylist"
         @click="handleRemovePlaylist"
       >
@@ -1545,6 +1545,7 @@ watch(
 }
 
 .sidebar-playlist-header {
+  --sidebar-section-action-size: 24px;
   margin-top: var(--sidebar-section-gap);
   padding-top: 0;
   padding-bottom: 0;
@@ -1882,11 +1883,14 @@ watch(
 }
 
 .sidebar-section-action-slot {
-  @apply h-6 w-6 shrink-0;
+  @apply shrink-0;
+  width: var(--sidebar-section-action-size);
+  height: var(--sidebar-section-action-size);
 }
 
 .sidebar-section-action {
-  @apply h-6 w-6 min-w-0 shrink-0 rounded-md flex items-center justify-center;
+  --button-height: var(--sidebar-section-action-size);
+  @apply shrink-0 rounded-md flex items-center justify-center;
   @apply transition-all disabled:opacity-30;
   color: var(--icon-main);
 }
@@ -1910,7 +1914,7 @@ watch(
 }
 
 .sidebar-playlist-action {
-  @apply absolute right-2.5 top-1/2 -translate-y-1/2 h-7 w-7 min-w-0 rounded-lg flex items-center justify-center text-[var(--icon-main)];
+  @apply absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg flex items-center justify-center text-[var(--icon-main)];
   @apply opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto hover:text-red-500 transition-all;
 }
 

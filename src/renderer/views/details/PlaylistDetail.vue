@@ -904,7 +904,7 @@ watch(
                     <template #trigger>
                       <Button
                         variant="unstyled"
-                        size="none"
+                        size="icon"
                         class="action-icon song-filter-info-btn"
                       >
                         <Icon :icon="iconInfo" width="14" height="14" />
@@ -939,17 +939,17 @@ watch(
             <template v-if="activeTab === 'songs'">
               <Button
                 variant="unstyled"
-                size="none"
+                size="icon"
                 @click="handlePlayAll"
-                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
+                class="action-icon hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>
               <Button
                 variant="unstyled"
-                size="none"
+                size="icon"
                 @click="openBatchDrawer"
-                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+                class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -958,7 +958,7 @@ watch(
             <Button
               v-if="!isOwnerPlaylist && userStore.isLoggedIn"
               variant="unstyled"
-              size="none"
+              size="icon"
               @click="
                 () => {
                   if (!playlist) return;
@@ -969,7 +969,7 @@ watch(
                   }
                 }
               "
-              class="action-icon p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
+              class="action-icon rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
             >
               <Icon
                 :icon="isFavoritePlaylist ? iconHeartFilled : iconHeart"
@@ -980,19 +980,19 @@ watch(
             <Button
               v-if="editablePlaylist"
               variant="unstyled"
-              size="none"
+              size="icon"
               tooltip="编辑歌单"
               aria-label="编辑歌单"
               @click="showPlaylistEdit = true"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconPencil" width="18" height="18" />
             </Button>
             <Button
               variant="unstyled"
-              size="none"
+              size="icon"
               @click="handleSharePlaylist"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconShare" width="18" height="18" />
             </Button>
@@ -1036,7 +1036,7 @@ watch(
                       class="action-icon song-sort-btn"
                       v-if="playlistOrderTarget"
                       variant="soft-secondary"
-                      size="none"
+                      size="icon"
                       tooltip="调整歌曲顺序"
                       @click="showPlaylistOrder = true"
                     >
@@ -1045,9 +1045,9 @@ watch(
                     <SongSearchInput v-model="searchQuery" />
                     <Button
                       variant="unstyled"
-                      size="none"
+                      size="icon"
                       @click="handleLocate"
-                      class="action-icon song-locate-btn p-2"
+                      class="action-icon song-locate-btn"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="18" height="18" />
@@ -1195,8 +1195,6 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
   color: #f59e0b;
   transition: all 0.2s ease;
 }

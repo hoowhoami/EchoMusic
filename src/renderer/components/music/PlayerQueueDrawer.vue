@@ -730,7 +730,7 @@ onBeforeUnmount(() => {
           type="button"
           class="action-icon queue-icon-btn queue-close"
           variant="ghost"
-          size="xs"
+          size="icon"
           tooltip="关闭"
           @click="open = false"
         >
@@ -749,7 +749,7 @@ onBeforeUnmount(() => {
             <template #trigger>
               <button
                 type="button"
-                class="action-icon queue-arrow-btn"
+                class="action-icon queue-arrow-btn echo-button-sized echo-button-icon"
                 :disabled="previewIndex === 0"
                 aria-label="上一队列"
                 @click="handleSwitchQueueByDirection(-1)"
@@ -773,7 +773,7 @@ onBeforeUnmount(() => {
             <template #trigger>
               <button
                 type="button"
-                class="action-icon queue-arrow-btn"
+                class="action-icon queue-arrow-btn echo-button-sized echo-button-icon"
                 :disabled="previewIndex === queueOptions.length - 1"
                 aria-label="下一队列"
                 @click="handleSwitchQueueByDirection(1)"
@@ -800,7 +800,7 @@ onBeforeUnmount(() => {
           type="button"
           class="action-icon queue-icon-btn"
           variant="ghost"
-          size="xs"
+          size="icon"
           tooltip="回到顶部"
           @click="scrollPreviewToTop"
         >
@@ -810,7 +810,7 @@ onBeforeUnmount(() => {
           type="button"
           class="action-icon queue-icon-btn"
           variant="ghost"
-          size="xs"
+          size="icon"
           tooltip="定位当前歌曲"
           @click="scrollToCurrent(false)"
         >
@@ -820,7 +820,7 @@ onBeforeUnmount(() => {
           type="button"
           class="action-icon queue-icon-btn"
           variant="ghost"
-          size="xs"
+          size="icon"
           :tooltip="isAddingToPlaylist ? '添加中...' : '添加到'"
           :disabled="!canAddPreviewQueue || isAddingToPlaylist"
           @click="handleAddToPlaylist"
@@ -832,7 +832,7 @@ onBeforeUnmount(() => {
           type="button"
           class="action-icon queue-icon-btn"
           variant="ghost"
-          size="xs"
+          size="icon"
           :tooltip="
             isMyQueue
               ? '清空我的队列'
@@ -895,7 +895,7 @@ onBeforeUnmount(() => {
               type="button"
               class="queue-inline-resume"
               variant="soft-primary"
-              size="xs"
+              size="default"
               :tooltip="`继续播放 ${resolveResumeTrack(queue)?.title || '这首歌'}`"
               @click="handleResumePreviewQueue(resolveResumeTrack(queue))"
             >
@@ -1101,8 +1101,6 @@ onBeforeUnmount(() => {
 }
 
 .queue-arrow-btn {
-  width: 24px;
-  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1132,10 +1130,6 @@ onBeforeUnmount(() => {
 }
 
 .queue-icon-btn {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  padding: 0;
   border-radius: var(--radius-control);
   color: var(--icon-main);
 }
@@ -1151,9 +1145,6 @@ onBeforeUnmount(() => {
     gap: 2px;
   }
   .queue-icon-btn {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
   }
 }
 
@@ -1212,14 +1203,12 @@ onBeforeUnmount(() => {
 
 .queue-inline-resume {
   max-width: min(70%, 220px);
-  height: 28px;
   min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   justify-content: center;
   border-radius: var(--radius-control);
-  padding: 0 10px;
   font-size: 12px;
 }
 

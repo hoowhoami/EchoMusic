@@ -42,13 +42,13 @@ const value = useVModel(props, 'modelValue', emits);
 .textarea-root {
   width: 100%;
   min-height: 120px;
-  padding: 12px 14px;
+  padding: 10px var(--field-padding-x);
   border: 1px solid var(--control-border);
   border-radius: var(--radius-control);
-  background: var(--control-muted-bg);
+  background: var(--field-bg);
   color: var(--color-text-main);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--field-font-size);
+  font-weight: var(--field-font-weight);
   line-height: 1.55;
   outline: none;
   resize: vertical;
@@ -62,11 +62,16 @@ const value = useVModel(props, 'modelValue', emits);
 }
 
 .textarea-root:focus {
+  background: var(--field-focus-bg);
   border-color: color-mix(in srgb, var(--color-primary) 35%, var(--control-border));
 }
 
 .textarea-root:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+.textarea-root:hover:not(:disabled):not(:focus) {
+  background: var(--field-hover-bg);
 }
 </style>

@@ -3,7 +3,8 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Switch from '@/components/ui/Switch.vue';
-import { iconCast, iconLoader2 } from '@/icons';
+import { iconCast } from '@/icons';
+import CastDeviceInfo from '@/components/player/CastDeviceInfo.vue';
 import { useOutputStore, type OutputTargetView } from '@/stores/output';
 import { useSettingStore } from '@/stores/setting';
 import SettingsSectionShell from './SettingsSectionShell.vue';
@@ -48,10 +49,6 @@ onMounted(() => {
 onUnmounted(() => {
   void output.setBrowsing(false);
 });
-
-function targetMeta(target: OutputTargetView): string {
-  return target.note || '';
-}
 
 function isConnectingTarget(target: OutputTargetView): boolean {
   return output.connectingTargetId === target.targetId;
@@ -132,7 +129,7 @@ function submitPin(): void {
         <button
           v-if="remoteActive"
           type="button"
-          class="settings-action"
+          class="settings-action echo-button-sized echo-button-standard"
           :disabled="output.busy"
           @click="output.useLocal()"
         >
@@ -140,7 +137,7 @@ function submitPin(): void {
         </button>
         <button
           type="button"
-          class="settings-action"
+          class="settings-action echo-button-sized echo-button-standard"
           :disabled="output.busy || output.searching || !settingStore.networkPlaybackEnabled"
           @click="output.refresh()"
         >
@@ -174,14 +171,7 @@ function submitPin(): void {
             "
             @click="choose(target)"
           >
-            <span class="cast-device-name">{{ target.displayName }}</span>
-            <span v-if="isConnectingTarget(target)" class="cast-device-meta is-connecting">
-              <Icon :icon="iconLoader2" width="12" height="12" class="animate-spin" />
-              连接中
-            </span>
-            <span v-else-if="targetMeta(target)" class="cast-device-meta">
-              {{ targetMeta(target) }}
-            </span>
+            <CastDeviceInfo :target="target" :connecting="isConnectingTarget(target)" />
           </button>
           <p v-if="dlnaTargets.length === 0" class="cast-empty">
             {{ output.searching ? '正在搜索设备' : '没有找到设备' }}
@@ -206,21 +196,14 @@ function submitPin(): void {
             "
             @click="choose(target)"
           >
-            <span class="cast-device-name">{{ target.displayName }}</span>
-            <span v-if="isConnectingTarget(target)" class="cast-device-meta is-connecting">
-              <Icon :icon="iconLoader2" width="12" height="12" class="animate-spin" />
-              连接中
-            </span>
-            <span v-else-if="targetMeta(target)" class="cast-device-meta">
-              {{ targetMeta(target) }}
-            </span>
+            <CastDeviceInfo :target="target" :connecting="isConnectingTarget(target)" />
           </button>
           <label v-if="pinTarget" class="cast-pin">
             密码/验证码
             <input v-model="pin" maxlength="32" @keydown.enter.prevent="submitPin" />
             <button
               type="button"
-              class="settings-action"
+              class="settings-action echo-button-sized echo-button-standard"
               :disabled="output.busy"
               @click="submitPin"
             >
@@ -243,7 +226,7 @@ function submitPin(): void {
       </div>
       <button
         type="button"
-        class="settings-action settings-action-danger"
+        class="settings-action settings-action-danger echo-button-sized echo-button-standard"
         @click="output.clearRecords()"
       >
         清除
@@ -362,12 +345,11 @@ function submitPin(): void {
 .cast-device {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
   width: 100%;
-  min-height: 38px;
-  padding: 0 9px;
+  min-height: 54px;
+  padding: 8px 10px;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: var(--floating-surface-bg);
@@ -398,7 +380,7 @@ function submitPin(): void {
   background: var(--color-primary);
 }
 
-.cast-device.active .cast-device-name {
+.cast-device.active .cast-device-info {
   padding-left: 6px;
 }
 
@@ -411,28 +393,11 @@ function submitPin(): void {
   opacity: 0.55;
 }
 
-.cast-device-name {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cast-device-meta,
 .cast-pin,
 .cast-empty {
   color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 650;
-}
-
-.cast-device-meta.is-connecting {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--color-primary-text);
 }
 
 .cast-pin {
@@ -441,12 +406,15 @@ function submitPin(): void {
   gap: 8px;
 }
 .cast-pin input {
+  box-sizing: border-box;
+  height: var(--control-height-default);
+  font-size: var(--field-font-size);
   width: 6rem;
   border: 1px solid var(--control-border);
   border-radius: var(--radius-control);
-  background: var(--control-muted-bg);
+  background: var(--field-bg);
   color: inherit;
-  padding: 6px 8px;
+  padding: 0 var(--field-padding-x);
 }
 
 .cast-empty {

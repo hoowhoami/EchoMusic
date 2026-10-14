@@ -42,7 +42,7 @@ const emit = defineEmits<{
     <Button
       v-if="showPlaybackActions"
       variant="soft-primary"
-      size="none"
+      size="default"
       :disabled="playDisabled"
       @click="emit('play')"
       class="action-btn primary"
@@ -55,7 +55,7 @@ const emit = defineEmits<{
     <Button
       v-if="showPlaybackActions"
       variant="soft-secondary"
-      size="none"
+      size="default"
       :disabled="batchDisabled"
       @click="emit('batch')"
       class="action-btn"
@@ -67,7 +67,7 @@ const emit = defineEmits<{
     <!-- 次要操作 (收藏、分享等) -->
     <Button
       :variant="action.tone === 'favorite' || action.emphasized ? 'unstyled' : 'soft-secondary'"
-      size="none"
+      size="default"
       v-for="action in secondaryActions"
       :key="action.label"
       :disabled="action.disabled"
@@ -91,7 +91,7 @@ const emit = defineEmits<{
 @reference "@/style.css";
 
 .action-btn {
-  @apply flex items-center gap-2 px-3 h-9 rounded-lg text-[12px] font-semibold transition-all active:scale-95 select-none;
+  @apply flex items-center gap-2 rounded-lg text-[12px] font-semibold transition-all active:scale-95 select-none;
 }
 
 .action-btn.secondary {

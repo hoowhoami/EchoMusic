@@ -109,7 +109,7 @@ const collapseHideControls = computed({
     </SkinSettingSection>
     <LyricTextStyleSettings :skin-key="HOST_SKIN_KEYS.portrait" />
     <div class="skin-settings-footer">
-      <Button variant="secondary" size="xs" :disabled="!hasCustomSettings" @click="reset"
+      <Button variant="secondary" size="default" :disabled="!hasCustomSettings" @click="reset"
         >恢复全部默认</Button
       >
     </div>

@@ -94,7 +94,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
       <PopoverTrigger as-child>
         <Button
           variant="unstyled"
-          size="none"
+          size="icon"
           class="action-icon titlebar-icon-action more-trigger"
           tooltip="更多"
           tooltip-side="bottom"
@@ -119,7 +119,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
             <span>更多应用</span>
             <button
               type="button"
-              class="titlebar-reset soft-secondary-action app-focus-ring-soft"
+              class="titlebar-reset soft-secondary-action app-focus-ring-soft echo-button-sized echo-button-standard"
               @click="settings.titlebarLayout = emptyTitlebarLayout()"
             >
               恢复默认
@@ -148,7 +148,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
               </Button>
               <Button
                 variant="unstyled"
-                size="none"
+                size="icon"
                 class="action-icon titlebar-pin"
                 :class="{ pinned: item.placement === 'toolbar' }"
                 :aria-pressed="item.placement === 'toolbar'"
@@ -180,8 +180,6 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   /* 浮层以按钮为定位锚点，按压时保持几何尺寸不变。 */
   scale: none;
   transform: none;
-  width: 34px;
-  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -291,9 +289,7 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 32px;
-  width: 32px;
-  height: 32px;
+  flex: 0 0 var(--button-height);
   border-radius: var(--radius-control);
   color: var(--color-text-secondary);
 }
@@ -327,8 +323,6 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
 }
 .titlebar-reset {
   flex-shrink: 0;
-  min-height: 28px;
-  padding: 4px 8px;
   font-weight: 400;
   border-radius: var(--radius-control);
   font-size: 12px;

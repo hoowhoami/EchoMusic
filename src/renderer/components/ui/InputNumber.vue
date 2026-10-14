@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch, onActivated, onDeactivated, onBeforeUnmount } from 'vue';
 import { iconChevronUp, iconChevronDown } from '@/icons';
+import type { ControlSize } from './controlSizes';
 
 interface Props {
   id?: string;
-  size?: 'sm' | 'md';
+  size?: ControlSize | 'sm' | 'md';
   modelValue?: number | string;
   min?: number;
   max?: number;
@@ -22,7 +23,7 @@ const props = withDefaults(defineProps<Props>(), {
   placeholder: '',
   suffix: '',
   disabled: false,
-  size: 'md',
+  size: 'default',
 });
 
 const emit = defineEmits<{
@@ -217,8 +218,10 @@ onBeforeUnmount(() => {
   <div
     :class="[
       'input-number',
+      'echo-field-sized',
+      `echo-field-${props.size === 'sm' ? 'small' : props.size === 'md' ? 'default' : props.size}`,
       props.class,
-      { 'is-disabled': props.disabled, 'is-small': props.size === 'sm' },
+      { 'is-disabled': props.disabled, 'is-small': props.size === 'sm' || props.size === 'small' },
     ]"
   >
     <input
@@ -273,9 +276,8 @@ onBeforeUnmount(() => {
 .input-number {
   @apply inline-flex items-stretch overflow-hidden;
   border-radius: var(--radius-control);
-  height: 40px;
   border: 1px solid var(--control-border);
-  background: var(--control-muted-bg);
+  background: var(--field-bg);
   transition: border-color 0.15s ease;
 }
 
@@ -291,13 +293,13 @@ onBeforeUnmount(() => {
 .input-number-field {
   flex: 1;
   min-width: 0;
-  padding: 0 0 0 14px;
+  padding: 0 0 0 var(--field-padding-x);
   border: none;
   background: transparent;
   color: var(--color-text-main);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 40px;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: normal;
   outline: none;
   text-align: left;
   font-variant-numeric: tabular-nums;
@@ -307,15 +309,8 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
 }
 
-.input-number.is-small {
-  height: 28px;
-  border-radius: var(--radius-control);
-}
-
 .input-number.is-small .input-number-field {
-  padding-left: 10px;
-  font-size: 12px;
-  line-height: 26px;
+  padding-left: var(--field-padding-x);
 }
 
 .input-number.is-small .input-number-controls {
@@ -327,7 +322,7 @@ onBeforeUnmount(() => {
 }
 
 .input-number-suffix {
-  @apply flex items-center text-text-secondary text-[13px] font-semibold pr-2 select-none shrink-0;
+  @apply flex items-center text-text-secondary pr-2 select-none shrink-0;
 }
 
 .input-number-controls {

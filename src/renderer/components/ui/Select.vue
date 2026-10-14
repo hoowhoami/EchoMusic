@@ -4,6 +4,7 @@ import Popover from './Popover.vue';
 import Tooltip from './Tooltip.vue';
 import Tag from './Tag.vue';
 import { iconChevronDown, iconCheckMark, iconX } from '@/icons';
+import type { ControlSize } from './controlSizes';
 
 type SelectValueType = string | number;
 
@@ -18,6 +19,7 @@ interface Props {
   options: SelectOption[];
   placeholder?: string;
   class?: string;
+  size?: ControlSize;
   disabled?: boolean;
   ariaLabel?: string;
   /** 弹层默认与选择框右侧对齐，空间不足时自动避让 */
@@ -40,6 +42,7 @@ const props = withDefaults(defineProps<Props>(), {
   options: () => [],
   placeholder: '请选择',
   disabled: false,
+  size: 'default',
   contentAlign: 'end',
   wrapOptions: false,
   filterable: false,
@@ -260,7 +263,8 @@ watch(open, (val) => {
           <div
             ref="triggerRef"
             :class="[
-              'echo-select-trigger motion-control-feedback',
+              'echo-select-trigger echo-field-sized motion-control-feedback',
+              `echo-field-${size}`,
               props.class,
               { 'is-disabled': props.disabled },
             ]"
@@ -404,8 +408,9 @@ watch(open, (val) => {
 @reference "@/style.css";
 
 .echo-select-trigger {
-  @apply inline-flex h-9 px-3 rounded-control text-text-main text-[13px] font-semibold items-center gap-2 cursor-pointer overflow-hidden;
-  background: var(--control-muted-bg);
+  @apply inline-flex rounded-control text-text-main items-center gap-2 cursor-pointer overflow-hidden;
+  padding: 0 var(--field-padding-x);
+  background: var(--field-bg);
   border: 0;
   box-shadow: var(--control-neutral-action-shadow);
 }
@@ -446,11 +451,13 @@ watch(open, (val) => {
 }
 
 .echo-select-input {
-  @apply flex-1 min-w-[40px] h-full bg-transparent text-text-main text-[13px] font-semibold outline-none;
+  @apply flex-1 min-w-[40px] h-full bg-transparent text-text-main outline-none;
+  font-size: inherit;
+  font-weight: inherit;
 }
 
 .echo-select-input::placeholder {
-  @apply text-text-secondary font-semibold;
+  @apply text-text-secondary;
   opacity: 1;
 }
 

@@ -1,4 +1,7 @@
-//! Keep decode, filter and WASAPI threads off Windows 11 EcoQoS.
+//! Protect audio producer scheduling during competing system/UI work.
+//!
+//! macOS decode/filter workers opt into interactive QoS; the CoreAudio callback
+//! already has its own realtime scheduling. Windows workers opt out of EcoQoS.
 //!
 //! Snapdragon Windows parks EcoQoS threads on efficiency cores. Chromium
 //! (Edge) opts the renderer out of that policy, so a browser video keeps
@@ -146,13 +149,70 @@ pub use windows_impl::{
     MultimediaTask,
 };
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+mod macos_impl {
+    use std::marker::PhantomData;
+    use std::rc::Rc;
+
+    // A QoS request belongs to the calling thread, so the guard cannot move to another thread.
+    pub struct MultimediaTask {
+        previous_class: libc::qos_class_t,
+        previous_priority: libc::c_int,
+        _thread_bound: PhantomData<Rc<()>>,
+    }
+
+    impl Drop for MultimediaTask {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = libc::pthread_set_qos_class_self_np(
+                    self.previous_class,
+                    self.previous_priority,
+                );
+            }
+        }
+    }
+
+    pub fn boost_audio_producer_thread() -> Option<MultimediaTask> {
+        let mut previous_class = libc::qos_class_t::QOS_CLASS_UNSPECIFIED;
+        let mut previous_priority = 0;
+        unsafe {
+            if libc::pthread_get_qos_class_np(
+                libc::pthread_self(),
+                &mut previous_class,
+                &mut previous_priority,
+            ) != 0
+                || libc::pthread_set_qos_class_self_np(
+                    libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE,
+                    0,
+                ) != 0
+            {
+                return None;
+            }
+        }
+        // UNSPECIFIED is query-only and cannot be passed to the setter. A successful
+        // boost of a previously unspecified thread restores the system's default class.
+        if previous_class as u32 == libc::qos_class_t::QOS_CLASS_UNSPECIFIED as u32 {
+            previous_class = libc::qos_class_t::QOS_CLASS_DEFAULT;
+            previous_priority = 0;
+        }
+        Some(MultimediaTask {
+            previous_class,
+            previous_priority,
+            _thread_bound: PhantomData,
+        })
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub use macos_impl::boost_audio_producer_thread;
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub struct MultimediaTask;
 
 #[cfg(not(target_os = "windows"))]
 pub fn opt_out_process_power_throttling() {}
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn boost_audio_producer_thread() -> Option<MultimediaTask> {
     None
 }
@@ -165,6 +225,45 @@ mod tests {
     fn producer_boost_is_safe_on_this_platform() {
         opt_out_process_power_throttling();
         let _guard = boost_audio_producer_thread();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_producer_boost_sets_qos_and_restores_it_on_the_worker() {
+        std::thread::spawn(|| {
+            let read_qos = || {
+                let mut class = libc::qos_class_t::QOS_CLASS_UNSPECIFIED;
+                let mut priority = 0;
+                assert_eq!(
+                    unsafe {
+                        libc::pthread_get_qos_class_np(
+                            libc::pthread_self(),
+                            &mut class,
+                            &mut priority,
+                        )
+                    },
+                    0
+                );
+                (class as u32, priority)
+            };
+            // Use a non-default relative priority to verify the complete previous state.
+            assert_eq!(
+                unsafe {
+                    libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, -1)
+                },
+                0
+            );
+            let previous = read_qos();
+            let guard = boost_audio_producer_thread().expect("macOS producer QoS request");
+            assert_eq!(
+                read_qos(),
+                (libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE as u32, 0)
+            );
+            drop(guard);
+            assert_eq!(read_qos(), previous);
+        })
+        .join()
+        .expect("QoS worker");
     }
 
     #[test]

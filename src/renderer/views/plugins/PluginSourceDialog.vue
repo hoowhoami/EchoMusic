@@ -46,18 +46,16 @@ const canAdd = computed(() => Boolean(props.sourceUrl.trim()) && !props.adding);
         <Input
           :model-value="sourceUrl"
           placeholder="https://github.com/owner/repo"
-          input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
           @update:model-value="emit('update:sourceUrl', $event)"
         />
         <Input
           :model-value="sourceName"
           placeholder="显示名称，可选"
-          input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
           @update:model-value="emit('update:sourceName', $event)"
         />
         <Button
           variant="primary"
-          size="xs"
+          size="default"
           :loading="adding"
           :disabled="!canAdd"
           @click="emit('add')"
@@ -100,7 +98,7 @@ const canAdd = computed(() => Boolean(props.sourceUrl.trim()) && !props.adding);
             />
             <Button
               variant="ghost"
-              size="xs"
+              size="icon"
               class="action-icon plugin-source-delete-btn"
               :tooltip="source.official ? '官方插件源可停用，但不能删除' : '删除插件源'"
               :disabled="source.official || busySourceIds.has(source.id)"

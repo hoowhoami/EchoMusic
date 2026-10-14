@@ -287,7 +287,7 @@ watch(selectedKey, () => {
         </div>
         <Button
           variant="ghost"
-          size="none"
+          size="icon"
           class="action-icon refresh-btn"
           tooltip="刷新歌词候选"
           :disabled="isLoading"
@@ -403,7 +403,7 @@ watch(selectedKey, () => {
                   </div>
                 </div>
                 <div class="preview-badges">
-                  <span>{{ previewState.lineCount }} 行</span>
+                  <small class="preview-line-count">{{ previewState.lineCount }} 行</small>
                   <span v-if="previewState.isScrollable">实时预览</span>
                   <span v-if="previewState.hasTranslation">翻译</span>
                   <span v-if="previewState.hasRomanization">音译</span>
@@ -452,13 +452,18 @@ watch(selectedKey, () => {
     <template #footer>
       <Button
         variant="secondary"
-        size="sm"
+        size="default"
         :disabled="!canRestoreAuto || isApplying"
         @click="restoreAuto"
       >
         使用智能推荐
       </Button>
-      <Button :loading="isApplying" :disabled="!selectedCandidate" size="sm" @click="applySelected">
+      <Button
+        :loading="isApplying"
+        :disabled="!selectedCandidate"
+        size="default"
+        @click="applySelected"
+      >
         应用
       </Button>
     </template>
@@ -499,8 +504,6 @@ watch(selectedKey, () => {
   align-items: center;
   justify-content: center;
   justify-self: end;
-  width: 32px;
-  height: 32px;
   border-radius: var(--radius-control);
 }
 
@@ -739,6 +742,13 @@ watch(selectedKey, () => {
   gap: 12px;
   padding: 12px;
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.preview-line-count {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .preview-title-group {

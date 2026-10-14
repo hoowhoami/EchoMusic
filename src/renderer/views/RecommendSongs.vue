@@ -174,17 +174,17 @@ onMounted(() => {
           <template #collapsed-actions>
             <Button
               variant="unstyled"
-              size="none"
+              size="icon"
               @click="handlePlayAll"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
+              class="action-icon hover:bg-[var(--control-hover-bg)] text-primary-text"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
             <Button
               variant="unstyled"
-              size="none"
+              size="icon"
               @click="openBatchDrawer"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
@@ -211,9 +211,9 @@ onMounted(() => {
                     <SongSearchInput v-model="searchQuery" />
                     <Button
                       variant="unstyled"
-                      size="none"
+                      size="icon"
                       @click="handleLocate"
-                      class="action-icon song-locate-btn p-2"
+                      class="action-icon song-locate-btn"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="16" height="16" />

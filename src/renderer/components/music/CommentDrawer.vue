@@ -108,7 +108,7 @@ onScopeDispose(stop);
         type="button"
         class="action-icon comment-drawer-close"
         variant="ghost"
-        size="xs"
+        size="icon"
         tooltip="关闭"
         @click="open = false"
       >
@@ -233,13 +233,9 @@ onScopeDispose(stop);
 }
 
 .comment-drawer-close {
-  width: 32px;
-  height: 32px;
-  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
   color: var(--icon-main);
   background: transparent;
   border: 0;

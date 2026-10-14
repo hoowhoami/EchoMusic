@@ -1186,7 +1186,7 @@ onBeforeUnmount(() => {
               <h1>此刻，一起听</h1>
               <p>进入正在播放的房间，和喜欢同一种声音的人共享音乐。</p>
               <div class="listen-hero-actions">
-                <Button size="sm" @click="openCreateRoom">
+                <Button size="default" @click="openCreateRoom">
                   <Icon :icon="iconPlus" width="16" height="16" />
                   创建众乐房
                 </Button>
@@ -1208,7 +1208,7 @@ onBeforeUnmount(() => {
               <span><span class="listen-live-dot"></span> 房间正在后台同步</span>
               <strong>{{ activeRoom?.name || '一起听房间' }}</strong>
             </div>
-            <Button size="sm" @click="sessionMinimized = false">
+            <Button size="default" @click="sessionMinimized = false">
               <Icon :icon="iconHeadphones" width="15" height="15" />
               返回房间
             </Button>
@@ -1236,7 +1236,7 @@ onBeforeUnmount(() => {
               <Button
                 class="action-icon listen-refresh-button"
                 variant="ghost"
-                size="sm"
+                size="icon"
                 :disabled="loadingRoomList"
                 tooltip="刷新房间"
                 aria-label="刷新房间"
@@ -1382,7 +1382,12 @@ onBeforeUnmount(() => {
             v-if="roomScope === 'discover' && rooms.length && !roomsEnded && !roomSearch"
             class="listen-load-more"
           >
-            <Button variant="secondary" size="sm" :loading="loadingRooms" @click="loadRooms(false)">
+            <Button
+              variant="secondary"
+              size="default"
+              :loading="loadingRooms"
+              @click="loadRooms(false)"
+            >
               加载更多房间
             </Button>
           </div>
@@ -1401,11 +1406,11 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="listen-session-actions">
-            <Button variant="soft-secondary" size="sm" @click="shareRoom(activeRoom)">
+            <Button variant="soft-secondary" size="default" @click="shareRoom(activeRoom)">
               <Icon :icon="iconShare" width="16" height="16" />
               分享房间
             </Button>
-            <Button variant="outline" size="sm" @click="leaveOpen = true">
+            <Button variant="outline" size="default" @click="leaveOpen = true">
               <Icon :icon="iconDoorExit" width="16" height="16" />
               {{ isOwner ? '房间管理' : '离开房间' }}
             </Button>
@@ -1458,17 +1463,17 @@ onBeforeUnmount(() => {
                   <h2>{{ roomSongs.length }} 首歌曲</h2>
                 </div>
                 <div class="listen-queue-header-actions">
-                  <Button v-if="isOwner" variant="secondary" size="xs" @click="openSongOrders">
+                  <Button v-if="isOwner" variant="secondary" size="default" @click="openSongOrders">
                     点播列表<span v-if="songOrders.length"> {{ songOrders.length }}</span>
                   </Button>
-                  <Button variant="soft-secondary" size="xs" @click="openOrderSongPicker">
+                  <Button variant="soft-secondary" size="default" @click="openOrderSongPicker">
                     <Icon :icon="iconPlus" width="14" height="14" />
                     {{ isOwner ? '添加歌曲' : '点歌' }}
                   </Button>
                   <Button
                     class="action-icon listen-panel-refresh-button"
                     variant="ghost"
-                    size="xs"
+                    size="icon"
                     tooltip="刷新房间歌单"
                     aria-label="刷新房间歌单"
                     @click="refreshRoomSongs"
@@ -1583,7 +1588,7 @@ onBeforeUnmount(() => {
                 <Button
                   v-if="isOwner"
                   variant="secondary"
-                  size="xs"
+                  size="default"
                   :disabled="updatingChat"
                   @click="toggleChat"
                 >
@@ -1644,7 +1649,7 @@ onBeforeUnmount(() => {
                 <Tooltip :content="chatCooldown ? '发送过于频繁，请稍候' : '发送消息'">
                   <template #trigger>
                     <button
-                      class="action-icon soft-neutral-action"
+                      class="action-icon soft-neutral-action echo-button-sized echo-button-icon"
                       type="button"
                       :disabled="
                         !messageText.trim() ||
@@ -1718,11 +1723,11 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <template #footer>
-        <Button variant="secondary" size="sm" @click="previewOpen = false">取消</Button>
+        <Button variant="secondary" size="default" @click="previewOpen = false">取消</Button>
         <Button
           v-if="previewRoom"
           variant="soft-secondary"
-          size="sm"
+          size="default"
           @click="shareRoom(previewRoom)"
         >
           <Icon :icon="iconShare" width="16" height="16" />
@@ -1731,12 +1736,12 @@ onBeforeUnmount(() => {
         <Button
           v-if="roomScope === 'mine' && previewRoom"
           variant="danger"
-          size="sm"
+          size="default"
           @click="openOwnedRoomDismiss(previewRoom)"
         >
           解散房间
         </Button>
-        <Button size="sm" :loading="phase === 'joining'" @click="joinPreviewRoom">
+        <Button size="default" :loading="phase === 'joining'" @click="joinPreviewRoom">
           <Icon :icon="iconHeadphones" width="16" height="16" />
           加入一起听
         </Button>
@@ -1750,7 +1755,7 @@ onBeforeUnmount(() => {
       <template #footer>
         <Button
           variant="secondary"
-          size="sm"
+          size="default"
           :disabled="dismissingOwnedRoom"
           @click="dismissOwnedOpen = false"
         >
@@ -1758,7 +1763,7 @@ onBeforeUnmount(() => {
         </Button>
         <Button
           variant="danger"
-          size="sm"
+          size="default"
           :loading="dismissingOwnedRoom"
           @click="confirmDismissOwnedRoom"
         >
@@ -1829,13 +1834,13 @@ onBeforeUnmount(() => {
       <template #footer>
         <Button
           variant="secondary"
-          size="sm"
+          size="default"
           :disabled="phase === 'creating'"
           @click="createOpen = false"
           >取消</Button
         >
         <Button
-          size="sm"
+          size="default"
           :disabled="!canCreate"
           :loading="phase === 'creating'"
           @click="submitCreateRoom"
@@ -1891,9 +1896,8 @@ onBeforeUnmount(() => {
             v-model="orderSongSearchKeyword"
             placeholder="搜索歌名或歌手"
             aria-label="搜索点播歌曲"
-            input-class="!h-10 !rounded-xl !pl-4 !text-xs"
           />
-          <Button size="sm" :loading="searchingOrderSongs" type="submit">
+          <Button size="default" :loading="searchingOrderSongs" type="submit">
             <Icon :icon="iconSearch" width="15" height="15" />
             搜索
           </Button>
@@ -1966,10 +1970,12 @@ onBeforeUnmount(() => {
         </Scrollbar>
       </div>
       <template v-if="isOwner" #footer>
-        <Button variant="secondary" size="sm" @click="orderSongPickerOpen = false">取消</Button>
+        <Button variant="secondary" size="default" @click="orderSongPickerOpen = false"
+          >取消</Button
+        >
         <Button
           variant="primary"
-          size="sm"
+          size="default"
           :disabled="selectedOrderSongs.length === 0 || addingOrderSongs"
           :loading="addingOrderSongs"
           @click="addSelectedOrderSongs"
@@ -2004,14 +2010,14 @@ onBeforeUnmount(() => {
               <div class="listen-song-order-actions">
                 <Button
                   variant="secondary"
-                  size="xs"
+                  size="default"
                   :disabled="Boolean(handlingSongOrderId)"
                   @click="removeSongOrder(order)"
                 >
                   忽略
                 </Button>
                 <Button
-                  size="xs"
+                  size="default"
                   :loading="handlingSongOrderId === order.id"
                   :disabled="Boolean(handlingSongOrderId)"
                   @click="approveSongOrder(order)"
@@ -2040,7 +2046,7 @@ onBeforeUnmount(() => {
       <template #footer>
         <Button
           variant="secondary"
-          size="sm"
+          size="default"
           :disabled="phase === 'leaving'"
           @click="leaveOpen = false"
           >取消</Button
@@ -2048,12 +2054,12 @@ onBeforeUnmount(() => {
         <Button
           v-if="isOwner"
           variant="danger"
-          size="sm"
+          size="default"
           :loading="phase === 'leaving'"
           @click="confirmLeave(true)"
           >结束一起听</Button
         >
-        <Button size="sm" :loading="phase === 'leaving'" @click="confirmLeave(false)">{{
+        <Button size="default" :loading="phase === 'leaving'" @click="confirmLeave(false)">{{
           isOwner ? '返回房间列表' : '离开房间'
         }}</Button>
       </template>

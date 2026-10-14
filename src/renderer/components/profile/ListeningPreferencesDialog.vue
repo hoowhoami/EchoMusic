@@ -136,7 +136,7 @@ watch(account, () => {
     <template #headerActions>
       <Button
         variant="ghost"
-        size="xs"
+        size="icon"
         class="action-icon preferences-refresh"
         :disabled="!loaded || busy || dirty"
         aria-label="刷新听歌偏好"
@@ -149,7 +149,7 @@ watch(account, () => {
     <div class="preferences-body" :aria-busy="busy">
       <div v-if="error" class="preferences-error" role="alert">
         <span>{{ error }}</span
-        ><Button v-if="!loaded" size="xs" variant="outline" :disabled="busy" @click="load()"
+        ><Button v-if="!loaded" size="default" variant="outline" :disabled="busy" @click="load()"
           >重新加载</Button
         >
       </div>
@@ -158,7 +158,7 @@ watch(account, () => {
           <h4>推荐偏好</h4>
           <Button
             variant="soft-secondary"
-            size="none"
+            size="default"
             type="button"
             class="preferences-blacklist-button"
             :disabled="saving"
@@ -308,13 +308,13 @@ watch(account, () => {
         <div class="preferences-footer-actions">
           <Button
             variant="secondary"
-            size="sm"
+            size="default"
             :disabled="!loaded || busy || !canReset"
             @click="resetDefaults"
             >恢复默认</Button
           >
           <Button
-            size="sm"
+            size="default"
             :loading="saving"
             :disabled="!loaded || loading || !dirty"
             @click="submit"
@@ -331,8 +331,8 @@ watch(account, () => {
     description="你的选择还没有保存，关闭后将丢弃本次修改。"
   >
     <template #footer>
-      <Button variant="outline" size="sm" @click="confirmDiscard = false">继续编辑</Button>
-      <Button variant="danger" size="sm" @click="discardAndClose">放弃修改</Button>
+      <Button variant="outline" size="default" @click="confirmDiscard = false">继续编辑</Button>
+      <Button variant="danger" size="default" @click="discardAndClose">放弃修改</Button>
     </template>
   </Dialog>
 </template>
@@ -350,8 +350,6 @@ watch(account, () => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 30px;
-  padding: 5px 10px;
   border-radius: var(--radius-control);
   font-size: 11px;
   font-weight: 700;
@@ -460,6 +458,7 @@ watch(account, () => {
   font-weight: 600;
   color: var(--color-text-secondary);
 }
+
 .preferences-tags {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -535,12 +534,6 @@ watch(account, () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-}
-.preferences-refresh {
-  width: 32px;
-  height: 32px;
-  min-width: 0;
-  padding: 0;
 }
 .preferences-footer p {
   margin-top: 10px;

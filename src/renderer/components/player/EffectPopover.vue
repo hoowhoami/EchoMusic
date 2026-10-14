@@ -5,20 +5,14 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { computed, nextTick, ref, shallowRef, useId, watch } from 'vue';
 import { useThrottleFn } from '@vueuse/core';
-import {
-  SliderTrack,
-  SliderRange,
-  SliderThumb,
-  TabsRoot,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from 'reka-ui';
+import { SliderTrack, SliderRange, SliderThumb, TabsRoot, TabsContent } from 'reka-ui';
 import { Icon } from '@iconify/vue';
 import Popover from '@/components/ui/Popover.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Button from '@/components/ui/Button.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
+import TabsList from '@/components/ui/TabsList.vue';
+import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
@@ -917,7 +911,12 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
         <div v-if="activeTab === 'eq'" class="panel-content">
           <div class="panel-header">
             <span class="panel-title">自定义调节</span>
-            <Button variant="secondary" size="xs" :disabled="providerEqLocked" @click="resetGains">
+            <Button
+              variant="secondary"
+              size="compact"
+              :disabled="providerEqLocked"
+              @click="resetGains"
+            >
               重置
             </Button>
           </div>
@@ -1012,7 +1011,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                 <template #trigger>
                   <button
                     type="button"
-                    class="original-effect-button app-focus-ring-soft"
+                    class="original-effect-button app-focus-ring-soft echo-button-sized echo-button-standard"
                     :class="[
                       !currentPlaybackEffectSelection.active
                         ? 'soft-accent-action'
@@ -1066,6 +1065,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
           <div class="irs-library-nav">
             <CustomTabBar
               class="irs-library-tabs"
+              size="sm"
               :tabs="['引擎预设', '我的音效']"
               :model-value="activeImpulseResponseLibraryTab === 'engine' ? 0 : 1"
               aria-label="音效库"
@@ -1090,15 +1090,15 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
             v-model="activeMyEffectSource"
             class="my-effect-library"
           >
-            <TabsList class="my-effect-source-tabs" aria-label="我的音效分类">
+            <TabsList variant="equal" class="my-effect-source-tabs" aria-label="我的音效分类">
               <TabsTrigger
                 v-for="group in myEffectGroups"
                 :key="group.id"
                 :value="group.id"
                 class="my-effect-source-tab"
-                :class="{ 'contains-active': isMyEffectSourceActive(group.id) }"
+                :data-highlighted="isMyEffectSourceActive(group.id) || undefined"
               >
-                <span class="my-effect-source-label">
+                <span class="my-effect-source-label badge-label">
                   <span>{{ group.label }}</span>
                   <span
                     v-if="isMyEffectSourceActive(group.id)"
@@ -1106,7 +1106,14 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                     role="img"
                     :aria-label="`当前音效位于${group.label}`"
                   ></span>
-                  <small class="my-effect-source-count">{{ group.files.length }}</small>
+                  <Badge
+                    :count="group.files.length"
+                    :tone="
+                      activeMyEffectSource === group.id || isMyEffectSourceActive(group.id)
+                        ? 'accent'
+                        : 'neutral'
+                    "
+                  />
                 </span>
               </TabsTrigger>
             </TabsList>
@@ -1167,7 +1174,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                     <small>前往音效广场，找到喜欢的音效</small>
                     <button
                       type="button"
-                      class="soft-neutral-action"
+                      class="soft-neutral-action echo-button-sized echo-button-standard"
                       @click="openMyEffectPlaza(group.id)"
                     >
                       去音效广场
@@ -1207,6 +1214,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                   <span>输出设备</span>
                   <CustomTabBar
                     class="spatial-provider-mode-tabs"
+                    size="sm"
                     :tabs="['扬声器', '耳机']"
                     :model-value="activeProviderMode === 'speaker' ? 0 : 1"
                     role="radiogroup"
@@ -1283,7 +1291,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                       <template #trigger>
                         <button
                           type="button"
-                          class="action-icon provider-preset-settings"
+                          class="action-icon provider-preset-settings echo-button-sized echo-button-icon"
                           :aria-label="`${preset.label}设置`"
                           :aria-controls="providerSettingsPanelId"
                           :aria-expanded="
@@ -1346,7 +1354,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                   </Tooltip>
                   <Button
                     variant="outline"
-                    size="xs"
+                    size="compact"
                     type="button"
                     :loading="activatingProviderId === provider.providerId"
                     :disabled="!!activatingProviderId"
@@ -1385,7 +1393,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
             <template #trigger>
               <button
                 type="button"
-                class="action-icon provider-settings-back"
+                class="action-icon provider-settings-back echo-button-sized echo-button-icon"
                 aria-label="返回引擎预设"
                 @click="closeProviderSettings"
               >
@@ -1400,7 +1408,9 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
               {{ activeProviderMode === 'headphone' ? '耳机' : '扬声器' }}</small
             >
           </div>
-          <Button variant="secondary" size="xs" @click="resetProviderControls">恢复默认</Button>
+          <Button variant="secondary" size="compact" @click="resetProviderControls"
+            >恢复默认</Button
+          >
         </div>
         <Scrollbar class="panel-scroll provider-settings-scroll">
           <section class="provider-settings-panel">
@@ -1480,6 +1490,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                 </div>
                 <Select
                   v-else-if="control.type === 'select'"
+                  size="small"
                   :model-value="JSON.stringify(providerControlValue(control))"
                   :options="providerSelectOptions(control)"
                   :disabled="providerControlDisabled(control)"
@@ -1529,9 +1540,9 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   padding: 12px 10px;
 }
 .provider-settings-back {
+  --button-height: var(--control-height-small);
   display: inline-flex;
-  flex: 0 0 28px;
-  height: 28px;
+  flex: 0 0 var(--button-height);
   align-items: center;
   justify-content: center;
   border: 0;
@@ -1994,14 +2005,14 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 }
 
 .original-effect-button {
+  --button-height: 26px;
+  --button-padding-x: 10px;
   position: relative;
   display: inline-flex;
   flex: 0 0 auto;
-  height: 26px;
   align-items: center;
   justify-content: center;
   min-width: 46px;
-  padding: 0 10px;
   border-radius: var(--radius-control);
   font-size: 10px;
   font-weight: 700;
@@ -2014,11 +2025,11 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 }
 
 .original-effect-button.is-active::after {
+  height: 4px;
   position: absolute;
   top: 3px;
   right: 3px;
   width: 4px;
-  height: 4px;
   border-radius: 50%;
   background: var(--color-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 14%, transparent);
@@ -2183,75 +2194,15 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 }
 
 .my-effect-source-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  flex: 0 0 auto;
-  gap: 4px;
+  --underline-tab-height: 34px;
   margin: 0 10px 3px;
-  border-bottom: 1px solid var(--control-border);
-}
-
-.my-effect-source-tab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-width: 0;
-  height: 34px;
-  padding: 0 2px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.my-effect-source-tab:hover,
-.my-effect-source-tab[data-state='active'] {
-  color: var(--color-primary-text);
-}
-
-.my-effect-source-tab.contains-active {
-  color: var(--color-primary-text);
-}
-
-.my-effect-source-tab[data-state='active'] {
-  border-bottom-color: var(--color-primary);
 }
 
 .my-effect-source-label {
-  position: relative;
   display: inline-flex;
   min-width: 0;
   align-items: center;
   gap: 6px;
-}
-
-.my-effect-source-count {
-  position: absolute;
-  top: -7px;
-  left: calc(100% + 2px);
-  display: inline-flex;
-  min-width: 13px;
-  height: 13px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 3px;
-  border-radius: 9999px;
-  background: var(--control-muted-bg);
-  color: var(--color-text-secondary);
-  font-size: 8px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.my-effect-source-tab[data-state='active'] .my-effect-source-count,
-.my-effect-source-tab.contains-active .my-effect-source-count {
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-elevated));
-  color: var(--color-primary-text);
 }
 
 .my-effect-source-current,
@@ -2264,7 +2215,6 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
-.my-effect-source-tab:focus-visible,
 .my-effect-empty button:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: -2px;
@@ -2289,8 +2239,9 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 }
 
 .my-effect-empty button {
+  --button-height: var(--control-height-small);
+  --button-padding-x: 10px;
   margin-top: 3px;
-  padding: 5px 10px;
   border-radius: var(--radius-control);
   font-size: 11px;
   cursor: pointer;
@@ -2420,10 +2371,9 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
 }
 
 .provider-preset-settings {
+  --button-height: var(--control-height-small);
   display: inline-flex;
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
+  flex: 0 0 var(--button-height);
   margin-right: 4px;
   align-items: center;
   justify-content: center;

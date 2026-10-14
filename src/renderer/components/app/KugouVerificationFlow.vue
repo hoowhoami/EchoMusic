@@ -547,7 +547,7 @@ onBeforeUnmount(resetTencentCaptcha);
           v-model="smsCode"
           type="text"
           placeholder="验证码"
-          input-class="text-center tracking-[4px] pr-6"
+          input-class="text-center tracking-[4px]"
           :show-clear="false"
           @keyup.enter="submitSmsCode"
         />

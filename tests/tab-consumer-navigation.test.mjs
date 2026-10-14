@@ -91,7 +91,7 @@ test('Effect plaza category/sort tabs keep stable API values and invoke the exis
   });
   const view = setup(t, 'components/player/EffectPlaza.vue', { plaza });
   view.selectCategoryTab(2);
-  view.selectSortTab(1);
+  view.selectSortTab(3);
   assert.deepEqual(calls, [
     ['category', 'market'],
     ['sort', 3],

@@ -21,7 +21,7 @@ const handleClick = () => {
 <template>
   <Button
     variant="soft-secondary"
-    size="none"
+    size="default"
     type="button"
     class="custom-selector"
     :class="props.class"
@@ -36,7 +36,7 @@ const handleClick = () => {
 @reference "@/style.css";
 
 .custom-selector {
-  @apply inline-flex items-center gap-2 h-9 px-[14px] rounded-control text-text-main text-[13px] font-semibold;
+  @apply inline-flex items-center gap-2 rounded-control text-text-main text-[13px] font-semibold;
 }
 
 .custom-selector-label {

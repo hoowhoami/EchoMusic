@@ -131,7 +131,6 @@ const popoverOpen = computed({
   display: inline-grid;
   place-items: center;
   width: 44px;
-  padding: 2px 4px;
   border-radius: var(--radius-detail);
   color: var(--color-text-secondary);
   font-size: 11px;

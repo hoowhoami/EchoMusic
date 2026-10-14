@@ -383,10 +383,15 @@ onBeforeUnmount(() => {
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        <Button variant="unstyled" size="none" class="settings-action" @click="openExportDialog">
+        <Button variant="unstyled" size="default" class="settings-action" @click="openExportDialog">
           创建备份
         </Button>
-        <Button variant="unstyled" size="none" class="settings-action" @click="openRestoreDialog">
+        <Button
+          variant="unstyled"
+          size="default"
+          class="settings-action"
+          @click="openRestoreDialog"
+        >
           恢复备份
         </Button>
       </div>
@@ -399,7 +404,7 @@ onBeforeUnmount(() => {
       </div>
       <Button
         variant="unstyled"
-        size="none"
+        size="default"
         class="settings-action"
         @click="settingStore.openLogDirectory()"
       >
@@ -414,7 +419,7 @@ onBeforeUnmount(() => {
       </div>
       <Button
         variant="unstyled"
-        size="none"
+        size="default"
         class="settings-action settings-action-danger"
         @click="onClear"
       >
@@ -471,10 +476,15 @@ onBeforeUnmount(() => {
       备份内容未加密，任何拿到数据的人都可能读取其中的插件账号与数据。选择插件存储时，备份数据会交给对应插件处理。
     </p>
     <template #footer>
-      <Button variant="outline" size="sm" :disabled="isExporting" @click="showExportDialog = false">
+      <Button
+        variant="outline"
+        size="default"
+        :disabled="isExporting"
+        @click="showExportDialog = false"
+      >
         取消
       </Button>
-      <Button size="sm" :disabled="!canExport" :loading="isExporting" @click="handleExport">
+      <Button size="default" :disabled="!canExport" :loading="isExporting" @click="handleExport">
         {{ createActionLabel }}
       </Button>
     </template>
@@ -514,7 +524,7 @@ onBeforeUnmount(() => {
         <span>可用备份</span>
         <Button
           variant="secondary"
-          size="xs"
+          size="default"
           :loading="isListingBackups"
           :disabled="isInspecting"
           @click="refreshProviderBackups"
@@ -555,14 +565,14 @@ onBeforeUnmount(() => {
     <template #footer>
       <Button
         variant="outline"
-        size="sm"
+        size="default"
         :disabled="isInspecting"
         @click="showRestoreSourceDialog = false"
       >
         取消
       </Button>
       <Button
-        size="sm"
+        size="default"
         :disabled="!canReadSelectedBackup || isListingBackups"
         :loading="isInspecting"
         @click="handleChooseImport"
@@ -607,10 +617,15 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <template #footer>
-      <Button variant="outline" size="sm" :disabled="isImporting" @click="showImportDialog = false">
+      <Button
+        variant="outline"
+        size="default"
+        :disabled="isImporting"
+        @click="showImportDialog = false"
+      >
         取消
       </Button>
-      <Button size="sm" :disabled="!canImport" :loading="isImporting" @click="handleImport">
+      <Button size="default" :disabled="!canImport" :loading="isImporting" @click="handleImport">
         恢复并重启
       </Button>
     </template>

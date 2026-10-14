@@ -734,7 +734,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
                 <template #trigger>
                   <button
                     type="button"
-                    class="action-icon settings-search-icon-button"
+                    class="action-icon settings-search-icon-button echo-button-sized echo-button-icon"
                     aria-label="搜索设置"
                     @click="expandSettingsSearch"
                   >
@@ -778,7 +778,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
             <button
               v-if="props.embedded"
               type="button"
-              class="action-icon settings-modal-close"
+              class="action-icon settings-modal-close echo-button-sized echo-button-icon"
               aria-label="关闭设置"
               @click="closeSettings"
             >
@@ -827,7 +827,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
               <span>没有找到匹配的设置</span>
               <button
                 type="button"
-                class="settings-action settings-empty-clear"
+                class="settings-action settings-empty-clear echo-button-sized echo-button-standard"
                 @click="clearSettingsSearch"
               >
                 清空搜索
@@ -858,14 +858,14 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
           <Button
             class="settings-button"
             variant="outline"
-            size="sm"
+            size="default"
             @click="showConfirmClear = false"
             >取消</Button
           >
           <Button
             class="settings-button"
             variant="danger"
-            size="sm"
+            size="default"
             @click="
               settingStore.clearAppData();
               showConfirmClear = false;
@@ -886,7 +886,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
           <div class="changelog-content" v-html="changelogHtml"></div>
         </Scrollbar>
         <template #footer>
-          <Button variant="secondary" size="sm" @click="showChangelog = false">关闭</Button>
+          <Button variant="secondary" size="default" @click="showChangelog = false">关闭</Button>
         </template>
       </Dialog>
 
@@ -947,8 +947,6 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
   border-radius: var(--radius-control);
   color: var(--icon-main);
   transition:
@@ -1067,8 +1065,6 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
   border-radius: var(--radius-control);
   color: var(--color-text-main);
   cursor: pointer;
@@ -1231,7 +1227,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 }
 
 .settings-empty-clear {
-  @apply min-h-8 rounded-control px-3 text-[12px] font-semibold;
+  @apply rounded-control text-[12px] font-semibold;
 }
 
 .settings-section {

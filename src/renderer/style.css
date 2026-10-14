@@ -2,13 +2,15 @@
 @import './motion.css';
 @import './theme/surfaces.css';
 @import './theme/shapes.css';
+@import './theme/fields.css';
+@import './theme/buttons.css';
 @import './theme/badges.css';
 @import './theme/sliders.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --scroll-action-size: 32px;
+  --scroll-action-size: var(--button-height);
   --surface-sidebar-base: var(--theme-shell, #f6f6f6);
   --surface-main-base: #ffffff;
   --surface-card-base: #ffffff;

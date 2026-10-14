@@ -577,7 +577,7 @@ onBeforeUnmount(() => {
         <p>{{ searchErrors[activeSearchType] }}</p>
         <Button
           variant="secondary"
-          size="sm"
+          size="default"
           @click="loadSearchResults(activeSearchType, { useGlobalLoading: true })"
           >重新搜索</Button
         >

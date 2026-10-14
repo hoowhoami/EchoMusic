@@ -244,7 +244,7 @@ const applyDesktopLyricColor = async (value: string) => {
         </div>
         <div class="settings-color-actions">
           <button
-            class="settings-action"
+            class="settings-action echo-button-sized echo-button-standard"
             type="button"
             :class="{ invisible: !hasCustomDesktopLyricColors }"
             @click="

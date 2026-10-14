@@ -481,7 +481,7 @@ watch(
         <div class="share-resolve-actions">
           <Button
             variant="primary"
-            size="sm"
+            size="default"
             class="share-resolve-action"
             :disabled="resolving"
             @click="handleRetry"
@@ -489,11 +489,21 @@ watch(
             <Icon :icon="iconRefreshCw" width="15" height="15" />
             重新打开
           </Button>
-          <Button variant="secondary" size="sm" class="share-resolve-action" @click="handleGoHome">
+          <Button
+            variant="secondary"
+            size="default"
+            class="share-resolve-action"
+            @click="handleGoHome"
+          >
             <Icon :icon="iconHome" width="15" height="15" />
             回到首页
           </Button>
-          <Button variant="secondary" size="sm" class="share-resolve-action" @click="handleGoBack">
+          <Button
+            variant="secondary"
+            size="default"
+            class="share-resolve-action"
+            @click="handleGoBack"
+          >
             <Icon :icon="iconArrowLeft" width="15" height="15" />
             返回上页
           </Button>

@@ -57,7 +57,7 @@ onMounted(() => {
       </div>
       <div class="flex items-center gap-2">
         <button
-          class="settings-action"
+          class="settings-action echo-button-sized echo-button-standard"
           v-if="settingStore.globalFont !== 'system-ui'"
           type="button"
           @click="settingStore.globalFont = 'system-ui'"
@@ -81,7 +81,7 @@ onMounted(() => {
       </div>
       <div class="flex items-center gap-2">
         <button
-          class="settings-action"
+          class="settings-action echo-button-sized echo-button-standard"
           v-if="settingStore.lyricFont !== 'follow'"
           type="button"
           @click="settingStore.lyricFont = 'follow'"
@@ -105,7 +105,7 @@ onMounted(() => {
       </div>
       <div class="flex items-center gap-2">
         <button
-          class="settings-action"
+          class="settings-action echo-button-sized echo-button-standard"
           v-if="desktopLyricFontName !== 'follow'"
           type="button"
           @click="applyDesktopLyricFont('follow')"

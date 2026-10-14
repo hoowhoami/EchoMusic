@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
+import CastDeviceInfo from './CastDeviceInfo.vue';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
@@ -43,10 +44,6 @@ const statusText = computed(() => {
   return '';
 });
 
-const protocolLabel = (target: OutputTargetView) =>
-  target.protocol === 'dlna' ? 'DLNA' : (target.note ?? 'AirPlay');
-const targetMeta = (target: OutputTargetView) => (target.note ? target.note : '');
-const deviceName = (target: OutputTargetView) => target.displayName || protocolLabel(target);
 const isConnectingTarget = (target: OutputTargetView) =>
   output.connectingTargetId === target.targetId;
 const isTargetAvailable = (target: OutputTargetView) => target.connection?.available !== false;
@@ -115,7 +112,7 @@ onUnmounted(() => {
           <template #trigger>
             <button
               type="button"
-              class="action-icon cast-panel-icon-button app-focus-ring-soft"
+              class="action-icon cast-panel-icon-button app-focus-ring-soft echo-button-sized echo-button-icon"
               :disabled="output.busy || output.searching || !settingStore.networkPlaybackEnabled"
               aria-label="刷新设备"
               @click="output.refresh()"
@@ -133,7 +130,7 @@ onUnmounted(() => {
           <template #trigger>
             <button
               type="button"
-              class="action-icon cast-panel-icon-button app-focus-ring-soft"
+              class="action-icon cast-panel-icon-button app-focus-ring-soft echo-button-sized echo-button-icon"
               aria-label="投放设置"
               @click="openCastSettings"
             >
@@ -153,7 +150,7 @@ onUnmounted(() => {
       <span>{{ output.snapshot?.protocol === 'dlna' ? 'DLNA 投放' : 'AirPlay 投放' }}</span>
       <button
         type="button"
-        class="cast-stop-button soft-neutral-action app-focus-ring-soft"
+        class="cast-stop-button soft-neutral-action app-focus-ring-soft echo-button-sized echo-button-standard"
         :disabled="output.busy"
         @click="output.useLocal()"
       >
@@ -186,14 +183,7 @@ onUnmounted(() => {
             "
             @click="choose(target)"
           >
-            <span class="cast-device-name">{{ deviceName(target) }}</span>
-            <span v-if="isConnectingTarget(target)" class="cast-device-meta is-connecting">
-              <Icon :icon="iconLoader2" width="12" height="12" class="animate-spin" />
-              连接中
-            </span>
-            <span v-else-if="targetMeta(target)" class="cast-device-meta">
-              {{ targetMeta(target) }}
-            </span>
+            <CastDeviceInfo :target="target" :connecting="isConnectingTarget(target)" />
           </button>
           <p v-if="dlnaTargets.length === 0" class="cast-empty">
             {{ output.searching ? '正在搜索设备' : '没有找到设备' }}
@@ -213,14 +203,10 @@ onUnmounted(() => {
               class="cast-device-row cast-device-row-expanded"
               :class="{ active: isActiveTarget(target), connecting: isConnectingTarget(target) }"
             >
-              <div class="cast-device-main">
-                <span class="cast-device-name">{{ deviceName(target) }}</span>
-                <span v-if="targetMeta(target)" class="cast-device-meta">
-                  {{ targetMeta(target) }}
-                </span>
-              </div>
+              <CastDeviceInfo :target="target" :connecting="isConnectingTarget(target)" />
               <div class="cast-pin-form">
                 <Input
+                  size="small"
                   v-model="pin"
                   class="cast-pin-input"
                   input-class="cast-pin-input-control"
@@ -231,7 +217,7 @@ onUnmounted(() => {
                 <Button
                   class="cast-pin-submit"
                   variant="secondary"
-                  size="none"
+                  size="default"
                   :disabled="output.busy"
                   @click="submitPin"
                 >
@@ -249,14 +235,7 @@ onUnmounted(() => {
               "
               @click="choose(target)"
             >
-              <span class="cast-device-name">{{ deviceName(target) }}</span>
-              <span v-if="isConnectingTarget(target)" class="cast-device-meta is-connecting">
-                <Icon :icon="iconLoader2" width="12" height="12" class="animate-spin" />
-                连接中
-              </span>
-              <span v-else-if="targetMeta(target)" class="cast-device-meta">
-                {{ targetMeta(target) }}
-              </span>
+              <CastDeviceInfo :target="target" :connecting="isConnectingTarget(target)" />
             </button>
           </template>
           <p v-if="airplayTargets.length === 0" class="cast-empty">
@@ -271,7 +250,7 @@ onUnmounted(() => {
 <style scoped>
 .cast-panel {
   width: 286px;
-  max-width: calc(100vw - 32px);
+  max-width: min(100%, calc(100vw - 32px));
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -309,7 +288,6 @@ onUnmounted(() => {
 
 .cast-panel-title span,
 .cast-section-title small,
-.cast-device-meta,
 .cast-empty,
 .cast-panel-status {
   color: var(--color-text-secondary);
@@ -331,6 +309,7 @@ onUnmounted(() => {
 
 .cast-panel-icon,
 .cast-panel-icon-button {
+  --button-height: 24px;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -369,8 +348,6 @@ onUnmounted(() => {
 }
 
 .cast-panel-icon-button {
-  width: 24px;
-  height: 24px;
   border-radius: var(--radius-control);
   color: var(--icon-main);
 }
@@ -394,14 +371,13 @@ onUnmounted(() => {
 }
 
 .cast-stop-button {
+  --button-height: var(--control-height-compact);
   flex: 0 0 86px;
   width: 86px;
-  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 0;
   border: 0;
   border-radius: var(--radius-control);
   font-size: 12px;
@@ -460,12 +436,12 @@ onUnmounted(() => {
 .cast-device-row {
   position: relative;
   display: grid;
-  /* 设备名优先拿到空间：meta 列可收缩并省略，名字只在名字本身过长时才截断。 */
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
-  min-height: 32px;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  min-height: 50px;
   align-items: center;
   gap: 8px;
-  padding: 0 7px;
+  padding: 7px 9px;
   border: 1px solid transparent;
   border-radius: var(--radius-item);
   color: var(--color-text-main);
@@ -496,7 +472,7 @@ onUnmounted(() => {
   background: var(--color-primary);
 }
 
-.cast-device-row.active .cast-device-name {
+.cast-device-row.active .cast-device-info {
   padding-left: 5px;
 }
 
@@ -511,38 +487,6 @@ onUnmounted(() => {
   padding: 7px;
   border-color: color-mix(in srgb, var(--color-primary) 22%, transparent);
   background: color-mix(in srgb, var(--color-primary) 6%, var(--control-hover-bg));
-}
-
-.cast-device-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.cast-device-name {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cast-device-meta {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cast-device-meta.is-connecting {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--color-primary-text);
 }
 
 .cast-empty {
@@ -561,8 +505,6 @@ onUnmounted(() => {
 }
 
 .cast-pin-input :deep(.cast-pin-input-control) {
-  height: 28px;
-  padding-left: 8px;
   border-color: var(--control-border);
   border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--floating-surface-bg) 84%, transparent);
@@ -588,8 +530,7 @@ onUnmounted(() => {
 }
 
 .cast-pin-submit {
-  height: 28px;
-  padding: 0 12px;
+  --button-height: var(--control-height-small);
   border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 800;

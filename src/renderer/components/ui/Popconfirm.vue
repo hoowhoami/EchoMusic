@@ -100,7 +100,7 @@ const handleConfirm = () => {
       <div class="popconfirm-actions">
         <Button
           variant="secondary"
-          size="none"
+          size="default"
           type="button"
           class="popconfirm-action popconfirm-cancel app-focus-ring-soft"
           @click.stop="handleCancel"
@@ -109,7 +109,7 @@ const handleConfirm = () => {
         </Button>
         <Button
           :variant="tone === 'danger' ? 'danger' : 'primary'"
-          size="none"
+          size="default"
           type="button"
           :class="[
             'popconfirm-action popconfirm-confirm app-focus-ring-soft',
@@ -196,14 +196,13 @@ const handleConfirm = () => {
 }
 
 .popconfirm-action {
+  --button-height: var(--control-height-compact);
+  --button-padding-x: 10px;
   appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 28px;
-  min-height: 28px;
   box-sizing: border-box;
-  padding: 0 12px;
   border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 700;

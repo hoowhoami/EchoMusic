@@ -311,7 +311,7 @@ const handleFavorite = () => {
       <Button
         v-if="showCoverPlayButton"
         variant="unstyled"
-        size="none"
+        size="icon"
         class="action-icon song-cover-play"
         :class="{ 'is-loading': isCoverPlayPending, 'is-playing': isCoverPlaying }"
         :tooltip="coverPlayTitle"
@@ -378,7 +378,7 @@ const handleFavorite = () => {
       <Button
         v-if="hasMv"
         variant="unstyled"
-        size="none"
+        size="icon"
         type="button"
         class="action-icon song-action song-action-hover-only"
         tooltip="播放 MV"
@@ -388,7 +388,7 @@ const handleFavorite = () => {
       </Button>
       <Button
         variant="unstyled"
-        size="none"
+        size="icon"
         type="button"
         class="action-icon song-action song-action-hover-only"
         tooltip="详情及评论"
@@ -398,7 +398,7 @@ const handleFavorite = () => {
       </Button>
       <Button
         variant="unstyled"
-        size="none"
+        size="icon"
         type="button"
         class="action-icon song-action song-action-favorite"
         :class="{ 'is-active': isFavorite }"
@@ -464,8 +464,6 @@ const handleFavorite = () => {
   inset: 0;
   z-index: 2;
   margin: auto;
-  width: 28px;
-  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -600,8 +598,6 @@ const handleFavorite = () => {
 }
 
 .song-action {
-  width: 28px;
-  height: 28px;
   border-radius: var(--radius-control);
   display: flex;
   align-items: center;

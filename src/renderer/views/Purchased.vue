@@ -445,17 +445,17 @@ onUnmounted(() => {
             <template v-if="activeTab === 'songs'">
               <Button
                 variant="unstyled"
-                size="none"
+                size="icon"
                 @click="handlePlayAll"
-                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
+                class="action-icon hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>
               <Button
                 variant="unstyled"
-                size="none"
+                size="icon"
                 @click="openBatchDrawer"
-                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+                class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -497,9 +497,9 @@ onUnmounted(() => {
                     <Button
                       v-if="activeTab === 'songs'"
                       variant="unstyled"
-                      size="none"
+                      size="icon"
                       @click="handleLocate"
-                      class="action-icon song-locate-btn p-2"
+                      class="action-icon song-locate-btn"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="16" height="16" />
@@ -564,7 +564,7 @@ onUnmounted(() => {
               >
                 <Button
                   variant="secondary"
-                  size="sm"
+                  size="default"
                   :disabled="songsLoadingMore"
                   @click="loadMoreSongs"
                 >
@@ -611,7 +611,7 @@ onUnmounted(() => {
             <div v-if="albumsHasMore && !albumsLoading" class="flex justify-center pt-6 pb-4">
               <Button
                 variant="secondary"
-                size="sm"
+                size="default"
                 :disabled="albumsLoadingMore"
                 @click="loadMoreAlbums"
               >

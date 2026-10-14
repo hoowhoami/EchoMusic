@@ -129,7 +129,11 @@ const restoreDefaults = () =>
       </div>
     </div>
     <template #footer>
-      <Button variant="secondary" size="xs" :disabled="!hasCustomTextStyle" @click="restoreDefaults"
+      <Button
+        variant="secondary"
+        size="default"
+        :disabled="!hasCustomTextStyle"
+        @click="restoreDefaults"
         >恢复歌词默认</Button
       >
     </template>

@@ -59,7 +59,7 @@ const userCount = (count: number) =>
           <template #trigger>
             <button
               type="button"
-              class="effect-action soft-neutral-action"
+              class="effect-action soft-neutral-action echo-button-sized echo-button-standard"
               :class="{ 'is-active': plaza.isActive(effect) }"
               :disabled="unavailable || plaza.isActive(effect) || plaza.downloadingId !== null"
               :aria-label="`${plaza.downloadedEffect(effect) ? '使用' : '下载'}${effect.name}`"
@@ -167,14 +167,14 @@ const userCount = (count: number) =>
   font-size: 9px;
 }
 .effect-action {
+  --button-height: var(--control-height-small);
+  --button-padding-x: 8px;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: 4px;
   min-width: 58px;
-  height: 28px;
-  padding: 0 8px;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   font-size: 10px;

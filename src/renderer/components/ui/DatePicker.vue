@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
+import type { ControlSize } from './controlSizes';
 
 import { computed, ref, watch } from 'vue';
 import { useCachedOverlayOpen } from '@/composables/useCachedOverlayOpen';
@@ -44,6 +45,7 @@ interface Props {
   locale?: string;
   ariaLabel?: string;
   class?: HTMLAttributes['class'];
+  size?: ControlSize;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -53,6 +55,7 @@ const props = withDefaults(defineProps<Props>(), {
   clearable: false,
   locale: 'zh-CN',
   ariaLabel: '日期',
+  size: 'default',
 });
 
 const emit = defineEmits<{
@@ -115,7 +118,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
     <DatePickerAnchor as-child>
       <DatePickerField
         v-slot="{ segments }"
-        :class="['echo-date-picker-field', props.class]"
+        :class="['echo-date-picker-field echo-field-sized', `echo-field-${size}`, props.class]"
         :aria-label="ariaLabel"
       >
         <span v-if="!selectedDate" class="echo-date-picker-placeholder">{{ placeholder }}</span>
@@ -136,7 +139,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
         <button
           v-if="clearable && selectedDate"
           type="button"
-          class="action-icon echo-date-picker-action"
+          class="action-icon echo-date-picker-action echo-button-sized echo-button-icon"
           aria-label="清除日期"
           :disabled="disabled"
           @click.stop="selectedDate = undefined"
@@ -249,13 +252,13 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
 
 <style scoped>
 .echo-date-picker-field {
+  --button-height: var(--control-height-small);
   position: relative;
   display: flex;
   align-items: center;
   width: 100%;
-  height: 44px;
   min-width: 0;
-  padding: 0 8px 0 13px;
+  padding: 0 8px 0 var(--field-padding-x);
   color: var(--color-text-main);
   background: var(--field-bg);
   border: 0;
@@ -279,11 +282,11 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
 
 .echo-date-picker-placeholder {
   position: absolute;
-  left: 13px;
+  left: var(--field-padding-x);
   overflow: hidden;
   max-width: calc(100% - 52px);
   color: var(--color-text-secondary);
-  font-size: 13px;
+  font-size: var(--field-font-size);
   font-weight: 500;
   white-space: nowrap;
   pointer-events: none;
@@ -295,8 +298,8 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
   flex: 1;
   align-items: center;
   min-width: 0;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--field-font-size);
+  font-weight: var(--field-font-weight);
   font-variant-numeric: tabular-nums;
 }
 
@@ -333,12 +336,11 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
 
 .echo-date-picker-action {
   display: inline-flex;
-  flex: 0 0 28px;
+  flex: 0 0 var(--button-height);
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
+  width: var(--button-height);
+  height: var(--button-height);
   color: var(--icon-main);
   background: transparent;
   border: 0;

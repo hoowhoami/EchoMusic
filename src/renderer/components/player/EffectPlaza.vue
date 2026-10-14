@@ -6,6 +6,9 @@ import { Icon } from '@iconify/vue';
 import { iconArrowLeft, iconHeadphones, iconLoader2, iconRefreshCw } from '@/icons';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
+import Tabs from '@/components/ui/Tabs.vue';
+import TabsList from '@/components/ui/TabsList.vue';
+import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import OnlineAudioEffectCard from './OnlineAudioEffectCard.vue';
 import type { AudioEffectPlazaState, EffectPlazaCategory } from '@/composables/useAudioEffectPlaza';
 import type { CommunityAudioEffectSort } from '@/api/audioEffect';
@@ -25,8 +28,8 @@ const selectCategoryTab = (index: number) => {
   const category = categories[index];
   if (category) props.plaza.selectCategory(category.id);
 };
-const selectSortTab = (index: number) => {
-  const sort = sorts[index];
+const selectSortTab = (value: string | number) => {
+  const sort = sorts.find((item) => item.value === Number(value));
   if (sort) props.plaza.selectSort(sort.value);
 };
 const description = computed(
@@ -62,7 +65,7 @@ const refresh = () => {
         <template #trigger>
           <button
             type="button"
-            class="action-icon plaza-refresh"
+            class="action-icon plaza-refresh echo-button-sized echo-button-icon"
             :disabled="loading"
             aria-label="刷新音效广场"
             @click="refresh"
@@ -74,26 +77,26 @@ const refresh = () => {
     </header>
     <CustomTabBar
       class="plaza-tabs"
+      size="sm"
       :tabs="categories.map((item) => item.label)"
       :model-value="categories.findIndex((item) => item.id === plaza.category)"
       aria-label="音效分类"
       @update:model-value="selectCategoryTab"
     />
     <div v-if="plaza.category === 'market'" class="plaza-tools">
-      <CustomTabBar
-        class="plaza-sorts"
-        :tabs="sorts.map((sort) => sort.label)"
-        :model-value="sorts.findIndex((sort) => sort.value === plaza.marketSort)"
-        role="radiogroup"
-        aria-label="音效市场排序"
-        @update:model-value="selectSortTab"
-      />
+      <Tabs class="plaza-sorts" :model-value="plaza.marketSort" @update:model-value="selectSortTab">
+        <TabsList variant="equal" aria-label="音效市场排序">
+          <TabsTrigger v-for="sort in sorts" :key="sort.value" :value="sort.value">
+            {{ sort.label }}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
       <span v-if="plaza.currentPage.loaded">{{ plaza.currentPage.total }} 个音效</span>
     </div>
     <div v-else-if="plaza.category === 'headphone' && plaza.selectedBrand" class="plaza-tools">
       <button
         type="button"
-        class="plaza-back soft-secondary-action app-focus-ring-soft"
+        class="plaza-back soft-secondary-action app-focus-ring-soft echo-button-sized echo-button-standard"
         @click="plaza.selectBrand(null)"
       >
         <Icon :icon="iconArrowLeft" width="13" />全部品牌
@@ -122,7 +125,11 @@ const refresh = () => {
           </div>
           <div v-if="plaza.common.error" class="plaza-inline-state" role="status">
             {{ plaza.common.error
-            }}<button type="button" class="soft-neutral-action" @click="plaza.loadCommon">
+            }}<button
+              type="button"
+              class="soft-neutral-action echo-button-sized echo-button-standard"
+              @click="plaza.loadCommon"
+            >
               重试
             </button>
           </div>
@@ -152,7 +159,7 @@ const refresh = () => {
             {{ plaza.brands.error
             }}<button
               type="button"
-              class="soft-neutral-action"
+              class="soft-neutral-action echo-button-sized echo-button-standard"
               @click="plaza.loadBrands(plaza.brands.retryReset)"
             >
               重试
@@ -167,7 +174,7 @@ const refresh = () => {
           <button
             v-if="plaza.brands.hasMore && !plaza.brands.error"
             type="button"
-            class="plaza-more soft-secondary-action"
+            class="plaza-more soft-secondary-action echo-button-sized echo-button-standard"
             :disabled="plaza.brands.loading"
             @click="plaza.loadBrands()"
           >
@@ -186,7 +193,7 @@ const refresh = () => {
             <span>{{ plaza.currentPage.error }}</span
             ><button
               type="button"
-              class="soft-neutral-action"
+              class="soft-neutral-action echo-button-sized echo-button-standard"
               @click="plaza.loadEffects(plaza.currentPage.retryReset)"
             >
               重试
@@ -210,12 +217,18 @@ const refresh = () => {
                     ? '该品牌的耳机音效'
                     : '市场音效'
               }}</span
-            ><button type="button" class="soft-neutral-action" @click="refresh">重新加载</button>
+            ><button
+              type="button"
+              class="soft-neutral-action echo-button-sized echo-button-standard"
+              @click="refresh"
+            >
+              重新加载
+            </button>
           </div>
           <button
             v-if="plaza.currentPage.hasMore && !plaza.currentPage.error"
             type="button"
-            class="plaza-more soft-secondary-action"
+            class="plaza-more soft-secondary-action echo-button-sized echo-button-standard"
             :disabled="plaza.currentPage.loading"
             @click="plaza.loadEffects()"
           >
@@ -268,12 +281,11 @@ const refresh = () => {
   color: var(--color-text-secondary);
 }
 .plaza-refresh {
+  --button-height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 26px;
-  width: 26px;
-  height: 26px;
+  flex: 0 0 var(--button-height);
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
@@ -313,15 +325,15 @@ const refresh = () => {
   color: var(--color-text-secondary);
 }
 .plaza-sorts {
-  --custom-tab-width: 220px;
+  width: 220px;
   max-width: 100%;
 }
 .plaza-back {
+  --button-height: var(--control-height-small);
+  --button-padding-x: 8px;
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 28px;
-  padding: 4px 8px;
   border-radius: var(--radius-control);
   border: 0;
   font-size: 10px;
@@ -424,14 +436,15 @@ const refresh = () => {
 }
 .plaza-state button,
 .plaza-inline-state button {
+  --button-height: var(--control-height-small);
+  --button-padding-x: 8px;
   border: 0;
-  padding: 4px 8px;
-  min-height: 28px;
   border-radius: var(--radius-control);
   cursor: pointer;
 }
 .plaza-more {
-  min-height: 30px;
+  --button-height: var(--control-height-compact);
+  --button-padding-x: 10px;
   border: 0;
   border-radius: var(--radius-control);
   font-size: 11px;

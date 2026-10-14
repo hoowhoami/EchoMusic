@@ -335,7 +335,7 @@ watch(
       <div class="theme-heading-actions">
         <button
           ref="adjustmentsTrigger"
-          class="theme-action soft-secondary-action app-focus-ring-soft"
+          class="theme-action soft-secondary-action app-focus-ring-soft echo-button-sized echo-button-standard"
           :aria-expanded="showAdjustments"
           @click="showAdjustments = true"
         >
@@ -481,7 +481,7 @@ watch(
       </div>
       <button
         ref="adjustmentsClose"
-        class="action-icon theme-drawer-close"
+        class="action-icon theme-drawer-close echo-button-sized echo-button-icon"
         aria-label="关闭外观调整"
         @click="showAdjustments = false"
       >
@@ -498,14 +498,18 @@ watch(
             :key="theme.currentTheme.revision + theme.effectiveThemeKey"
             layer="settings"
           />
-          <Button variant="secondary" size="sm" @click="theme.resetThemeSettings()"
+          <Button variant="secondary" size="default" @click="theme.resetThemeSettings()"
             >重置专属参数</Button
           >
         </div>
       </details>
     </div>
     <footer class="theme-drawer-footer">
-      <Button variant="secondary" size="sm" :disabled="resettingAppearance" @click="resetAppearance"
+      <Button
+        variant="secondary"
+        size="default"
+        :disabled="resettingAppearance"
+        @click="resetAppearance"
         >恢复外观默认</Button
       >
     </footer>
@@ -728,7 +732,6 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 9px 12px;
   border-radius: var(--radius-control);
   font-size: 13px;
   cursor: pointer;
@@ -747,7 +750,6 @@ watch(
   font-weight: 600;
 }
 .theme-drawer-close {
-  padding: 6px;
   border-radius: var(--radius-control);
   cursor: pointer;
 }

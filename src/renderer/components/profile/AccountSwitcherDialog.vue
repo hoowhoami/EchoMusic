@@ -202,7 +202,7 @@ const removeAccount = () => {
         <Button
           v-if="managing && account.userid !== currentId"
           variant="danger"
-          size="xs"
+          size="default"
           class="saved-account-action"
           @click="removal = account"
           >移除</Button
@@ -210,7 +210,7 @@ const removeAccount = () => {
         <Button
           v-else-if="!managing && account.userid !== currentId"
           variant="secondary"
-          size="xs"
+          size="default"
           class="saved-account-action"
           @click="switchAccount(account)"
           >切换</Button
@@ -224,13 +224,13 @@ const removeAccount = () => {
           <Button
             v-if="accounts.length"
             variant="secondary"
-            size="sm"
+            size="default"
             @click="managing = !managing"
           >
             {{ managing ? '完成管理' : '管理账号' }}
           </Button>
         </div>
-        <Button variant="primary" size="sm" @click="addAccount">添加账号</Button>
+        <Button variant="primary" size="default" @click="addAccount">添加账号</Button>
       </div>
     </template>
   </Dialog>
@@ -248,8 +248,8 @@ const removeAccount = () => {
       </div>
     </div>
     <template #footer>
-      <Button variant="outline" size="sm" @click="removal = null">取消</Button>
-      <Button variant="danger" size="sm" @click="removeAccount">确认移除</Button>
+      <Button variant="outline" size="default" @click="removal = null">取消</Button>
+      <Button variant="danger" size="default" @click="removeAccount">确认移除</Button>
     </template>
   </Dialog>
 </template>

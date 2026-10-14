@@ -40,6 +40,7 @@ const rootPageTransitionMode = computed(() =>
 const rootPageTransitionAppear = computed(
   () =>
     !isMiniPlayerRoute.value &&
+    route.name !== 'loading' &&
     !suppressRootTransition.value &&
     pageTransitionState.enabled &&
     pageTransitionState.appear,

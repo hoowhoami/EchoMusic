@@ -21,7 +21,7 @@ defineEmits<{ retry: [] }>();
     role="alert"
   >
     <span>{{ activePagination.error }}</span>
-    <Button variant="secondary" size="sm" @click="$emit('retry')">重试加载</Button>
+    <Button variant="secondary" size="default" @click="$emit('retry')">重试加载</Button>
   </div>
   <div
     v-else-if="activePagination.loadingMore || activePagination.hasMore"

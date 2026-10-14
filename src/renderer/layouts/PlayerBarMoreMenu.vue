@@ -332,7 +332,7 @@ onBeforeUnmount(() => {
             <template #trigger>
               <button
                 type="button"
-                class="action-icon playerbar-edit-entry app-focus-ring-soft"
+                class="action-icon playerbar-edit-entry app-focus-ring-soft echo-button-sized echo-button-icon"
                 aria-label="编辑播放栏布局"
                 @click="editMode = true"
               >
@@ -387,7 +387,7 @@ onBeforeUnmount(() => {
         <div class="playerbar-more-heading-actions">
           <Button
             variant="ghost"
-            size="none"
+            size="icon"
             class="playerbar-edit-entry"
             aria-label="返回更多功能"
             tooltip="返回更多功能"
@@ -400,7 +400,7 @@ onBeforeUnmount(() => {
         <div class="playerbar-more-heading-actions">
           <button
             type="button"
-            class="playerbar-reset soft-secondary-action app-focus-ring-soft"
+            class="playerbar-reset soft-secondary-action app-focus-ring-soft echo-button-sized echo-button-standard"
             @click="settings.playerBarLayout = emptyPlayerBarLayout()"
           >
             恢复默认
@@ -690,8 +690,6 @@ onBeforeUnmount(() => {
 }
 
 .playerbar-reset {
-  min-height: 28px;
-  padding: 4px 8px;
   border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 500;
@@ -699,8 +697,6 @@ onBeforeUnmount(() => {
 
 .playerbar-edit-entry {
   display: inline-flex;
-  width: 28px;
-  height: 28px;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-control);

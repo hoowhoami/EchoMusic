@@ -585,7 +585,7 @@ const handleDeleteComment = async (comment: Comment) => {
               <template #trigger>
                 <Button
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   type="button"
                   class="action-icon comment-delete"
                   :disabled="isDeletingComment(comment)"
@@ -699,7 +699,7 @@ const handleDeleteComment = async (comment: Comment) => {
                     <template #trigger>
                       <Button
                         variant="unstyled"
-                        size="none"
+                        size="icon"
                         type="button"
                         class="action-icon floor-target-delete"
                         :disabled="isDeletingComment(reply)"
@@ -745,7 +745,7 @@ const handleDeleteComment = async (comment: Comment) => {
             <div v-if="canLoadMoreFloor(comment)" class="comment-floor-more">
               <Button
                 variant="unstyled"
-                size="none"
+                size="default"
                 type="button"
                 class="comment-floor-more-btn"
                 @click="loadMoreFloor(comment)"
@@ -1005,17 +1005,6 @@ const handleDeleteComment = async (comment: Comment) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
-}
-
-.comment-delete {
-  width: 24px;
-  height: 24px;
-}
-
-.floor-target-delete {
-  width: 20px;
-  height: 20px;
 }
 
 .comment-delete:hover,
@@ -1142,7 +1131,6 @@ const handleDeleteComment = async (comment: Comment) => {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-primary-text);
-  padding: 4px 12px;
   border-radius: var(--radius-control);
   transition: background 0.2s ease;
 }

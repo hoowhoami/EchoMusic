@@ -170,7 +170,7 @@ const resetMiniStyle = () => {
         <div class="settings-color-actions">
           <button
             type="button"
-            class="settings-action"
+            class="settings-action echo-button-sized echo-button-standard"
             :class="{
               invisible:
                 !settingStore.miniLyricFollowCoverColor &&
@@ -246,7 +246,13 @@ const resetMiniStyle = () => {
       <Switch v-model="settingStore.miniLyricBackgroundBlur" />
     </div>
     <div class="settings-color-actions">
-      <button type="button" class="settings-action" @click="resetMiniStyle">重置排版与背景</button>
+      <button
+        type="button"
+        class="settings-action echo-button-sized echo-button-standard"
+        @click="resetMiniStyle"
+      >
+        重置排版与背景
+      </button>
     </div>
     <ColorPickerDialog
       :open="activeColorField !== null"

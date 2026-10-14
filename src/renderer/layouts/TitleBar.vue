@@ -601,7 +601,7 @@ onUnmounted(() => {
     >
       <Button
         variant="unstyled"
-        size="none"
+        size="icon"
         @click="goBack"
         class="action-icon titlebar-icon-action nav-btn group icon-action"
         :disabled="!canGoBack"
@@ -611,7 +611,7 @@ onUnmounted(() => {
       </Button>
       <Button
         variant="unstyled"
-        size="none"
+        size="icon"
         @click="goForward"
         class="action-icon titlebar-icon-action nav-btn group icon-action"
         :disabled="!canGoForward"
@@ -621,7 +621,7 @@ onUnmounted(() => {
       </Button>
       <Button
         variant="unstyled"
-        size="none"
+        size="icon"
         @click="refresh"
         class="action-icon titlebar-icon-action nav-btn group icon-action"
         tooltip="刷新"
@@ -856,7 +856,7 @@ onUnmounted(() => {
               v-for="action in task.actions"
               :key="action.id"
               type="button"
-              class="task-text-action"
+              class="task-text-action echo-button-sized echo-button-standard"
               :class="{
                 'is-primary': action.variant === 'primary',
                 'soft-accent-action': action.variant === 'primary',
@@ -872,7 +872,7 @@ onUnmounted(() => {
             <button
               v-if="isManuallyDismissibleTask(task)"
               type="button"
-              class="task-text-action soft-secondary-action"
+              class="task-text-action soft-secondary-action echo-button-sized echo-button-standard"
               @click="dismissTaskEntry(task.id, task.generation)"
             >
               关闭
@@ -901,7 +901,7 @@ onUnmounted(() => {
               v-for="action in item.actions"
               :key="action.id"
               type="button"
-              class="task-text-action"
+              class="task-text-action echo-button-sized echo-button-standard"
               :class="{
                 'is-primary': action.variant === 'primary',
                 'soft-accent-action': action.variant === 'primary',
@@ -952,8 +952,6 @@ onUnmounted(() => {
 
 .nav-btn {
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1370,8 +1368,6 @@ onUnmounted(() => {
 .task-text-action {
   appearance: none;
   border: 0;
-  padding: 4px 8px;
-  min-height: 28px;
   font: inherit;
   font-size: 12px;
   cursor: pointer;

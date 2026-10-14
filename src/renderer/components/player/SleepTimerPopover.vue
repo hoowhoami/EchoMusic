@@ -219,7 +219,7 @@ const selectAction = (action: SleepTimerAction) => {
                 v-for="option in actionOptions"
                 :key="option.value"
                 type="button"
-                class="sleep-timer-action app-focus-ring-soft"
+                class="sleep-timer-action app-focus-ring-soft echo-button-sized echo-button-standard"
                 :class="{ 'is-selected': selectedAction === option.value }"
                 :aria-pressed="selectedAction === option.value"
                 :disabled="busy || (option.value === 'shutdown' && !shutdownSupported)"
@@ -273,7 +273,7 @@ const selectAction = (action: SleepTimerAction) => {
           <Button
             v-if="active"
             variant="secondary"
-            size="sm"
+            size="default"
             type="button"
             class="shrink-0"
             @click="player.cancelSleepTimer"
@@ -281,7 +281,7 @@ const selectAction = (action: SleepTimerAction) => {
           >
           <Button
             variant="primary"
-            size="sm"
+            size="default"
             type="submit"
             :disabled="!valid || busy"
             :loading="busy"
@@ -346,7 +346,6 @@ const selectAction = (action: SleepTimerAction) => {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 10px 12px;
   border: 1px solid var(--sleep-timer-border);
   border-radius: var(--radius-control);
   cursor: pointer;
@@ -482,8 +481,10 @@ const selectAction = (action: SleepTimerAction) => {
   gap: 10px;
 }
 .sleep-timer-input-row input {
+  box-sizing: border-box;
+  height: var(--control-height-compact);
   width: 104px;
-  padding: 8px 12px;
+  padding: 0 10px;
   border: 1px solid var(--sleep-timer-border);
   border-radius: var(--radius-control);
   background: var(--control-muted-bg);
@@ -515,6 +516,8 @@ const selectAction = (action: SleepTimerAction) => {
 .dark .sleep-timer-preset,
 .dark .sleep-timer-custom,
 .dark .sleep-timer-input-row input {
+  box-sizing: border-box;
+  height: var(--control-height-compact);
   border-color: var(--sleep-timer-border);
   background: color-mix(in srgb, var(--color-text-main) 3%, var(--color-bg-elevated));
 }

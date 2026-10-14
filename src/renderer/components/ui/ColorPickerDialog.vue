@@ -114,11 +114,7 @@ const confirm = () => {
           </Tooltip>
         </div>
         <div class="color-picker-input-wrap">
-          <Input
-            v-model="displayValue"
-            inputClass="!h-9 !rounded-lg !pl-3 !pr-3 !text-[13px] font-mono"
-            :show-clear="!isDynamicDraft"
-          />
+          <Input v-model="displayValue" inputClass="font-mono" :show-clear="!isDynamicDraft" />
         </div>
       </div>
 
@@ -179,14 +175,14 @@ const confirm = () => {
       <div class="color-picker-actions">
         <button
           type="button"
-          class="color-picker-btn cancel soft-secondary-action app-focus-ring-soft"
+          class="color-picker-btn cancel soft-secondary-action app-focus-ring-soft echo-button-sized echo-button-standard"
           @click="open = false"
         >
           取消
         </button>
         <button
           type="button"
-          class="color-picker-btn confirm soft-accent-action app-focus-ring-soft"
+          class="color-picker-btn confirm soft-accent-action app-focus-ring-soft echo-button-sized echo-button-standard"
           @click="confirm"
         >
           确定
@@ -337,8 +333,6 @@ const confirm = () => {
 }
 
 .color-picker-btn {
-  height: 36px;
-  padding: 0 18px;
   font-size: 13px;
   font-weight: 600;
   border-radius: var(--radius-control);

@@ -2,6 +2,7 @@
 import { getCurrentInstance, type HTMLAttributes } from 'vue';
 import { Primitive, useForwardExpose, type PrimitiveProps } from 'reka-ui';
 import Tooltip from './Tooltip.vue';
+import type { ControlSize } from './controlSizes';
 
 defineOptions({ inheritAttrs: false });
 const { forwardRef } = useForwardExpose();
@@ -21,7 +22,8 @@ interface Props extends PrimitiveProps {
     | 'outline'
     | 'danger'
     | 'unstyled';
-  size?: 'none' | 'xs' | 'sm' | 'md' | 'lg';
+  /** Shared action sizes; custom controls can own their geometry with none. */
+  size?: ControlSize | 'icon' | 'none' | 'xs' | 'sm' | 'md' | 'lg';
   loading?: boolean;
   disabled?: boolean;
   class?: HTMLAttributes['class'];
@@ -32,7 +34,7 @@ interface Props extends PrimitiveProps {
 const props = withDefaults(defineProps<Props>(), {
   as: 'button',
   variant: 'primary',
-  size: 'md',
+  size: 'default',
 });
 
 const variants = {
@@ -48,12 +50,19 @@ const variants = {
   unstyled: '',
 };
 
+const standardSize = 'echo-button-sized echo-button-standard';
 const sizes = {
   none: '',
-  xs: 'h-8 px-3 text-[12px] rounded-control font-black',
-  sm: 'h-10 px-4 text-xs rounded-control font-black',
-  md: 'h-14 px-6 text-[15px] rounded-control font-black',
-  lg: 'h-16 px-8 text-lg rounded-control font-black',
+  default: standardSize,
+  compact: `${standardSize} echo-button-compact`,
+  small: `${standardSize} echo-button-small`,
+  icon: 'echo-button-sized echo-button-icon',
+  large: `${standardSize} echo-button-large`,
+  // Plugins also consume this component; xs keeps their compact action role.
+  xs: `${standardSize} echo-button-compact`,
+  sm: standardSize,
+  md: standardSize,
+  lg: standardSize,
 };
 </script>
 
@@ -79,9 +88,12 @@ const sizes = {
       >
         <div
           v-if="loading"
-          class="mr-2 w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+          :class="[
+            'shrink-0 w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin',
+            size === 'none' ? 'mr-2' : '',
+          ]"
         ></div>
-        <slot />
+        <slot v-if="!loading || size !== 'icon'" />
       </Primitive>
     </template>
   </Tooltip>

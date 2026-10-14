@@ -173,7 +173,11 @@ const restoreDefaults = () => patch({ ...LYRIC_SKIN_AMLL_DEFAULTS });
       </div>
     </SkinSettingSection>
     <div class="skin-settings-footer">
-      <Button variant="secondary" size="xs" :disabled="!hasCustomSettings" @click="restoreDefaults"
+      <Button
+        variant="secondary"
+        size="default"
+        :disabled="!hasCustomSettings"
+        @click="restoreDefaults"
         >恢复全部默认</Button
       >
     </div>

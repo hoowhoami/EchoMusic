@@ -338,25 +338,25 @@ watch(
           <template #collapsed-actions>
             <Button
               variant="unstyled"
-              size="none"
+              size="icon"
               @click="showSelectorDialog = true"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-text-main"
+              class="action-icon hover:bg-[var(--control-hover-bg)] text-text-main"
             >
               <Icon :icon="iconChevronDown" width="18" height="18" />
             </Button>
             <Button
               variant="unstyled"
-              size="none"
+              size="icon"
               @click="handlePlayAll"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
+              class="action-icon hover:bg-[var(--control-hover-bg)] text-primary-text"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
             <Button
               variant="unstyled"
-              size="none"
+              size="icon"
               @click="openBatchDrawer"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
@@ -392,9 +392,9 @@ watch(
                     <SongSearchInput v-model="searchQuery" />
                     <Button
                       variant="unstyled"
-                      size="none"
+                      size="icon"
                       @click="handleLocate"
-                      class="action-icon song-locate-btn p-2"
+                      class="action-icon song-locate-btn"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="16" height="16" />
@@ -458,7 +458,7 @@ watch(
               class="rank-selector-item"
               :aria-pressed="rank.id === selectedRankId"
               :variant="rank.id === selectedRankId ? 'soft-primary' : 'soft-secondary'"
-              size="xs"
+              size="none"
               @click="handleRankSelect(rank.id)"
             >
               {{ rank.name }}

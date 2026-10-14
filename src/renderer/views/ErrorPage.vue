@@ -90,13 +90,13 @@ const handleCopyError = async () => {
       </div>
 
       <div class="error-actions">
-        <Button variant="primary" size="sm" class="error-action-btn" @click="handleGoHome">
+        <Button variant="primary" size="default" class="error-action-btn" @click="handleGoHome">
           回到首页
         </Button>
-        <Button variant="secondary" size="sm" class="error-action-btn" @click="handleGoBack">
+        <Button variant="secondary" size="default" class="error-action-btn" @click="handleGoBack">
           返回上页
         </Button>
-        <Button variant="secondary" size="sm" class="error-action-btn" @click="handleReload">
+        <Button variant="secondary" size="default" class="error-action-btn" @click="handleReload">
           重新加载
         </Button>
       </div>
@@ -104,7 +104,7 @@ const handleCopyError = async () => {
       <div class="error-footer">
         <button
           type="button"
-          class="error-copy-btn soft-secondary-action app-focus-ring-soft"
+          class="error-copy-btn soft-secondary-action app-focus-ring-soft echo-button-sized echo-button-standard"
           @click="handleCopyError"
         >
           <span v-if="!copied">复制错误信息</span>
@@ -274,7 +274,6 @@ const handleCopyError = async () => {
 }
 
 .error-copy-btn {
-  padding: 8px 16px;
   border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 600;

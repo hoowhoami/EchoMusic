@@ -6,6 +6,7 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 import { computed, nextTick, ref, useId, watch, onBeforeUnmount } from 'vue';
 import type { BlacklistEntry, BlacklistLabel } from '@/api/blacklist';
 import Button from '@/components/ui/Button.vue';
+import Badge from '@/components/ui/Badge.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
@@ -52,9 +53,10 @@ const activeTabIndex = computed({
     activeTab.value = value === 1 ? 'singer' : 'song';
   },
 });
-const tabLabels = computed(() => [
-  blacklistStore.song.loaded ? `不感兴趣 ${blacklistStore.song.total}` : '不感兴趣',
-  blacklistStore.singer.loaded ? `已屏蔽歌手 ${blacklistStore.singer.total}` : '已屏蔽歌手',
+const tabLabels = ['不感兴趣', '已屏蔽歌手'];
+const tabCounts = computed(() => [
+  blacklistStore.song.loaded ? blacklistStore.song.total : undefined,
+  blacklistStore.singer.loaded ? blacklistStore.singer.total : undefined,
 ]);
 const activeTabId = computed(() => tabIds[activeTabIndex.value]);
 const activePanelId = computed(() => panelIds[activeTabIndex.value]);
@@ -224,7 +226,14 @@ watch(activeTab, () => {
             :panel-ids="panelIds"
             aria-label="黑名单管理分类"
             class="blacklist-category-tabs"
-          />
+          >
+            <template #tab="{ label, index, selected }">
+              <span class="badge-label">
+                <span>{{ label }}</span>
+                <Badge :count="tabCounts[index]" :tone="selected ? 'accent' : 'neutral'" />
+              </span>
+            </template>
+          </CustomTabBar>
         </div>
 
         <div
@@ -242,7 +251,7 @@ watch(activeTab, () => {
               </div>
               <Button
                 variant="unstyled"
-                size="none"
+                size="icon"
                 class="action-icon blacklist-refresh-button"
                 :disabled="bucket.loading || Boolean(removingKey)"
                 :tooltip="`刷新${activeMeta.title}`"
@@ -266,8 +275,8 @@ watch(activeTab, () => {
               <span class="min-w-0 truncate">{{ bucket.error }}</span>
               <Button
                 variant="secondary"
-                size="xs"
-                class="h-7 shrink-0 px-2"
+                size="default"
+                class="shrink-0"
                 :disabled="bucket.loading"
                 @click="refreshCurrentTab"
               >
@@ -300,7 +309,7 @@ watch(activeTab, () => {
                 <p class="text-[12px] font-bold text-red-500">{{ bucket.error }}</p>
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="default"
                   class="mt-4"
                   :loading="bucket.loading"
                   @click="refreshCurrentTab"
@@ -355,7 +364,7 @@ watch(activeTab, () => {
                     </div>
                     <Button
                       variant="ghost"
-                      size="none"
+                      size="icon"
                       class="action-icon blacklist-entry-action"
                       :disabled="bucket.loading || Boolean(removingKey)"
                       :tooltip="
@@ -385,7 +394,7 @@ watch(activeTab, () => {
                 <div v-if="hasMore" class="blacklist-list-footer">
                   <Button
                     variant="secondary"
-                    size="sm"
+                    size="default"
                     :loading="bucket.loading"
                     :disabled="Boolean(removingKey)"
                     @click="loadMore"
@@ -411,13 +420,13 @@ watch(activeTab, () => {
     <template #footer>
       <Button
         variant="outline"
-        size="sm"
+        size="default"
         :disabled="Boolean(removingKey)"
         @click="pendingRemoval = null"
       >
         取消
       </Button>
-      <Button size="sm" :loading="Boolean(removingKey)" @click="confirmRemoval">
+      <Button size="default" :loading="Boolean(removingKey)" @click="confirmRemoval">
         {{ pendingRemoval?.label === 'singer' ? '取消屏蔽' : '确认撤销' }}
       </Button>
     </template>
@@ -476,8 +485,6 @@ watch(activeTab, () => {
 
 .blacklist-refresh-button {
   display: flex;
-  width: 32px;
-  height: 32px;
   flex: none;
   align-items: center;
   justify-content: center;
@@ -575,8 +582,6 @@ watch(activeTab, () => {
 
 .blacklist-entry-action {
   display: inline-flex;
-  width: 36px;
-  height: 36px;
   flex: none;
   align-items: center;
   justify-content: center;

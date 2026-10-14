@@ -175,7 +175,7 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       <div class="plugin-card-primary-actions">
         <Button
           variant="secondary"
-          size="xs"
+          size="default"
           class="plugin-share-btn"
           tooltip="复制插件分享链接"
           @click="emit('share', plugin)"
@@ -185,7 +185,7 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
         </Button>
         <Button
           variant="secondary"
-          size="xs"
+          size="default"
           class="plugin-settings-btn"
           :disabled="!plugin.repo"
           @click="emit('open-external', plugin.repo || plugin.homepage)"
@@ -197,7 +197,7 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
 
       <Button
         variant="primary"
-        size="xs"
+        size="default"
         class="marketplace-install-btn"
         :tooltip="installTitle"
         :loading="busy"

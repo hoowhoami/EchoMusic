@@ -555,7 +555,7 @@ onActivated(() => {
                   <div class="radio-actions">
                     <Button
                       variant="unstyled"
-                      size="none"
+                      size="icon"
                       class="action-icon radio-dislike"
                       tooltip="不喜欢"
                       :disabled="personalFmLoading || !personalFmCurrentDisc"
@@ -825,8 +825,6 @@ onActivated(() => {
 }
 
 .radio-dislike {
-  width: 42px;
-  height: 42px;
   flex-shrink: 0;
   border-radius: var(--radius-control);
   display: flex;

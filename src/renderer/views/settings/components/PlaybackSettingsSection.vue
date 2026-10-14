@@ -1,25 +1,17 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
-
-import { computed, ref } from 'vue';
-import { storeToRefs } from 'pinia';
+import { computed } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { usePlayerStore } from '@/stores/player';
-import { useToastStore } from '@/stores/toast';
 import { clampPreferredAudioQuality, isViperAudioQuality } from '@/utils/song';
 import type { AudioQualityValue } from '@/types';
 import Switch from '@/components/ui/Switch.vue';
 import Slider from '@/components/ui/Slider.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
 import Select from '@/components/ui/Select.vue';
-import Button from '@/components/ui/Button.vue';
-import CustomTabBar from '@/components/ui/CustomTabBar.vue';
-import Dialog from '@/components/ui/Dialog.vue';
 import { Icon } from '@iconify/vue';
-import { iconCheckMark, iconPencil, iconPlayerPlay, iconTrash, iconX } from '@/icons';
+import { iconPlayerPlay } from '@/icons';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { audioQualityOptions, sectionTitles } from '../constants';
-import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../../../shared/audio';
 import { calculateNormalizationGainDb } from '../../../../shared/loudness';
 import {
   MAX_FADE_CROSS_SECS,
@@ -28,16 +20,7 @@ import {
 } from '../../../../shared/trackTransition';
 
 const settingStore = useSettingStore();
-const { impulseResponseEnabled, impulseResponseFiles, selectedImpulseResponseId } =
-  storeToRefs(settingStore);
 const playerStore = usePlayerStore();
-const toastStore = useToastStore();
-const isImportingImpulseResponse = ref(false);
-const showImpulseResponseDialog = ref(false);
-const editingImpulseResponseId = ref('');
-const impulseResponseNameDraft = ref('');
-type ImpulseResponseSourceTab = 'local' | 'community';
-const activeImpulseResponseSourceTab = ref<ImpulseResponseSourceTab>('local');
 
 const playbackQueueModeOptions = [
   { label: '当前歌曲所在列表', value: 'context' },
@@ -51,23 +34,6 @@ const availableAudioQualityOptions = computed(() =>
 );
 const defaultAudioQuality = computed(() =>
   clampPreferredAudioQuality(settingStore.defaultAudioQuality, settingStore.viperQualityEnabled),
-);
-
-const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseResponse());
-const isCommunityAudioEffect = (file: SpatialAudioEffectEntry) =>
-  file.kind === 'community-ir' ||
-  file.kind === 'community-vpf' ||
-  file.kind === 'community-combined';
-const communityAudioEffects = computed(() =>
-  settingStore.impulseResponseFiles.filter(isCommunityAudioEffect),
-);
-const localImpulseResponseFiles = computed(() =>
-  settingStore.impulseResponseFiles.filter((file) => file.kind === 'imported-ir'),
-);
-const activeImpulseResponseFiles = computed(() =>
-  activeImpulseResponseSourceTab.value === 'community'
-    ? communityAudioEffects.value
-    : localImpulseResponseFiles.value,
 );
 
 const autoNextDelayInput = computed({
@@ -128,83 +94,6 @@ const volumeNormalizationStatus = computed(() => {
   }
   return `当前歌曲 ${loudness.lufs.toFixed(1)} LUFS，将${gainDb > 0 ? '提高' : '降低'} ${Math.abs(gainDb).toFixed(1)} dB`;
 });
-
-const getImpulseResponseDisplayName = (name: string) => normalizeAudioEffectName(name);
-
-const openImpulseResponseDialog = () => {
-  if (
-    activeImpulseResponseSourceTab.value === 'local' &&
-    localImpulseResponseFiles.value.length === 0 &&
-    communityAudioEffects.value.length > 0
-  ) {
-    activeImpulseResponseSourceTab.value = 'community';
-  } else if (
-    activeImpulseResponseSourceTab.value === 'community' &&
-    communityAudioEffects.value.length === 0 &&
-    localImpulseResponseFiles.value.length > 0
-  ) {
-    activeImpulseResponseSourceTab.value = 'local';
-  }
-  showImpulseResponseDialog.value = true;
-};
-
-const beginRenameImpulseResponse = (file: SpatialAudioEffectEntry) => {
-  editingImpulseResponseId.value = file.id;
-  impulseResponseNameDraft.value = getImpulseResponseDisplayName(file.name);
-};
-
-const cancelRenameImpulseResponse = () => {
-  editingImpulseResponseId.value = '';
-  impulseResponseNameDraft.value = '';
-};
-
-const commitRenameImpulseResponse = (id: string) => {
-  settingStore.renameImpulseResponseFile(id, impulseResponseNameDraft.value);
-  cancelRenameImpulseResponse();
-};
-
-const handleImpulseResponseEnabledChange = (enabled: boolean) => {
-  if (enabled && !selectedImpulseResponse.value) {
-    toastStore.warning('请先导入音效文件');
-    return;
-  }
-  if (enabled && selectedImpulseResponse.value) {
-    playerStore.selectSpatialAudioEffect(selectedImpulseResponse.value.id);
-    return;
-  }
-  settingStore.impulseResponseEnabled = enabled;
-};
-
-const handleImportImpulseResponse = async () => {
-  if (!window.electron?.audioEffects || isImportingImpulseResponse.value) return;
-  isImportingImpulseResponse.value = true;
-  try {
-    const result = await window.electron.audioEffects.importImpulseResponse();
-    if (result.canceled) return;
-    const files = result.files?.length ? result.files : result.file ? [result.file] : [];
-    if (files.length === 0) {
-      toastStore.warning(result.error || '音效文件导入失败');
-      return;
-    }
-    settingStore.addImpulseResponseFiles(files);
-    if (result.errors?.length) {
-      toastStore.warning(`已导入 ${files.length} 个音效文件，${result.errors.length} 个失败`, 4200);
-    } else {
-      toastStore.success(
-        files.length === 1 ? '音效文件已导入' : `已导入 ${files.length} 个音效文件`,
-      );
-    }
-  } catch {
-    toastStore.actionFailed('导入音效文件');
-  } finally {
-    isImportingImpulseResponse.value = false;
-  }
-};
-
-const handleRemoveImpulseResponse = (id: string) => {
-  settingStore.removeImpulseResponseFile(id);
-  toastStore.actionCompleted('已移除音效文件');
-};
 </script>
 
 <template>
@@ -375,147 +264,6 @@ const handleRemoveImpulseResponse = (id: string) => {
       </div>
     </template>
 
-    <template v-if="false">
-      <div class="settings-divider"></div>
-      <div class="settings-item">
-        <div class="space-y-1">
-          <h3 class="font-semibold">音效管理</h3>
-          <p class="text-sm text-text-secondary">管理本地导入和在线下载的音效文件</p>
-        </div>
-        <div class="irs-actions">
-          <Button
-            variant="unstyled"
-            size="none"
-            class="settings-action"
-            type="button"
-            @click="openImpulseResponseDialog"
-          >
-            添加
-          </Button>
-          <Switch
-            :model-value="impulseResponseEnabled"
-            :disabled="impulseResponseFiles.length === 0"
-            @update:model-value="handleImpulseResponseEnabledChange"
-          />
-        </div>
-      </div>
-
-      <Dialog
-        v-model:open="showImpulseResponseDialog"
-        title="音效管理"
-        showClose
-        :content-style="{ width: '420px' }"
-      >
-        <CustomTabBar
-          class="irs-source-tabs"
-          :tabs="['用户导入', '在线下载']"
-          :model-value="activeImpulseResponseSourceTab === 'local' ? 0 : 1"
-          aria-label="音效文件来源"
-          @update:model-value="
-            activeImpulseResponseSourceTab = $event === 0 ? 'local' : 'community'
-          "
-        >
-          <template #tab="{ label, index }">
-            <span>{{ label }}</span>
-            <span class="irs-source-count">{{
-              index === 0 ? localImpulseResponseFiles.length : communityAudioEffects.length
-            }}</span>
-          </template>
-        </CustomTabBar>
-
-        <div v-if="activeImpulseResponseFiles.length > 0" class="irs-list">
-          <div
-            v-for="file in activeImpulseResponseFiles"
-            :key="file.id"
-            class="irs-file-row"
-            :class="{ 'is-active': file.id === selectedImpulseResponseId }"
-          >
-            <span class="irs-file-main">
-              <input
-                v-if="editingImpulseResponseId === file.id"
-                v-model="impulseResponseNameDraft"
-                class="irs-rename-input"
-                type="text"
-                maxlength="40"
-                @keydown.enter.prevent="commitRenameImpulseResponse(file.id)"
-                @keydown.esc.prevent="cancelRenameImpulseResponse"
-              />
-              <span v-else class="irs-file-name">{{
-                getImpulseResponseDisplayName(file.name)
-              }}</span>
-            </span>
-            <Tooltip v-if="editingImpulseResponseId === file.id" content="保存名称">
-              <template #trigger>
-                <button
-                  type="button"
-                  class="action-icon irs-row-btn"
-                  aria-label="保存名称"
-                  @click.stop="commitRenameImpulseResponse(file.id)"
-                >
-                  <Icon :icon="iconCheckMark" width="14" height="14" />
-                </button>
-              </template>
-            </Tooltip>
-            <Tooltip v-if="editingImpulseResponseId === file.id" content="取消重命名">
-              <template #trigger>
-                <button
-                  type="button"
-                  class="action-icon irs-row-btn"
-                  aria-label="取消重命名"
-                  @click.stop="cancelRenameImpulseResponse"
-                >
-                  <Icon :icon="iconX" width="14" height="14" />
-                </button>
-              </template>
-            </Tooltip>
-            <Tooltip v-else content="重命名">
-              <template #trigger>
-                <button
-                  type="button"
-                  class="action-icon irs-row-btn"
-                  aria-label="重命名"
-                  @click.stop="beginRenameImpulseResponse(file)"
-                >
-                  <Icon :icon="iconPencil" width="14" height="14" />
-                </button>
-              </template>
-            </Tooltip>
-            <Tooltip content="移除音效文件">
-              <template #trigger>
-                <button
-                  type="button"
-                  class="action-icon irs-row-btn is-danger"
-                  aria-label="移除音效文件"
-                  @click.stop="handleRemoveImpulseResponse(file.id)"
-                >
-                  <Icon :icon="iconTrash" width="14" height="14" />
-                </button>
-              </template>
-            </Tooltip>
-          </div>
-        </div>
-        <div v-else class="irs-empty">
-          {{ activeImpulseResponseSourceTab === 'local' ? '暂无本地导入音效' : '暂无在线下载音效' }}
-        </div>
-
-        <template #footer>
-          <Button
-            v-if="activeImpulseResponseSourceTab === 'local'"
-            variant="primary"
-            size="sm"
-            type="button"
-            :loading="isImportingImpulseResponse"
-            @click="handleImportImpulseResponse"
-          >
-            导入音效文件
-          </Button>
-          <span v-else class="irs-community-hint"
-            >请在播放器的「音效广场 → 音效市场」中下载新音效</span
-          >
-        </template>
-      </Dialog>
-    </template>
-
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
@@ -575,126 +323,3 @@ const handleRemoveImpulseResponse = (id: string) => {
 </template>
 
 <style scoped src="../settingsSection.css"></style>
-<style scoped>
-.irs-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.irs-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 320px;
-  overflow: auto;
-}
-
-.irs-source-tabs {
-  margin-bottom: 14px;
-}
-
-.irs-source-count {
-  display: inline-flex;
-  min-width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 5px;
-  border-radius: var(--radius-control);
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  font-size: 10px;
-}
-
-.irs-community-hint {
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.irs-file-row {
-  min-width: 0;
-  width: 100%;
-  min-height: 52px;
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
-  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
-  border-radius: var(--radius-item);
-  padding: 0 10px 0 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--color-text-main);
-  transition: all 0.2s;
-}
-
-.irs-file-row.is-active {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-}
-
-.irs-file-main {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  align-items: center;
-}
-
-.irs-file-name {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.irs-rename-input {
-  width: 100%;
-  min-width: 0;
-  height: 30px;
-  border-radius: var(--radius-control);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
-  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
-  padding: 0 8px;
-  color: var(--color-text-main);
-  font-size: 12px;
-  font-weight: 700;
-  outline: none;
-}
-
-.irs-row-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-control);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-secondary);
-  flex-shrink: 0;
-  transition: all 0.2s;
-}
-
-.irs-row-btn:hover {
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-}
-
-.irs-row-btn.is-danger:hover {
-  color: var(--state-danger);
-  background: color-mix(in srgb, var(--state-danger) 10%, transparent);
-}
-
-.irs-empty {
-  height: 96px;
-  border-radius: var(--radius-control);
-  border: 1px dashed color-mix(in srgb, var(--color-text-main) 16%, transparent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 650;
-}
-</style>

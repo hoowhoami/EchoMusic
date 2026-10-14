@@ -228,7 +228,7 @@ const confirmResetDeviceIdentity = async () => {
       <div class="flex items-center gap-2">
         <Button
           variant="unstyled"
-          size="none"
+          size="default"
           class="settings-action"
           v-if="diagnosticActive"
           @click="settingStore.disableTemporaryDiagnosticLogging()"
@@ -237,7 +237,7 @@ const confirmResetDeviceIdentity = async () => {
         </Button>
         <Button
           variant="unstyled"
-          size="none"
+          size="default"
           class="settings-action"
           @click="settingStore.enableTemporaryDiagnosticLogging(10)"
         >
@@ -245,7 +245,7 @@ const confirmResetDeviceIdentity = async () => {
         </Button>
         <Button
           variant="unstyled"
-          size="none"
+          size="default"
           class="settings-action"
           @click="restartWithDiagnostics"
         >
@@ -324,7 +324,7 @@ const confirmResetDeviceIdentity = async () => {
         <h3 class="font-semibold">用户信息</h3>
         <p class="text-sm text-text-secondary">查看当前账号与设备信息，可复制鉴权头用于调试接口</p>
       </div>
-      <Button variant="unstyled" size="none" class="settings-action" @click="showUserInfoDialog"
+      <Button variant="unstyled" size="default" class="settings-action" @click="showUserInfoDialog"
         >查看</Button
       >
     </div>
@@ -338,7 +338,7 @@ const confirmResetDeviceIdentity = async () => {
       </div>
       <Button
         variant="unstyled"
-        size="none"
+        size="default"
         class="settings-action settings-action-danger"
         @click="showResetDeviceIdentityConfirm = true"
       >
@@ -355,7 +355,7 @@ const confirmResetDeviceIdentity = async () => {
         <p v-if="userInfoEntries.length === 0" class="user-info-empty">暂无用户信息，请先登录</p>
       </div>
       <template #footer>
-        <Button variant="primary" size="sm" @click="copyAuthHeader">复制鉴权头</Button>
+        <Button variant="primary" size="default" @click="copyAuthHeader">复制鉴权头</Button>
       </template>
     </Dialog>
 
@@ -365,10 +365,12 @@ const confirmResetDeviceIdentity = async () => {
       description="这会清除本机设备标识并退出当前账号。重启后会生成新的设备身份，酷狗可能会把它视为一台新设备。"
     >
       <template #footer>
-        <Button variant="outline" size="sm" @click="showResetDeviceIdentityConfirm = false">
+        <Button variant="outline" size="default" @click="showResetDeviceIdentityConfirm = false">
           取消
         </Button>
-        <Button variant="danger" size="sm" @click="confirmResetDeviceIdentity"> 确认重置 </Button>
+        <Button variant="danger" size="default" @click="confirmResetDeviceIdentity">
+          确认重置
+        </Button>
       </template>
     </Dialog>
   </SettingsSectionShell>

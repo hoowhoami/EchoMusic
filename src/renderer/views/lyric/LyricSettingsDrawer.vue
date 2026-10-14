@@ -133,7 +133,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
           <Button
             v-if="view === 'settings'"
             variant="unstyled"
-            size="none"
+            size="icon"
             class="action-icon settings-header-action"
             tooltip="返回换肤"
             aria-label="返回换肤"
@@ -143,7 +143,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
           </Button>
           <Button
             variant="unstyled"
-            size="none"
+            size="icon"
             class="action-icon settings-header-action"
             tooltip="全局设置"
             aria-label="全局设置"
@@ -153,7 +153,7 @@ const cardStyle = (skin: LyricSkin, index: number) => {
           </Button>
           <Button
             variant="unstyled"
-            size="none"
+            size="icon"
             class="action-icon settings-close-btn"
             aria-label="关闭皮肤设置"
             @click="close"
@@ -331,8 +331,6 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
   border-radius: var(--radius-control);
   color: var(--icon-main);
 }
@@ -347,8 +345,6 @@ const cardStyle = (skin: LyricSkin, index: number) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
   border-radius: var(--radius-control);
   color: var(--icon-main);
 }

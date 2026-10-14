@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import Button from '@/components/ui/Button.vue';
+import Badge from '@/components/ui/Badge.vue';
 import { iconCheck, iconCircleAlert, iconCircleX, iconInfo, iconX } from '@/icons';
 import { useToastStore, type ToastTone } from '@/stores/toast';
 
@@ -221,7 +222,7 @@ onUnmounted(() => {
         <Button
           v-if="visibleToast.action"
           variant="primary"
-          size="none"
+          size="default"
           class="toast-action"
           @click="runToastAction(visibleToast.id)"
         >
@@ -231,7 +232,7 @@ onUnmounted(() => {
         <Button
           v-if="visibleToast.variant === 'standard'"
           variant="unstyled"
-          size="none"
+          size="icon"
           class="action-icon toast-close"
           aria-label="关闭提示"
           @click="toastStore.remove(visibleToast.id)"
@@ -239,9 +240,13 @@ onUnmounted(() => {
           <Icon :icon="iconX" width="14" height="14" />
         </Button>
 
-        <span v-if="visibleToast.count > 1" :key="visibleToast.count" class="toast-count">
-          ×{{ visibleToast.count }}
-        </span>
+        <Badge
+          v-if="visibleToast.count > 1"
+          :key="visibleToast.count"
+          :count="`×${visibleToast.count}`"
+          placement="floating"
+          class="toast-count badge-solid"
+        />
       </div>
     </Transition>
   </div>
@@ -387,7 +392,7 @@ onUnmounted(() => {
 }
 
 .toast-close {
-  @apply flex h-6 w-6 shrink-0 items-center justify-center transition;
+  @apply flex shrink-0 items-center justify-center transition;
   border-radius: var(--radius-control);
   color: var(--icon-main);
 }
@@ -398,30 +403,24 @@ onUnmounted(() => {
 }
 
 .toast-action {
-  @apply h-7 shrink-0 px-2 text-[12px] font-semibold transition;
+  @apply shrink-0 text-[12px] font-semibold transition;
   border-radius: var(--radius-control);
 }
 
 .toast-count {
-  @apply absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center px-1 text-[10px] font-bold leading-none;
-  border-radius: var(--radius-detail);
-  color: var(--color-on-primary);
-  background: var(--color-primary);
-  border: 2px solid var(--color-bg-elevated);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   animation: toast-count-bump 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .is-warning .toast-count {
-  background: var(--state-warning);
+  --badge-tone: var(--state-warning);
 }
 
 .is-danger .toast-count {
-  background: var(--state-danger);
+  --badge-tone: var(--state-danger);
 }
 
 .is-success .toast-count {
-  background: var(--state-success);
+  --badge-tone: var(--state-success);
 }
 
 .toast-rise-enter-active,
@@ -439,13 +438,13 @@ onUnmounted(() => {
 
 @keyframes toast-count-bump {
   0% {
-    transform: scale(0.72);
+    scale: 0.72;
   }
   70% {
-    transform: scale(1.12);
+    scale: 1.12;
   }
   100% {
-    transform: scale(1);
+    scale: 1;
   }
 }
 

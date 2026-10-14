@@ -1,0 +1,49 @@
+/* Shared form geometry. Dense controls and login forms keep explicit roles. */
+:root {
+  --control-height-default: 36px;
+  --control-height-compact: 32px;
+  --control-height-small: 28px;
+  --control-height-large: 56px;
+  --field-font-size: 13px;
+  --field-font-weight: 500;
+  --field-padding-x: 12px;
+  --field-clear-size: 24px;
+  --field-clear-right: 8px;
+}
+
+.echo-field-default {
+  --field-height: var(--control-height-default);
+  --field-padding-x: 12px;
+  --field-font-size: 13px;
+  --field-clear-size: 24px;
+  --field-clear-right: 8px;
+}
+
+.echo-field-compact {
+  --field-height: var(--control-height-compact);
+  --field-padding-x: 10px;
+  --field-font-size: 12px;
+}
+
+.echo-field-small {
+  --field-height: var(--control-height-small);
+  --field-padding-x: 8px;
+  --field-font-size: 12px;
+  --field-clear-size: 20px;
+  --field-clear-right: 4px;
+}
+
+.echo-field-large {
+  --field-height: var(--control-height-large);
+  --field-padding-x: 24px;
+  --field-font-size: 15px;
+  --field-clear-right: 12px;
+}
+
+.echo-field-sized {
+  box-sizing: border-box;
+  height: var(--field-height, var(--control-height-default));
+  font-size: var(--field-font-size);
+  font-weight: var(--field-font-weight);
+  line-height: 20px;
+}

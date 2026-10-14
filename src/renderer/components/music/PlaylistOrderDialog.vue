@@ -332,7 +332,7 @@ watch(account, () => {
     <template #headerActions>
       <Button
         variant="ghost"
-        size="xs"
+        size="icon"
         class="action-icon order-close-button"
         type="button"
         aria-label="关闭"
@@ -353,7 +353,7 @@ watch(account, () => {
       </div>
       <div v-if="error" role="alert" class="order-error">
         <span>{{ error }}</span>
-        <Button variant="secondary" size="xs" :disabled="busy" @click="load">重新加载</Button>
+        <Button variant="secondary" size="default" :disabled="busy" @click="load">重新加载</Button>
       </div>
       <div v-if="loading" class="order-loading" role="status" aria-label="正在加载并排序">
         <Skeleton height="44" radius="10" />
@@ -375,7 +375,7 @@ watch(account, () => {
           <div class="order-tools">
             <Button
               variant="soft-secondary"
-              size="xs"
+              size="icon"
               class="action-icon order-icon-button"
               tooltip="上移"
               aria-label="上移"
@@ -386,7 +386,7 @@ watch(account, () => {
             </Button>
             <Button
               variant="soft-secondary"
-              size="xs"
+              size="icon"
               class="action-icon order-icon-button"
               tooltip="下移"
               aria-label="下移"
@@ -412,7 +412,7 @@ watch(account, () => {
               />
               <Button
                 variant="secondary"
-                size="xs"
+                size="compact"
                 class="order-action-button"
                 :disabled="busy || selectedIndex < 0"
                 @click="moveToPosition()"
@@ -494,7 +494,7 @@ watch(account, () => {
     <template #footer>
       <Button
         variant="secondary"
-        size="xs"
+        size="compact"
         class="order-action-button"
         :disabled="busy || !dirty"
         @click="
@@ -507,13 +507,13 @@ watch(account, () => {
       <span v-if="dirty" class="order-save-hint">有未保存的调整</span>
       <Button
         variant="secondary"
-        size="xs"
+        size="compact"
         class="order-action-button"
         :disabled="saving"
         @click="updateOpen(false)"
         >取消</Button
       >
-      <Button size="xs" class="order-action-button" :disabled="busy || !dirty" @click="save">{{
+      <Button size="compact" class="order-action-button" :disabled="busy || !dirty" @click="save">{{
         saving ? '正在保存…' : '保存顺序'
       }}</Button>
     </template>
@@ -533,9 +533,7 @@ watch(account, () => {
   align-items: center;
 }
 .order-close-button {
-  width: 32px;
-  height: 32px;
-  padding: 0;
+  --button-height: var(--control-height-compact);
   border-radius: var(--radius-control);
 }
 .order-editor {
@@ -607,10 +605,9 @@ watch(account, () => {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
 .order-icon-button {
-  width: 32px;
-  height: 32px;
-  padding: 0;
+  --button-height: var(--control-height-compact);
   border-radius: var(--radius-control);
 }
 .order-action-button {
@@ -624,15 +621,8 @@ watch(account, () => {
 }
 .order-position.input-number {
   width: 92px;
-  height: 32px;
   flex-shrink: 0;
   border-radius: var(--radius-control);
-}
-.order-position :deep(.input-number-field) {
-  padding-left: 10px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 30px;
 }
 .order-position :deep(.input-number-suffix) {
   font-size: 11px;

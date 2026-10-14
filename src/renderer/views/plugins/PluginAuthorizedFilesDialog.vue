@@ -52,7 +52,7 @@ watch(
   >
     <div v-if="error" class="grant-error" role="alert">
       <p>{{ error }}</p>
-      <Button variant="secondary" size="xs" :disabled="busy" @click="load()">重试</Button>
+      <Button variant="secondary" size="default" :disabled="busy" @click="load()">重试</Button>
     </div>
     <div v-else-if="!groups.length" class="grant-empty" role="status" aria-live="polite">
       <span class="grant-empty-icon" aria-hidden="true">
@@ -88,7 +88,7 @@ watch(
               grant.revoked ? `移除 ${grant.name} 的授权记录` : `撤销 ${grant.name} 的授权`
             "
             variant="secondary"
-            size="xs"
+            size="default"
             @click="load(group.pluginId, grant.id, grant.revoked ? 'remove' : 'revoke')"
             >{{ grant.revoked ? '移除记录' : '撤销' }}</Button
           >
@@ -96,7 +96,7 @@ watch(
       </div>
     </section>
     <template #footer>
-      <Button variant="secondary" size="xs" @click="emit('update:open', false)">关闭</Button>
+      <Button variant="secondary" size="default" @click="emit('update:open', false)">关闭</Button>
     </template>
   </Dialog>
 </template>
@@ -170,6 +170,7 @@ watch(
   color: var(--color-text-secondary);
   font-size: 12px;
 }
+
 .grant-row {
   display: flex;
   align-items: center;

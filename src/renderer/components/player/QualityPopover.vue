@@ -154,9 +154,9 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
     <template #trigger>
       <Button
         variant="unstyled"
-        size="none"
+        size="icon"
         type="button"
-        class="action-icon relative p-2 transition-all"
+        class="action-icon relative transition-all"
         :class="buttonClass"
         :tooltip="triggerLabel"
         :aria-label="triggerLabel"
@@ -185,7 +185,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
           <button
             v-if="hasAudioQualityAccessError && !isAudioQualityAccessLoading"
             type="button"
-            class="pm-retry"
+            class="pm-retry echo-button-sized echo-button-standard"
             @click="retryCurrentTrackQualityAccess"
           >
             重试

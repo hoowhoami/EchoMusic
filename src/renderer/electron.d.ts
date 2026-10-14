@@ -252,6 +252,7 @@ type PlayerCoreStateChangePayload = {
 export interface IElectronAPI {
   platform: string;
   isWayland?: boolean;
+  notifyPageMounted: () => void;
   ipcRenderer: {
     send: (channel: string, ...args: unknown[]) => void;
     invoke: (channel: string, ...args: unknown[]) => Promise<any>;

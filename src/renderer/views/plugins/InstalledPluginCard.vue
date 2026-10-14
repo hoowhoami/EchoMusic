@@ -138,7 +138,7 @@ const emit = defineEmits<{
         <div class="plugin-card-primary-actions">
           <Button
             variant="secondary"
-            size="xs"
+            size="default"
             class="plugin-settings-btn"
             :class="{ 'is-unavailable': !settingsAvailable }"
             :tooltip="settingsTitle"
@@ -151,7 +151,7 @@ const emit = defineEmits<{
 
           <Button
             variant="danger"
-            size="xs"
+            size="default"
             class="plugin-remove-btn"
             :disabled="busy"
             @click="emit('uninstall', record.descriptor.id)"
@@ -163,7 +163,7 @@ const emit = defineEmits<{
         <Tooltip v-if="hasFailure" :content="failureTitle">
           <template #trigger>
             <button
-              class="action-icon plugin-card-failure-btn"
+              class="action-icon plugin-card-failure-btn echo-button-sized echo-button-icon"
               :class="{
                 'is-historical': hasHistoricalFailure,
                 'is-warning': cardFailure?.reason === 'incompatible',

@@ -401,13 +401,8 @@ test('the current spatial effect is locatable without locking manual tab browsin
   assert.match(descriptor.template.content, /class="my-effect-source-current"/);
   assert.match(
     descriptor.template.content,
-    /group\.label[\s\S]*class="my-effect-source-current"[\s\S]*class="my-effect-source-count"/,
+    /group\.label[\s\S]*class="my-effect-source-current"[\s\S]*<Badge[\s\S]*:count="group\.files\.length"/,
   );
-  assert.match(
-    descriptor.styles[0].content,
-    /\.my-effect-source-count\s*{[\s\S]*position:\s*absolute;[\s\S]*top:\s*-7px;[\s\S]*left:\s*calc\(100% \+ 2px\);/,
-  );
-  assert.match(descriptor.styles[0].content, /\.my-effect-source-label\s*{[\s\S]*gap:\s*6px;/);
   assert.doesNotMatch(descriptor.template.content, />\s*使用中\s*</);
 });
 

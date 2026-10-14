@@ -427,7 +427,7 @@ const confirmRemoveFromPlaylist = async () => {
         type="button"
         class="action-icon batch-close"
         variant="ghost"
-        size="xs"
+        size="icon"
         aria-label="关闭"
         :disabled="isBatchBusy"
         @click="open = false"
@@ -503,7 +503,7 @@ const confirmRemoveFromPlaylist = async () => {
           type="button"
           class="batch-action primary"
           variant="soft-primary"
-          size="xs"
+          size="default"
           :disabled="!canPlaySelected || isBatchBusy"
           @click="handlePlaySelected"
         >
@@ -514,7 +514,7 @@ const confirmRemoveFromPlaylist = async () => {
           type="button"
           class="batch-action"
           variant="soft-secondary"
-          size="xs"
+          size="default"
           :disabled="!canAddSelected || isBatchBusy"
           :loading="batchOp === 'addPlaylist'"
           @click="handleAddToPlaylist"
@@ -529,7 +529,7 @@ const confirmRemoveFromPlaylist = async () => {
           type="button"
           class="batch-action danger"
           variant="danger"
-          size="xs"
+          size="default"
           :disabled="!canBatchRemove || isBatchBusy"
           :loading="batchOp === 'remove'"
           @click="handleRemoveFromPlaylist"
@@ -565,8 +565,8 @@ const confirmRemoveFromPlaylist = async () => {
     contentClass="max-w-[420px]"
   >
     <template #footer>
-      <Button variant="outline" size="sm" @click="showRemoveConfirm = false">取消</Button>
-      <Button variant="danger" size="sm" @click="confirmBatchRemove">
+      <Button variant="outline" size="default" @click="showRemoveConfirm = false">取消</Button>
+      <Button variant="danger" size="default" @click="confirmBatchRemove">
         {{ removeConfirmText }}
       </Button>
     </template>
@@ -648,8 +648,6 @@ const confirmRemoveFromPlaylist = async () => {
   white-space: nowrap;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
-  padding: 8px 14px;
   border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 600;
@@ -670,7 +668,7 @@ const confirmRemoveFromPlaylist = async () => {
 }
 
 .batch-close {
-  @apply h-8 w-8 min-w-0 p-0 text-[var(--icon-main)] hover:text-text-main;
+  @apply text-[var(--icon-main)] hover:text-text-main;
 }
 
 .batch-selection {
@@ -800,7 +798,6 @@ const confirmRemoveFromPlaylist = async () => {
     padding: 12px 14px;
   }
   .batch-action {
-    padding: 8px 10px;
   }
 }
 </style>

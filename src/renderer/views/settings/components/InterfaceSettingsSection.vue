@@ -39,7 +39,7 @@ const { percent, zoomIn, zoomOut, reset, canZoomIn, canZoomOut } = useWindowZoom
       <div class="flex items-center gap-3 shrink-0" role="group" aria-label="界面缩放">
         <button
           type="button"
-          class="settings-action w-8"
+          class="settings-action w-8 echo-button-sized echo-button-standard"
           aria-label="缩小界面"
           :disabled="!canZoomOut"
           @click="zoomOut"
@@ -49,14 +49,20 @@ const { percent, zoomIn, zoomOut, reset, canZoomIn, canZoomOut } = useWindowZoom
         <output class="min-w-12 text-center" aria-live="polite">{{ percent }}%</output>
         <button
           type="button"
-          class="settings-action w-8"
+          class="settings-action w-8 echo-button-sized echo-button-standard"
           aria-label="放大界面"
           :disabled="!canZoomIn"
           @click="zoomIn"
         >
           +
         </button>
-        <button class="settings-action" type="button" @click="reset">重置</button>
+        <button
+          class="settings-action echo-button-sized echo-button-standard"
+          type="button"
+          @click="reset"
+        >
+          重置
+        </button>
       </div>
     </div>
     <template v-if="supportsCustomWindowControls">

@@ -128,7 +128,7 @@ watch(
           <Switch v-model="enabled" aria-label="显示弹幕" />
           <Button
             variant="unstyled"
-            size="none"
+            size="icon"
             type="button"
             class="action-icon barrage-close"
             aria-label="关闭弹幕面板"
@@ -359,8 +359,6 @@ watch(
   align-items: center;
   justify-content: center;
   flex: 0 0 26px;
-  width: 26px;
-  height: 26px;
   padding: 0;
   border: 0;
   border-radius: var(--radius-control);

@@ -27,8 +27,6 @@
 
 .search-history-clear {
   margin-left: auto;
-  width: 28px;
-  height: 28px;
   border-radius: var(--radius-control);
   display: flex;
   align-items: center;
@@ -270,6 +268,7 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
 .search-song-toolbar-actions {
   margin-left: auto;
   min-width: 0;

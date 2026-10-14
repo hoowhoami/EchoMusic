@@ -206,9 +206,10 @@
 }
 
 .listen-search-shell {
+  box-sizing: border-box;
   flex: 1;
   min-width: 0;
-  height: 44px;
+  height: var(--control-height-default);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1147,8 +1148,6 @@
 }
 
 .listen-chat-composer button {
-  width: 30px;
-  height: 30px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
@@ -1303,14 +1302,6 @@
 .listen-create-field > span {
   font-size: 11px;
   font-weight: 850;
-}
-
-.listen-create-form .relative.group > input {
-  height: 44px;
-  padding-left: 14px;
-  padding-right: 14px;
-  border-radius: var(--radius-control);
-  font-size: 12px;
 }
 
 .listen-create-form .textarea-root {
@@ -1960,6 +1951,7 @@
 }
 
 .listen-filter-panel .listen-search-shell {
+  box-sizing: border-box;
   height: 38px;
   border-radius: var(--radius-popover);
 }
@@ -2243,10 +2235,6 @@
 }
 
 .listen-browser-panel .listen-refresh-button {
-  width: 38px;
-  min-width: 38px;
-  height: 38px;
-  padding: 0;
   justify-content: center;
 }
 
@@ -2272,9 +2260,6 @@
 }
 
 .listen-panel-refresh-button {
-  width: 32px;
-  min-width: 32px;
-  padding: 0;
 }
 
 .listen-queue-header-actions,
@@ -2597,6 +2582,7 @@
 }
 
 .listen-browser-panel .listen-search-shell {
+  box-sizing: border-box;
   height: 38px;
   border-color: transparent;
   border-radius: var(--radius-popover);

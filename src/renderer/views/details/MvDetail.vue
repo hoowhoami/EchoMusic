@@ -403,7 +403,7 @@ watch(
         </div>
         <div class="mv-player-actions">
           <Button
-            size="xs"
+            size="default"
             :variant="isCollected ? 'secondary' : 'ghost'"
             :loading="videoCollectionStore.loading || collectionPending"
             :disabled="loading || !collectionId"
@@ -458,7 +458,7 @@ watch(
             <div v-if="mvVersions.length > 1" class="mv-version-switcher">
               <button
                 type="button"
-                class="mv-version-button"
+                class="mv-version-button echo-button-sized echo-button-standard"
                 :disabled="!hasPrevVersion"
                 @click="switchVersion(-1)"
               >
@@ -469,7 +469,7 @@ watch(
               </div>
               <button
                 type="button"
-                class="mv-version-button"
+                class="mv-version-button echo-button-sized echo-button-standard"
                 :disabled="!hasNextVersion"
                 @click="switchVersion(1)"
               >
@@ -651,8 +651,6 @@ watch(
 }
 
 .mv-version-button {
-  height: 34px;
-  padding: 0 12px;
   border-radius: var(--radius-control);
   border: 1px solid var(--content-panel-border);
   background: var(--bg-info-card);

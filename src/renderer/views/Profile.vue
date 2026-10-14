@@ -11,7 +11,6 @@ import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useLoginDeviceStore, type LoginDeviceSession } from '@/stores/loginDevices';
 import Button from '@/components/ui/Button.vue';
-import Badge from '@/components/ui/Badge.vue';
 import Tag from '@/components/ui/Tag.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import DatePicker from '@/components/ui/DatePicker.vue';
@@ -1459,9 +1458,9 @@ onUnmounted(() => {
               <div class="flex flex-wrap items-center justify-end gap-2">
                 <Button
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   @click="showAccountSwitcher = true"
-                  class="action-icon w-9 h-9 flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  class="action-icon flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
                   tooltip="切换账号"
                   aria-label="切换账号"
                 >
@@ -1469,9 +1468,9 @@ onUnmounted(() => {
                 </Button>
                 <Button
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   @click="openProfileEditor"
-                  class="action-icon w-9 h-9 flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  class="action-icon flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
                   tooltip="编辑个人资料"
                   aria-label="编辑个人资料"
                 >
@@ -1479,9 +1478,9 @@ onUnmounted(() => {
                 </Button>
                 <Button
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   @click="showListeningPreferences = true"
-                  class="action-icon w-9 h-9 flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  class="action-icon flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
                   tooltip="听歌偏好"
                   aria-label="听歌偏好"
                 >
@@ -1489,9 +1488,9 @@ onUnmounted(() => {
                 </Button>
                 <Button
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   @click="openDeviceManager"
-                  class="action-icon w-9 h-9 flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  class="action-icon flex items-center justify-center border border-[var(--control-border)] text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
                   tooltip="登录设备"
                   aria-label="登录设备"
                 >
@@ -1499,9 +1498,9 @@ onUnmounted(() => {
                 </Button>
                 <Button
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   @click="handleLogout"
-                  class="action-icon w-9 h-9 flex items-center justify-center border border-[var(--control-border)] hover:bg-red-500/10 hover:text-red-500 transition-all active:scale-90"
+                  class="action-icon flex items-center justify-center border border-[var(--control-border)] hover:bg-red-500/10 hover:text-red-500 transition-all active:scale-90"
                   tooltip="退出登录"
                   aria-label="退出登录"
                 >
@@ -1717,7 +1716,7 @@ onUnmounted(() => {
         <span class="text-[16px] font-bold">请先登录以查看个人中心</span>
         <Button
           variant="primary"
-          size="sm"
+          size="default"
           @click="router.push('/login')"
           class="mt-6 rounded-full not-italic"
           >立即登录</Button
@@ -1803,14 +1802,14 @@ onUnmounted(() => {
       <template #footer>
         <Button
           variant="outline"
-          size="sm"
+          size="default"
           :disabled="isSavingProfile"
           @click="showProfileEditor = false"
           >取消</Button
         >
         <Button
           variant="primary"
-          size="sm"
+          size="default"
           :loading="isSavingProfile"
           :disabled="profileSignatureOverLimit"
           @click="saveProfile"
@@ -1835,7 +1834,7 @@ onUnmounted(() => {
           <Button
             v-if="socialChatTarget"
             variant="unstyled"
-            size="none"
+            size="icon"
             class="action-icon profile-social-icon-btn"
             tooltip="返回列表"
             aria-label="返回列表"
@@ -1853,7 +1852,7 @@ onUnmounted(() => {
             <Button
               v-if="!socialChatTarget"
               variant="unstyled"
-              size="none"
+              size="icon"
               class="action-icon profile-social-icon-btn"
               tooltip="刷新列表"
               aria-label="刷新列表"
@@ -1869,7 +1868,7 @@ onUnmounted(() => {
             </Button>
             <Button
               variant="unstyled"
-              size="none"
+              size="icon"
               class="action-icon profile-social-icon-btn"
               tooltip="关闭"
               aria-label="关闭"
@@ -1897,7 +1896,7 @@ onUnmounted(() => {
               class="profile-social-state"
             >
               <p>{{ socialError[activeSocialTab] }}</p>
-              <Button variant="outline" size="xs" @click="refreshSocialList">重试</Button>
+              <Button variant="outline" size="default" @click="refreshSocialList">重试</Button>
             </div>
             <div v-else-if="activeSocialUsers.length === 0" class="profile-social-state">
               {{ activeSocialTabMeta.empty }}
@@ -1924,7 +1923,7 @@ onUnmounted(() => {
                     v-if="item.friendAction"
                     type="button"
                     :variant="item.friendAction === 'follow' ? 'primary' : 'secondary'"
-                    size="xs"
+                    size="default"
                     class="profile-social-follow-btn"
                     :class="{ 'is-unfollow': item.friendAction === 'unfollow' }"
                     :loading="socialFollowPending.has(item.userId)"
@@ -1942,7 +1941,7 @@ onUnmounted(() => {
                   </Button>
                   <Button
                     variant="secondary"
-                    size="xs"
+                    size="default"
                     class="profile-social-message-btn"
                     :disabled="!item.canMessage"
                     @click="openSocialChat(item)"
@@ -2006,7 +2005,7 @@ onUnmounted(() => {
             <Button
               type="submit"
               variant="primary"
-              size="xs"
+              size="default"
               class="profile-chat-send"
               :loading="socialChatSending"
               :disabled="socialChatDraftOverLimit || !socialChatDraft.trim() || socialChatSending"
@@ -2102,13 +2101,13 @@ onUnmounted(() => {
       <template #footer>
         <Button
           variant="outline"
-          size="sm"
+          size="default"
           :loading="gradeLoading"
           :disabled="gradeLoading"
           @click="openGradeDetail"
           >刷新进度</Button
         >
-        <Button size="sm" @click="showGradeDetail = false">继续听歌</Button>
+        <Button size="default" @click="showGradeDetail = false">继续听歌</Button>
       </template>
     </Dialog>
 
@@ -2125,8 +2124,8 @@ onUnmounted(() => {
           </div>
           <Button
             variant="unstyled"
-            size="none"
-            class="action-icon w-8 h-8 flex items-center justify-center text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main"
+            size="icon"
+            class="action-icon flex items-center justify-center text-[var(--icon-main)] hover:bg-[var(--control-hover-bg)] hover:text-text-main"
             tooltip="刷新登录设备"
             aria-label="刷新登录设备"
             :disabled="loginDeviceStore.loading"
@@ -2194,7 +2193,7 @@ onUnmounted(() => {
             <Button
               v-if="!device.isCurrent"
               variant="danger"
-              size="xs"
+              size="default"
               :disabled="!device.canKick"
               :loading="loginDeviceStore.kickingId === device.id"
               class="shrink-0"
@@ -2213,10 +2212,10 @@ onUnmounted(() => {
       :description="`移除“${pendingKickDevice?.title || '该设备'}”后，该设备需要重新登录。`"
     >
       <template #footer>
-        <Button variant="outline" size="sm" @click="showKickConfirm = false">取消</Button>
+        <Button variant="outline" size="default" @click="showKickConfirm = false">取消</Button>
         <Button
           variant="danger"
-          size="sm"
+          size="default"
           :loading="
             Boolean(pendingKickDevice && loginDeviceStore.kickingId === pendingKickDevice.id)
           "
@@ -2632,8 +2631,6 @@ onUnmounted(() => {
 }
 .profile-social-icon-btn {
   display: inline-flex;
-  width: 32px;
-  height: 32px;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-control);
@@ -2733,9 +2730,7 @@ onUnmounted(() => {
 }
 .profile-social-follow-btn {
   width: 96px;
-  height: 32px;
   flex-shrink: 0;
-  padding: 0 10px;
   border-radius: var(--radius-control);
   font-weight: 700;
   white-space: nowrap;
@@ -3097,16 +3092,6 @@ onUnmounted(() => {
 .dialog-content.profile-editor-dialog {
   width: min(520px, 92vw);
   max-height: min(760px, calc(100vh - 100px));
-}
-
-.profile-editor-dialog .profile-editor-field .relative > input,
-.profile-editor-dialog .echo-select-trigger {
-  height: 44px;
-  min-height: 44px;
-  border-color: var(--control-border);
-  border-radius: var(--radius-control);
-  padding-left: 14px;
-  font-size: 13px;
 }
 
 .profile-editor-dialog .profile-editor-select,

@@ -644,17 +644,17 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
             <template v-if="activeTab === 'songs'">
               <Button
                 variant="unstyled"
-                size="none"
+                size="icon"
                 @click="handlePlayAll"
-                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
+                class="action-icon hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>
               <Button
                 variant="unstyled"
-                size="none"
+                size="icon"
                 @click="openBatchDrawer"
-                class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+                class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
@@ -663,17 +663,17 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
             <Button
               v-if="userStore.isLoggedIn"
               variant="unstyled"
-              size="none"
+              size="icon"
               @click="toggleFavoriteAlbum"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-red-500"
+              class="action-icon hover:bg-[var(--control-hover-bg)] text-red-500"
             >
               <Icon :icon="isFavoriteAlbum ? iconHeartFilled : iconHeart" width="18" height="18" />
             </Button>
             <Button
               variant="unstyled"
-              size="none"
+              size="icon"
               @click="handleShareAlbum"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconShare" width="18" height="18" />
             </Button>
@@ -712,9 +712,9 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                     <SongSearchInput v-model="searchQuery" />
                     <Button
                       variant="unstyled"
-                      size="none"
+                      size="icon"
                       @click="handleLocate"
-                      class="action-icon song-locate-btn p-2"
+                      class="action-icon song-locate-btn"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="18" height="18" />

@@ -21,8 +21,8 @@ defineEmits<{ retry: [] }>();
     <p>内容还没能加载出来，请稍后重试。</p>
     <Button
       variant="secondary"
-      size="none"
-      class="mt-5 inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium"
+      size="default"
+      class="mt-5 inline-flex items-center gap-1.5 rounded-lg px-3 text-xs font-medium"
       @click="$emit('retry')"
     >
       <Icon :icon="iconRefreshCw" width="14" height="14" aria-hidden="true" />

@@ -67,12 +67,12 @@ defineProps<{
         </p>
       </div>
       <div class="flex items-center gap-2">
-        <Button variant="unstyled" size="none" class="settings-action" @click="onShowChangelog">
+        <Button variant="unstyled" size="default" class="settings-action" @click="onShowChangelog">
           更新日志
         </Button>
         <Button
           variant="primary"
-          size="none"
+          size="default"
           class="settings-action settings-action-primary"
           :disabled="isCheckingUpdate"
           @click="onCheckUpdates"
@@ -89,8 +89,8 @@ defineProps<{
       </div>
       <Button
         variant="ghost"
-        size="xs"
-        class="action-icon text-text-secondary h-10 w-10 min-w-0 p-0"
+        size="icon"
+        class="action-icon text-text-secondary"
         aria-label="查看源码"
         @click="settingStore.openRepo()"
       >
@@ -105,8 +105,8 @@ defineProps<{
       </div>
       <Button
         variant="ghost"
-        size="xs"
-        class="action-icon text-text-secondary h-10 w-10 min-w-0 p-0"
+        size="icon"
+        class="action-icon text-text-secondary"
         aria-label="查看声明"
         @click="onShowDisclaimer"
       >

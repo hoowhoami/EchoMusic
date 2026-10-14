@@ -385,7 +385,7 @@ onMounted(() => {
         <Button
           v-if="state === 'need-source'"
           variant="primary"
-          size="sm"
+          size="default"
           :loading="isBusy"
           @click="applySource"
         >
@@ -394,7 +394,7 @@ onMounted(() => {
         <Button
           v-else-if="state === 'ready'"
           variant="primary"
-          size="sm"
+          size="default"
           :loading="installing"
           :disabled="!targetPlugin?.compatibility.compatible"
           @click="installPlugin"
@@ -404,14 +404,19 @@ onMounted(() => {
         <Button
           v-else-if="state === 'failed'"
           variant="primary"
-          size="sm"
+          size="default"
           :loading="resolving"
           @click="retry"
         >
           <Icon v-if="!resolving" :icon="iconRefreshCw" width="15" height="15" />
           重新打开
         </Button>
-        <Button variant="secondary" size="sm" :disabled="isWorking" @click="goPluginManagement">
+        <Button
+          variant="secondary"
+          size="default"
+          :disabled="isWorking"
+          @click="goPluginManagement"
+        >
           <Icon :icon="iconArrowLeft" width="15" height="15" />
           插件管理
         </Button>

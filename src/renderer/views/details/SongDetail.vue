@@ -1387,9 +1387,9 @@ watch(total, (value) => {
         <template v-if="isMusicType" #collapsed-actions>
           <Button
             type="button"
-            class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
+            class="action-icon hover:bg-[var(--control-hover-bg)] text-primary-text"
             variant="unstyled"
-            size="none"
+            size="icon"
             tooltip="播放"
             aria-label="播放"
             :disabled="!canUseSongActions || detailLoading"
@@ -1399,9 +1399,9 @@ watch(total, (value) => {
           </Button>
           <Button
             type="button"
-            class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+            class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
             variant="unstyled"
-            size="none"
+            size="icon"
             tooltip="添加到"
             aria-label="添加到"
             :disabled="!canUseSongActions || detailLoading"
@@ -1411,9 +1411,9 @@ watch(total, (value) => {
           </Button>
           <Button
             type="button"
-            class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+            class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
             variant="unstyled"
-            size="none"
+            size="icon"
             tooltip="分享"
             aria-label="分享"
             @click="handleShareSong"

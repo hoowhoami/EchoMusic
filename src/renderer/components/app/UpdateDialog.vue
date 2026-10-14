@@ -139,18 +139,20 @@ const handleClose = () => updateStore.closeDialog();
         <span class="text-xs text-red-500 truncate min-w-0 flex-1">
           下载失败：{{ downloadError || '未知错误' }}
         </span>
-        <Button variant="secondary" size="sm" class="shrink-0" @click="handleOpenRelease"
+        <Button variant="secondary" size="default" class="shrink-0" @click="handleOpenRelease"
           >前往下载</Button
         >
       </div>
       <div v-else class="flex-1"></div>
 
       <!-- 右侧：按钮 -->
-      <Button variant="secondary" size="sm" @click="handleClose">{{ props.dismissLabel }}</Button>
+      <Button variant="secondary" size="default" @click="handleClose">{{
+        props.dismissLabel
+      }}</Button>
       <Button
         v-if="checkResult?.manualDownload && (checkResult.downloadUrl || checkResult.releaseUrl)"
         variant="primary"
-        size="sm"
+        size="default"
         @click="handleOpenDownload"
       >
         {{ checkResult.downloadLabel || '前往发布页下载' }}
@@ -159,7 +161,7 @@ const handleClose = () => updateStore.closeDialog();
         <Button
           v-if="checkResult?.releaseUrl"
           variant="secondary"
-          size="sm"
+          size="default"
           @click="handleOpenRelease"
         >
           前往下载
@@ -167,18 +169,28 @@ const handleClose = () => updateStore.closeDialog();
         <Button
           v-if="downloadStatus === 'downloaded'"
           variant="primary"
-          size="sm"
+          size="default"
           @click="handleInstall"
         >
           立即安装
         </Button>
-        <Button v-else-if="downloadStatus === 'installing'" variant="secondary" size="sm" disabled>
+        <Button
+          v-else-if="downloadStatus === 'installing'"
+          variant="secondary"
+          size="default"
+          disabled
+        >
           安装中
         </Button>
-        <Button v-else-if="downloadStatus === 'downloading'" variant="secondary" size="sm" disabled>
+        <Button
+          v-else-if="downloadStatus === 'downloading'"
+          variant="secondary"
+          size="default"
+          disabled
+        >
           下载中
         </Button>
-        <Button v-else variant="primary" size="sm" @click="handleDownload"> 立即更新 </Button>
+        <Button v-else variant="primary" size="default" @click="handleDownload"> 立即更新 </Button>
       </template>
     </template>
   </Dialog>

@@ -616,17 +616,17 @@ onBeforeUnmount(() => {
           <template #collapsed-actions>
             <Button
               variant="unstyled"
-              size="none"
+              size="icon"
               @click="handlePlayAll"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] text-primary-text"
+              class="action-icon hover:bg-[var(--control-hover-bg)] text-primary-text"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
             <Button
               variant="unstyled"
-              size="none"
+              size="icon"
               @click="openBatchDrawer"
-              class="action-icon p-2 hover:bg-[var(--control-hover-bg)] icon-action"
+              class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
@@ -662,9 +662,9 @@ onBeforeUnmount(() => {
                     <SongSearchInput v-model="searchQuery" />
                     <Button
                       variant="unstyled"
-                      size="none"
+                      size="icon"
                       @click="handleLocate"
-                      class="action-icon song-locate-btn p-2"
+                      class="action-icon song-locate-btn"
                       tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="16" height="16" />
@@ -690,7 +690,7 @@ onBeforeUnmount(() => {
               class="flex items-center justify-center gap-3 py-4 text-sm text-text-secondary"
             >
               <span>{{ loadError }}</span>
-              <Button variant="outline" size="sm" @click="retryCloud">重试加载</Button>
+              <Button variant="outline" size="default" @click="retryCloud">重试加载</Button>
             </div>
             <div
               v-if="!loading && !loadError && songs.length === 0"
@@ -705,7 +705,7 @@ onBeforeUnmount(() => {
               <div class="mt-2 text-[13px] font-medium text-text-secondary">上传后会展示在这里</div>
               <Button
                 variant="soft-secondary"
-                size="md"
+                size="default"
                 class="mt-5 gap-2"
                 @click="cloudUploadStore.requestOpen('start')"
               >
@@ -758,7 +758,7 @@ onBeforeUnmount(() => {
           <template #footer>
             <Button
               variant="outline"
-              size="sm"
+              size="default"
               :disabled="deletingCloudSong"
               @click="closeDeleteCloudSongDialog"
             >
@@ -766,7 +766,7 @@ onBeforeUnmount(() => {
             </Button>
             <Button
               variant="danger"
-              size="sm"
+              size="default"
               :loading="deletingCloudSong"
               @click="confirmDeleteCloudSong"
             >

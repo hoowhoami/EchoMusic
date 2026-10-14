@@ -73,7 +73,7 @@ onUnmounted(() => {
     <div v-if="visible" class="absolute right-6 bottom-4 z-50">
       <Button
         variant="unstyled"
-        size="none"
+        size="icon"
         @click="scrollToTop"
         class="action-icon inline-flex items-center justify-center back-to-top-btn"
         aria-label="回到顶部"
@@ -90,8 +90,6 @@ onUnmounted(() => {
 .back-to-top-btn {
   --back-to-top-hover-y: 0px;
   --back-to-top-active-scale: 1;
-  width: var(--scroll-action-size);
-  height: var(--scroll-action-size);
   background: var(--scroll-action-bg);
   color: var(--scroll-action-text);
   border: 1px solid var(--scroll-action-border);

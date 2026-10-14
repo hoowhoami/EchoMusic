@@ -54,12 +54,12 @@ const handleReject = () => {
       <Button
         class="legal-button legal-button--danger"
         variant="danger"
-        size="sm"
+        size="default"
         @click="handleReject"
       >
         不同意并退出
       </Button>
-      <Button class="legal-button" variant="primary" size="sm" @click="handleAccept">
+      <Button class="legal-button" variant="primary" size="default" @click="handleAccept">
         同意并继续
       </Button>
     </template>

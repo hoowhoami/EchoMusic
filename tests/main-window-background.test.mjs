@@ -18,6 +18,7 @@ const compiled = {
   background: compile('../src/main/macBackgroundMode.ts'),
   app: compile('../src/shared/app.ts'),
   zoom: compile('../src/shared/windowZoom.ts'),
+  startup: compile('../src/main/window/startup.ts'),
 };
 const noop = () => {};
 
@@ -26,6 +27,9 @@ async function setup({
   platform = 'darwin',
   hideDockInBackground = true,
   hideMenuBarInBackground = true,
+  startMinimized = false,
+  isMaximized = false,
+  finishStartup = true,
 } = {}) {
   const events = [];
   const timers = new Map();
@@ -33,6 +37,7 @@ async function setup({
   let timerId = 0;
   let activeMode = 'main';
   let quitCalls = 0;
+  let stateOptions;
   let dockShow = () => Promise.resolve();
   const saved = {
     closeBehavior: behavior,
@@ -41,9 +46,9 @@ async function setup({
     theme: 'system',
     windowBackground: { enabled: false, frosted: false },
     rememberWindowSize: true,
-    windowState: { width: 1150, height: 750, isMaximized: false },
+    windowState: { width: 1150, height: 750, isMaximized },
     windowZoomLevel: 0,
-    startMinimized: false,
+    startMinimized,
   };
   const app = Object.assign(new EventEmitter(), {
     setLoginItemSettings: noop,
@@ -95,6 +100,10 @@ async function setup({
     }
     setSheetOffset() {}
     setBackgroundColor() {}
+    maximize() {
+      events.push('window:maximize');
+      this.show(); // Electron may present a hidden window when maximizing it.
+    }
     loadFile() {}
     show() {
       events.push('window:show');
@@ -127,6 +136,7 @@ async function setup({
     'node:os': { release: () => '25.0.0' },
     path: { join },
     electron: {
+      ipcMain: new EventEmitter(),
       app,
       BrowserWindow: FakeWindow,
       nativeTheme: Object.assign(new EventEmitter(), { themeSource: 'system' }),
@@ -167,7 +177,12 @@ async function setup({
     '../diagnostics/memory': { logMainMemory: async () => {} },
     '../windowSizing': { resolveMainWindowPlacement: () => ({ bounds: saved.windowState }) },
     '../../shared/windowing': { isWaylandWindowingBackend: () => false },
-    './state': { trackMainWindowState: () => ({ flush: noop, dispose: noop }) },
+    './state': {
+      trackMainWindowState: (_win, options) => {
+        stateOptions = options;
+        return { flush: noop, dispose: noop };
+      },
+    },
     './pointer': { installWindowPointerEvents: noop },
     './windowsComposition': { supportsWindowsAccent: () => false, applyWindowsComposition: noop },
     './macComposition': { applyMacWindowBackground: noop },
@@ -198,13 +213,22 @@ async function setup({
   mocks['../../shared/app'] = evaluate(compiled.app);
   mocks['./chrome'] = evaluate(compiled.chrome);
   mocks['../../shared/windowZoom'] = evaluate(compiled.zoom);
+  mocks['./startup'] = evaluate(compiled.startup);
   const fullscreen = (mocks['./fullscreen'] = evaluate(compiled.fullscreen));
   const background = (mocks['../macBackgroundMode'] = evaluate(compiled.background));
   background.registerMacTrayVisibility((visible) => events.push(`tray:${visible}`));
   const api = evaluate(compiled.window);
   api.registerMainWindowPreferenceHandlers();
   const win = await api.createWindow();
-  win.emit('ready-to-show');
+  const mounted = () =>
+    mocks.electron.ipcMain.emit('main-window:page-mounted', {
+      sender: win.webContents,
+      senderFrame: win.webContents.mainFrame,
+    });
+  if (finishStartup) {
+    win.emit('ready-to-show');
+    mounted();
+  }
   events.length = 0;
   return {
     api,
@@ -215,6 +239,8 @@ async function setup({
     background,
     fullscreen,
     saved,
+    mounted,
+    statePersistenceEnabled: () => stateOptions.enabled(),
     get quitCalls() {
       return quitCalls;
     },
@@ -609,4 +635,52 @@ test('a pending fullscreen close applies the latest independent icon preferences
   assert.equal(e.win.isVisible(), false);
   assert.deepEqual(e.events, ['window:hide', 'tray:false']);
   assert.equal(e.timers.size, 0);
+});
+
+test('startup waits for the mounted page before showing or restoring maximization', async () => {
+  const e = await setup({ finishStartup: false, isMaximized: true });
+  assert.equal(e.win.isVisible(), false);
+  e.win.emit('ready-to-show');
+  assert.equal(e.win.isVisible(), false);
+  assert.deepEqual(e.events, []);
+  e.mounted();
+  assert.equal(e.win.isVisible(), true);
+  assert.equal(e.events[0], 'window:maximize');
+});
+
+test('minimized startup stays hidden even with saved maximization until explicitly restored', async () => {
+  const e = await setup({ startMinimized: true, isMaximized: true });
+  assert.equal(e.win.isVisible(), false);
+  assert.equal(e.statePersistenceEnabled(), false);
+  assert.deepEqual(e.events, []);
+  await e.api.restoreWindow();
+  assert.equal(e.win.isVisible(), true);
+  assert.equal(e.events[0], 'window:maximize');
+  assert.equal(e.statePersistenceEnabled(), true);
+});
+
+test('an early restore request waits for the mounted page', async () => {
+  const e = await setup({ finishStartup: false });
+  const restoring = e.api.restoreWindow();
+  await new Promise(setImmediate);
+  assert.equal(e.win.isVisible(), false);
+  e.win.emit('ready-to-show');
+  await new Promise(setImmediate);
+  assert.equal(e.win.isVisible(), false);
+  e.mounted();
+  await restoring;
+  assert.equal(e.win.isVisible(), true);
+  assert.equal(e.events.filter((event) => event === 'window:show').length, 1);
+});
+
+test('closing during startup cancels automatic presentation and a pending restore', async () => {
+  const e = await setup({ finishStartup: false });
+  const restoring = e.api.restoreWindow();
+  await new Promise(setImmediate);
+  e.api.requestMainWindowClose();
+  e.win.emit('ready-to-show');
+  e.mounted();
+  await restoring;
+  assert.equal(e.win.isVisible(), false);
+  assert.equal(e.events.includes('window:show'), false);
 });

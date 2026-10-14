@@ -64,7 +64,7 @@ async function submit() {
       <Button
         class="comment-send"
         type="submit"
-        size="xs"
+        size="default"
         :disabled="overLimit || sending || !content.trim() || !available || !user.isLoggedIn"
       >
         {{ sending ? '发送中…' : '发送' }}
@@ -80,7 +80,7 @@ async function submit() {
       v-if="variant !== 'barrage'"
       class="comment-send"
       type="submit"
-      size="xs"
+      size="default"
       :disabled="overLimit || sending || !content.trim() || !available || !user.isLoggedIn"
     >
       {{ sending ? '发送中…' : '发送' }}

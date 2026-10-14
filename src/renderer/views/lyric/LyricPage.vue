@@ -523,7 +523,7 @@ onUnmounted(() => {
         <Tooltip content="选择歌词">
           <template #trigger>
             <button
-              class="action-icon lyric-page-tool-btn soft-secondary-action"
+              class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
               aria-label="选择歌词"
               @click="lyricStore.sourceDialogOpen = true"
             >
@@ -534,7 +534,7 @@ onUnmounted(() => {
         <Tooltip v-if="hasLyrics" :content="`歌词后退 ${lyricOffsetStepLabel}`">
           <template #trigger>
             <button
-              class="action-icon lyric-page-tool-btn soft-secondary-action"
+              class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
               :aria-label="`歌词后退 ${lyricOffsetStepLabel}`"
               @click="handleOffsetAdjust(-1)"
             >
@@ -545,7 +545,7 @@ onUnmounted(() => {
         <Tooltip v-if="hasLyrics" :content="`歌词前进 ${lyricOffsetStepLabel}`">
           <template #trigger>
             <button
-              class="action-icon lyric-page-tool-btn soft-secondary-action"
+              class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
               :aria-label="`歌词前进 ${lyricOffsetStepLabel}`"
               @click="handleOffsetAdjust(1)"
             >
@@ -556,7 +556,7 @@ onUnmounted(() => {
         <Tooltip v-if="hasLyrics" content="重置单曲偏移">
           <template #trigger>
             <button
-              class="action-icon lyric-page-tool-btn soft-secondary-action"
+              class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
               :style="{
                 visibility: lyricStore.currentTrackTimeOffset !== 0 ? 'visible' : 'hidden',
               }"
@@ -600,7 +600,7 @@ onUnmounted(() => {
         <Tooltip content="复制歌词">
           <template #trigger>
             <button
-              class="action-icon lyric-page-tool-btn soft-secondary-action"
+              class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
               aria-label="复制歌词"
               @click="handleCopyLyrics"
             >
@@ -765,7 +765,7 @@ onUnmounted(() => {
           <Tooltip content="选择歌词">
             <template #trigger>
               <button
-                class="action-icon lyric-page-tool-btn soft-secondary-action"
+                class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
                 aria-label="选择歌词"
                 @click="lyricStore.sourceDialogOpen = true"
               >
@@ -776,7 +776,7 @@ onUnmounted(() => {
           <Tooltip v-if="hasLyrics" :content="`歌词后退 ${lyricOffsetStepLabel}`">
             <template #trigger>
               <button
-                class="action-icon lyric-page-tool-btn soft-secondary-action"
+                class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
                 :aria-label="`歌词后退 ${lyricOffsetStepLabel}`"
                 @click="handleOffsetAdjust(-1)"
               >
@@ -787,7 +787,7 @@ onUnmounted(() => {
           <Tooltip v-if="hasLyrics" :content="`歌词前进 ${lyricOffsetStepLabel}`">
             <template #trigger>
               <button
-                class="action-icon lyric-page-tool-btn soft-secondary-action"
+                class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
                 :aria-label="`歌词前进 ${lyricOffsetStepLabel}`"
                 @click="handleOffsetAdjust(1)"
               >
@@ -798,7 +798,7 @@ onUnmounted(() => {
           <Tooltip v-if="hasLyrics" content="重置单曲偏移">
             <template #trigger>
               <button
-                class="action-icon lyric-page-tool-btn soft-secondary-action"
+                class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
                 :style="{
                   visibility: lyricStore.currentTrackTimeOffset !== 0 ? 'visible' : 'hidden',
                 }"
@@ -844,7 +844,7 @@ onUnmounted(() => {
           <Tooltip content="复制歌词">
             <template #trigger>
               <button
-                class="action-icon lyric-page-tool-btn soft-secondary-action"
+                class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
                 aria-label="复制歌词"
                 @click="handleCopyLyrics"
               >
@@ -1159,8 +1159,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
   border-radius: var(--radius-control);
   border: 0;
   font-size: 12px;

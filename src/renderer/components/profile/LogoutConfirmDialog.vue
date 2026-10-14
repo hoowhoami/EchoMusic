@@ -9,8 +9,8 @@ const emit = defineEmits<{ confirm: [] }>();
 <template>
   <Dialog v-model:open="open" title="退出登录" description="确定要退出当前账号吗？">
     <template #footer>
-      <Button variant="outline" size="sm" @click="open = false">取消</Button>
-      <Button variant="danger" size="sm" @click="emit('confirm')">确认退出</Button>
+      <Button variant="outline" size="default" @click="open = false">取消</Button>
+      <Button variant="danger" size="default" @click="emit('confirm')">确认退出</Button>
     </template>
   </Dialog>
 </template>

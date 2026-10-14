@@ -130,7 +130,7 @@ const updateLyricOffsetStep = (value: string) => {
       <div class="flex shrink-0 items-center gap-2">
         <button
           type="button"
-          class="settings-action"
+          class="settings-action echo-button-sized echo-button-standard"
           :disabled="globalOffsetSeconds === 0"
           @click="lyricStore.setGlobalTimeOffset(0)"
         >
@@ -182,7 +182,7 @@ const updateLyricOffsetStep = (value: string) => {
         </div>
         <div class="flex items-center gap-2">
           <button
-            class="settings-action"
+            class="settings-action echo-button-sized echo-button-standard"
             v-if="settingStore.lyricFilterPattern"
             type="button"
             @click="settingStore.lyricFilterPattern = ''"

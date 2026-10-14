@@ -347,7 +347,7 @@ onBeforeUnmount(() => {
       <Button
         class="action-icon discover-reel-refresh"
         variant="unstyled"
-        size="none"
+        size="icon"
         tooltip="换一批推荐"
         tooltip-side="bottom"
         :disabled="loading"
@@ -405,7 +405,7 @@ onBeforeUnmount(() => {
         <Button
           class="action-icon discover-reel-action"
           variant="unstyled"
-          size="none"
+          size="icon"
           :disabled="!canGoPrev"
           tooltip="上一首"
           tooltip-side="left"
@@ -417,7 +417,7 @@ onBeforeUnmount(() => {
           class="action-icon discover-reel-action"
           :class="{ active: favorite }"
           variant="unstyled"
-          size="none"
+          size="icon"
           :disabled="actionBusy"
           :tooltip="favorite ? '取消收藏' : '收藏'"
           tooltip-side="left"
@@ -428,7 +428,7 @@ onBeforeUnmount(() => {
         <Button
           class="action-icon discover-reel-play"
           variant="unstyled"
-          size="none"
+          size="icon"
           :disabled="playbackBusy"
           :tooltip="isCurrentPlaying ? '暂停' : '播放'"
           tooltip-side="left"
@@ -444,7 +444,7 @@ onBeforeUnmount(() => {
         <Button
           class="action-icon discover-reel-action"
           variant="unstyled"
-          size="none"
+          size="icon"
           :disabled="!canGoNext"
           tooltip="下一首"
           tooltip-side="left"
@@ -535,11 +535,9 @@ onBeforeUnmount(() => {
 
 .discover-reel-refresh {
   display: inline-flex;
-  flex: 0 0 34px;
+  flex: 0 0 var(--button-height);
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
   border-radius: var(--radius-control);
   color: var(--color-text-secondary);
   background: transparent;
@@ -683,14 +681,7 @@ onBeforeUnmount(() => {
   color: var(--color-text-main);
 }
 
-.discover-reel-action {
-  width: 40px;
-  height: 40px;
-}
-
 .discover-reel-play {
-  width: 52px;
-  height: 52px;
   color: var(--color-text-main);
 }
 

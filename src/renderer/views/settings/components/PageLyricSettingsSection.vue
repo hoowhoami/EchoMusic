@@ -54,7 +54,7 @@ const { activeValue, activeTitle, isOpen, dynamicOption, presets, open, close, a
         </div>
         <div class="settings-color-actions">
           <button
-            class="settings-action"
+            class="settings-action echo-button-sized echo-button-standard"
             type="button"
             :class="{ invisible: !lyricStore.playedColor && !lyricStore.unplayedColor }"
             @click="reset"

@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
+import Badge from '@/components/ui/Badge.vue';
 import Checkbox from '@/components/ui/Checkbox.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -319,8 +320,8 @@ const getPluginAccentStyle = (pluginId: string) => {
         <div class="plugin-header-actions">
           <Button
             variant="secondary"
-            size="sm"
-            class="action-icon h-9! w-9! p-0! shrink-0"
+            size="icon"
+            class="action-icon shrink-0"
             tooltip="已授权文件与目录"
             @click="grantsOpen = true"
           >
@@ -330,9 +331,9 @@ const getPluginAccentStyle = (pluginId: string) => {
           <!-- 打开目录 -->
           <Button
             variant="secondary"
-            size="sm"
+            size="icon"
             @click="openDirectory"
-            class="action-icon h-9! w-9! p-0! shrink-0"
+            class="action-icon shrink-0"
             tooltip="打开插件目录"
           >
             <Icon :icon="iconFolderOpen" width="16" height="16" />
@@ -341,10 +342,10 @@ const getPluginAccentStyle = (pluginId: string) => {
           <!-- 刷新 -->
           <Button
             variant="secondary"
-            size="sm"
+            size="icon"
             :disabled="isRefreshing || isMarketplaceRefreshing"
             @click="activeView === 'marketplace' ? loadMarketplace(true) : refresh()"
-            class="action-icon h-9! w-9! p-0! shrink-0"
+            class="action-icon shrink-0"
             tooltip="刷新插件列表"
           >
             <Icon
@@ -365,14 +366,17 @@ const getPluginAccentStyle = (pluginId: string) => {
           :model-value="activeView === 'marketplace' ? 1 : 0"
           @update:model-value="switchView($event === 1 ? 'marketplace' : 'installed')"
         >
-          <template #tab="{ label, index }">
+          <template #tab="{ label, index, selected }">
             <Icon :icon="index === 0 ? iconPlugin : iconCloud" width="14" height="14" />
-            <span class="plugin-view-tab-label">{{ label }}</span>
-            <small class="plugin-view-tab-count">
-              {{
-                index === 0 ? records.length : marketplaceLoaded ? marketplacePlugins.length : '-'
-              }}
-            </small>
+            <span class="badge-label">
+              <span class="plugin-view-tab-label">{{ label }}</span>
+              <Badge
+                :count="
+                  index === 0 ? records.length : marketplaceLoaded ? marketplacePlugins.length : '-'
+                "
+                :tone="selected ? 'accent' : 'neutral'"
+              />
+            </span>
           </template>
         </CustomTabBar>
         <div class="plugin-safe-mode-control">
@@ -406,7 +410,7 @@ const getPluginAccentStyle = (pluginId: string) => {
         </div>
         <Button
           variant="danger"
-          size="xs"
+          size="default"
           class="shrink-0"
           :loading="isClearingFailure"
           @click="clearGlobalFailureRecord"
@@ -470,7 +474,6 @@ const getPluginAccentStyle = (pluginId: string) => {
               v-model="marketplaceSearch"
               placeholder="搜索插件、作者或标签"
               class="marketplace-search"
-              input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
             />
             <div class="marketplace-source-controls">
               <Select
@@ -480,8 +483,8 @@ const getPluginAccentStyle = (pluginId: string) => {
               />
               <Button
                 variant="secondary"
-                size="sm"
-                class="action-icon h-9! w-9! p-0! shrink-0"
+                size="icon"
+                class="action-icon shrink-0"
                 tooltip="管理插件源"
                 @click="openSourceDialog"
               >
@@ -491,8 +494,8 @@ const getPluginAccentStyle = (pluginId: string) => {
             <Button
               v-if="updatableMarketplaceCount > 0 || isUpdatingAllMarketplace"
               variant="primary"
-              size="sm"
-              class="marketplace-update-all-btn h-9! shrink-0"
+              size="default"
+              class="marketplace-update-all-btn shrink-0"
               :loading="isUpdatingAllMarketplace"
               :disabled="isUpdatingAllMarketplace || isMarketplaceRefreshing"
               :tooltip="`更新全部 ${updatableMarketplaceCount} 个插件`"
@@ -653,7 +656,7 @@ const getPluginAccentStyle = (pluginId: string) => {
       <template #footer>
         <Button
           variant="secondary"
-          size="xs"
+          size="default"
           :disabled="isUninstalling"
           @click="showUninstallDialog = false"
         >
@@ -661,7 +664,7 @@ const getPluginAccentStyle = (pluginId: string) => {
         </Button>
         <Button
           variant="danger"
-          size="xs"
+          size="default"
           :loading="isUninstalling"
           @click="confirmUninstallPlugin"
         >
@@ -704,7 +707,7 @@ const getPluginAccentStyle = (pluginId: string) => {
           <Button
             v-if="canClearActiveFailureDetail"
             variant="danger"
-            size="xs"
+            size="default"
             :loading="isClearingFailure"
             @click="clearActiveFailureRecord"
           >
@@ -712,7 +715,7 @@ const getPluginAccentStyle = (pluginId: string) => {
           </Button>
           <Button
             variant="secondary"
-            size="xs"
+            size="default"
             :disabled="isClearingFailure"
             @click="showFailureDetailDialog = false"
           >

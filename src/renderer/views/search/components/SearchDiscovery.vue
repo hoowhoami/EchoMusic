@@ -34,7 +34,7 @@ const emit = defineEmits<{
           <div class="search-section-title">历史搜索</div>
           <Button
             variant="unstyled"
-            size="none"
+            size="icon"
             type="button"
             class="action-icon search-history-clear"
             @click="emit('clearHistory')"

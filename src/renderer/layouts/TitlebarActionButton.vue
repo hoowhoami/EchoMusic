@@ -8,7 +8,7 @@ defineProps<{ action: ResolvedTitlebarAction; badge?: boolean }>();
 <template>
   <Button
     variant="unstyled"
-    size="none"
+    size="icon"
     class="action-icon titlebar-icon-action titlebar-action no-drag"
     :tooltip="action.tooltip"
     tooltip-side="bottom"
@@ -26,11 +26,9 @@ defineProps<{ action: ResolvedTitlebarAction; badge?: boolean }>();
 .titlebar-action {
   position: relative;
   display: flex;
-  flex: 0 0 34px;
+  flex: 0 0 var(--button-height);
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
   border-radius: var(--radius-control);
 }
 .action-badge {

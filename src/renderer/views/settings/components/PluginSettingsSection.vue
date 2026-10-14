@@ -45,7 +45,7 @@ const handleOpenDocs = () => {
       </div>
       <Button
         variant="unstyled"
-        size="none"
+        size="default"
         class="settings-action"
         @click="handleOpenPluginManagement"
       >
@@ -60,7 +60,7 @@ const handleOpenDocs = () => {
         <h3 class="font-semibold">插件文档</h3>
         <p class="text-sm text-text-secondary">了解如何开发和使用插件</p>
       </div>
-      <Button variant="unstyled" size="none" class="settings-action" @click="handleOpenDocs">
+      <Button variant="unstyled" size="default" class="settings-action" @click="handleOpenDocs">
         查看文档
       </Button>
     </div>

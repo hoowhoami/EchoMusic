@@ -217,7 +217,7 @@ const orderedPlaylists = computed(() => {
             'add-to-selected': multiple && selectedIds.has(addTargetKey('queue', queue.id)),
           }"
           variant="ghost"
-          size="sm"
+          size="none"
           :disabled="disabled || isBusy || (multiple && hasResults)"
           :role="multiple ? 'checkbox' : undefined"
           :aria-checked="multiple ? selectedIds.has(addTargetKey('queue', queue.id)) : undefined"
@@ -276,7 +276,7 @@ const orderedPlaylists = computed(() => {
             multiple && selectedIds.has(addTargetKey('playlist', entry.listid ?? entry.id)),
         }"
         variant="ghost"
-        size="sm"
+        size="none"
         :disabled="loading || disabled || isBusy || (multiple && hasResults)"
         :role="multiple ? 'checkbox' : undefined"
         :aria-checked="
@@ -338,12 +338,18 @@ const orderedPlaylists = computed(() => {
             添加中 {{ progress.done }}/{{ progress.total }}
           </span>
         </div>
-        <Button type="button" variant="outline" size="sm" :disabled="busy" @click="open = false">
+        <Button
+          type="button"
+          variant="outline"
+          size="default"
+          :disabled="busy"
+          @click="open = false"
+        >
           取消
         </Button>
         <Button
           type="button"
-          size="sm"
+          size="default"
           :loading="busy"
           :disabled="loading || disabled || selectedIds.size === 0 || songs.length === 0"
           @click="submit(failedIds.length > 0)"
@@ -425,6 +431,7 @@ const orderedPlaylists = computed(() => {
 }
 
 .add-to-item {
+  min-height: 40px;
   width: 100%;
   padding: 8px 12px;
   border-radius: var(--radius-item);

@@ -879,7 +879,7 @@ const statusLabel = (item: CloudUploadItem) => {
         </div>
         <Button
           variant="primary"
-          size="sm"
+          size="default"
           class="self-end"
           :disabled="manualSearching || !manualSearchTitle.trim()"
           @click="handleManualSearch"
@@ -989,19 +989,21 @@ const statusLabel = (item: CloudUploadItem) => {
 
     <template #footer>
       <template v-if="step === 'pick'">
-        <Button variant="secondary" size="sm" :disabled="picking" @click="closeDialog">取消</Button>
+        <Button variant="secondary" size="default" :disabled="picking" @click="closeDialog"
+          >取消</Button
+        >
       </template>
       <template v-else-if="step === 'manual-search'">
         <Button
           variant="secondary"
-          size="sm"
+          size="default"
           @click="
             step = 'pick';
             manualFile = null;
           "
           >返回</Button
         >
-        <Button variant="secondary" size="sm" @click="closeDialog">取消</Button>
+        <Button variant="secondary" size="default" @click="closeDialog">取消</Button>
       </template>
       <template v-else>
         <div class="cloud-upload-footer-content">
@@ -1016,18 +1018,18 @@ const statusLabel = (item: CloudUploadItem) => {
               {{ doneCount + failedCount }} / {{ items.length }}
             </span>
           </div>
-          <Button v-if="isUploading" variant="secondary" size="sm" @click="handleCancel">
+          <Button v-if="isUploading" variant="secondary" size="default" @click="handleCancel">
             取消上传
           </Button>
           <Button
             v-if="isUploading && cloudUploadStore.status === 'running'"
             variant="primary"
-            size="sm"
+            size="default"
             @click="handleBackgroundRun"
           >
             后台运行
           </Button>
-          <Button v-else variant="primary" size="sm" @click="closeDialog">完成</Button>
+          <Button v-else variant="primary" size="default" @click="closeDialog">完成</Button>
         </div>
       </template>
     </template>
@@ -1060,10 +1062,10 @@ const statusLabel = (item: CloudUploadItem) => {
       </label>
     </div>
     <template #footer>
-      <Button variant="secondary" size="sm" type="button" @click="cancelBackgroundUpload">
+      <Button variant="secondary" size="default" type="button" @click="cancelBackgroundUpload">
         留在本页
       </Button>
-      <Button variant="primary" size="sm" @click="confirmBackgroundUpload">我知道了</Button>
+      <Button variant="primary" size="default" @click="confirmBackgroundUpload">我知道了</Button>
     </template>
   </Dialog>
 </template>

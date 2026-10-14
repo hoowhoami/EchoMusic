@@ -36,6 +36,7 @@ import { applyMacWindowBackground } from './macComposition';
 import { getMainWindowChrome } from './chrome';
 import { createHyprlandBackgroundController } from './hyprlandBackground';
 import { installWindowZoom, registerWindowZoomHandlers } from './zoom';
+import { waitForMainWindowStartup } from './startup';
 import {
   installWindowFullscreen,
   installWindowFullscreenShortcut,
@@ -82,6 +83,13 @@ let powerSaveBlockerId = -1;
 app.setLoginItemSettings({ openAtLogin: initialSettings.autoLaunch });
 
 let win: BrowserWindow | null = null;
+let mainWindowStartup: Promise<void> | null = null;
+let initialMaximizePending = false;
+const applyInitialMaximize = () => {
+  if (!initialMaximizePending || !canUseMainWindow(win)) return;
+  initialMaximizePending = false;
+  win.maximize();
+};
 let isQuitting = false;
 let windowPresentationRevision = 0;
 let cancelPendingBackgroundClose = () => {};
@@ -118,15 +126,18 @@ export async function prepareWindowPresentation() {
 
 export async function showMainWindow(focus = true, forceRaise = false) {
   if (!canUseMainWindow(win)) return;
+  const mainWindow = win;
   // Publish the requested mode before Dock restoration can trigger app.activate.
   setActiveWindowMode('main');
   const canPresent = await prepareWindowPresentation();
-  if (!canPresent() || !canUseMainWindow(win)) return;
+  await mainWindowStartup;
+  if (!canPresent() || !canUseMainWindow(win) || win !== mainWindow) return;
 
   const wasVisible = win.isVisible();
   const wasMinimized = win.isMinimized();
   const wasFocused = win.isFocused();
 
+  applyInitialMaximize();
   if (wasMinimized) {
     win.restore();
   }
@@ -496,6 +507,25 @@ export async function createWindow() {
     win.setBounds(placement.bounds);
   }
   const mainWindow = win;
+  initialMaximizePending = rememberWindowSize && initialWindowState.isMaximized === true;
+  const startupPresentationRevision = windowPresentationRevision;
+  mainWindowStartup = waitForMainWindowStartup(mainWindow, () => {
+    flushPersistWindowState();
+    void logMainMemory('main window:page-mounted');
+    if (
+      mainWindow === win &&
+      !isQuitting &&
+      windowPresentationRevision === startupPresentationRevision &&
+      !initialSettings.startMinimized &&
+      !isMacBackgroundMode() &&
+      getActiveWindowMode() !== 'mini'
+    ) {
+      applyInitialMaximize();
+      mainWindow.show();
+      void logMainMemory('main window:after show');
+    }
+  });
+
   if (windowBackgroundStrategy === 'hyprland') {
     hyprlandBackgroundController = createHyprlandBackgroundController(mainWindow);
   }
@@ -505,7 +535,8 @@ export async function createWindow() {
   });
   windowStateTracker = trackMainWindowState(win, {
     initial: initialWindowState,
-    enabled: () => rememberWindowSize,
+    // Keep saved maximization while startup remains hidden and maximize is deferred.
+    enabled: () => rememberWindowSize && !initialMaximizePending,
     save: (state) => setMainAppSetting('windowState', state),
     supportsPosition: !usesWayland,
     macOS: process.platform === 'darwin',
@@ -520,20 +551,9 @@ export async function createWindow() {
   applyWindowAppIcon(win);
   await logMainMemory('createWindow:after window icon');
 
-  if (rememberWindowSize && initialWindowState.isMaximized === true) {
-    win.maximize();
-    await logMainMemory('createWindow:after maximize');
-  }
-
-  // 当窗口准备好显示时再展示，优雅解决启动白屏
-  // 如果启用了启动时最小化，则不自动显示窗口，由用户通过托盘恢复
+  // Native readiness alone must not expose an empty document before Vue mounts.
   win.once('ready-to-show', () => {
-    flushPersistWindowState();
     void logMainMemory('main window:ready-to-show');
-    if (!initialSettings.startMinimized && !isMacBackgroundMode()) {
-      win?.show();
-      void logMainMemory('main window:after show');
-    }
     // The native surface address is only reliable after the window has been
     // created by the compositor; retry the selected blur mode at this point.
     syncHyprlandBackground();

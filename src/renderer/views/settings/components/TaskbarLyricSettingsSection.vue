@@ -109,7 +109,7 @@ const setBarSettings = async (patch: Partial<TaskbarLyricSettings>) => {
         <button
           v-if="barEnabled"
           type="button"
-          class="settings-action"
+          class="settings-action echo-button-sized echo-button-standard"
           :disabled="barBusy"
           @click="setBar(true)"
         >

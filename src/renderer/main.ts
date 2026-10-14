@@ -13,7 +13,7 @@ import { installInputBehaviorGuard } from '@/utils/inputBehaviorGuard';
 import { startRendererMemoryDiagnostics } from '@/utils/rendererMemoryDiagnostics';
 import { openSettingsDialog } from '@/composables/useSettingsDialog';
 import './style.css';
-import { finishStartup, markStartup } from '@/utils/startupTiming';
+import { markStartup } from '@/utils/startupTiming';
 
 markStartup('entry-ready');
 
@@ -246,11 +246,15 @@ router.afterEach((to, _from, failure) => {
   if (!failure && to.path.startsWith('/main/')) markStartup('main-route-ready');
 });
 
-// Hand off the lightweight splash to the mounted route, including Loading.
+// Wait for the initial route and a painted Vue frame before presenting the main window.
 const mountApplication = () => {
   markStartup('initial-route-ready');
   app.mount('#app');
   markStartup('app-mounted');
-  void nextTick(finishStartup);
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => window.electron?.notifyPageMounted());
+    });
+  });
 };
 void router.isReady().then(mountApplication, mountApplication);

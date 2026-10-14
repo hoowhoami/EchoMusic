@@ -308,7 +308,7 @@ onBeforeUnmount(() => {
               <template #trigger>
                 <button
                   type="button"
-                  class="action-icon shortcut-remove"
+                  class="action-icon shortcut-remove echo-button-sized echo-button-icon"
                   :aria-label="`移除${entry.title}卡片`"
                   @pointerdown.stop
                   @click.stop="remove(entry)"
@@ -340,12 +340,11 @@ onBeforeUnmount(() => {
         content-class="shortcut-picker"
         :content-style="pickerPosition"
       >
-        <p class="shortcut-picker-hint">拖动卡片调整顺序，第一张就是首页；至少保留一张卡片。</p>
         <div class="shortcut-functions-heading">
           <h3>常用功能</h3>
           <button
             type="button"
-            class="shortcut-reset soft-secondary-action app-focus-ring-soft"
+            class="shortcut-reset soft-secondary-action app-focus-ring-soft echo-button-sized echo-button-standard"
             @click="save([...DEFAULT_SHORTCUT_KEYS])"
           >
             恢复默认
@@ -448,12 +447,6 @@ onBeforeUnmount(() => {
   </div>
 </template>
 <style scoped>
-.shortcut-picker-hint {
-  margin: 0 0 16px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-}
 .sidebar-shortcuts {
   padding: 0 18px;
   flex-shrink: 0;
@@ -512,9 +505,6 @@ onBeforeUnmount(() => {
   right: 3px;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
@@ -614,8 +604,6 @@ onBeforeUnmount(() => {
   padding: 24px 0 24px 24px;
 }
 .shortcut-reset {
-  min-height: 28px;
-  padding: 4px 8px;
   border-radius: var(--radius-control);
   font-size: 12px;
 }

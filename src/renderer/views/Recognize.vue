@@ -525,7 +525,7 @@ onBeforeUnmount(() => {
               <div class="rec-match-actions">
                 <Button
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   class="action-icon rec-circle-btn rec-circle-primary"
                   tooltip="播放"
                   @click="handlePlay(match.song)"
@@ -535,7 +535,7 @@ onBeforeUnmount(() => {
                 <Button
                   class="action-icon"
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   :class="[
                     'rec-circle-btn',
                     isFavorite(match.song) ? 'rec-circle-fav-active' : 'rec-circle-fav',
@@ -551,7 +551,7 @@ onBeforeUnmount(() => {
                 </Button>
                 <Button
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   class="action-icon rec-circle-btn rec-circle-ghost"
                   tooltip="添加到歌单"
                   @click="handleAddToPlaylist(match.song)"
@@ -560,7 +560,7 @@ onBeforeUnmount(() => {
                 </Button>
                 <Button
                   variant="unstyled"
-                  size="none"
+                  size="icon"
                   class="action-icon rec-circle-btn rec-circle-ghost"
                   tooltip="歌曲详情"
                   @click="goToDetail(match.song)"
@@ -574,7 +574,7 @@ onBeforeUnmount(() => {
           <div class="rec-retry-center">
             <Button
               variant="soft-secondary"
-              size="none"
+              size="default"
               class="rec-retry-btn"
               @click="resetAndRestart"
             >
@@ -693,7 +693,7 @@ onBeforeUnmount(() => {
           <Button
             v-if="status === 'failed'"
             variant="secondary"
-            size="sm"
+            size="default"
             class="mt-4"
             @click="startRecording"
           >
@@ -1148,8 +1148,6 @@ onBeforeUnmount(() => {
 }
 
 .rec-circle-btn {
-  width: 34px;
-  height: 34px;
   border-radius: var(--radius-control);
   display: flex;
   align-items: center;
@@ -1205,7 +1203,6 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 20px;
   border-radius: var(--radius-control);
   font-size: 13px;
   font-weight: 600;

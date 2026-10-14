@@ -95,8 +95,8 @@ defineExpose({ scrollToActive });
           <Button
             v-if="enableLocate"
             variant="unstyled"
-            size="none"
-            class="action-icon song-locate-btn p-2"
+            size="icon"
+            class="action-icon song-locate-btn"
             tooltip="定位当前播放"
             @click="emit('locate')"
           >

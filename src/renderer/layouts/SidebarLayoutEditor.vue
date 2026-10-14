@@ -188,7 +188,7 @@ onBeforeUnmount(destroySortables);
       <Button
         class="action-icon sidebar-app-tool sidebar-layout-entry"
         variant="unstyled"
-        size="none"
+        size="icon"
         type="button"
         aria-label="编辑侧边栏"
         tooltip="编辑侧边栏"
@@ -207,7 +207,7 @@ onBeforeUnmount(destroySortables);
           <template #trigger>
             <button
               type="button"
-              class="sidebar-layout-reset soft-secondary-action app-focus-ring-soft"
+              class="sidebar-layout-reset soft-secondary-action app-focus-ring-soft echo-button-sized echo-button-standard"
               aria-label="恢复默认"
               @click="settings.sidebarLayout = resetSidebarMenus(settings.sidebarLayout)"
             >
@@ -271,7 +271,7 @@ onBeforeUnmount(destroySortables);
               <template #trigger>
                 <button
                   type="button"
-                  class="action-icon sidebar-layout-icon-button app-focus-ring-soft"
+                  class="action-icon sidebar-layout-icon-button app-focus-ring-soft echo-button-sized echo-button-icon"
                   :aria-pressed="!section.isHidden"
                   :aria-label="
                     section.id === SIDEBAR_PLAYLIST_SECTION_ID
@@ -326,7 +326,7 @@ onBeforeUnmount(destroySortables);
                 <template #trigger>
                   <button
                     type="button"
-                    class="action-icon sidebar-layout-icon-button is-small app-focus-ring-soft"
+                    class="action-icon sidebar-layout-icon-button is-small app-focus-ring-soft echo-button-sized echo-button-icon"
                     :aria-pressed="!item.isHidden"
                     :aria-label="item.isHidden ? '显示入口' : '隐藏入口'"
                     @click="toggleItem(item)"
@@ -346,8 +346,6 @@ onBeforeUnmount(destroySortables);
 <style scoped>
 .sidebar-layout-entry {
   display: flex;
-  width: 32px;
-  height: 32px;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-control);
@@ -441,22 +439,16 @@ onBeforeUnmount(destroySortables);
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  height: 28px;
-  padding: 0 8px;
   border-radius: var(--radius-control);
   font-size: 12px;
   font-weight: 650;
 }
 
 .sidebar-layout-icon-button {
-  width: 28px;
-  height: 28px;
   border-radius: var(--radius-control);
 }
 
 .sidebar-layout-icon-button.is-small {
-  width: 28px;
-  height: 28px;
   border-radius: var(--radius-control);
 }
 
