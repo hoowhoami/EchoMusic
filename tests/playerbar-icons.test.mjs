@@ -51,7 +51,7 @@ const render = (component, props) =>
   renderToString(createSSRApp({ render: () => h(component, props) }));
 
 test('layout icons render the supplied custom SVG without action ID lookup', async () => {
-  for (const name of ['AudioWaveIcon', 'MvIcon', 'BarrageIcon']) {
+  for (const name of ['AudioWaveIcon', 'BarrageIcon']) {
     const component = load(`src/renderer/components/ui/${name}.vue`).default;
     const expected = await render(component, { width: 18, height: 18 });
     const actual = await render(ActionIcon, {

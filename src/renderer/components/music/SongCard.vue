@@ -10,8 +10,14 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
-import { iconMessageCircle, iconHeart, iconHeartFilled, iconPlay, iconPause } from '@/icons';
-import MvIcon from '@/components/ui/MvIcon.vue';
+import {
+  iconMessageCircle,
+  iconHeart,
+  iconHeartFilled,
+  iconPlay,
+  iconPause,
+  iconBrandYoutube,
+} from '@/icons';
 import { playSongInContext, queueAndPlaySong, replaceQueueAndPlay } from '@/utils/playback';
 import { getSongDerivedState } from '@/utils/song';
 
@@ -384,7 +390,7 @@ const handleFavorite = () => {
         tooltip="播放 MV"
         @click.stop="goToMvDetail"
       >
-        <MvIcon class="w-4 h-4" />
+        <Icon :icon="iconBrandYoutube" width="16" height="16" />
       </Button>
       <Button
         variant="unstyled"
@@ -589,7 +595,7 @@ const handleFavorite = () => {
   transition:
     opacity var(--motion-duration-fast) var(--motion-ease-standard),
     color var(--motion-duration-fast) var(--motion-ease-standard),
-    transform var(--motion-duration-fast) var(--motion-ease-standard);
+    scale var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .song-card:hover .song-action-hover-only,
@@ -603,16 +609,25 @@ const handleFavorite = () => {
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
+  /* 按钮位于行网格 1fr 标题列之后，x 坐标非整数。hover 缩放会为按钮新建
+     合成层，层原点吸附到整数像素，与按小数位置绘制的内容相差约 1px，
+     表现为 hover 进入/退出时按钮「跳一下」。will-change 常驻预建层，
+     让缩放在既有层内完成，不再建层/销层。手法与 SongList 的
+     .song-context-menu（translateZ(0)）相同。 */
+  will-change: transform;
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
     color var(--motion-duration-fast) var(--motion-ease-standard),
     opacity var(--motion-duration-fast) var(--motion-ease-standard),
-    transform var(--motion-duration-fast) var(--motion-ease-standard);
+    scale var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
+/* 缩放走独立 scale 属性并显式 transform: none —— 与 playerBarActionStrip
+   的播放控制按钮同一套反馈写法，不进 transform 合成链。 */
 .song-action:hover {
   color: var(--color-primary-text);
-  transform: scale(1.12);
+  transform: none;
+  scale: 1.1;
 }
 
 .song-action.is-active {
