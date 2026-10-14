@@ -299,7 +299,7 @@ test('removing either default card leaves one and last visible card cannot be re
   assert.doesNotMatch(html, /必留/);
 });
 
-test('card handlers reject deleting the last visible card and keep first-card ordering when moved', (t) => {
+test('card handlers preserve minimum/order and only restore focus for keyboard removal', async (t) => {
   const settings = vue.reactive({ sidebarLayout: baseLayout(['home', 'explore']) });
   const comp = component(
     'layouts/SidebarShortcuts.vue',
@@ -316,7 +316,7 @@ test('card handlers reject deleting the last visible card and keep first-card or
       './sidebarShortcutEntries': entries,
       './sidebarLayout': layout,
       './sidebarShortcutResources': resources,
-      sortablejs: {},
+      sortablejs: { create: () => ({ destroy() {} }) },
     },
     { ...vue, onMounted() {}, onBeforeUnmount() {} },
     false,
@@ -336,6 +336,27 @@ test('card handlers reject deleting the last visible card and keep first-card or
   settings.sidebarLayout.shortcutKeys = ['unavailable', 'ranking'];
   api.remove(api.visible.value[0], false);
   assert.deepEqual(settings.sidebarLayout.shortcutKeys, ['unavailable', 'ranking']);
+
+  const focused = [];
+  api.container.value = {
+    querySelectorAll: () =>
+      api.visible.value.map((entry) => ({
+        focus: (options) => focused.push({ key: entry.key, options }),
+      })),
+    querySelector: () => ({ focus: () => focused.push({ key: 'add' }) }),
+  };
+  settings.sidebarLayout = baseLayout(['home', 'explore', 'ranking']);
+  await vue.nextTick();
+  api.remove(api.visible.value[2]);
+  await vue.nextTick();
+  assert.deepEqual(focused, []);
+  assert.deepEqual(settings.sidebarLayout.shortcutKeys, ['home', 'explore']);
+
+  settings.sidebarLayout = baseLayout(['home', 'explore', 'ranking']);
+  await vue.nextTick();
+  api.remove(api.visible.value[2], true);
+  await vue.nextTick();
+  assert.deepEqual(focused, [{ key: 'explore', options: { preventScroll: true } }]);
 });
 
 test('action-card homepage executes that first card on entry and keeps failures retryable', async (t) => {

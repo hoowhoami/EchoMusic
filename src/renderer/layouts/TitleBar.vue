@@ -101,6 +101,8 @@ const placedActions = computed(() =>
 );
 const toolbarActions = computed(() => placedActions.value.toolbar);
 const toolbarActionsRef = ref<HTMLElement | null>(null);
+const titlebarToolsRef = ref<HTMLElement | null>(null);
+const windowDividerRef = ref<HTMLElement | null>(null);
 const saveToolbarOrder = (keys: string[]) => {
   settingStore.titlebarLayout = reorderTitlebarLayout(
     settingStore.titlebarLayout,
@@ -124,11 +126,32 @@ const updateToolbarCapacity = () => {
   // Reserve the search/navigation width, window controls, More, divider and a drag area.
   // Measure fixed space only, so moving overflow items cannot cause resize oscillation.
   const navigationWidth = parseFloat(getComputedStyle(navigationRef.value).flexBasis) || 350;
+  const outerWidth = (element: HTMLElement | null) => {
+    if (!element?.offsetWidth) return 0;
+    const elementStyle = getComputedStyle(element);
+    return (
+      element.offsetWidth +
+      (parseFloat(elementStyle.marginLeft) || 0) +
+      (parseFloat(elementStyle.marginRight) || 0)
+    );
+  };
   const fixedWidth =
-    navigationWidth + (windowActionsRef.value?.offsetWidth ?? 0) + 34 + 12 + 4 + 64;
-  toolbarCapacity.value = Math.max(0, Math.floor((available - fixedWidth) / 38));
+    navigationWidth +
+    outerWidth(windowActionsRef.value) +
+    outerWidth(titlebarToolsRef.value) +
+    outerWidth(windowDividerRef.value) +
+    64;
+  const actionSize = parseFloat(style.getPropertyValue('--button-height')) || 36;
+  const actionGap = parseFloat(style.getPropertyValue('--titlebar-action-gap')) || 0;
+  toolbarCapacity.value = Math.max(
+    0,
+    Math.floor((available - fixedWidth + actionGap) / (actionSize + actionGap)),
+  );
 };
-useResizeObserver([titlebarRef, windowActionsRef], updateToolbarCapacity);
+useResizeObserver(
+  [titlebarRef, windowActionsRef, titlebarToolsRef, windowDividerRef],
+  updateToolbarCapacity,
+);
 const builtinDisposers: (() => void)[] = [];
 const builtinApi = createTitlebarApi(
   null,
@@ -808,10 +831,10 @@ onUnmounted(() => {
     <!-- 2. 中间：拖拽区域 -->
     <div class="titlebar-drag-space flex-1 h-full"></div>
 
-    <div class="titlebar-tools no-drag">
+    <div ref="titlebarToolsRef" class="titlebar-tools no-drag">
       <TitleBarMoreMenu :items="managedActions" />
     </div>
-    <span class="titlebar-window-divider" aria-hidden="true"></span>
+    <span ref="windowDividerRef" class="titlebar-window-divider" aria-hidden="true"></span>
     <div ref="windowActionsRef" class="titlebar-window-actions">
       <WindowControls show-mini-player />
     </div>
@@ -822,6 +845,7 @@ onUnmounted(() => {
 
 <style scoped>
 .title-bar {
+  --titlebar-action-gap: 4px;
   container-type: inline-size;
   container-name: main-titlebar;
   -webkit-app-region: drag;
@@ -884,7 +908,7 @@ onUnmounted(() => {
   width: 1px;
   height: 20px;
   flex-shrink: 0;
-  margin: 0 1.5px;
+  margin: 0 4px;
   background: color-mix(in srgb, var(--color-text-main) 24%, transparent);
   position: relative;
   z-index: 10;
@@ -895,7 +919,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 4px;
+  gap: var(--titlebar-action-gap);
   position: relative;
   z-index: 10;
 }

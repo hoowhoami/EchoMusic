@@ -137,7 +137,7 @@ const save = (value: string[], added?: SidebarShortcutResource) => {
     ),
   };
 };
-const remove = (entry: Entry, focusAfter = true) => {
+const remove = (entry: Entry, focusAfter = false) => {
   if (!canRemove(entry)) return;
   const index = visible.value.findIndex((item) => item.key === entry.key);
   save(keys.value.filter((key) => key !== entry.key));
@@ -146,7 +146,9 @@ const remove = (entry: Entry, focusAfter = true) => {
     if (disposed) return;
     const cards = container.value?.querySelectorAll<HTMLButtonElement>('.shortcut-activate');
     const target = cards?.[Math.min(index, cards.length - 1)];
-    (target ?? container.value?.querySelector<HTMLButtonElement>('.shortcut-add'))?.focus();
+    (target ?? container.value?.querySelector<HTMLButtonElement>('.shortcut-add'))?.focus({
+      preventScroll: true,
+    });
   });
 };
 const toggle = (entry: Entry) => {
@@ -308,7 +310,7 @@ onBeforeUnmount(() => {
           class="action-icon shortcut-remove echo-button-sized echo-button-icon"
           :aria-label="`移除${entry.title}卡片`"
           @pointerdown.stop
-          @click.stop="remove(entry)"
+          @click.stop="remove(entry, $event.detail === 0)"
         >
           <Icon :icon="iconX" :width="13" :height="13" />
         </button>
@@ -470,8 +472,9 @@ onBeforeUnmount(() => {
   overflow: hidden;
   padding: 0;
   cursor: grab;
+  transition: background-color var(--motion-duration-normal) var(--motion-ease-standard);
 }
-.shortcut-card:is(:hover, :focus-within) {
+.shortcut-card:is(:hover, :has(:focus-visible)) {
   background: var(--control-hover-bg);
 }
 .shortcut-card:active {
@@ -494,6 +497,10 @@ onBeforeUnmount(() => {
 .shortcut-activate > * {
   grid-area: 1/1;
 }
+.shortcut-icon {
+  opacity: 1;
+  transition: opacity var(--motion-duration-normal) var(--motion-ease-standard);
+}
 .shortcut-remove {
   --button-height: var(--shortcut-dismiss-size);
   position: absolute;
@@ -508,8 +515,12 @@ onBeforeUnmount(() => {
   opacity: 0;
   pointer-events: none;
   cursor: pointer;
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
 }
-.shortcut-card:is(:hover, :focus-within) .shortcut-remove {
+.shortcut-card:is(:hover, :has(:focus-visible)) .shortcut-remove {
   opacity: 1;
   pointer-events: auto;
 }
@@ -530,15 +541,16 @@ onBeforeUnmount(() => {
   line-height: 1.35;
   text-align: center;
   overflow-wrap: anywhere;
+  transition: opacity var(--motion-duration-normal) var(--motion-ease-standard);
 }
 .shortcut-card:has(.shortcut-remove) .shortcut-label {
   width: calc(100% - var(--shortcut-dismiss-size));
   justify-self: start;
 }
-.shortcut-card:is(:hover, :focus-within) .shortcut-label {
+.shortcut-card:is(:hover, :has(:focus-visible)) .shortcut-label {
   opacity: 1;
 }
-.shortcut-card:is(:hover, :focus-within) .shortcut-icon {
+.shortcut-card:is(:hover, :has(:focus-visible)) .shortcut-icon {
   opacity: 0;
 }
 .shortcut-card:has(.shortcut-activate[aria-current='page']) {
@@ -577,12 +589,20 @@ onBeforeUnmount(() => {
 .is-collapsed .shortcut-label {
   display: none;
 }
-.is-collapsed .shortcut-card:is(:hover, :focus-within) .shortcut-icon {
+.is-collapsed .shortcut-card:is(:hover, :has(:focus-visible)) .shortcut-icon {
   opacity: 1;
 }
 .shortcut-activate:disabled {
   cursor: default;
   opacity: 0.5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shortcut-card,
+  .shortcut-icon,
+  .shortcut-label,
+  .shortcut-remove {
+    transition: none;
+  }
 }
 @media (hover: none) {
   .shortcut-remove {
