@@ -916,16 +916,16 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   align-items: center;
   gap: 10px;
   min-width: 0;
-  height: 30px;
+  height: var(--button-height);
 }
 
 .settings-heading h1 {
-  line-height: 30px;
+  line-height: var(--button-height);
 }
 
 .settings-heading-hint {
   font-size: 11px;
-  line-height: 30px;
+  line-height: var(--button-height);
   color: var(--color-text-secondary);
 }
 
@@ -933,7 +933,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
+  height: var(--button-height);
   line-height: 0;
 }
 
@@ -1047,8 +1047,8 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  width: 30px;
-  height: 30px;
+  width: var(--button-height);
+  height: var(--button-height);
   transition: width 0.2s ease-out;
 }
 
@@ -1085,7 +1085,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   display: flex;
   align-items: center;
   width: 200px;
-  height: 30px;
+  height: var(--button-height);
   border: 1px solid transparent;
   border-radius: 999px;
   background: var(--control-muted-bg);
@@ -1100,7 +1100,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 
 @keyframes settings-search-expand {
   from {
-    width: 30px;
+    width: var(--button-height);
     opacity: 0.6;
   }
   to {
@@ -1115,7 +1115,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
     opacity: 1;
   }
   to {
-    width: 30px;
+    width: var(--button-height);
     opacity: 0;
   }
 }

@@ -1597,11 +1597,12 @@ watch(
 }
 
 .sidebar-rail-tabs {
+  --button-height: 24px;
   width: 100%;
-  height: 30px;
+  height: calc(var(--button-height) + 6px);
   position: relative;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 2px;
   padding: 3px;
   margin-bottom: 8px;
@@ -1631,7 +1632,7 @@ watch(
 .sidebar-rail-tab {
   position: relative;
   z-index: 1;
-  height: 24px;
+  width: 100%;
   min-width: 0;
   display: flex;
   align-items: center;

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { vTooltip } from '@/components/ui/tooltip';
 defineOptions({ name: 'lyric-page' });
 
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue';
@@ -519,36 +518,44 @@ onUnmounted(() => {
     >
       <!-- 上组：歌词来源 / 时间调整 -->
       <div class="lyric-page-tools-group">
-        <button
-          v-tooltip="'选择歌词'"
-          class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
+        <Button
+          tooltip="选择歌词"
+          variant="secondary"
+          size="icon"
+          class="action-icon lyric-page-tool-btn"
           aria-label="选择歌词"
           @click="lyricStore.sourceDialogOpen = true"
         >
           <Icon :icon="iconList" width="14" height="14" />
-        </button>
-        <button
-          v-tooltip="`歌词后退 ${lyricOffsetStepLabel}`"
+        </Button>
+        <Button
+          :tooltip="`歌词后退 ${lyricOffsetStepLabel}`"
           v-if="hasLyrics"
-          class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
+          variant="secondary"
+          size="icon"
+          class="action-icon lyric-page-tool-btn"
           :aria-label="`歌词后退 ${lyricOffsetStepLabel}`"
           @click="handleOffsetAdjust(-1)"
         >
           <Icon :icon="iconRotateCcw" width="15" height="15" />
-        </button>
-        <button
-          v-tooltip="`歌词前进 ${lyricOffsetStepLabel}`"
+        </Button>
+        <Button
+          :tooltip="`歌词前进 ${lyricOffsetStepLabel}`"
           v-if="hasLyrics"
-          class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
+          variant="secondary"
+          size="icon"
+          class="action-icon lyric-page-tool-btn"
           :aria-label="`歌词前进 ${lyricOffsetStepLabel}`"
           @click="handleOffsetAdjust(1)"
         >
           <Icon :icon="iconRotateCw" width="15" height="15" />
-        </button>
-        <button
-          v-tooltip="'重置单曲偏移'"
+        </Button>
+        <Button
+          tooltip="重置单曲偏移"
           v-if="hasLyrics"
-          class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
+          variant="secondary"
+          size="icon"
+          class="action-icon lyric-page-tool-btn"
           :style="{
             visibility: lyricStore.currentTrackTimeOffset !== 0 ? 'visible' : 'hidden',
           }"
@@ -556,41 +563,45 @@ onUnmounted(() => {
           @click="handleOffsetReset"
         >
           <Icon :icon="iconRefreshCw" width="14" height="14" />
-        </button>
+        </Button>
       </div>
 
       <!-- 下组：翻译/音译/复制 -->
       <div v-if="hasLyrics" class="lyric-page-tools-group">
-        <button
-          v-tooltip="'翻译'"
+        <Button
+          tooltip="翻译"
           v-if="lyricStore.hasTranslation"
-          class="lyric-page-tool-btn"
-          :class="lyricStore.wantTranslation ? 'soft-accent-action' : 'soft-secondary-action'"
+          size="icon"
+          class="action-icon lyric-page-tool-btn"
+          :variant="lyricStore.wantTranslation ? 'primary' : 'secondary'"
           :aria-pressed="lyricStore.wantTranslation"
           aria-label="翻译"
           @click="lyricStore.wantTranslation = !lyricStore.wantTranslation"
         >
           译
-        </button>
-        <button
-          v-tooltip="'音译'"
+        </Button>
+        <Button
+          tooltip="音译"
           v-if="lyricStore.hasRomanization"
-          class="lyric-page-tool-btn"
-          :class="lyricStore.wantRomanization ? 'soft-accent-action' : 'soft-secondary-action'"
+          size="icon"
+          class="action-icon lyric-page-tool-btn"
+          :variant="lyricStore.wantRomanization ? 'primary' : 'secondary'"
           :aria-pressed="lyricStore.wantRomanization"
           aria-label="音译"
           @click="lyricStore.wantRomanization = !lyricStore.wantRomanization"
         >
           音
-        </button>
-        <button
-          v-tooltip="'复制歌词'"
-          class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
+        </Button>
+        <Button
+          tooltip="复制歌词"
+          variant="secondary"
+          size="icon"
+          class="action-icon lyric-page-tool-btn"
           aria-label="复制歌词"
           @click="handleCopyLyrics"
         >
           <Icon :icon="iconCopy" width="14" height="14" />
-        </button>
+        </Button>
       </div>
     </div>
 
@@ -745,36 +756,44 @@ onUnmounted(() => {
       >
         <!-- 上组：歌词来源 / 时间调整 -->
         <div class="lyric-page-tools-group">
-          <button
-            v-tooltip="'选择歌词'"
-            class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
+          <Button
+            tooltip="选择歌词"
+            variant="secondary"
+            size="icon"
+            class="action-icon lyric-page-tool-btn"
             aria-label="选择歌词"
             @click="lyricStore.sourceDialogOpen = true"
           >
             <Icon :icon="iconList" width="14" height="14" />
-          </button>
-          <button
-            v-tooltip="`歌词后退 ${lyricOffsetStepLabel}`"
+          </Button>
+          <Button
+            :tooltip="`歌词后退 ${lyricOffsetStepLabel}`"
             v-if="hasLyrics"
-            class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
+            variant="secondary"
+            size="icon"
+            class="action-icon lyric-page-tool-btn"
             :aria-label="`歌词后退 ${lyricOffsetStepLabel}`"
             @click="handleOffsetAdjust(-1)"
           >
             <Icon :icon="iconRotateCcw" width="15" height="15" />
-          </button>
-          <button
-            v-tooltip="`歌词前进 ${lyricOffsetStepLabel}`"
+          </Button>
+          <Button
+            :tooltip="`歌词前进 ${lyricOffsetStepLabel}`"
             v-if="hasLyrics"
-            class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
+            variant="secondary"
+            size="icon"
+            class="action-icon lyric-page-tool-btn"
             :aria-label="`歌词前进 ${lyricOffsetStepLabel}`"
             @click="handleOffsetAdjust(1)"
           >
             <Icon :icon="iconRotateCw" width="15" height="15" />
-          </button>
-          <button
-            v-tooltip="'重置单曲偏移'"
+          </Button>
+          <Button
+            tooltip="重置单曲偏移"
             v-if="hasLyrics"
-            class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
+            variant="secondary"
+            size="icon"
+            class="action-icon lyric-page-tool-btn"
             :style="{
               visibility: lyricStore.currentTrackTimeOffset !== 0 ? 'visible' : 'hidden',
             }"
@@ -782,41 +801,45 @@ onUnmounted(() => {
             @click="handleOffsetReset"
           >
             <Icon :icon="iconRefreshCw" width="14" height="14" />
-          </button>
+          </Button>
         </div>
 
         <!-- 下组：翻译/音译/复制 -->
         <div v-if="hasLyrics" class="lyric-page-tools-group">
-          <button
-            v-tooltip="'翻译'"
+          <Button
+            tooltip="翻译"
             v-if="lyricStore.hasTranslation"
-            class="lyric-page-tool-btn"
-            :class="lyricStore.wantTranslation ? 'soft-accent-action' : 'soft-secondary-action'"
+            size="icon"
+            class="action-icon lyric-page-tool-btn"
+            :variant="lyricStore.wantTranslation ? 'primary' : 'secondary'"
             :aria-pressed="lyricStore.wantTranslation"
             aria-label="翻译"
             @click="lyricStore.wantTranslation = !lyricStore.wantTranslation"
           >
             译
-          </button>
-          <button
-            v-tooltip="'音译'"
+          </Button>
+          <Button
+            tooltip="音译"
             v-if="lyricStore.hasRomanization"
-            class="lyric-page-tool-btn"
-            :class="lyricStore.wantRomanization ? 'soft-accent-action' : 'soft-secondary-action'"
+            size="icon"
+            class="action-icon lyric-page-tool-btn"
+            :variant="lyricStore.wantRomanization ? 'primary' : 'secondary'"
             :aria-pressed="lyricStore.wantRomanization"
             aria-label="音译"
             @click="lyricStore.wantRomanization = !lyricStore.wantRomanization"
           >
             音
-          </button>
-          <button
-            v-tooltip="'复制歌词'"
-            class="action-icon lyric-page-tool-btn soft-secondary-action echo-button-sized echo-button-icon"
+          </Button>
+          <Button
+            tooltip="复制歌词"
+            variant="secondary"
+            size="icon"
+            class="action-icon lyric-page-tool-btn"
             aria-label="复制歌词"
             @click="handleCopyLyrics"
           >
             <Icon :icon="iconCopy" width="14" height="14" />
-          </button>
+          </Button>
         </div>
       </div>
     </template>
@@ -1106,7 +1129,7 @@ onUnmounted(() => {
   transform: translateY(-50%);
   z-index: 60;
   display: grid;
-  grid-template-rows: 152px 112px;
+  grid-template-rows: auto auto;
   gap: 180px;
   align-items: start;
   justify-items: center;

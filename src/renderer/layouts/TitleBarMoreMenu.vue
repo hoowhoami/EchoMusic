@@ -172,8 +172,6 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
 .more-anchor {
   display: inline-flex;
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
 }
 
 .more-trigger {

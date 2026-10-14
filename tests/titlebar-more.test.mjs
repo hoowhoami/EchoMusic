@@ -14,6 +14,14 @@ const { code } = transformSync(
     loader: 'ts',
   },
 );
+const { code: dragCode } = transformSync(
+  readFileSync(new URL('../src/renderer/layouts/windowDrag.ts', import.meta.url), 'utf8').replace(
+    /^export /gm,
+    '',
+  ) + '\nreturn isWindowDragTarget;',
+  { loader: 'ts' },
+);
+const isWindowDragTarget = new Function(dragCode)();
 function setup(target = null) {
   const settings = { titlebarLayout: { placements: {}, order: ['a'] } };
   const api = new Function(
@@ -26,6 +34,7 @@ function setup(target = null) {
     'onUnmounted',
     'document',
     'logger',
+    'isWindowDragTarget',
     code,
   )(
     () => ({ items: [] }),
@@ -37,6 +46,7 @@ function setup(target = null) {
     () => {},
     { elementFromPoint: () => target },
     { info() {} },
+    isWindowDragTarget,
   );
   api.open.value = true;
   return { settings, ...api };
@@ -66,7 +76,7 @@ test('activation closes the popover; disabled actions do not execute or close it
 });
 
 test('native titlebar click closes More; delayed pin and trigger notifications do not', () => {
-  const s = setup({ closest: () => true });
+  const s = setup({ closest: (selector) => selector.includes('.drag-region') });
   s.handleNativePointerDown({ x: 500, y: 20 });
   assert.equal(s.open.value, false);
   const buttonClick = setup({ closest: () => null });
@@ -84,7 +94,13 @@ test('native window movement/blur dismisses More and invalid payloads are ignore
 });
 
 test('native click on the central titlebar spacer closes More', () => {
-  const s = setup({ closest: (selector) => selector.includes('.titlebar-drag-space') });
+  const s = setup({ closest: (selector) => selector.includes('.window-drag-area') });
   s.handleNativePointerDown({ x: 500, y: 20 });
   assert.equal(s.open.value, false);
+});
+
+test('native notifications on an interactive control within the drag area leave More open', () => {
+  const s = setup({ closest: () => true });
+  s.handleNativePointerDown({ x: 500, y: 20 });
+  assert.equal(s.open.value, true);
 });

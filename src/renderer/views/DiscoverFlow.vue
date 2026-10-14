@@ -678,6 +678,7 @@ onBeforeUnmount(() => {
 }
 
 .discover-reel-play {
+  --button-height: 52px;
   color: var(--color-text-main);
 }
 

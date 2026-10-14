@@ -466,6 +466,7 @@ const handleFavorite = () => {
 }
 
 .song-cover-play {
+  --button-height: var(--control-height-small);
   position: absolute;
   inset: 0;
   z-index: 2;

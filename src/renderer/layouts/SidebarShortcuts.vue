@@ -255,9 +255,8 @@ onBeforeUnmount(() => {
     <div ref="container" class="shortcut-grid" aria-label="常用功能">
       <div
         v-tooltip="{
-          content: index === 0 ? `${entry.title}（首页）` : entry.title,
+          content: collapsed && index === 0 ? `${entry.title}（首页）` : entry.title,
           side: 'right',
-          disabled: !collapsed,
         }"
         v-for="(entry, index) in visible"
         :key="entry.key"
@@ -300,7 +299,7 @@ onBeforeUnmount(() => {
             :width="SHORTCUT_ICON_SIZE"
             :height="SHORTCUT_ICON_SIZE"
             class="shortcut-icon"
-          /><span class="shortcut-label">{{ entry.title }}</span>
+          /><span class="shortcut-label" data-tooltip-label>{{ entry.title }}</span>
         </button>
         <button
           v-tooltip="{ content: `移除${entry.title}`, side: 'right' }"
@@ -466,6 +465,7 @@ onBeforeUnmount(() => {
   border: 0;
 }
 .shortcut-card {
+  --shortcut-dismiss-size: 24px;
   position: relative;
   overflow: hidden;
   padding: 0;
@@ -484,7 +484,7 @@ onBeforeUnmount(() => {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  padding: 8px;
+  padding: 4px 8px;
   border: 0;
   border-radius: inherit;
   background: transparent;
@@ -495,6 +495,7 @@ onBeforeUnmount(() => {
   grid-area: 1/1;
 }
 .shortcut-remove {
+  --button-height: var(--shortcut-dismiss-size);
   position: absolute;
   top: 3px;
   right: 3px;
@@ -517,6 +518,11 @@ onBeforeUnmount(() => {
   color: var(--text-main);
 }
 .shortcut-label {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   opacity: 0;
   font-size: 13px;
   font-weight: 500;
@@ -524,6 +530,10 @@ onBeforeUnmount(() => {
   line-height: 1.35;
   text-align: center;
   overflow-wrap: anywhere;
+}
+.shortcut-card:has(.shortcut-remove) .shortcut-label {
+  width: calc(100% - var(--shortcut-dismiss-size));
+  justify-self: start;
 }
 .shortcut-card:is(:hover, :focus-within) .shortcut-label {
   opacity: 1;

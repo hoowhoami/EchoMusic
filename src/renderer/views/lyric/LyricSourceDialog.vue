@@ -481,7 +481,7 @@ watch(selectedKey, () => {
 
 .source-summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
   width: 100%;

@@ -1184,6 +1184,7 @@ watch(
 }
 
 .song-filter-info-btn {
+  --button-height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

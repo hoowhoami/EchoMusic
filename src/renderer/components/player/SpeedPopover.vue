@@ -67,7 +67,7 @@ const popoverOpen = computed({
         <span class="text-[11px] font-bold text-text-secondary">倍速播放</span>
         <Button
           variant="unstyled"
-          size="none"
+          size="small"
           class="speed-current-rate app-focus-ring-soft"
           :aria-label="`当前倍速 ${playbackRateDisplay}，重置为 1.0x`"
           @click="resetPlaybackRate"
