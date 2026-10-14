@@ -10,6 +10,16 @@ import * as audioSupport from '../src/shared/audioEffectSupport.ts';
 import * as songQuality from '../src/renderer/utils/song.ts';
 
 // Exercise the actual SFC setup/watchers without Electron, DOM, or audio playback.
+const tooltipOwnership = { exports: {} };
+new Function(
+  'module',
+  'exports',
+  transformSync(readFileSync('src/renderer/components/ui/tooltipOwnership.ts', 'utf8'), {
+    loader: 'ts',
+    format: 'cjs',
+  }).code,
+)(tooltipOwnership, tooltipOwnership.exports);
+
 function setupComponent(t, file, props, imports = {}) {
   const source = readFileSync(new URL(file, import.meta.url), 'utf8');
   const { descriptor } = parse(source);
@@ -17,6 +27,7 @@ function setupComponent(t, file, props, imports = {}) {
   const { code } = transformSync(script.content, { loader: 'ts', format: 'cjs' });
   const module = { exports: {} };
   const modules = {
+    './tooltipOwnership': tooltipOwnership.exports,
     vue: {
       ...vue,
       useId: () => 'settings-panel',

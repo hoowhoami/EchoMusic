@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
-
+import { vTooltip } from '@/components/ui/tooltip';
 import {
   computed,
   nextTick,
@@ -1300,109 +1299,93 @@ onBeforeUnmount(() => {
       <div class="header-left" @pointerdown.stop>
         <span class="song-name">{{ songName }} - {{ artistName }}</span>
         <div v-if="hasLyrics" class="offset-controls">
-          <Tooltip :content="`歌词后退 ${offsetStepLabel}`">
-            <template #trigger>
-              <button
-                class="menu-btn"
-                :aria-label="`歌词后退 ${offsetStepLabel}`"
-                @click.stop="adjustLyricOffsetBackward"
-              >
-                <Icon :icon="iconRotateCcw" width="18" height="18" />
-              </button>
-            </template>
-          </Tooltip>
-          <Tooltip :content="`歌词前进 ${offsetStepLabel}`">
-            <template #trigger>
-              <button
-                class="menu-btn"
-                :aria-label="`歌词前进 ${offsetStepLabel}`"
-                @click.stop="adjustLyricOffsetForward"
-              >
-                <Icon :icon="iconRotateCw" width="18" height="18" />
-              </button>
-            </template>
-          </Tooltip>
-          <Tooltip v-if="hasLyrics && currentTrackTimeOffset !== 0" content="重置单曲偏移">
-            <template #trigger>
-              <button class="menu-btn" aria-label="重置单曲偏移" @click.stop="resetLyricOffset">
-                <Icon :icon="iconRefreshCw" width="17" height="17" />
-              </button>
-            </template>
-          </Tooltip>
+          <button
+            v-tooltip="`歌词后退 ${offsetStepLabel}`"
+            class="menu-btn"
+            :aria-label="`歌词后退 ${offsetStepLabel}`"
+            @click.stop="adjustLyricOffsetBackward"
+          >
+            <Icon :icon="iconRotateCcw" width="18" height="18" />
+          </button>
+          <button
+            v-tooltip="`歌词前进 ${offsetStepLabel}`"
+            class="menu-btn"
+            :aria-label="`歌词前进 ${offsetStepLabel}`"
+            @click.stop="adjustLyricOffsetForward"
+          >
+            <Icon :icon="iconRotateCw" width="18" height="18" />
+          </button>
+          <button
+            v-tooltip="'重置单曲偏移'"
+            v-if="hasLyrics && currentTrackTimeOffset !== 0"
+            class="menu-btn"
+            aria-label="重置单曲偏移"
+            @click.stop="resetLyricOffset"
+          >
+            <Icon :icon="iconRefreshCw" width="17" height="17" />
+          </button>
         </div>
       </div>
       <div class="header-center" @pointerdown.stop>
-        <Tooltip content="上一首">
-          <template #trigger>
-            <button class="menu-btn" aria-label="上一首" @click.stop="playPrevious">
-              <Icon :icon="iconStepBack" width="20" height="20" />
-            </button>
-          </template>
-        </Tooltip>
-        <Tooltip :content="isPlaying ? '暂停' : '播放'">
-          <template #trigger>
-            <button
-              class="menu-btn"
-              :aria-label="isPlaying ? '暂停' : '播放'"
-              @click.stop="togglePlayback"
-            >
-              <Icon :icon="isPlaying ? iconPause : iconPlayerPlay" width="20" height="20" />
-            </button>
-          </template>
-        </Tooltip>
-        <Tooltip content="下一首">
-          <template #trigger>
-            <button class="menu-btn" aria-label="下一首" @click.stop="playNext">
-              <Icon :icon="iconStepForward" width="20" height="20" />
-            </button>
-          </template>
-        </Tooltip>
+        <button
+          v-tooltip="'上一首'"
+          class="menu-btn"
+          aria-label="上一首"
+          @click.stop="playPrevious"
+        >
+          <Icon :icon="iconStepBack" width="20" height="20" />
+        </button>
+        <button
+          v-tooltip="isPlaying ? '暂停' : '播放'"
+          class="menu-btn"
+          :aria-label="isPlaying ? '暂停' : '播放'"
+          @click.stop="togglePlayback"
+        >
+          <Icon :icon="isPlaying ? iconPause : iconPlayerPlay" width="20" height="20" />
+        </button>
+        <button v-tooltip="'下一首'" class="menu-btn" aria-label="下一首" @click.stop="playNext">
+          <Icon :icon="iconStepForward" width="20" height="20" />
+        </button>
       </div>
       <div class="header-right" @pointerdown.stop>
-        <Tooltip content="选择歌词">
-          <template #trigger>
-            <button class="menu-btn" aria-label="选择歌词" @click.stop="openLyricSource">
-              <Icon :icon="iconList" width="20" height="20" />
-            </button>
-          </template>
-        </Tooltip>
+        <button
+          v-tooltip="'选择歌词'"
+          class="menu-btn"
+          aria-label="选择歌词"
+          @click.stop="openLyricSource"
+        >
+          <Icon :icon="iconList" width="20" height="20" />
+        </button>
         <div v-if="hasLyrics && hasSecondary" class="tran-group">
-          <Tooltip v-if="hasTranslation" content="翻译">
-            <template #trigger>
-              <button
-                class="menu-btn text-toggle-btn"
-                :class="{ 'is-active': settings?.wantTranslation }"
-                aria-label="翻译"
-                @click.stop="toggleTranslation"
-              >
-                译
-              </button>
-            </template>
-          </Tooltip>
-          <Tooltip v-if="hasRomanization" content="音译">
-            <template #trigger>
-              <button
-                class="menu-btn text-toggle-btn"
-                :class="{ 'is-active': settings?.wantRomanization }"
-                aria-label="音译"
-                @click.stop="toggleRomanization"
-              >
-                音
-              </button>
-            </template>
-          </Tooltip>
+          <button
+            v-tooltip="'翻译'"
+            v-if="hasTranslation"
+            class="menu-btn text-toggle-btn"
+            :class="{ 'is-active': settings?.wantTranslation }"
+            aria-label="翻译"
+            @click.stop="toggleTranslation"
+          >
+            译
+          </button>
+          <button
+            v-tooltip="'音译'"
+            v-if="hasRomanization"
+            class="menu-btn text-toggle-btn"
+            :class="{ 'is-active': settings?.wantRomanization }"
+            aria-label="音译"
+            @click.stop="toggleRomanization"
+          >
+            音
+          </button>
         </div>
-        <Tooltip content="桌面歌词设置">
-          <template #trigger>
-            <button
-              class="menu-btn"
-              aria-label="桌面歌词设置"
-              @click.stop="openDesktopLyricSettings"
-            >
-              <Icon :icon="iconSettings" width="19" height="19" />
-            </button>
-          </template>
-        </Tooltip>
+        <button
+          v-tooltip="'桌面歌词设置'"
+          class="menu-btn"
+          aria-label="桌面歌词设置"
+          @click.stop="openDesktopLyricSettings"
+        >
+          <Icon :icon="iconSettings" width="19" height="19" />
+        </button>
         <button
           v-if="!isLocked || canShowUnlockButton"
           ref="lockButtonRef"

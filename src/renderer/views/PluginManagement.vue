@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { useRouteTabs } from '@/composables/useRouteTabs';
 import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
@@ -309,7 +310,7 @@ const getPluginAccentStyle = (pluginId: string) => {
             <h1 class="text-lg font-bold text-text-main">插件管理</h1>
             <p
               class="plugin-header-path text-xs text-text-secondary mt-0.5"
-              :title="pluginRuntimeState.directory"
+              v-tooltip="pluginRuntimeState.directory"
             >
               {{ pluginRuntimeState.directory || '插件目录尚未初始化' }}
             </p>

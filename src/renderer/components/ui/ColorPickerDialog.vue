@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
-
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -100,18 +99,15 @@ const confirm = () => {
       <!-- 顶部：原生色盘（美化为色块）+ hex 输入框 -->
       <div class="color-picker-top-row">
         <div class="color-picker-native-wrap">
-          <Tooltip content="点击打开系统色盘">
-            <template #trigger>
-              <input
-                :value="normalizedDraft"
-                type="color"
-                class="color-picker-native"
-                aria-label="点击打开系统色盘"
-                @input="handleNativeInput"
-                @change="handleNativeInput"
-              />
-            </template>
-          </Tooltip>
+          <input
+            v-tooltip="'点击打开系统色盘'"
+            :value="normalizedDraft"
+            type="color"
+            class="color-picker-native"
+            aria-label="点击打开系统色盘"
+            @input="handleNativeInput"
+            @change="handleNativeInput"
+          />
         </div>
         <div class="color-picker-input-wrap">
           <Input v-model="displayValue" inputClass="font-mono" :show-clear="!isDynamicDraft" />
@@ -120,29 +116,28 @@ const confirm = () => {
 
       <!-- 预设色 -->
       <div v-if="props.presets.length" class="color-picker-presets">
-        <Tooltip v-for="color in props.presets" :key="color" :content="color">
-          <template #trigger>
-            <button
-              type="button"
-              class="color-picker-swatch"
-              :class="{ active: !isDynamicDraft && normalizedDraft === color.toLowerCase() }"
-              :style="{
-                backgroundColor: color,
-                color: contrast('#ffffff', color) >= 3 ? '#ffffff' : '#1d1d1f',
-              }"
-              :aria-label="color"
-              :aria-pressed="!isDynamicDraft && normalizedDraft === color.toLowerCase()"
-              @click="applyPreset(color)"
-            >
-              <Icon
-                v-if="!isDynamicDraft && normalizedDraft === color.toLowerCase()"
-                :icon="iconCheckMark"
-                width="16"
-                height="16"
-              />
-            </button>
-          </template>
-        </Tooltip>
+        <button
+          v-tooltip="color"
+          v-for="color in props.presets"
+          :key="color"
+          type="button"
+          class="color-picker-swatch"
+          :class="{ active: !isDynamicDraft && normalizedDraft === color.toLowerCase() }"
+          :style="{
+            backgroundColor: color,
+            color: contrast('#ffffff', color) >= 3 ? '#ffffff' : '#1d1d1f',
+          }"
+          :aria-label="color"
+          :aria-pressed="!isDynamicDraft && normalizedDraft === color.toLowerCase()"
+          @click="applyPreset(color)"
+        >
+          <Icon
+            v-if="!isDynamicDraft && normalizedDraft === color.toLowerCase()"
+            :icon="iconCheckMark"
+            width="16"
+            height="16"
+          />
+        </button>
       </div>
 
       <button

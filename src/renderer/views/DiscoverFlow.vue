@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
+import { vTooltip } from '@/components/ui/tooltip';
 defineOptions({ name: 'discover-flow' });
 
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
@@ -379,25 +379,19 @@ onBeforeUnmount(() => {
               {{ tag }}
             </span>
           </div>
-          <Tooltip :content="currentSong.name || currentSong.title" overflow-only>
-            <template #trigger>
-              <h2>
-                {{ currentSong.name || currentSong.title }}
-              </h2>
-            </template>
-          </Tooltip>
-          <Tooltip :content="currentSong.artist" overflow-only>
-            <template #trigger>
-              <p>{{ currentSong.artist }}</p>
-            </template>
-          </Tooltip>
-          <Tooltip v-if="currentSong.albumName" :content="currentSong.albumName" overflow-only>
-            <template #trigger>
-              <div class="discover-reel-album">
-                {{ currentSong.albumName }}
-              </div>
-            </template>
-          </Tooltip>
+          <h2 v-tooltip="{ content: currentSong.name || currentSong.title, overflowOnly: true }">
+            {{ currentSong.name || currentSong.title }}
+          </h2>
+          <p v-tooltip="{ content: currentSong.artist, overflowOnly: true }">
+            {{ currentSong.artist }}
+          </p>
+          <div
+            v-tooltip="{ content: currentSong.albumName, overflowOnly: true }"
+            v-if="currentSong.albumName"
+            class="discover-reel-album"
+          >
+            {{ currentSong.albumName }}
+          </div>
         </section>
       </Transition>
 

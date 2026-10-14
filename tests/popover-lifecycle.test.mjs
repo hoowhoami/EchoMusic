@@ -10,6 +10,16 @@ const { code } = transformSync(compileScript(descriptor, { id: 'popover-lifecycl
   loader: 'ts',
   format: 'cjs',
 });
+const ownership = { exports: {} };
+new Function(
+  'module',
+  'exports',
+  transformSync(readFileSync('src/renderer/components/ui/tooltipOwnership.ts', 'utf8'), {
+    loader: 'ts',
+    format: 'cjs',
+  }).code,
+)(ownership, ownership.exports);
+
 function fixture(overrides = {}) {
   const hooks = {},
     timers = new Map(),
@@ -22,17 +32,19 @@ function fixture(overrides = {}) {
   const mod = { exports: {} };
   new Function('require', 'module', 'exports', 'document', 'setTimeout', 'clearTimeout', code)(
     (id) =>
-      id === 'vue'
-        ? {
-            ...vue,
-            onMounted: (fn) => (hooks.mount = fn),
-            onUnmounted: (fn) => (hooks.unmount = fn),
-            onActivated: (fn) => (hooks.activate = fn),
-            onDeactivated: (fn) => (hooks.deactivate = fn),
-            provide() {},
-            inject: () => () => () => removedBranches++,
-          }
-        : {},
+      id === './tooltipOwnership'
+        ? ownership.exports
+        : id === 'vue'
+          ? {
+              ...vue,
+              onMounted: (fn) => (hooks.mount = fn),
+              onUnmounted: (fn) => (hooks.unmount = fn),
+              onActivated: (fn) => (hooks.activate = fn),
+              onDeactivated: (fn) => (hooks.deactivate = fn),
+              provide() {},
+              inject: () => () => () => removedBranches++,
+            }
+          : {},
     mod,
     mod.exports,
     {

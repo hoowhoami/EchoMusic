@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
-
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -343,20 +342,16 @@ watch(selectedKey, () => {
                   <Icon :icon="iconSparkles" width="12" height="12" />
                   智能推荐
                 </span>
-                <Tooltip :content="`推荐 ${recommendationLevel(candidate)} 星`">
-                  <template #trigger>
-                    <span class="star-rating">
-                      <span
-                        v-for="index in 5"
-                        :key="index"
-                        class="star"
-                        :class="starClass(candidate, index)"
-                      >
-                        ★
-                      </span>
-                    </span>
-                  </template>
-                </Tooltip>
+                <span v-tooltip="`推荐 ${recommendationLevel(candidate)} 星`" class="star-rating">
+                  <span
+                    v-for="index in 5"
+                    :key="index"
+                    class="star"
+                    :class="starClass(candidate, index)"
+                  >
+                    ★
+                  </span>
+                </span>
               </div>
               <div class="candidate-tags">
                 <span

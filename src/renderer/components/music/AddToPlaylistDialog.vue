@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -239,7 +240,13 @@ const orderedPlaylists = computed(() => {
             </span>
             <span class="add-to-name">
               <Icon class="add-to-queue-icon" :icon="iconList" width="16" height="16" />
-              <span class="add-to-title" :title="getPlaybackQueuePresentation(queue).title">
+              <span
+                class="add-to-title"
+                v-tooltip="{
+                  content: getPlaybackQueuePresentation(queue).title,
+                  overflowOnly: true,
+                }"
+              >
                 {{ getPlaybackQueuePresentation(queue).title }}
               </span>
             </span>
@@ -300,7 +307,9 @@ const orderedPlaylists = computed(() => {
               height="14"
             />
           </span>
-          <span class="add-to-name" :title="entry.name">{{ entry.name }}</span>
+          <span class="add-to-name" v-tooltip="{ content: entry.name, overflowOnly: true }">{{
+            entry.name
+          }}</span>
         </span>
         <span
           v-if="multiple && resultLabel(addTargetKey('playlist', entry.listid ?? entry.id))"
@@ -330,7 +339,7 @@ const orderedPlaylists = computed(() => {
             />
             <span
               class="add-to-count"
-              :title="`已选择 ${selectedTargetCount} 个，可选 ${selectableTargetKeys.length} 个`"
+              v-tooltip="`已选择 ${selectedTargetCount} 个，可选 ${selectableTargetKeys.length} 个`"
               >{{ selectedTargetCount }}/{{ selectableTargetKeys.length }}</span
             >
           </label>

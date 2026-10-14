@@ -37,6 +37,7 @@ function closePopover(): void {
 
 <template>
   <Popover
+    :show-arrow="false"
     ref="popoverRef"
     trigger="click"
     :open="props.open"

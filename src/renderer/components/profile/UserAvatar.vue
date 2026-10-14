@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
 
@@ -28,7 +29,7 @@ const sizeStyle = computed(() => ({
       class="user-avatar-identity"
       :src="identityIcon"
       :alt="identityLabel"
-      :title="identityLabel"
+      v-tooltip="identityLabel"
     />
   </span>
 </template>

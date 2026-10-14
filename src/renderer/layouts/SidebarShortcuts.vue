@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Sortable from 'sortablejs';
@@ -13,7 +14,6 @@ import {
 import Dialog from '@/components/ui/Dialog.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Cover from '@/components/ui/Cover.vue';
-import Tooltip from '@/components/ui/Tooltip.vue';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import { useHistoryStore } from '@/stores/historyStore';
@@ -253,72 +253,67 @@ onBeforeUnmount(() => {
 <template>
   <div class="sidebar-shortcuts" :class="{ 'is-collapsed': collapsed }">
     <div ref="container" class="shortcut-grid" aria-label="常用功能">
-      <Tooltip
+      <div
+        v-tooltip="{
+          content: index === 0 ? `${entry.title}（首页）` : entry.title,
+          side: 'right',
+          disabled: !collapsed,
+        }"
         v-for="(entry, index) in visible"
         :key="entry.key"
-        :content="index === 0 ? `${entry.title}（首页）` : entry.title"
-        side="right"
-        :disabled="!collapsed"
+        class="shortcut-card"
+        :data-shortcut-key="entry.key"
       >
-        <template #trigger
-          ><div class="shortcut-card" :data-shortcut-key="entry.key">
-            <button
-              type="button"
-              class="shortcut-activate"
-              :aria-label="index === 0 ? `${entry.title}（首页）` : entry.title"
-              :aria-current="route.path === entry.path ? 'page' : undefined"
-              :disabled="entry.disabled || busy === entry.key"
-              @click="activate(entry)"
-              @keydown.alt.left.prevent="move(entry.key, -1)"
-              @keydown.alt.up.prevent="move(entry.key, -1)"
-              @keydown.alt.right.prevent="move(entry.key, 1)"
-              @keydown.alt.down.prevent="move(entry.key, 1)"
-            >
-              <Avatar
-                v-if="entry.resource?.kind === 'artist'"
-                :src="entry.resource.image"
-                :alt="entry.title"
-                :size="SHORTCUT_ICON_SIZE"
-                :show-skeleton="false"
-                error-class="!opacity-50"
-                class="shortcut-icon rounded-full"
-              />
-              <Cover
-                v-else-if="entry.resource"
-                :url="entry.resource.image"
-                :alt="entry.title"
-                :width="SHORTCUT_ICON_SIZE"
-                :height="SHORTCUT_ICON_SIZE"
-                :border-radius="5"
-                class="shortcut-icon"
-              />
-              <PluginIcon
-                v-else
-                :icon="entry.icon"
-                :width="SHORTCUT_ICON_SIZE"
-                :height="SHORTCUT_ICON_SIZE"
-                class="shortcut-icon"
-              /><span class="shortcut-label">{{ entry.title }}</span>
-            </button>
-            <Tooltip
-              v-if="!collapsed && canRemove(entry)"
-              :content="`移除${entry.title}`"
-              side="right"
-            >
-              <template #trigger>
-                <button
-                  type="button"
-                  class="action-icon shortcut-remove echo-button-sized echo-button-icon"
-                  :aria-label="`移除${entry.title}卡片`"
-                  @pointerdown.stop
-                  @click.stop="remove(entry)"
-                >
-                  <Icon :icon="iconX" :width="13" :height="13" />
-                </button>
-              </template>
-            </Tooltip></div
-        ></template>
-      </Tooltip>
+        <button
+          type="button"
+          class="shortcut-activate"
+          :aria-label="index === 0 ? `${entry.title}（首页）` : entry.title"
+          :aria-current="route.path === entry.path ? 'page' : undefined"
+          :disabled="entry.disabled || busy === entry.key"
+          @click="activate(entry)"
+          @keydown.alt.left.prevent="move(entry.key, -1)"
+          @keydown.alt.up.prevent="move(entry.key, -1)"
+          @keydown.alt.right.prevent="move(entry.key, 1)"
+          @keydown.alt.down.prevent="move(entry.key, 1)"
+        >
+          <Avatar
+            v-if="entry.resource?.kind === 'artist'"
+            :src="entry.resource.image"
+            :alt="entry.title"
+            :size="SHORTCUT_ICON_SIZE"
+            :show-skeleton="false"
+            error-class="!opacity-50"
+            class="shortcut-icon rounded-full"
+          />
+          <Cover
+            v-else-if="entry.resource"
+            :url="entry.resource.image"
+            :alt="entry.title"
+            :width="SHORTCUT_ICON_SIZE"
+            :height="SHORTCUT_ICON_SIZE"
+            :border-radius="5"
+            class="shortcut-icon"
+          />
+          <PluginIcon
+            v-else
+            :icon="entry.icon"
+            :width="SHORTCUT_ICON_SIZE"
+            :height="SHORTCUT_ICON_SIZE"
+            class="shortcut-icon"
+          /><span class="shortcut-label">{{ entry.title }}</span>
+        </button>
+        <button
+          v-tooltip="{ content: `移除${entry.title}`, side: 'right' }"
+          v-if="!collapsed && canRemove(entry)"
+          type="button"
+          class="action-icon shortcut-remove echo-button-sized echo-button-icon"
+          :aria-label="`移除${entry.title}卡片`"
+          @pointerdown.stop
+          @click.stop="remove(entry)"
+        >
+          <Icon :icon="iconX" :width="13" :height="13" />
+        </button>
+      </div>
       <button
         type="button"
         class="shortcut-add"

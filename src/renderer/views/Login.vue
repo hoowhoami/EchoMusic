@@ -1,7 +1,6 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { watchUserSession } from '@/utils/watchUserSession';
-
-import Tooltip from '@/components/ui/Tooltip.vue';
 
 defineOptions({ name: 'login-page' });
 import { ref, onMounted, onUnmounted, reactive, watch } from 'vue';
@@ -979,18 +978,15 @@ onUnmounted(() => {
                   <span class="text-[11px] font-black text-text-secondary uppercase tracking-[3px]">
                     {{ qqQr.isLoading ? '正在生成二维码' : qqQr.message || '等待 QQ 扫码' }}
                   </span>
-                  <Tooltip content="刷新 QQ 二维码">
-                    <template #trigger>
-                      <button
-                        class="action-icon absolute right-0 flex items-center justify-center text-[var(--icon-main)] hover:text-[#12B7F5] hover:bg-[#12B7F5]/10 transition-all active:scale-90 disabled:opacity-40 echo-button-sized echo-button-icon"
-                        :disabled="qqQr.isLoading"
-                        aria-label="刷新 QQ 二维码"
-                        @click="loadQqQr"
-                      >
-                        <Icon :icon="iconRefreshCw" width="14" height="14" />
-                      </button>
-                    </template>
-                  </Tooltip>
+                  <button
+                    v-tooltip="'刷新 QQ 二维码'"
+                    class="action-icon absolute right-0 flex items-center justify-center text-[var(--icon-main)] hover:text-[#12B7F5] hover:bg-[#12B7F5]/10 transition-all active:scale-90 disabled:opacity-40 echo-button-sized echo-button-icon"
+                    :disabled="qqQr.isLoading"
+                    aria-label="刷新 QQ 二维码"
+                    @click="loadQqQr"
+                  >
+                    <Icon :icon="iconRefreshCw" width="14" height="14" />
+                  </button>
                 </div>
               </TabsContent>
 
@@ -1076,23 +1072,17 @@ onUnmounted(() => {
                 <TabsList
                   class="login-method-list grid! grid-cols-5 gap-2 h-auto! w-full items-stretch"
                 >
-                  <Tooltip
+                  <TabsTrigger
                     v-for="method in loginMethods"
                     :key="method.value"
-                    :content="`${method.label}登录`"
+                    :value="method.value"
+                    :data-tone="method.tone"
+                    :aria-label="`${method.label}登录`"
+                    class="login-method-trigger group h-14! pb-0! flex-col! items-center! justify-center! gap-1 rounded-2xl border border-transparent opacity-65! hover:opacity-100! data-[state=active]:opacity-100! [&_.active-line]:hidden"
                   >
-                    <template #trigger>
-                      <TabsTrigger
-                        :value="method.value"
-                        :data-tone="method.tone"
-                        :aria-label="`${method.label}登录`"
-                        class="login-method-trigger group h-14! pb-0! flex-col! items-center! justify-center! gap-1 rounded-2xl border border-transparent opacity-65! hover:opacity-100! data-[state=active]:opacity-100! [&_.active-line]:hidden"
-                      >
-                        <Icon :icon="method.icon" width="20" height="20" />
-                        <span class="text-[10px] leading-none font-black">{{ method.label }}</span>
-                      </TabsTrigger>
-                    </template>
-                  </Tooltip>
+                    <Icon :icon="method.icon" width="20" height="20" />
+                    <span class="text-[10px] leading-none font-black">{{ method.label }}</span>
+                  </TabsTrigger>
                 </TabsList>
               </div>
             </div>

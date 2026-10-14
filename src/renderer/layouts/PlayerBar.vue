@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
+import { vTooltip } from '@/components/ui/tooltip';
 import './playerBarActionStrip.css';
 import { useRouter } from 'vue-router';
 import { markRaw, computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
@@ -604,17 +604,14 @@ onUnmounted(() => {
               :style="{ '--marquee-distance': marqueeDistance }"
               @mouseenter="handleSongInfoHover"
             >
-              <Tooltip :content="isCurrentAlbumClickable ? '查看专辑' : ''">
-                <template #trigger>
-                  <span
-                    class="text-[14px] font-bold text-text-main cursor-pointer transition-colors"
-                    :class="{ 'hover:text-primary-text': isCurrentAlbumClickable }"
-                    @click="goToCurrentAlbum"
-                  >
-                    {{ currentTrack ? currentTrack.name : '未在播放' }}
-                  </span>
-                </template>
-              </Tooltip>
+              <span
+                v-tooltip="isCurrentAlbumClickable ? '查看专辑' : ''"
+                class="text-[14px] font-bold text-text-main cursor-pointer transition-colors"
+                :class="{ 'hover:text-primary-text': isCurrentAlbumClickable }"
+                @click="goToCurrentAlbum"
+              >
+                {{ currentTrack ? currentTrack.name : '未在播放' }}
+              </span>
               <span v-if="currentTrack" class="text-[14px] text-text-secondary mx-0.5">-</span>
               <div v-if="currentTrack" class="flex items-center">
                 <template v-for="(artist, index) in artistList" :key="index">
@@ -678,13 +675,13 @@ onUnmounted(() => {
                 </Button>
               </div>
             </template>
-            <Tooltip content="云盘歌曲" v-if="currentTrack?.source === 'cloud'">
-              <template #trigger>
-                <div class="text-[var(--icon-main)]">
-                  <Icon :icon="iconCloud" width="20" height="20" />
-                </div>
-              </template>
-            </Tooltip>
+            <div
+              v-tooltip="'云盘歌曲'"
+              v-if="currentTrack?.source === 'cloud'"
+              class="text-[var(--icon-main)]"
+            >
+              <Icon :icon="iconCloud" width="20" height="20" />
+            </div>
           </div>
         </div>
       </div>

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
-
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import { iconArrowLeft, iconHeadphones, iconLoader2, iconRefreshCw } from '@/icons';
@@ -61,19 +60,16 @@ const refresh = () => {
         <h2>音效广场</h2>
         <p>{{ description }}</p>
       </div>
-      <Tooltip content="刷新当前分类">
-        <template #trigger>
-          <button
-            type="button"
-            class="action-icon plaza-refresh echo-button-sized echo-button-icon"
-            :disabled="loading"
-            aria-label="刷新音效广场"
-            @click="refresh"
-          >
-            <Icon :icon="iconRefreshCw" width="15" :class="{ 'plaza-spin': loading }" />
-          </button>
-        </template>
-      </Tooltip>
+      <button
+        v-tooltip="'刷新当前分类'"
+        type="button"
+        class="action-icon plaza-refresh echo-button-sized echo-button-icon"
+        :disabled="loading"
+        aria-label="刷新音效广场"
+        @click="refresh"
+      >
+        <Icon :icon="iconRefreshCw" width="15" :class="{ 'plaza-spin': loading }" />
+      </button>
     </header>
     <CustomTabBar
       class="plaza-tabs"

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { RouterView, useRoute } from 'vue-router';
-import TooltipScope from '@/components/ui/TooltipScope.vue';
 import SettingsDialog from '@/components/app/SettingsDialog.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
 import RouteErrorBoundary from '@/components/app/RouteErrorBoundary.vue';
@@ -57,41 +56,39 @@ watch(
 </script>
 
 <template>
-  <TooltipScope>
-    <RouterView v-slot="{ Component, route }">
-      <Transition
-        :name="rootPageTransitionName"
-        :mode="rootPageTransitionMode"
-        :appear="rootPageTransitionAppear"
-      >
-        <RouteErrorBoundary :key="rootPageTransitionKey" :route="route">
-          <component :is="Component" />
-        </RouteErrorBoundary>
-      </Transition>
-    </RouterView>
-    <Teleport v-if="!isMiniPlayerRoute" to="body">
-      <Transition
-        :css="false"
-        appear
-        @before-enter="lyricTransition.beforeEnter"
-        @enter="lyricTransition.enter"
-        @leave="lyricTransition.leave"
-        @enter-cancelled="lyricTransition.cancel"
-        @leave-cancelled="lyricTransition.cancel"
-      >
-        <!-- Mount the host synchronously, even while the lyric chunk is loading.
+  <RouterView v-slot="{ Component, route }">
+    <Transition
+      :name="rootPageTransitionName"
+      :mode="rootPageTransitionMode"
+      :appear="rootPageTransitionAppear"
+    >
+      <RouteErrorBoundary :key="rootPageTransitionKey" :route="route">
+        <component :is="Component" />
+      </RouteErrorBoundary>
+    </Transition>
+  </RouterView>
+  <Teleport v-if="!isMiniPlayerRoute" to="body">
+    <Transition
+      :css="false"
+      appear
+      @before-enter="lyricTransition.beforeEnter"
+      @enter="lyricTransition.enter"
+      @leave="lyricTransition.leave"
+      @enter-cancelled="lyricTransition.cancel"
+      @leave-cancelled="lyricTransition.cancel"
+    >
+      <!-- Mount the host synchronously, even while the lyric chunk is loading.
              Reveal the retained page as soon as the leave transition starts. -->
-        <div v-if="player?.isLyricViewOpen" class="lyric-overlay-host" data-entering>
-          <LyricView />
-        </div>
-      </Transition>
-    </Teleport>
-    <AuthExpiredDialog v-if="!isMiniPlayerRoute" />
-    <KugouVerificationFlow v-if="!isMiniPlayerRoute" />
-    <ToastViewport v-if="!isMiniPlayerRoute" :lyric-view-open="Boolean(player?.isLyricViewOpen)" />
-    <UpdateDialog v-if="!isMiniPlayerRoute" dismiss-label="稍后" />
-    <SettingsDialog v-if="!isMiniPlayerRoute" />
-  </TooltipScope>
+      <div v-if="player?.isLyricViewOpen" class="lyric-overlay-host" data-entering>
+        <LyricView />
+      </div>
+    </Transition>
+  </Teleport>
+  <AuthExpiredDialog v-if="!isMiniPlayerRoute" />
+  <KugouVerificationFlow v-if="!isMiniPlayerRoute" />
+  <ToastViewport v-if="!isMiniPlayerRoute" :lyric-view-open="Boolean(player?.isLyricViewOpen)" />
+  <UpdateDialog v-if="!isMiniPlayerRoute" dismiss-label="稍后" />
+  <SettingsDialog v-if="!isMiniPlayerRoute" />
 </template>
 
 <style>

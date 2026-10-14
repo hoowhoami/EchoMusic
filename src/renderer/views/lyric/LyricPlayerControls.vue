@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
+import { vTooltip } from '@/components/ui/tooltip';
 import '@/layouts/playerBarActionStrip.css';
 /**
  * 歌词页底部播放控制栏
@@ -556,15 +556,15 @@ useResizeObserver(
       <div class="bar-left">
         <!-- 歌曲信息 + 操作 -->
         <div class="bar-song-info">
-          <Tooltip content="点击复制歌曲信息">
-            <template #trigger>
-              <div class="bar-song-text bar-song-clickable" @click="handleCopySongInfo">
-                <span class="bar-song-title">{{ currentTrack?.name || '未在播放' }}</span>
-                <span v-if="currentTrack" class="bar-song-sep">-</span>
-                <span v-if="currentTrack" class="bar-song-artist">{{ currentTrack.artist }}</span>
-              </div>
-            </template>
-          </Tooltip>
+          <div
+            v-tooltip="'点击复制歌曲信息'"
+            class="bar-song-text bar-song-clickable"
+            @click="handleCopySongInfo"
+          >
+            <span class="bar-song-title">{{ currentTrack?.name || '未在播放' }}</span>
+            <span v-if="currentTrack" class="bar-song-sep">-</span>
+            <span v-if="currentTrack" class="bar-song-artist">{{ currentTrack.artist }}</span>
+          </div>
           <div
             ref="leftActionsRef"
             class="bar-song-actions player-bar-action-strip bar-song-action-strip"

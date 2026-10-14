@@ -101,6 +101,7 @@ const selectAction = (action: SleepTimerAction) => {
 
 <template>
   <Popover
+    :show-arrow="false"
     trigger="click"
     :open="open"
     align="center"

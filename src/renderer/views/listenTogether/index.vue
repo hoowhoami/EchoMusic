@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { watchUserSession } from '@/utils/watchUserSession';
 
 import Tag from '@/components/ui/Tag.vue';
-import Tooltip from '@/components/ui/Tooltip.vue';
 import { captureUserSession } from '@/utils/userSession';
 import { handleComposerKeydown } from '@/utils/composerKeyboard';
 
@@ -1646,24 +1646,18 @@ onBeforeUnmount(() => {
                   rows="1"
                   @keydown="handleMessageKeydown"
                 ></textarea>
-                <Tooltip :content="chatCooldown ? '发送过于频繁，请稍候' : '发送消息'">
-                  <template #trigger>
-                    <button
-                      class="action-icon soft-neutral-action echo-button-sized echo-button-icon"
-                      type="button"
-                      :disabled="
-                        !messageText.trim() ||
-                        !activeRoom?.allowChat ||
-                        sendingMessage ||
-                        chatCooldown
-                      "
-                      :aria-label="chatCooldown ? '发送过于频繁，请稍候' : '发送消息'"
-                      @click="sendMessage"
-                    >
-                      <Icon :icon="iconSend" width="17" height="17" />
-                    </button>
-                  </template>
-                </Tooltip>
+                <button
+                  v-tooltip="chatCooldown ? '发送过于频繁，请稍候' : '发送消息'"
+                  class="action-icon soft-neutral-action echo-button-sized echo-button-icon"
+                  type="button"
+                  :disabled="
+                    !messageText.trim() || !activeRoom?.allowChat || sendingMessage || chatCooldown
+                  "
+                  :aria-label="chatCooldown ? '发送过于频繁，请稍候' : '发送消息'"
+                  @click="sendMessage"
+                >
+                  <Icon :icon="iconSend" width="17" height="17" />
+                </button>
               </div>
             </section>
           </aside>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { watchUserSession } from '@/utils/watchUserSession';
 
 import { computed, onMounted, ref, useAttrs, watch } from 'vue';
@@ -801,28 +802,23 @@ watch(
     <template v-if="collapsed">
       <div class="sidebar-rail flex flex-col flex-1 min-h-0 no-drag">
         <div class="sidebar-rail-top">
-          <Tooltip
-            :content="isLoggedIn ? userInfo?.nickname || '个人中心' : '点击登录账号'"
-            side="right"
+          <Button
+            :tooltip="isLoggedIn ? userInfo?.nickname || '个人中心' : '点击登录账号'"
+            :tooltip-side="'right'"
+            variant="unstyled"
+            size="none"
+            class="sidebar-rail-avatar-btn"
+            :aria-label="isLoggedIn ? '个人中心' : '点击登录账号'"
+            @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
           >
-            <template #trigger>
-              <Button
-                variant="unstyled"
-                size="none"
-                class="sidebar-rail-avatar-btn"
-                :aria-label="isLoggedIn ? '个人中心' : '点击登录账号'"
-                @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
-              >
-                <UserAvatar
-                  :src="isLoggedIn ? userInfo?.pic : ''"
-                  :size="32"
-                  :identity-icon="userIdentity.avatarIcon"
-                  :identity-label="userIdentity.avatarLabel"
-                  error-class="opacity-30"
-                />
-              </Button>
-            </template>
-          </Tooltip>
+            <UserAvatar
+              :src="isLoggedIn ? userInfo?.pic : ''"
+              :size="32"
+              :identity-icon="userIdentity.avatarIcon"
+              :identity-label="userIdentity.avatarLabel"
+              error-class="opacity-30"
+            />
+          </Button>
         </div>
 
         <Scrollbar
@@ -834,52 +830,50 @@ watch(
           <SidebarShortcuts collapsed />
           <div v-if="visibleRailMenuGroups.length > 0" class="sidebar-rail-nav">
             <template v-for="group in visibleRailMenuGroups" :key="group.id">
-              <Tooltip
-                v-for="item in group.items"
-                :key="item.key"
-                :content="item.title"
-                side="right"
-              >
-                <template #trigger>
-                  <component
-                    :is="item.railComponent"
-                    v-if="item.railComponent"
-                    :item="item"
-                    :section="group"
-                    :collapsed="true"
+              <template v-for="item in group.items" :key="item.key">
+                <Tooltip v-if="item.railComponent" :content="item.title" side="right">
+                  <template #trigger>
+                    <component
+                      :is="item.railComponent"
+                      :item="item"
+                      :section="group"
+                      :collapsed="true"
+                    />
+                  </template>
+                </Tooltip>
+                <Button
+                  class="action-icon"
+                  :tooltip="item.title"
+                  tooltip-side="right"
+                  v-else
+                  variant="unstyled"
+                  size="icon"
+                  :disabled="isMenuItemDisabled(item)"
+                  :aria-label="item.title"
+                  :class="[
+                    'sidebar-rail-item',
+                    isMenuItemDisabled(item)
+                      ? 'is-disabled'
+                      : isMenuItemActive(item)
+                        ? 'is-active'
+                        : '',
+                  ]"
+                  @click="handleMenuClick(item)"
+                >
+                  <Icon
+                    v-if="item.builtinIcon"
+                    :icon="iconMap[item.builtinIcon]"
+                    width="19"
+                    height="19"
                   />
-                  <Button
-                    class="action-icon"
-                    v-else
-                    variant="unstyled"
-                    size="icon"
-                    :disabled="isMenuItemDisabled(item)"
-                    :aria-label="item.title"
-                    :class="[
-                      'sidebar-rail-item',
-                      isMenuItemDisabled(item)
-                        ? 'is-disabled'
-                        : isMenuItemActive(item)
-                          ? 'is-active'
-                          : '',
-                    ]"
-                    @click="handleMenuClick(item)"
-                  >
-                    <Icon
-                      v-if="item.builtinIcon"
-                      :icon="iconMap[item.builtinIcon]"
-                      width="19"
-                      height="19"
-                    />
-                    <PluginIcon
-                      v-else-if="item.pluginId"
-                      :icon="item.pluginIcon"
-                      width="19"
-                      height="19"
-                    />
-                  </Button>
-                </template>
-              </Tooltip>
+                  <PluginIcon
+                    v-else-if="item.pluginId"
+                    :icon="item.pluginIcon"
+                    width="19"
+                    height="19"
+                  />
+                </Button>
+              </template>
             </template>
           </div>
           <div v-if="playlistAreaVisible" class="sidebar-rail-playlists">
@@ -888,34 +882,30 @@ watch(
               :class="activePlaylistTab === 1 ? 'is-favorited' : 'is-created'"
             >
               <span class="sidebar-rail-tab-indicator" aria-hidden="true"></span>
-              <Tooltip content="自建歌单" side="right">
-                <template #trigger>
-                  <Button
-                    class="action-icon"
-                    variant="unstyled"
-                    size="icon"
-                    aria-label="自建歌单"
-                    :class="['sidebar-rail-tab', activePlaylistTab === 0 ? 'is-active' : '']"
-                    @click="activePlaylistTab = 0"
-                  >
-                    <Icon :icon="iconPlaylistAdd" width="15" height="15" />
-                  </Button>
-                </template>
-              </Tooltip>
-              <Tooltip content="收藏歌单" side="right">
-                <template #trigger>
-                  <Button
-                    class="action-icon"
-                    variant="unstyled"
-                    size="icon"
-                    aria-label="收藏歌单"
-                    :class="['sidebar-rail-tab', activePlaylistTab === 1 ? 'is-active' : '']"
-                    @click="activePlaylistTab = 1"
-                  >
-                    <Icon :icon="iconHeart" width="15" height="15" />
-                  </Button>
-                </template>
-              </Tooltip>
+              <Button
+                :tooltip="'自建歌单'"
+                :tooltip-side="'right'"
+                class="action-icon"
+                variant="unstyled"
+                size="icon"
+                aria-label="自建歌单"
+                :class="['sidebar-rail-tab', activePlaylistTab === 0 ? 'is-active' : '']"
+                @click="activePlaylistTab = 0"
+              >
+                <Icon :icon="iconPlaylistAdd" width="15" height="15" />
+              </Button>
+              <Button
+                :tooltip="'收藏歌单'"
+                :tooltip-side="'right'"
+                class="action-icon"
+                variant="unstyled"
+                size="icon"
+                aria-label="收藏歌单"
+                :class="['sidebar-rail-tab', activePlaylistTab === 1 ? 'is-active' : '']"
+                @click="activePlaylistTab = 1"
+              >
+                <Icon :icon="iconHeart" width="15" height="15" />
+              </Button>
             </div>
 
             <div class="sidebar-rail-playlist-content">
@@ -923,40 +913,31 @@ watch(
                 v-if="isLoggedIn && visibleRailPlaylists.length > 0"
                 class="sidebar-rail-cover-list"
               >
-                <Tooltip
+                <button
+                  v-tooltip="{ content: playlist.name || '歌单', side: 'right' }"
                   v-for="playlist in visibleRailPlaylists"
                   :key="playlist.listid || playlist.id"
-                  :content="playlist.name || '歌单'"
-                  side="right"
+                  type="button"
+                  :aria-label="playlist.name || '歌单'"
+                  :class="['sidebar-rail-cover-btn', isActivePlaylist(playlist) ? 'is-active' : '']"
+                  @click="navigateToPlaylist(playlist)"
                 >
-                  <template #trigger>
-                    <button
-                      type="button"
-                      :aria-label="playlist.name || '歌单'"
-                      :class="[
-                        'sidebar-rail-cover-btn',
-                        isActivePlaylist(playlist) ? 'is-active' : '',
-                      ]"
-                      @click="navigateToPlaylist(playlist)"
-                    >
-                      <Cover
-                        :url="playlistCoversStore.coverFor(playlist, userStore.info?.userid)"
-                        :size="96"
-                        :width="32"
-                        :height="32"
-                        class="sidebar-rail-cover"
-                      />
-                    </button>
-                  </template>
-                </Tooltip>
+                  <Cover
+                    :url="playlistCoversStore.coverFor(playlist, userStore.info?.userid)"
+                    :size="96"
+                    :width="32"
+                    :height="32"
+                    class="sidebar-rail-cover"
+                  />
+                </button>
               </div>
-              <Tooltip v-else-if="!isLoggedIn" content="登录同步云端歌单" side="right">
-                <template #trigger>
-                  <div class="sidebar-rail-empty">
-                    <Icon :icon="iconCloud" width="17" height="17" />
-                  </div>
-                </template>
-              </Tooltip>
+              <div
+                v-tooltip="{ content: '登录同步云端歌单', side: 'right' }"
+                v-else-if="!isLoggedIn"
+                class="sidebar-rail-empty"
+              >
+                <Icon :icon="iconCloud" width="17" height="17" />
+              </div>
             </div>
           </div>
         </Scrollbar>
@@ -971,42 +952,39 @@ watch(
       <div class="sidebar-full-panel flex flex-col flex-1 min-h-0">
         <div class="sidebar-profile shrink-0 no-drag">
           <div class="user-info-card flex items-center transition-colors duration-200">
-            <Tooltip :content="isLoggedIn ? userInfo?.nickname : ''" overflowOnly>
-              <template #trigger>
-                <button
-                  type="button"
-                  class="sidebar-user-link"
-                  @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
-                >
-                  <div class="sidebar-profile-avatar">
-                    <UserAvatar
-                      :src="isLoggedIn ? userInfo?.pic : ''"
-                      :identity-icon="userIdentity.avatarIcon"
-                      :identity-label="userIdentity.avatarLabel"
-                    />
-                  </div>
-                  <div class="sidebar-profile-copy">
-                    <span class="sidebar-profile-name" data-tooltip-label>
-                      {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
-                    </span>
-                    <span class="sidebar-profile-meta">
-                      <template v-if="isLoggedIn">
-                        <span class="sidebar-profile-level">Lv.{{ userInfo?.p_grade || 0 }}</span>
-                        <span
-                          v-if="vipBadge"
-                          class="sidebar-member-badge"
-                          :class="`is-${vipBadge.kind}`"
-                          >{{ vipBadge.label }}</span
-                        >
-                        <span v-else class="sidebar-member-badge">NOVIP</span>
-                      </template>
+            <button
+              v-tooltip="{ content: isLoggedIn ? userInfo?.nickname : '', overflowOnly: true }"
+              type="button"
+              class="sidebar-user-link"
+              @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
+            >
+              <div class="sidebar-profile-avatar">
+                <UserAvatar
+                  :src="isLoggedIn ? userInfo?.pic : ''"
+                  :identity-icon="userIdentity.avatarIcon"
+                  :identity-label="userIdentity.avatarLabel"
+                />
+              </div>
+              <div class="sidebar-profile-copy">
+                <span class="sidebar-profile-name" data-tooltip-label>
+                  {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
+                </span>
+                <span class="sidebar-profile-meta">
+                  <template v-if="isLoggedIn">
+                    <span class="sidebar-profile-level">Lv.{{ userInfo?.p_grade || 0 }}</span>
+                    <span
+                      v-if="vipBadge"
+                      class="sidebar-member-badge"
+                      :class="`is-${vipBadge.kind}`"
+                      >{{ vipBadge.label }}</span
+                    >
+                    <span v-else class="sidebar-member-badge">NOVIP</span>
+                  </template>
 
-                      <span v-else>点击登录账号</span>
-                    </span>
-                  </div>
-                </button>
-              </template>
-            </Tooltip>
+                  <span v-else>点击登录账号</span>
+                </span>
+              </div>
+            </button>
             <span class="sidebar-account-divider" aria-hidden="true"></span>
             <SidebarAccountPopover />
           </div>

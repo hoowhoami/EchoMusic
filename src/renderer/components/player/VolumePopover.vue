@@ -48,11 +48,12 @@ const handleWheel = (e: WheelEvent) => {
 <template>
   <div class="flex items-center" @wheel="handleWheel">
     <Popover
+      :show-arrow="false"
       v-model:open="popoverOpen"
       trigger="click"
       :side="side"
       align="center"
-      :side-offset="0"
+      :side-offset="8"
       content-class="vol-popover"
       @open-auto-focus="$event.preventDefault()"
     >

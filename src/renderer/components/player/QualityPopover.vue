@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed, ref, watch } from 'vue';
 import Popover from '@/components/ui/Popover.vue';
 import Tag from '@/components/ui/Tag.vue';
@@ -142,6 +143,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
 
 <template>
   <Popover
+    :show-arrow="false"
     trigger="click"
     :open="props.open"
     @update:open="handleOpenChange"
@@ -235,7 +237,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
           'is-pending': isPendingQuality(q.value),
         }"
         :disabled="isAudioQualityDisabled(q.value)"
-        :title="
+        v-tooltip="
           !isAudioQualityAccessLoading || hasAudioQualityAccessData
             ? getAudioQualityAccessReason(q.value) || undefined
             : undefined

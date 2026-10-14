@@ -39,6 +39,7 @@ const focusSelectedMode = (event: Event) => {
 
 <template>
   <Popover
+    :show-arrow="false"
     v-model:open="popoverOpen"
     trigger="click"
     :side="props.side"

@@ -32,6 +32,7 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@floating-ui/dom": "^1.8.0",
     "@applemusic-like-lyrics/core": "^0.6.0",
     "@iconify/icons-tabler": "^1.2.95",
     "@iconify/types": "^2.0.0",

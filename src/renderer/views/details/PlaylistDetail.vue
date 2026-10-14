@@ -37,7 +37,6 @@ import type { Song } from '@/models/song';
 import { formatDate } from '@/utils/format';
 import { useUserStore } from '@/stores/user';
 import Button from '@/components/ui/Button.vue';
-import Tooltip from '@/components/ui/Tooltip.vue';
 import { mapPlaylistMeta, resolvePlaylistTrackQueryId } from '@/utils/mappers';
 import { parsePlaylistTracks } from '@/utils/mappers';
 import type { PlaylistMeta } from '@/models/playlist';
@@ -900,24 +899,17 @@ watch(
                 >
                   <Icon :icon="iconMusic" width="12" height="12" />
                   <span>{{ songTotalCount }}</span>
-                  <Tooltip v-if="playlistFilteredInvalidCount > 0" side="bottom" align="center">
-                    <template #trigger>
-                      <Button
-                        variant="unstyled"
-                        size="icon"
-                        class="action-icon song-filter-info-btn"
-                      >
-                        <Icon :icon="iconInfo" width="14" height="14" />
-                      </Button>
-                    </template>
-
-                    <span class="block whitespace-pre-line"
-                      >当前列表已过滤 {{ playlistFilteredInvalidCount }} 首无效歌曲</span
-                    >
-                    <span class="block whitespace-pre-line"
-                      >通常是因为歌曲信息缺失无法参与播放</span
-                    >
-                  </Tooltip>
+                  <Button
+                    v-if="playlistFilteredInvalidCount > 0"
+                    variant="unstyled"
+                    size="icon"
+                    class="action-icon song-filter-info-btn"
+                    aria-label="查看无效歌曲过滤说明"
+                    :tooltip="`当前列表已过滤 ${playlistFilteredInvalidCount} 首无效歌曲\n通常是因为歌曲信息缺失无法参与播放`"
+                    tooltip-side="bottom"
+                  >
+                    <Icon :icon="iconInfo" width="14" height="14" />
+                  </Button>
                 </span>
                 <Tag v-for="tag in playlistTags" :key="tag" tone="accent">
                   {{ tag }}

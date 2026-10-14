@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { watchUserSession } from '@/utils/watchUserSession';
 
-import Tooltip from '@/components/ui/Tooltip.vue';
 import RollingNumber from '@/components/ui/RollingNumber.vue';
 
 defineOptions({ name: 'profile' });
@@ -1512,34 +1512,31 @@ onUnmounted(() => {
             <section class="profile-overview" aria-label="个人资料">
               <div class="profile-overview-main">
                 <div class="profile-identity">
-                  <Tooltip content="修改头像">
-                    <template #trigger>
-                      <button
-                        type="button"
-                        class="profile-avatar-button group relative rounded-full shrink-0"
-                        :disabled="isUploadingAvatar"
-                        aria-label="修改头像"
-                        @click="triggerAvatarPicker"
-                      >
-                        <UserAvatar
-                          :src="userInfo.pic"
-                          :size="56"
-                          :identity-inset="3"
-                          :identity-icon="userIdentity.avatarIcon"
-                          :identity-label="userIdentity.avatarLabel"
-                        />
-                        <span
-                          class="absolute inset-0 rounded-full flex items-center justify-center bg-black/45 text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
-                        >
-                          <span
-                            v-if="isUploadingAvatar"
-                            class="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin"
-                          ></span>
-                          <Icon v-else :icon="iconPencil" width="20" height="20" />
-                        </span>
-                      </button>
-                    </template>
-                  </Tooltip>
+                  <button
+                    v-tooltip="'修改头像'"
+                    type="button"
+                    class="profile-avatar-button group relative rounded-full shrink-0"
+                    :disabled="isUploadingAvatar"
+                    aria-label="修改头像"
+                    @click="triggerAvatarPicker"
+                  >
+                    <UserAvatar
+                      :src="userInfo.pic"
+                      :size="56"
+                      :identity-inset="3"
+                      :identity-icon="userIdentity.avatarIcon"
+                      :identity-label="userIdentity.avatarLabel"
+                    />
+                    <span
+                      class="absolute inset-0 rounded-full flex items-center justify-center bg-black/45 text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
+                    >
+                      <span
+                        v-if="isUploadingAvatar"
+                        class="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin"
+                      ></span>
+                      <Icon v-else :icon="iconPencil" width="20" height="20" />
+                    </span>
+                  </button>
 
                   <input
                     ref="avatarInput"

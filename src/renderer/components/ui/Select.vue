@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed, ref, watch, nextTick } from 'vue';
 import Popover from './Popover.vue';
-import Tooltip from './Tooltip.vue';
 import Tag from './Tag.vue';
 import { iconChevronDown, iconCheckMark, iconX } from '@/icons';
 import type { ControlSize } from './controlSizes';
@@ -255,99 +255,96 @@ watch(open, (val) => {
     }"
   >
     <template #trigger>
-      <Tooltip
-        :content="props.multiple ? selectedTags.map((tag) => tag.label).join('、') : selectedLabel"
-        :overflow-only="!props.multiple && !props.filterable"
+      <div
+        v-tooltip="{
+          content: props.multiple ? selectedTags.map((tag) => tag.label).join('、') : selectedLabel,
+          overflowOnly: !props.multiple && !props.filterable,
+        }"
+        ref="triggerRef"
+        :class="[
+          'echo-select-trigger echo-field-sized motion-control-feedback',
+          `echo-field-${size}`,
+          props.class,
+          { 'is-disabled': props.disabled },
+        ]"
+        :data-state="open ? 'open' : 'closed'"
+        role="combobox"
+        :tabindex="props.disabled ? -1 : 0"
+        :aria-label="props.ariaLabel"
+        :aria-expanded="open"
+        :aria-disabled="props.disabled"
+        @keydown.enter.self.prevent="!props.disabled && (open = !open)"
+        @keydown.space.self.prevent="!props.disabled && (open = !open)"
+        @keydown.esc.stop.prevent="open = false"
+        @mouseenter="isHovered = true"
+        @mouseleave="isHovered = false"
       >
-        <template #trigger>
-          <div
-            ref="triggerRef"
-            :class="[
-              'echo-select-trigger echo-field-sized motion-control-feedback',
-              `echo-field-${size}`,
-              props.class,
-              { 'is-disabled': props.disabled },
-            ]"
-            :data-state="open ? 'open' : 'closed'"
-            role="combobox"
-            :tabindex="props.disabled ? -1 : 0"
-            :aria-label="props.ariaLabel"
-            :aria-expanded="open"
-            :aria-disabled="props.disabled"
-            @keydown.enter.self.prevent="!props.disabled && (open = !open)"
-            @keydown.space.self.prevent="!props.disabled && (open = !open)"
-            @keydown.esc.stop.prevent="open = false"
-            @mouseenter="isHovered = true"
-            @mouseleave="isHovered = false"
+        <!-- 多选标签 -->
+        <div v-if="props.multiple" class="echo-select-tags">
+          <Tag
+            v-for="tag in visibleTags"
+            :key="String(tag.value)"
+            class="echo-select-tag"
+            tone="accent"
+            size="sm"
           >
-            <!-- 多选标签 -->
-            <div v-if="props.multiple" class="echo-select-tags">
-              <Tag
-                v-for="tag in visibleTags"
-                :key="String(tag.value)"
-                class="echo-select-tag"
-                tone="accent"
-                size="sm"
-              >
-                <span class="echo-select-tag-text">{{ tag.label }}</span>
-                <span
-                  class="echo-select-tag-close motion-control-feedback"
-                  @click="removeTag(tag.value, $event)"
-                >
-                  <Icon :icon="iconX" width="10" height="10" />
-                </span>
-              </Tag>
-              <Tag v-if="overflowCount > 0" class="echo-select-tag" tone="muted" size="sm">
-                +{{ overflowCount }}
-              </Tag>
-              <input
-                v-if="props.filterable"
-                ref="inputRef"
-                v-model="searchTerm"
-                class="echo-select-input"
-                :disabled="props.disabled"
-                :placeholder="selectedTags.length === 0 ? props.placeholder : ''"
-                @keydown.stop="handleSearchKeydown"
-              />
-              <span v-else-if="selectedTags.length === 0" class="echo-select-placeholder">
-                {{ props.placeholder }}
-              </span>
-            </div>
-            <!-- 单选 -->
-            <template v-else>
-              <input
-                v-if="props.filterable"
-                ref="inputRef"
-                v-model="searchTerm"
-                class="echo-select-input"
-                :disabled="props.disabled"
-                :placeholder="selectedLabel || props.placeholder"
-                @keydown.stop="handleSearchKeydown"
-              />
-              <span
-                v-else
-                class="echo-select-value"
-                data-tooltip-label
-                :class="{ 'is-placeholder': !selectedLabel }"
-              >
-                {{ selectedLabel || props.placeholder }}
-              </span>
-            </template>
-
-            <!-- 清除 / 箭头 -->
+            <span class="echo-select-tag-text">{{ tag.label }}</span>
             <span
-              v-if="showClear"
-              class="echo-select-clear motion-control-feedback"
-              @click="handleClear"
+              class="echo-select-tag-close motion-control-feedback"
+              @click="removeTag(tag.value, $event)"
             >
-              <Icon :icon="iconX" width="12" height="12" />
+              <Icon :icon="iconX" width="10" height="10" />
             </span>
-            <span v-else class="echo-select-arrow" :class="{ 'is-open': open }">
-              <Icon :icon="iconChevronDown" width="14" height="14" />
-            </span>
-          </div>
+          </Tag>
+          <Tag v-if="overflowCount > 0" class="echo-select-tag" tone="muted" size="sm">
+            +{{ overflowCount }}
+          </Tag>
+          <input
+            v-if="props.filterable"
+            ref="inputRef"
+            v-model="searchTerm"
+            class="echo-select-input"
+            :disabled="props.disabled"
+            :placeholder="selectedTags.length === 0 ? props.placeholder : ''"
+            @keydown.stop="handleSearchKeydown"
+          />
+          <span v-else-if="selectedTags.length === 0" class="echo-select-placeholder">
+            {{ props.placeholder }}
+          </span>
+        </div>
+        <!-- 单选 -->
+        <template v-else>
+          <input
+            v-if="props.filterable"
+            ref="inputRef"
+            v-model="searchTerm"
+            class="echo-select-input"
+            :disabled="props.disabled"
+            :placeholder="selectedLabel || props.placeholder"
+            @keydown.stop="handleSearchKeydown"
+          />
+          <span
+            v-else
+            class="echo-select-value"
+            data-tooltip-label
+            :class="{ 'is-placeholder': !selectedLabel }"
+          >
+            {{ selectedLabel || props.placeholder }}
+          </span>
         </template>
-      </Tooltip>
+
+        <!-- 清除 / 箭头 -->
+        <span
+          v-if="showClear"
+          class="echo-select-clear motion-control-feedback"
+          @click="handleClear"
+        >
+          <Icon :icon="iconX" width="12" height="12" />
+        </span>
+        <span v-else class="echo-select-arrow" :class="{ 'is-open': open }">
+          <Icon :icon="iconChevronDown" width="14" height="14" />
+        </span>
+      </div>
     </template>
 
     <div v-if="filteredOptions.length === 0" class="echo-select-empty">无匹配项</div>
@@ -366,38 +363,30 @@ watch(open, (val) => {
             ...(useVirtual ? { transform: `translateY(${offsetY}px)` } : {}),
           }"
         >
-          <Tooltip
+          <button
+            v-tooltip="{
+              content: option.label,
+              side: 'left',
+              overflowOnly: true,
+              ignoreNonKeyboardFocus: true,
+            }"
             v-for="option in visibleItems"
             :key="String(option.value)"
-            :content="option.label"
-            side="left"
-            overflow-only
-            ignore-non-keyboard-focus
+            type="button"
+            class="echo-select-item"
+            :class="{
+              'is-selected': isSelected(option.value),
+              'is-disabled': option.disabled,
+            }"
+            :style="useVirtual ? { height: ITEM_HEIGHT + 'px' } : {}"
+            :disabled="props.disabled || option.disabled"
+            @click="handleSelect(option)"
           >
-            <template #trigger>
-              <button
-                type="button"
-                class="echo-select-item"
-                :class="{
-                  'is-selected': isSelected(option.value),
-                  'is-disabled': option.disabled,
-                }"
-                :style="useVirtual ? { height: ITEM_HEIGHT + 'px' } : {}"
-                :disabled="props.disabled || option.disabled"
-                @click="handleSelect(option)"
-              >
-                <span class="echo-select-item-text" data-tooltip-label>{{ option.label }}</span>
-                <span class="echo-select-item-check" aria-hidden="true">
-                  <Icon
-                    v-if="isSelected(option.value)"
-                    :icon="iconCheckMark"
-                    width="14"
-                    height="14"
-                  />
-                </span>
-              </button>
-            </template>
-          </Tooltip>
+            <span class="echo-select-item-text" data-tooltip-label>{{ option.label }}</span>
+            <span class="echo-select-item-check" aria-hidden="true">
+              <Icon v-if="isSelected(option.value)" :icon="iconCheckMark" width="14" height="14" />
+            </span>
+          </button>
         </div>
       </div>
     </div>

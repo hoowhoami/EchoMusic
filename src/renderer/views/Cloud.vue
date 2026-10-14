@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { watchUserSession } from '@/utils/watchUserSession';
 
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
@@ -582,7 +583,7 @@ onBeforeUnmount(() => {
                 <Icon :icon="iconPlay" width="12" height="12" />
                 <span>{{ displaySongCount }} 首歌曲</span>
               </div>
-              <div class="cloud-capacity" :title="`可用 ${formatBytes(cloudAvailable)}`">
+              <div class="cloud-capacity" v-tooltip="`可用 ${formatBytes(cloudAvailable)}`">
                 <div class="flex items-center justify-between gap-3 text-[11px] leading-4">
                   <span>已用 {{ formatBytes(usedCapacity) }}</span>
                   <span>{{ formatBytes(cloudCapacity) }}</span>

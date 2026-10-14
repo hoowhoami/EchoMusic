@@ -37,7 +37,7 @@ function fixture(t, initialSection = 'interface') {
   };
   const dependencies = {
     vue,
-    '@/components/ui/Tooltip.vue': { default: empty },
+    '@/components/ui/tooltip': { vTooltip: {} },
     '@/components/ui/Dialog.vue': { default: dialog },
     '@/components/ui/Button.vue': { default: slot },
     '@/components/ui/Scrollbar.vue': { default: slot },

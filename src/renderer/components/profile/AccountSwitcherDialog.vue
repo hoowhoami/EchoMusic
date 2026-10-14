@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { watchUserSession } from '@/utils/watchUserSession';
 
 import { userSessionSources } from '@/utils/userSession';
@@ -12,7 +13,6 @@ import Badge from '@/components/ui/Badge.vue';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Tag from '@/components/ui/Tag.vue';
-import Tooltip from '@/components/ui/Tooltip.vue';
 import { useUserStore, type SavedAccount } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { getUserGradeInfo } from '@/api/user';
@@ -174,11 +174,13 @@ const removeAccount = () => {
         />
         <div class="saved-account-info">
           <div class="saved-account-name">
-            <Tooltip :content="account.nickname || `账号 ${account.userid}`" overflow-only>
-              <template #trigger>
-                <strong>{{ account.nickname || `账号 ${account.userid}` }}</strong>
-              </template>
-            </Tooltip>
+            <strong
+              v-tooltip="{
+                content: account.nickname || `账号 ${account.userid}`,
+                overflowOnly: true,
+              }"
+              >{{ account.nickname || `账号 ${account.userid}` }}</strong
+            >
             <span
               v-if="accountDisplay(account).membership"
               class="profile-member-badge"

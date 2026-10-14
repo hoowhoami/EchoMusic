@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
-
+import { vTooltip } from '@/components/ui/tooltip';
 import { iconChevronUpDown, iconSortDown, iconSortUp } from '@/icons';
 import { computed } from 'vue';
 import type { SongListSortField, SongListSortOrder } from '@/utils/songList';
@@ -82,47 +81,41 @@ const gridTemplate = computed(() =>
           :style="{ width: `${SONG_LIST_TITLE_OFFSET_WITH_COVER}px` }"
         ></div>
         <div class="min-w-0 flex items-center gap-1.5">
-          <Tooltip content="按歌曲名排序">
-            <template #trigger>
-              <button
-                type="button"
-                class="song-sort-choice"
-                :class="{ 'is-active': sortField === 'title' }"
-                :aria-pressed="sortField === 'title'"
-                aria-label="按歌曲名排序"
-                @click="handleSort('title')"
-              >
-                <span>歌曲</span>
-                <Icon
-                  v-if="sortField === 'title'"
-                  class="sort-icon"
-                  :icon="sortOrder === 'desc' ? iconSortDown : iconSortUp"
-                />
-                <Icon v-else class="sort-icon sort-icon-idle" :icon="iconChevronUpDown" />
-              </button>
-            </template>
-          </Tooltip>
+          <button
+            v-tooltip="'按歌曲名排序'"
+            type="button"
+            class="song-sort-choice"
+            :class="{ 'is-active': sortField === 'title' }"
+            :aria-pressed="sortField === 'title'"
+            aria-label="按歌曲名排序"
+            @click="handleSort('title')"
+          >
+            <span>歌曲</span>
+            <Icon
+              v-if="sortField === 'title'"
+              class="sort-icon"
+              :icon="sortOrder === 'desc' ? iconSortDown : iconSortUp"
+            />
+            <Icon v-else class="sort-icon sort-icon-idle" :icon="iconChevronUpDown" />
+          </button>
           <span class="song-sort-separator" aria-hidden="true">/</span>
-          <Tooltip content="按歌手排序">
-            <template #trigger>
-              <button
-                type="button"
-                class="song-sort-choice"
-                :class="{ 'is-active': sortField === 'artist' }"
-                :aria-pressed="sortField === 'artist'"
-                aria-label="按歌手排序"
-                @click="handleSort('artist')"
-              >
-                <span>歌手</span>
-                <Icon
-                  v-if="sortField === 'artist'"
-                  class="sort-icon"
-                  :icon="sortOrder === 'desc' ? iconSortDown : iconSortUp"
-                />
-                <Icon v-else class="sort-icon sort-icon-idle" :icon="iconChevronUpDown" />
-              </button>
-            </template>
-          </Tooltip>
+          <button
+            v-tooltip="'按歌手排序'"
+            type="button"
+            class="song-sort-choice"
+            :class="{ 'is-active': sortField === 'artist' }"
+            :aria-pressed="sortField === 'artist'"
+            aria-label="按歌手排序"
+            @click="handleSort('artist')"
+          >
+            <span>歌手</span>
+            <Icon
+              v-if="sortField === 'artist'"
+              class="sort-icon"
+              :icon="sortOrder === 'desc' ? iconSortDown : iconSortUp"
+            />
+            <Icon v-else class="sort-icon sort-icon-idle" :icon="iconChevronUpDown" />
+          </button>
         </div>
       </div>
 

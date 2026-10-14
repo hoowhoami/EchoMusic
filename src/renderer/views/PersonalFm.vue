@@ -1,7 +1,6 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { watchUserSession } from '@/utils/watchUserSession';
-
-import Tooltip from '@/components/ui/Tooltip.vue';
 
 defineOptions({ name: 'personal-fm' });
 import { computed, onActivated, onDeactivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
@@ -587,27 +586,24 @@ onActivated(() => {
                 </div>
               </div>
               <div v-if="personalFmCurrentDisc" class="radio-current-disc">
-                <Tooltip
-                  :content="`${isPersonalFmPlaying ? '暂停' : '播放'} ${personalFmCurrentDisc.title}`"
+                <button
+                  v-tooltip="
+                    `${isPersonalFmPlaying ? '暂停' : '播放'} ${personalFmCurrentDisc.title}`
+                  "
+                  type="button"
+                  class="radio-vinyl radio-vinyl-current"
+                  :aria-label="`${isPersonalFmPlaying ? '暂停' : '播放'} ${personalFmCurrentDisc.title}`"
+                  @click="handlePlayPersonalFm"
                 >
-                  <template #trigger>
-                    <button
-                      type="button"
-                      class="radio-vinyl radio-vinyl-current"
-                      :aria-label="`${isPersonalFmPlaying ? '暂停' : '播放'} ${personalFmCurrentDisc.title}`"
-                      @click="handlePlayPersonalFm"
-                    >
-                      <div class="radio-vinyl-core" :class="{ 'is-spinning': isPersonalFmPlaying }">
-                        <Cover
-                          :url="personalFmCurrentDisc.coverUrl"
-                          :size="320"
-                          :borderRadius="'50%'"
-                          class="w-full h-full"
-                        />
-                      </div>
-                    </button>
-                  </template>
-                </Tooltip>
+                  <div class="radio-vinyl-core" :class="{ 'is-spinning': isPersonalFmPlaying }">
+                    <Cover
+                      :url="personalFmCurrentDisc.coverUrl"
+                      :size="320"
+                      :borderRadius="'50%'"
+                      class="w-full h-full"
+                    />
+                  </div>
+                </button>
               </div>
               <div v-else-if="isPersonalFmInitialLoading" class="radio-current-disc">
                 <div class="radio-vinyl radio-vinyl-current radio-vinyl-skeleton">
@@ -627,28 +623,23 @@ onActivated(() => {
                 </template>
 
                 <template v-else>
-                  <Tooltip
+                  <button
+                    v-tooltip="`播放 ${track.name} · ${track.artist}`"
                     v-for="(track, index) in personalFmVisibleSideTracks"
                     :key="`${track.id}:${track.hash ?? ''}:${index}`"
-                    :content="`播放 ${track.name} · ${track.artist}`"
+                    type="button"
+                    class="radio-vinyl"
+                    :class="[`radio-vinyl-${index + 1}`]"
+                    :aria-label="`播放 ${track.name} · ${track.artist}`"
+                    @click="handleSelectPersonalFmTrack(track)"
                   >
-                    <template #trigger>
-                      <button
-                        type="button"
-                        class="radio-vinyl"
-                        :class="[`radio-vinyl-${index + 1}`]"
-                        :aria-label="`播放 ${track.name} · ${track.artist}`"
-                        @click="handleSelectPersonalFmTrack(track)"
-                      >
-                        <Cover
-                          :url="track.coverUrl"
-                          :size="320"
-                          :borderRadius="'50%'"
-                          class="w-full h-full"
-                        />
-                      </button>
-                    </template>
-                  </Tooltip>
+                    <Cover
+                      :url="track.coverUrl"
+                      :size="320"
+                      :borderRadius="'50%'"
+                      class="w-full h-full"
+                    />
+                  </button>
                 </template>
               </div>
             </div>

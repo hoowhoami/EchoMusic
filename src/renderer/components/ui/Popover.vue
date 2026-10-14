@@ -11,6 +11,7 @@ import {
   provide,
 } from 'vue';
 import FloatingSurface from './FloatingSurface.vue';
+import { isOwnedTooltipTarget } from './tooltipOwnership';
 import { PopoverRoot, PopoverTrigger, PopoverPortal, PopoverContent, PopoverArrow } from 'reka-ui';
 
 type TriggerMode = 'hover' | 'click' | 'focus' | 'manual';
@@ -68,7 +69,8 @@ const childBranches = new Set<PopoverBranch>();
 const containsPopoverTarget: PopoverBranch = (target) =>
   !!triggerWrapRef.value?.contains(target) ||
   !!contentWrapRef.value?.contains(target) ||
-  [...childBranches].some((contains) => contains(target));
+  [...childBranches].some((contains) => contains(target)) ||
+  isOwnedTooltipTarget(target, containsPopoverTarget);
 const registerPopoverBranch: RegisterPopoverBranch = (branch) => {
   childBranches.add(branch);
   return () => {

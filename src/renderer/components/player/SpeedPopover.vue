@@ -39,6 +39,7 @@ const popoverOpen = computed({
 
 <template>
   <Popover
+    :show-arrow="false"
     trigger="click"
     :open="popoverOpen"
     :side="props.side"

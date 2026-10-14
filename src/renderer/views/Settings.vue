@@ -1,4 +1,5 @@
 <script lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { defineAsyncComponent, defineComponent, h } from 'vue';
 import type { Component } from 'vue';
 
@@ -62,7 +63,6 @@ const AboutSettingsSection = loadSection(
 </script>
 
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
 import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useUpdateStore } from '@/stores/update';
@@ -727,26 +727,21 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
               class="settings-search-shell"
               :class="{ 'is-expanded': isSettingsSearchExpanded || isSettingsSearchCollapsing }"
             >
-              <Tooltip
+              <button
+                v-tooltip="'搜索设置'"
                 v-if="!isSettingsSearchExpanded && !isSettingsSearchCollapsing"
-                content="搜索设置"
+                type="button"
+                class="action-icon settings-search-icon-button echo-button-sized echo-button-icon"
+                aria-label="搜索设置"
+                @click="expandSettingsSearch"
               >
-                <template #trigger>
-                  <button
-                    type="button"
-                    class="action-icon settings-search-icon-button echo-button-sized echo-button-icon"
-                    aria-label="搜索设置"
-                    @click="expandSettingsSearch"
-                  >
-                    <Icon
-                      :icon="iconSearch"
-                      width="17"
-                      height="17"
-                      class="settings-search-trigger-icon"
-                    />
-                  </button>
-                </template>
-              </Tooltip>
+                <Icon
+                  :icon="iconSearch"
+                  width="17"
+                  height="17"
+                  class="settings-search-trigger-icon"
+                />
+              </button>
               <div
                 v-if="isSettingsSearchExpanded || isSettingsSearchCollapsing"
                 class="settings-search"

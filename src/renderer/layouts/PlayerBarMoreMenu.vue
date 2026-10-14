@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed, nextTick, onBeforeUnmount, ref, useSlots, watch } from 'vue';
 import { useElementBounding } from '@vueuse/core';
 import Sortable from 'sortablejs';
@@ -299,10 +299,11 @@ onBeforeUnmount(() => {
 
 <template>
   <Popover
+    :show-arrow="false"
     trigger="click"
     side="top"
     align="center"
-    :side-offset="10"
+    :side-offset="8"
     :delay="80"
     :duration="160"
     :content-class="popoverClass"
@@ -328,51 +329,43 @@ onBeforeUnmount(() => {
       <div class="playerbar-more-heading">
         <span>更多功能</span>
         <div class="playerbar-more-heading-actions">
-          <Tooltip content="编辑播放栏布局">
-            <template #trigger>
-              <button
-                type="button"
-                class="action-icon playerbar-edit-entry app-focus-ring-soft echo-button-sized echo-button-icon"
-                aria-label="编辑播放栏布局"
-                @click="editMode = true"
-              >
-                <Icon :icon="iconLayoutBottombar" width="16" height="16" />
-              </button>
-            </template>
-          </Tooltip>
+          <button
+            v-tooltip="'编辑播放栏布局'"
+            type="button"
+            class="action-icon playerbar-edit-entry app-focus-ring-soft echo-button-sized echo-button-icon"
+            aria-label="编辑播放栏布局"
+            @click="editMode = true"
+          >
+            <Icon :icon="iconLayoutBottombar" width="16" height="16" />
+          </button>
         </div>
       </div>
       <div v-if="visibleMenuItems.length" class="playerbar-use-grid">
-        <Tooltip
-          :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : undefined"
+        <button
+          v-tooltip="item.tooltip && item.tooltip !== item.title ? item.tooltip : undefined"
           v-for="item in visibleMenuItems"
           :key="item.key"
+          type="button"
+          class="playerbar-use-item app-focus-ring-soft"
+          :class="{ disabled: item.disabled }"
+          :disabled="item.disabled"
+          :aria-label="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
+          @click="activate(item, $event)"
         >
-          <template #trigger>
-            <button
-              type="button"
-              class="playerbar-use-item app-focus-ring-soft"
-              :class="{ disabled: item.disabled }"
-              :disabled="item.disabled"
-              :aria-label="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
-              @click="activate(item, $event)"
-            >
-              <span
-                class="playerbar-use-icon"
-                :class="{ 'is-favorite': item.key === 'favorite' && item.active }"
-              >
-                <PlayerBarActionIcon :item="item" :width="19" :height="19" />
-              </span>
-              <span class="playerbar-use-title">{{ item.title }}</span>
-              <Badge
-                v-if="item.visibleBadge"
-                :count="item.visibleBadge"
-                :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
-                class="playerbar-more-badge"
-              />
-            </button>
-          </template>
-        </Tooltip>
+          <span
+            class="playerbar-use-icon"
+            :class="{ 'is-favorite': item.key === 'favorite' && item.active }"
+          >
+            <PlayerBarActionIcon :item="item" :width="19" :height="19" />
+          </span>
+          <span class="playerbar-use-title">{{ item.title }}</span>
+          <Badge
+            v-if="item.visibleBadge"
+            :count="item.visibleBadge"
+            :tone="getPlayerBarBadgeTone(item.key, item.visibleBadge)"
+            class="playerbar-more-badge"
+          />
+        </button>
       </div>
       <p v-else class="playerbar-more-empty">暂无收纳功能</p>
     </div>
@@ -438,51 +431,43 @@ onBeforeUnmount(() => {
                 :data-playerbar-placement-list="zone.value"
                 :aria-label="zone.ariaLabel"
               >
-                <Tooltip
-                  :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
+                <div
+                  v-tooltip="
+                    item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title
+                  "
                   v-for="(item, index) in groupedItems[zone.value]"
                   :key="item.key"
+                  role="button"
+                  tabindex="0"
+                  class="playerbar-layout-chip app-focus-ring-soft"
+                  :class="{ disabled: item.disabled }"
+                  :data-playerbar-key="item.key"
+                  :aria-label="item.title"
+                  @keydown="reorderByKeyboard($event, item, zone.value, index)"
                 >
-                  <template #trigger>
-                    <div
-                      role="button"
-                      tabindex="0"
-                      class="playerbar-layout-chip app-focus-ring-soft"
-                      :class="{ disabled: item.disabled }"
-                      :data-playerbar-key="item.key"
-                      :aria-label="item.title"
-                      @keydown="reorderByKeyboard($event, item, zone.value, index)"
-                    >
-                      <span
-                        class="playerbar-chip-icon"
-                        :class="{ 'is-favorite': item.key === 'favorite' && item.active }"
-                      >
-                        <PlayerBarActionIcon :item="item" :width="18" :height="18" />
-                      </span>
-                      <span class="playerbar-chip-title">{{ item.title }}</span>
-                      <Tooltip
-                        :content="badgeControlLabel(badgeControlForItem(item)!)"
-                        v-if="badgeControlForItem(item)"
-                      >
-                        <template #trigger>
-                          <button
-                            type="button"
-                            class="playerbar-chip-badge-check app-focus-ring-soft"
-                            :class="{ active: badgeControlForItem(item)?.active }"
-                            :aria-pressed="badgeControlForItem(item)?.active"
-                            :aria-label="badgeControlLabel(badgeControlForItem(item)!)"
-                            @pointerdown.stop
-                            @mousedown.stop
-                            @click.stop="badgeControlForItem(item)?.toggle()"
-                          >
-                            <span class="playerbar-chip-check-box" aria-hidden="true"> </span>
-                            <span class="playerbar-chip-badge-label">徽标</span>
-                          </button>
-                        </template>
-                      </Tooltip>
-                    </div>
-                  </template>
-                </Tooltip>
+                  <span
+                    class="playerbar-chip-icon"
+                    :class="{ 'is-favorite': item.key === 'favorite' && item.active }"
+                  >
+                    <PlayerBarActionIcon :item="item" :width="18" :height="18" />
+                  </span>
+                  <span class="playerbar-chip-title">{{ item.title }}</span>
+                  <button
+                    v-tooltip="badgeControlLabel(badgeControlForItem(item)!)"
+                    v-if="badgeControlForItem(item)"
+                    type="button"
+                    class="playerbar-chip-badge-check app-focus-ring-soft"
+                    :class="{ active: badgeControlForItem(item)?.active }"
+                    :aria-pressed="badgeControlForItem(item)?.active"
+                    :aria-label="badgeControlLabel(badgeControlForItem(item)!)"
+                    @pointerdown.stop
+                    @mousedown.stop
+                    @click.stop="badgeControlForItem(item)?.toggle()"
+                  >
+                    <span class="playerbar-chip-check-box" aria-hidden="true"> </span>
+                    <span class="playerbar-chip-badge-label">徽标</span>
+                  </button>
+                </div>
                 <span
                   v-if="!groupedItems[zone.value].length"
                   class="playerbar-layout-empty"
@@ -501,51 +486,41 @@ onBeforeUnmount(() => {
               data-playerbar-placement-list="more"
               aria-label="更多菜单按钮"
             >
-              <Tooltip
-                :content="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
+              <div
+                v-tooltip="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
                 v-for="(item, index) in groupedItems.more"
                 :key="item.key"
+                role="button"
+                tabindex="0"
+                class="playerbar-layout-chip app-focus-ring-soft"
+                :class="{ disabled: item.disabled }"
+                :data-playerbar-key="item.key"
+                :aria-label="item.title"
+                @keydown="reorderByKeyboard($event, item, 'more', index)"
               >
-                <template #trigger>
-                  <div
-                    role="button"
-                    tabindex="0"
-                    class="playerbar-layout-chip app-focus-ring-soft"
-                    :class="{ disabled: item.disabled }"
-                    :data-playerbar-key="item.key"
-                    :aria-label="item.title"
-                    @keydown="reorderByKeyboard($event, item, 'more', index)"
-                  >
-                    <span
-                      class="playerbar-chip-icon"
-                      :class="{ 'is-favorite': item.key === 'favorite' && item.active }"
-                    >
-                      <PlayerBarActionIcon :item="item" :width="18" :height="18" />
-                    </span>
-                    <span class="playerbar-chip-title">{{ item.title }}</span>
-                    <Tooltip
-                      :content="badgeControlLabel(badgeControlForItem(item)!)"
-                      v-if="badgeControlForItem(item)"
-                    >
-                      <template #trigger>
-                        <button
-                          type="button"
-                          class="playerbar-chip-badge-check app-focus-ring-soft"
-                          :class="{ active: badgeControlForItem(item)?.active }"
-                          :aria-pressed="badgeControlForItem(item)?.active"
-                          :aria-label="badgeControlLabel(badgeControlForItem(item)!)"
-                          @pointerdown.stop
-                          @mousedown.stop
-                          @click.stop="badgeControlForItem(item)?.toggle()"
-                        >
-                          <span class="playerbar-chip-check-box" aria-hidden="true"> </span>
-                          <span class="playerbar-chip-badge-label">徽标</span>
-                        </button>
-                      </template>
-                    </Tooltip>
-                  </div>
-                </template>
-              </Tooltip>
+                <span
+                  class="playerbar-chip-icon"
+                  :class="{ 'is-favorite': item.key === 'favorite' && item.active }"
+                >
+                  <PlayerBarActionIcon :item="item" :width="18" :height="18" />
+                </span>
+                <span class="playerbar-chip-title">{{ item.title }}</span>
+                <button
+                  v-tooltip="badgeControlLabel(badgeControlForItem(item)!)"
+                  v-if="badgeControlForItem(item)"
+                  type="button"
+                  class="playerbar-chip-badge-check app-focus-ring-soft"
+                  :class="{ active: badgeControlForItem(item)?.active }"
+                  :aria-pressed="badgeControlForItem(item)?.active"
+                  :aria-label="badgeControlLabel(badgeControlForItem(item)!)"
+                  @pointerdown.stop
+                  @mousedown.stop
+                  @click.stop="badgeControlForItem(item)?.toggle()"
+                >
+                  <span class="playerbar-chip-check-box" aria-hidden="true"> </span>
+                  <span class="playerbar-chip-badge-label">徽标</span>
+                </button>
+              </div>
               <span
                 v-if="!groupedItems.more.length"
                 class="playerbar-layout-empty"

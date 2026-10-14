@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed } from 'vue';
 import PluginCardOrigin from './PluginCardOrigin.vue';
 import { getInstalledPluginSourceName } from '../../../shared/pluginSource';
-import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
@@ -76,29 +76,26 @@ const emit = defineEmits<{
       </div>
 
       <div class="plugin-card-header">
-        <Tooltip :content="record.descriptor.name" overflow-only>
-          <template #trigger>
-            <h3 class="plugin-card-name">
-              {{ record.descriptor.name }}
-            </h3>
-          </template>
-        </Tooltip>
-        <Tooltip :content="statusTitle">
-          <template #trigger>
-            <Tag
-              size="sm"
-              class="plugin-status-badge"
-              :class="{
-                'is-active': record.status === 'active' && !hasCurrentFailure,
-                'is-error': hasCurrentFailure && cardFailure?.reason !== 'incompatible',
-                'is-safe': safeMode && record.descriptor.enabled && !hasCurrentFailure,
-                'is-warning': cardFailure?.reason === 'incompatible',
-              }"
-            >
-              {{ statusLabel }}
-            </Tag>
-          </template>
-        </Tooltip>
+        <h3
+          v-tooltip="{ content: record.descriptor.name, overflowOnly: true }"
+          class="plugin-card-name"
+        >
+          {{ record.descriptor.name }}
+        </h3>
+        <Tag
+          as-child
+          size="sm"
+          class="plugin-status-badge"
+          :class="{
+            'is-active': record.status === 'active' && !hasCurrentFailure,
+            'is-error': hasCurrentFailure && cardFailure?.reason !== 'incompatible',
+            'is-safe': safeMode && record.descriptor.enabled && !hasCurrentFailure,
+            'is-warning': cardFailure?.reason === 'incompatible',
+          }"
+          ><span v-tooltip="statusTitle">
+            {{ statusLabel }}
+          </span></Tag
+        >
       </div>
 
       <div class="plugin-card-byline">
@@ -109,13 +106,12 @@ const emit = defineEmits<{
       </div>
     </div>
 
-    <Tooltip :content="record.descriptor.description || '暂无描述'" overflow-only>
-      <template #trigger>
-        <p class="plugin-card-description">
-          {{ record.descriptor.description || '暂无描述' }}
-        </p>
-      </template>
-    </Tooltip>
+    <p
+      v-tooltip="{ content: record.descriptor.description || '暂无描述', overflowOnly: true }"
+      class="plugin-card-description"
+    >
+      {{ record.descriptor.description || '暂无描述' }}
+    </p>
 
     <div v-if="compatibilityMessage" class="plugin-card-error is-warning">
       <Icon :icon="iconTriangleAlert" width="14" height="14" />
@@ -160,22 +156,20 @@ const emit = defineEmits<{
           </Button>
         </div>
 
-        <Tooltip v-if="hasFailure" :content="failureTitle">
-          <template #trigger>
-            <button
-              class="action-icon plugin-card-failure-btn echo-button-sized echo-button-icon"
-              :class="{
-                'is-historical': hasHistoricalFailure,
-                'is-warning': cardFailure?.reason === 'incompatible',
-              }"
-              type="button"
-              :aria-label="failureTitle"
-              @click="emit('failure-detail', record.descriptor.id)"
-            >
-              <Icon :icon="iconTriangleAlert" width="14" height="14" />
-            </button>
-          </template>
-        </Tooltip>
+        <button
+          v-tooltip="failureTitle"
+          v-if="hasFailure"
+          class="action-icon plugin-card-failure-btn echo-button-sized echo-button-icon"
+          :class="{
+            'is-historical': hasHistoricalFailure,
+            'is-warning': cardFailure?.reason === 'incompatible',
+          }"
+          type="button"
+          :aria-label="failureTitle"
+          @click="emit('failure-detail', record.descriptor.id)"
+        >
+          <Icon :icon="iconTriangleAlert" width="14" height="14" />
+        </button>
       </div>
 
       <Switch

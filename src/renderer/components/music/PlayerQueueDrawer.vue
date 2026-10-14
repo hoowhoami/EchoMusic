@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
-
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import { useVModel } from '@vueuse/core';
@@ -706,25 +705,20 @@ onBeforeUnmount(() => {
         <div class="queue-title-block">
           <div class="queue-title-row">
             <span v-if="headerStatus" class="queue-status">{{ headerStatus }}</span>
-            <Tooltip :content="headerPresentation.title" overflow-only>
-              <template #trigger>
-                <div class="queue-title">
-                  {{ headerPresentation.title }}
-                </div>
-              </template>
-            </Tooltip>
+            <div
+              v-tooltip="{ content: headerPresentation.title, overflowOnly: true }"
+              class="queue-title"
+            >
+              {{ headerPresentation.title }}
+            </div>
           </div>
-          <Tooltip
+          <div
+            v-tooltip="{ content: headerPresentation.subtitle, overflowOnly: true }"
             v-if="headerPresentation.subtitle"
-            :content="headerPresentation.subtitle"
-            overflow-only
+            class="queue-title-subtitle"
           >
-            <template #trigger>
-              <div class="queue-title-subtitle">
-                {{ headerPresentation.subtitle }}
-              </div>
-            </template>
-          </Tooltip>
+            {{ headerPresentation.subtitle }}
+          </div>
         </div>
         <Button
           type="button"
@@ -745,54 +739,48 @@ onBeforeUnmount(() => {
           role="group"
           aria-label="队列切换"
         >
-          <Tooltip content="上一队列">
-            <template #trigger>
-              <button
-                type="button"
-                class="action-icon queue-arrow-btn echo-button-sized echo-button-icon"
-                :disabled="previewIndex === 0"
-                aria-label="上一队列"
-                @click="handleSwitchQueueByDirection(-1)"
-              >
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M19 12H5M12 19l-7-7 7-7" />
-                </svg>
-              </button>
-            </template>
-          </Tooltip>
-          <Tooltip content="下一队列">
-            <template #trigger>
-              <button
-                type="button"
-                class="action-icon queue-arrow-btn echo-button-sized echo-button-icon"
-                :disabled="previewIndex === queueOptions.length - 1"
-                aria-label="下一队列"
-                @click="handleSwitchQueueByDirection(1)"
-              >
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </button>
-            </template>
-          </Tooltip>
+          <button
+            v-tooltip="'上一队列'"
+            type="button"
+            class="action-icon queue-arrow-btn echo-button-sized echo-button-icon"
+            :disabled="previewIndex === 0"
+            aria-label="上一队列"
+            @click="handleSwitchQueueByDirection(-1)"
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <button
+            v-tooltip="'下一队列'"
+            type="button"
+            class="action-icon queue-arrow-btn echo-button-sized echo-button-icon"
+            :disabled="previewIndex === queueOptions.length - 1"
+            aria-label="下一队列"
+            @click="handleSwitchQueueByDirection(1)"
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
         </div>
       </div>
       <div class="queue-actions">

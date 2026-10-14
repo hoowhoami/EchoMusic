@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { watchUserSession } from '@/utils/watchUserSession';
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
-import Tooltip from '@/components/ui/Tooltip.vue';
 import Input from '@/components/ui/Input.vue';
 import TagInput from '@/components/ui/TagInput.vue';
 import { parsePlaylistTags, serializePlaylistTags } from '@/utils/playlistTags';
@@ -259,11 +259,13 @@ onBeforeUnmount(() => {
             >
               {{ selectingCover ? '正在读取…' : '更换封面' }}
             </Button>
-            <Tooltip v-if="selectedCover" :content="selectedCover.name" overflow-only>
-              <template #trigger>
-                <span class="edit-cover-name" data-tooltip-label>{{ selectedCover.name }}</span>
-              </template>
-            </Tooltip>
+            <span
+              v-tooltip="{ content: selectedCover.name, overflowOnly: true }"
+              v-if="selectedCover"
+              class="edit-cover-name"
+              data-tooltip-label
+              >{{ selectedCover.name }}</span
+            >
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import Sortable from 'sortablejs';
 import Button from '@/components/ui/Button.vue';
@@ -203,18 +203,15 @@ onBeforeUnmount(destroySortables);
         <div class="sidebar-layout-title">
           <span>菜单与歌单</span>
         </div>
-        <Tooltip content="恢复菜单与歌单默认布局">
-          <template #trigger>
-            <button
-              type="button"
-              class="sidebar-layout-reset soft-secondary-action app-focus-ring-soft echo-button-sized echo-button-standard"
-              aria-label="恢复默认"
-              @click="settings.sidebarLayout = resetSidebarMenus(settings.sidebarLayout)"
-            >
-              恢复默认
-            </button>
-          </template>
-        </Tooltip>
+        <button
+          v-tooltip="'恢复菜单与歌单默认布局'"
+          type="button"
+          class="sidebar-layout-reset soft-secondary-action app-focus-ring-soft echo-button-sized echo-button-standard"
+          aria-label="恢复默认"
+          @click="settings.sidebarLayout = resetSidebarMenus(settings.sidebarLayout)"
+        >
+          恢复默认
+        </button>
       </div>
 
       <div ref="sectionListRef" class="sidebar-layout-section-list">
@@ -227,28 +224,25 @@ onBeforeUnmount(destroySortables);
           :data-sidebar-order-locked="section.lockedOrder ? 'true' : undefined"
         >
           <div class="sidebar-layout-section-row">
-            <Tooltip :content="section.lockedOrder ? '位置固定' : '拖动排序'">
-              <template #trigger>
-                <span
-                  class="sidebar-layout-section-handle"
-                  :class="{ 'is-fixed': section.lockedOrder }"
-                >
-                  <Cover
-                    v-if="sectionVisualItem(section)?.layoutCover"
-                    :url="sectionVisualItem(section)?.layoutCover"
-                    :size="64"
-                    :width="22"
-                    :height="22"
-                  />
-                  <PluginIcon
-                    v-else-if="sectionVisualItem(section)?.layoutIcon"
-                    :icon="sectionVisualItem(section)?.layoutIcon"
-                    :width="16"
-                    :height="16"
-                  />
-                </span>
-              </template>
-            </Tooltip>
+            <span
+              v-tooltip="section.lockedOrder ? '位置固定' : '拖动排序'"
+              class="sidebar-layout-section-handle"
+              :class="{ 'is-fixed': section.lockedOrder }"
+            >
+              <Cover
+                v-if="sectionVisualItem(section)?.layoutCover"
+                :url="sectionVisualItem(section)?.layoutCover"
+                :size="64"
+                :width="22"
+                :height="22"
+              />
+              <PluginIcon
+                v-else-if="sectionVisualItem(section)?.layoutIcon"
+                :icon="sectionVisualItem(section)?.layoutIcon"
+                :width="16"
+                :height="16"
+              />
+            </span>
             <div class="sidebar-layout-section-copy">
               <span>{{ section.title }}</span>
               <small v-if="section.id === SIDEBAR_PLAYLIST_SECTION_ID">自建与收藏歌单</small>
@@ -257,8 +251,8 @@ onBeforeUnmount(destroySortables);
                 {{ section.items.length }} 项
               </small>
             </div>
-            <Tooltip
-              :content="
+            <button
+              v-tooltip="
                 section.id === SIDEBAR_PLAYLIST_SECTION_ID
                   ? section.isHidden
                     ? '显示整个歌单区域'
@@ -267,27 +261,22 @@ onBeforeUnmount(destroySortables);
                     ? '显示分组'
                     : '隐藏分组'
               "
+              type="button"
+              class="action-icon sidebar-layout-icon-button app-focus-ring-soft echo-button-sized echo-button-icon"
+              :aria-pressed="!section.isHidden"
+              :aria-label="
+                section.id === SIDEBAR_PLAYLIST_SECTION_ID
+                  ? section.isHidden
+                    ? '显示整个歌单区域'
+                    : '隐藏整个歌单区域'
+                  : section.isHidden
+                    ? '显示分组'
+                    : '隐藏分组'
+              "
+              @click="toggleSection(section)"
             >
-              <template #trigger>
-                <button
-                  type="button"
-                  class="action-icon sidebar-layout-icon-button app-focus-ring-soft echo-button-sized echo-button-icon"
-                  :aria-pressed="!section.isHidden"
-                  :aria-label="
-                    section.id === SIDEBAR_PLAYLIST_SECTION_ID
-                      ? section.isHidden
-                        ? '显示整个歌单区域'
-                        : '隐藏整个歌单区域'
-                      : section.isHidden
-                        ? '显示分组'
-                        : '隐藏分组'
-                  "
-                  @click="toggleSection(section)"
-                >
-                  <Icon :icon="section.isHidden ? iconEyeOff : iconEye" width="15" height="15" />
-                </button>
-              </template>
-            </Tooltip>
+              <Icon :icon="section.isHidden ? iconEyeOff : iconEye" width="15" height="15" />
+            </button>
           </div>
 
           <div class="sidebar-layout-item-list" :data-sidebar-item-list="section.id">
@@ -299,42 +288,36 @@ onBeforeUnmount(destroySortables);
               :data-sidebar-item-key="item.key"
               :data-sidebar-order-locked="item.lockedOrder ? 'true' : undefined"
             >
-              <Tooltip :content="item.lockedOrder ? '位置固定' : '拖动排序'">
-                <template #trigger>
-                  <span
-                    class="sidebar-layout-item-handle"
-                    :class="{ 'is-fixed': item.lockedOrder }"
-                  >
-                    <Cover
-                      v-if="item.layoutCover"
-                      :url="item.layoutCover"
-                      :size="64"
-                      :width="22"
-                      :height="22"
-                    />
-                    <PluginIcon
-                      v-else-if="item.layoutIcon"
-                      :icon="item.layoutIcon"
-                      :width="16"
-                      :height="16"
-                    />
-                  </span>
-                </template>
-              </Tooltip>
+              <span
+                v-tooltip="item.lockedOrder ? '位置固定' : '拖动排序'"
+                class="sidebar-layout-item-handle"
+                :class="{ 'is-fixed': item.lockedOrder }"
+              >
+                <Cover
+                  v-if="item.layoutCover"
+                  :url="item.layoutCover"
+                  :size="64"
+                  :width="22"
+                  :height="22"
+                />
+                <PluginIcon
+                  v-else-if="item.layoutIcon"
+                  :icon="item.layoutIcon"
+                  :width="16"
+                  :height="16"
+                />
+              </span>
               <span class="sidebar-layout-item-title">{{ item.title }}</span>
-              <Tooltip :content="item.isHidden ? '显示入口' : '隐藏入口'">
-                <template #trigger>
-                  <button
-                    type="button"
-                    class="action-icon sidebar-layout-icon-button is-small app-focus-ring-soft echo-button-sized echo-button-icon"
-                    :aria-pressed="!item.isHidden"
-                    :aria-label="item.isHidden ? '显示入口' : '隐藏入口'"
-                    @click="toggleItem(item)"
-                  >
-                    <Icon :icon="item.isHidden ? iconEyeOff : iconEye" width="14" height="14" />
-                  </button>
-                </template>
-              </Tooltip>
+              <button
+                v-tooltip="item.isHidden ? '显示入口' : '隐藏入口'"
+                type="button"
+                class="action-icon sidebar-layout-icon-button is-small app-focus-ring-soft echo-button-sized echo-button-icon"
+                :aria-pressed="!item.isHidden"
+                :aria-label="item.isHidden ? '显示入口' : '隐藏入口'"
+                @click="toggleItem(item)"
+              >
+                <Icon :icon="item.isHidden ? iconEyeOff : iconEye" width="14" height="14" />
+              </button>
             </div>
           </div>
         </section>

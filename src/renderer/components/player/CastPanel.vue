@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
+import { vTooltip } from '@/components/ui/tooltip';
 import CastDeviceInfo from './CastDeviceInfo.vue';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Icon } from '@iconify/vue';
@@ -108,36 +108,30 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="cast-panel-actions">
-        <Tooltip content="刷新设备">
-          <template #trigger>
-            <button
-              type="button"
-              class="action-icon cast-panel-icon-button app-focus-ring-soft echo-button-sized echo-button-icon"
-              :disabled="output.busy || output.searching || !settingStore.networkPlaybackEnabled"
-              aria-label="刷新设备"
-              @click="output.refresh()"
-            >
-              <Icon
-                :icon="iconRefreshCw"
-                width="15"
-                height="15"
-                :class="{ 'animate-spin': output.searching }"
-              />
-            </button>
-          </template>
-        </Tooltip>
-        <Tooltip content="投放设置">
-          <template #trigger>
-            <button
-              type="button"
-              class="action-icon cast-panel-icon-button app-focus-ring-soft echo-button-sized echo-button-icon"
-              aria-label="投放设置"
-              @click="openCastSettings"
-            >
-              <Icon :icon="iconSettings" width="15" height="15" />
-            </button>
-          </template>
-        </Tooltip>
+        <button
+          v-tooltip="'刷新设备'"
+          type="button"
+          class="action-icon cast-panel-icon-button app-focus-ring-soft echo-button-sized echo-button-icon"
+          :disabled="output.busy || output.searching || !settingStore.networkPlaybackEnabled"
+          aria-label="刷新设备"
+          @click="output.refresh()"
+        >
+          <Icon
+            :icon="iconRefreshCw"
+            width="15"
+            height="15"
+            :class="{ 'animate-spin': output.searching }"
+          />
+        </button>
+        <button
+          v-tooltip="'投放设置'"
+          type="button"
+          class="action-icon cast-panel-icon-button app-focus-ring-soft echo-button-sized echo-button-icon"
+          aria-label="投放设置"
+          @click="openCastSettings"
+        >
+          <Icon :icon="iconSettings" width="15" height="15" />
+        </button>
         <Switch v-model="settingStore.networkPlaybackEnabled" />
       </div>
     </div>

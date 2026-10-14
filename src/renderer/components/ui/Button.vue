@@ -1,15 +1,11 @@
 <script setup lang="ts">
-import { getCurrentInstance, type HTMLAttributes } from 'vue';
+import type { HTMLAttributes } from 'vue';
 import { Primitive, useForwardExpose, type PrimitiveProps } from 'reka-ui';
-import Tooltip from './Tooltip.vue';
+import { useElementTooltip } from './tooltip';
 import type { ControlSize } from './controlSizes';
 
 defineOptions({ inheritAttrs: false });
-const { forwardRef } = useForwardExpose();
-// Tooltip's portal makes its root a fragment. Preserve the caller's scoped CSS
-// on the actual button instead of relying on Vue's single-root propagation.
-const callerScopeId = getCurrentInstance()?.vnode.scopeId;
-const callerScopeAttrs = callerScopeId ? { [callerScopeId]: '' } : {};
+const { forwardRef, currentElement } = useForwardExpose();
 
 interface Props extends PrimitiveProps {
   variant?:
@@ -36,6 +32,8 @@ const props = withDefaults(defineProps<Props>(), {
   variant: 'primary',
   size: 'default',
 });
+
+useElementTooltip(currentElement, () => ({ content: props.tooltip, side: props.tooltipSide }));
 
 const variants = {
   primary: 'soft-accent-action',
@@ -67,36 +65,32 @@ const sizes = {
 </script>
 
 <template>
-  <Tooltip :content="tooltip" :side="tooltipSide" :disabled="!tooltip">
-    <template #trigger>
-      <Primitive
-        :ref="forwardRef"
-        :aria-label="tooltip || undefined"
-        v-bind="{ ...callerScopeAttrs, ...$attrs }"
-        :as="as"
-        :as-child="asChild"
-        :disabled="disabled || loading"
-        :class="[
-          props.variant === 'unstyled' || props.size === 'none'
-            ? 'app-focus-ring-soft echo-button-motion active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed'
-            : 'app-focus-ring-soft inline-flex items-center justify-center echo-button-motion active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed',
-          variants[variant],
-          sizes[size],
-          variant !== 'unstyled' ? `echo-button-control echo-button-${variant}` : '',
-          props.class,
-        ]"
-      >
-        <div
-          v-if="loading"
-          :class="[
-            'shrink-0 w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin',
-            size === 'none' ? 'mr-2' : '',
-          ]"
-        ></div>
-        <slot v-if="!loading || size !== 'icon'" />
-      </Primitive>
-    </template>
-  </Tooltip>
+  <Primitive
+    :ref="forwardRef"
+    :aria-label="tooltip || undefined"
+    v-bind="$attrs"
+    :as="as"
+    :as-child="asChild"
+    :disabled="disabled || loading"
+    :class="[
+      props.variant === 'unstyled' || props.size === 'none'
+        ? 'app-focus-ring-soft echo-button-motion active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed'
+        : 'app-focus-ring-soft inline-flex items-center justify-center echo-button-motion active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed',
+      variants[variant],
+      sizes[size],
+      variant !== 'unstyled' ? `echo-button-control echo-button-${variant}` : '',
+      props.class,
+    ]"
+  >
+    <div
+      v-if="loading"
+      :class="[
+        'shrink-0 w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin',
+        size === 'none' ? 'mr-2' : '',
+      ]"
+    ></div>
+    <slot v-if="!loading || size !== 'icon'" />
+  </Primitive>
 </template>
 
 <style>

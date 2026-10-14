@@ -17,13 +17,11 @@ function vueFiles(directory) {
 test('tooltips preserve the rendered control, accessible label and disabled semantics', async () => {
   const { build } = await import('esbuild');
   const { createSSRApp, defineComponent, h } = await import('vue');
-  const { TooltipProvider, injectTooltipRootContext } = await import('reka-ui');
   const { renderToString } = await import('@vue/server-renderer');
   const result = await build({
     stdin: {
       contents: `export { default as Button } from './src/renderer/components/ui/Button.vue';
-        export { default as Tooltip } from './src/renderer/components/ui/Tooltip.vue';
-        export { default as Scope } from './src/renderer/components/ui/TooltipScope.vue';`,
+        export { default as Tooltip } from './src/renderer/components/ui/Tooltip.vue';`,
       resolveDir: process.cwd(),
     },
     bundle: true,
@@ -48,20 +46,13 @@ test('tooltips preserve the rendered control, accessible label and disabled sema
       },
     ],
   });
-  const { Button, Tooltip, Scope } = await import(
+  const { Button, Tooltip } = await import(
     `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`
   );
   const render = (component) => renderToString(createSSRApp({ render: () => component }));
   for (const tooltip of [undefined, '', '保存']) {
     const html = await render(
-      h(Scope, null, {
-        default: () =>
-          h(
-            Button,
-            { tooltip, disabled: true, id: 'save', 'aria-label': '保存设置' },
-            () => '保存',
-          ),
-      }),
+      h(Button, { tooltip, disabled: true, id: 'save', 'aria-label': '保存设置' }, () => '保存'),
     );
     assert.match(html, /<button\b[^>]*disabled/);
     assert.match(html, /aria-label="保存设置"/);
@@ -81,7 +72,7 @@ test('tooltips preserve the rendered control, accessible label and disabled sema
       __scopeId: 'data-v-toolbar-regression',
       render: () => h('header', null, [h(Button, { tooltip, class: 'nav-btn' }, () => '后退')]),
     };
-    const html = await render(h(Scope, null, { default: () => h(toolbar) }));
+    const html = await render(h(toolbar));
     assert.match(
       html,
       /<button\b[^>]*data-v-toolbar-regression/,
@@ -106,18 +97,6 @@ test('tooltips preserve the rendered control, accessible label and disabled sema
     h(Tooltip, { content: '插件提示' }, { trigger: () => h('button', '插件') }),
   );
   assert.match(standalone, /<button\b/);
-  const DisabledProbe = defineComponent({
-    setup() {
-      const context = injectTooltipRootContext();
-      return () => h('button', String(context.disabled.value));
-    },
-  });
-  const inheritedDisabled = await render(
-    h(TooltipProvider, { disabled: true }, () =>
-      h(Tooltip, { content: '父级禁用' }, { trigger: () => h(DisabledProbe) }),
-    ),
-  );
-  assert.match(inheritedDisabled, /<button\b[^>]*>true<\/button>/);
 });
 
 test('hover panels and the mini volume slider do not have redundant trigger tooltips', () => {
@@ -129,6 +108,7 @@ test('hover panels and the mini volume slider do not have redundant trigger tool
       if (
         node.type === 1 &&
         (node.tag === 'Tooltip' ||
+          node.props.some((prop) => prop.type === 7 && prop.name === 'tooltip') ||
           node.props.some(
             (prop) =>
               (prop.type === 6 && ['tooltip', 'title'].includes(prop.name)) ||
@@ -184,5 +164,36 @@ test('hover panels and the mini volume slider do not have redundant trigger tool
     if (ast) visit(ast);
   }
   assert.ok(checked >= 2, 'must cover hover panels and the custom mini volume slider');
+  assert.deepEqual(offenders, []);
+});
+
+test('plain text tooltips bind to native elements, and only component-slot tooltips remain wrapped', () => {
+  const offenders = [];
+  for (const file of vueFiles('src/renderer')) {
+    const ast = parse(readFileSync(file, 'utf8')).descriptor.template?.ast;
+    function visit(node) {
+      if (
+        node.type === 1 &&
+        node.props.some((prop) => prop.type === 7 && prop.name === 'tooltip') &&
+        (!/^[a-z]/.test(node.tag) || node.tag === 'component')
+      )
+        offenders.push(`${file}:${node.loc.start.line}: directive on component`);
+      if (node.type === 1 && node.tag === 'Tooltip') {
+        const trigger = node.children.find(
+          (child) =>
+            child.type === 1 &&
+            child.tag === 'template' &&
+            child.props.some(
+              (p) => p.type === 7 && p.name === 'slot' && p.arg?.content === 'trigger',
+            ),
+        );
+        const child = trigger?.children.find((node) => node.type === 1);
+        if (child && /^[a-z]/.test(child.tag) && child.tag !== 'component')
+          offenders.push(`${file}:${node.loc.start.line}: unnecessary wrapper`);
+      }
+      node.children?.forEach(visit);
+    }
+    if (ast) visit(ast);
+  }
   assert.deepEqual(offenders, []);
 });

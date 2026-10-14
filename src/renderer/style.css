@@ -68,6 +68,7 @@
   --border-light: #dedede;
   --control-thumb-bg: #ffffff;
   --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+  --shadow-tooltip: 0 2px 8px rgba(0, 0, 0, 0.12);
   --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.22);
   --shadow-card: none;
   --shadow-card-hover: none;
@@ -114,6 +115,7 @@
   --color-on-primary: #000000;
   --border-light: #444446;
   --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.36), 0 2px 6px rgba(0, 0, 0, 0.18);
+  --shadow-tooltip: 0 2px 8px rgba(0, 0, 0, 0.28);
   --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.42);
   --shadow-card: none;
   --shadow-card-hover: none;
@@ -525,14 +527,18 @@ body.echo-surface-translucent .comment-main-tabs {
 
 .app-tooltip-surface {
   background-clip: padding-box;
-  padding: 6px 10px;
-  border-radius: var(--radius-popover);
+  padding: 6px 9px;
+  border-radius: var(--radius-tooltip);
   background: var(--color-bg-elevated);
   color: var(--color-text-main);
   font-size: 12px;
-  font-weight: 600;
-  line-height: 1.45;
-  box-shadow: var(--shadow-elevated);
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: normal;
+  text-align: start;
+  box-shadow:
+    0 0 0 1px var(--surface-outline),
+    var(--shadow-tooltip);
 }
 
 body .add-to-item,

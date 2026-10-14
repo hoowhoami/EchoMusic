@@ -1,7 +1,6 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { watchUserSession } from '@/utils/watchUserSession';
-
-import Tooltip from '@/components/ui/Tooltip.vue';
 
 defineOptions({ name: 'recognize-page' });
 
@@ -509,18 +508,15 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <Tooltip :content="`匹配度 ${distPercent(match.confidence)}`">
-                <template #trigger>
-                  <div
-                    class="rec-match-score"
-                    :aria-label="`匹配度 ${distPercent(match.confidence)}`"
-                    :style="{ '--score': match.confidence }"
-                  >
-                    <span class="rec-match-score-label">匹配度</span>
-                    <span class="rec-match-score-num">{{ distPercent(match.confidence) }}</span>
-                  </div>
-                </template>
-              </Tooltip>
+              <div
+                v-tooltip="`匹配度 ${distPercent(match.confidence)}`"
+                class="rec-match-score"
+                :aria-label="`匹配度 ${distPercent(match.confidence)}`"
+                :style="{ '--score': match.confidence }"
+              >
+                <span class="rec-match-score-label">匹配度</span>
+                <span class="rec-match-score-num">{{ distPercent(match.confidence) }}</span>
+              </div>
 
               <div class="rec-match-actions">
                 <Button
@@ -640,22 +636,17 @@ onBeforeUnmount(() => {
               contentClass="rec-source-dropdown"
             >
               <template #trigger>
-                <Tooltip :content="currentSourceLabel" overflow-only>
-                  <template #trigger>
-                    <button class="rec-source-toggle" :disabled="isActive">
-                      <Icon :icon="sourceIcon" width="14" height="14" />
-                      <span class="rec-source-toggle-label" data-tooltip-label>
-                        {{ currentSourceLabel }}
-                      </span>
-                      <Icon
-                        :icon="iconChevronDown"
-                        width="12"
-                        height="12"
-                        class="rec-source-arrow"
-                      />
-                    </button>
-                  </template>
-                </Tooltip>
+                <button
+                  v-tooltip="{ content: currentSourceLabel, overflowOnly: true }"
+                  class="rec-source-toggle"
+                  :disabled="isActive"
+                >
+                  <Icon :icon="sourceIcon" width="14" height="14" />
+                  <span class="rec-source-toggle-label" data-tooltip-label>
+                    {{ currentSourceLabel }}
+                  </span>
+                  <Icon :icon="iconChevronDown" width="12" height="12" class="rec-source-arrow" />
+                </button>
               </template>
 
               <div class="rec-source-menu">

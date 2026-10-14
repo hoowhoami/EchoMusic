@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed } from 'vue';
 import { Icon } from '@iconify/vue';
-import Tooltip from '@/components/ui/Tooltip.vue';
 import { iconLoader2, iconLock } from '@/icons';
 import type { OutputTargetView } from '@/stores/output';
 
@@ -31,34 +31,33 @@ const details = computed(
 
 <template>
   <span class="cast-device-info">
-    <Tooltip :content="name" overflow-only>
-      <template #trigger>
-        <span class="cast-device-name">{{ name }}</span>
-      </template>
-    </Tooltip>
+    <span v-tooltip="{ content: name, overflowOnly: true }" class="cast-device-name">{{
+      name
+    }}</span>
     <span v-if="connecting" class="cast-device-state" role="status">
       <Icon :icon="iconLoader2" width="12" height="12" class="animate-spin" />
       连接中
     </span>
-    <Tooltip v-else-if="target.paired === false" content="连接前需输入设备密码或验证码">
-      <template #trigger>
-        <span class="cast-device-state is-pairing ui-badge badge-muted">
-          <Icon :icon="iconLock" width="11" height="11" aria-hidden="true" />
-          <span>需验证</span>
-        </span>
-      </template>
-    </Tooltip>
-    <Tooltip v-if="details" :content="details">
-      <template #trigger>
-        <span class="cast-device-meta" :class="{ 'has-model': model && address }">
-          <span v-if="model || (!address && target.note)" class="cast-device-model">
-            {{ model || target.note }}
-          </span>
-          <span v-if="model && address" class="cast-device-separator" aria-hidden="true">·</span>
-          <span v-if="address" class="cast-device-address">{{ address }}</span>
-        </span>
-      </template>
-    </Tooltip>
+    <span
+      v-tooltip="'连接前需输入设备密码或验证码'"
+      v-else-if="target.paired === false"
+      class="cast-device-state is-pairing ui-badge badge-muted"
+    >
+      <Icon :icon="iconLock" width="11" height="11" aria-hidden="true" />
+      <span>需验证</span>
+    </span>
+    <span
+      v-tooltip="details"
+      v-if="details"
+      class="cast-device-meta"
+      :class="{ 'has-model': model && address }"
+    >
+      <span v-if="model || (!address && target.note)" class="cast-device-model">
+        {{ model || target.note }}
+      </span>
+      <span v-if="model && address" class="cast-device-separator" aria-hidden="true">·</span>
+      <span v-if="address" class="cast-device-address">{{ address }}</span>
+    </span>
   </span>
 </template>
 

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import Tooltip from '@/components/ui/Tooltip.vue';
-
+import { vTooltip } from '@/components/ui/tooltip';
 import { computed, onMounted, ref } from 'vue';
 import { TabsRoot, TabsContent } from 'reka-ui';
 import TabsList from '@/components/ui/TabsList.vue';
@@ -306,54 +305,45 @@ const commitRename = (id: string) => {
               <span v-else class="spatial-file-select">{{
                 normalizeAudioEffectName(file.name)
               }}</span>
-              <Tooltip v-if="editingFileId === file.id" content="保存名称">
-                <template #trigger>
-                  <button
-                    type="button"
-                    class="action-icon spatial-file-action echo-button-sized echo-button-icon"
-                    aria-label="保存名称"
-                    @click="commitRename(file.id)"
-                  >
-                    <Icon :icon="iconCheckMark" width="14" height="14" />
-                  </button>
-                </template>
-              </Tooltip>
-              <Tooltip v-if="editingFileId === file.id" content="取消">
-                <template #trigger>
-                  <button
-                    type="button"
-                    class="action-icon spatial-file-action echo-button-sized echo-button-icon"
-                    aria-label="取消"
-                    @click="cancelRename"
-                  >
-                    <Icon :icon="iconX" width="14" height="14" />
-                  </button>
-                </template>
-              </Tooltip>
-              <Tooltip v-else content="重命名">
-                <template #trigger>
-                  <button
-                    type="button"
-                    class="action-icon spatial-file-action echo-button-sized echo-button-icon"
-                    aria-label="重命名"
-                    @click="beginRename(file.id, file.name)"
-                  >
-                    <Icon :icon="iconPencil" width="14" height="14" />
-                  </button>
-                </template>
-              </Tooltip>
-              <Tooltip content="移除">
-                <template #trigger>
-                  <button
-                    type="button"
-                    class="action-icon spatial-file-delete echo-button-sized echo-button-icon"
-                    aria-label="移除"
-                    @click="removeFile(file.id)"
-                  >
-                    <Icon :icon="iconTrash" width="14" height="14" />
-                  </button>
-                </template>
-              </Tooltip>
+              <button
+                v-tooltip="'保存名称'"
+                v-if="editingFileId === file.id"
+                type="button"
+                class="action-icon spatial-file-action echo-button-sized echo-button-icon"
+                aria-label="保存名称"
+                @click="commitRename(file.id)"
+              >
+                <Icon :icon="iconCheckMark" width="14" height="14" />
+              </button>
+              <button
+                v-tooltip="'取消'"
+                v-if="editingFileId === file.id"
+                type="button"
+                class="action-icon spatial-file-action echo-button-sized echo-button-icon"
+                aria-label="取消"
+                @click="cancelRename"
+              >
+                <Icon :icon="iconX" width="14" height="14" />
+              </button>
+              <button
+                v-tooltip="'重命名'"
+                v-else
+                type="button"
+                class="action-icon spatial-file-action echo-button-sized echo-button-icon"
+                aria-label="重命名"
+                @click="beginRename(file.id, file.name)"
+              >
+                <Icon :icon="iconPencil" width="14" height="14" />
+              </button>
+              <button
+                v-tooltip="'移除'"
+                type="button"
+                class="action-icon spatial-file-delete echo-button-sized echo-button-icon"
+                aria-label="移除"
+                @click="removeFile(file.id)"
+              >
+                <Icon :icon="iconTrash" width="14" height="14" />
+              </button>
             </div>
             <div v-if="group.files.length === 0" class="spatial-empty">
               {{ group.id === 'local' ? '暂无本地导入音效' : '此分类暂无已下载音效' }}
@@ -398,18 +388,15 @@ const commitRename = (id: string) => {
               </div>
               <span class="engine-technical-info">{{ providerTechnicalInfo(provider) }}</span>
             </div>
-            <Tooltip content="删除音效引擎">
-              <template #trigger>
-                <button
-                  type="button"
-                  class="action-icon spatial-file-delete engine-delete echo-button-sized echo-button-icon"
-                  aria-label="删除音效引擎"
-                  @click="removeProvider(provider)"
-                >
-                  <Icon :icon="iconTrash" width="15" height="15" />
-                </button>
-              </template>
-            </Tooltip>
+            <button
+              v-tooltip="'删除音效引擎'"
+              type="button"
+              class="action-icon spatial-file-delete engine-delete echo-button-sized echo-button-icon"
+              aria-label="删除音效引擎"
+              @click="removeProvider(provider)"
+            >
+              <Icon :icon="iconTrash" width="15" height="15" />
+            </button>
           </div>
 
           <p v-if="providerDescription(provider)" class="engine-description">
@@ -427,13 +414,9 @@ const commitRename = (id: string) => {
           </div>
 
           <div class="engine-card-footer">
-            <Tooltip :content="provider.path">
-              <template #trigger>
-                <span class="engine-file-name">
-                  {{ provider.originalFileName }}
-                </span>
-              </template>
-            </Tooltip>
+            <span v-tooltip="provider.path" class="engine-file-name">
+              {{ provider.originalFileName }}
+            </span>
             <Button
               variant="secondary"
               size="default"
