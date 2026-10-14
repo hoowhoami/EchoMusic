@@ -23,7 +23,7 @@ export type PlaybackSource = {
   audioTrackId?: number | null;
 };
 
-export type PlaybackSourceKind = 'catalog' | 'cloud' | 'plugin';
+export type PlaybackSourceKind = 'catalog' | 'cloud' | 'plugin' | 'mv';
 
 export type PlaybackIntentPhase = 'idle' | 'loading' | 'ready' | 'failed';
 

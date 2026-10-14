@@ -37,6 +37,7 @@ import {
   findTrackById,
 } from './utils';
 import type { PlaybackSource, ResolvedAudioSource } from './types';
+import { canFallbackToMvAudio, captureMvAudioSession, resolveMvAudioSource } from './mvAudio';
 import { canPrepareGaplessForQueue, getQueueAdvanceAuthority } from './queueAdvancePolicy';
 import {
   formatTrackTransitionNotice,
@@ -182,6 +183,8 @@ export const createPlaybackManager = (
     { prepared: GaplessPreparedSource; completionContextKey?: string }
   >();
   let deferredPreResolvedFallback: DeferredPreResolvedFallback | null = null;
+  let mvFallbackAttemptSeq: number | null = null;
+  let sourceRecovery: { requestSeq: number; promise: Promise<boolean> } | null = null;
   let seekDispatchSeq = 0;
   let shuffleSourceQueueId: string | null = null;
   let shuffleTrackIds: string[] = [];
@@ -266,7 +269,8 @@ export const createPlaybackManager = (
     state.currentResolvedAudioEffect = resolved.effect;
     state.currentResolvedAudioLoudness = resolved.loudness;
     state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
-    track.audioUrl = primarySource?.url ?? resolved.url;
+    // MV is a runtime fallback, not the song's regular audio address.
+    if (resolved.sourceKind !== 'mv') track.audioUrl = primarySource?.url ?? resolved.url;
     if (state.currentTrackSnapshot && String(state.currentTrackSnapshot.id) === String(track.id)) {
       state.currentTrackSnapshot = {
         ...state.currentTrackSnapshot,
@@ -291,9 +295,13 @@ export const createPlaybackManager = (
     const trackId = String(options?.trackId ?? state.currentTrackId ?? '');
     if (!trackId) return false;
     const requestSeq = state.playbackRequestSeq;
+    const isCurrentSession =
+      state.currentResolvedSourceKind === 'mv' ? captureMvAudioSession() : () => true;
     const isCurrentRequest = () =>
-      requestSeq === state.playbackRequestSeq && String(state.currentTrackId ?? '') === trackId;
-    const shouldAutoPlay = options?.autoPlay ?? state.playbackIntent.shouldPlay;
+      requestSeq === state.playbackRequestSeq &&
+      String(state.currentTrackId ?? '') === trackId &&
+      isCurrentSession();
+    let shouldAutoPlay = options?.autoPlay ?? state.playbackIntent.shouldPlay;
     const candidates = state.currentAudioCandidateSources.length
       ? state.currentAudioCandidateSources
       : state.currentAudioCandidateUrls
@@ -320,7 +328,7 @@ export const createPlaybackManager = (
       state.currentAudioCandidateIndex = nextIndex;
       state.currentAudioUrl = nextSource.url;
       state.currentPlaybackSource = nextSource;
-      track.audioUrl = nextSource.url;
+      if (state.currentResolvedSourceKind !== 'mv') track.audioUrl = nextSource.url;
       beginPlaybackIntent(state, {
         seq: requestSeq,
         trackId,
@@ -330,7 +338,13 @@ export const createPlaybackManager = (
       beginNativeTrackLoad(state);
       state.lastError = null;
 
-      const targetPosition = Math.max(0, Number(options?.position) || 0);
+      const targetPosition =
+        state.currentResolvedSourceKind === 'mv' ? 0 : Math.max(0, Number(options?.position) || 0);
+      if (state.currentResolvedSourceKind === 'mv') {
+        state.currentTime = 0;
+        state.currentTimeUpdatedAt = Date.now();
+        state.stallRecovering = false;
+      }
       if (targetPosition > 0) {
         state.stallRecovering = true;
         state.stallRecoverTarget = targetPosition;
@@ -350,19 +364,32 @@ export const createPlaybackManager = (
         await engine.reloadSource(nextSource);
         if (!isCurrentRequest()) return false;
         engine.applyTrackLoudness(state.currentResolvedAudioLoudness);
-        if (shouldAutoPlay) {
+        if (state.playbackIntent.shouldPlay) {
           await engine.play();
           if (!isCurrentRequest()) return false;
         }
         // commit 失败已经 skip + 切下一首 FM，对调用方视为已处理，避免再走失败态/自动下一首。
         if (!(await recoverFailedFmCommit(requestSeq))) return true;
         if (targetPosition > 0) engine.seek(targetPosition);
-        completePlaybackIntent(state, requestSeq, { isPlaying: shouldAutoPlay });
-        setEnginePlaybackStatus(state, shouldAutoPlay ? 'playing' : 'paused', trackId);
+        completePlaybackIntent(state, requestSeq, { isPlaying: state.playbackIntent.shouldPlay });
+        setEnginePlaybackStatus(
+          state,
+          state.playbackIntent.shouldPlay ? 'playing' : 'paused',
+          trackId,
+        );
         return true;
       } catch (error) {
         if (!isCurrentRequest()) return false;
+        const normalized = normalizePlayerErrorPayload(error);
+        if (await handleOutputDeviceError?.(normalized)) return true;
+        if (!isCurrentRequest()) return false;
+        if (
+          (normalized.errorCode && !canFallbackToMvAudio(normalized)) ||
+          /superseded|cancelled|stale|output|device|dsp|filter|seek/i.test(normalized.message)
+        )
+          throw error;
         logger.warn('PlayerPlayback', 'Fallback audio url failed:', error);
+        shouldAutoPlay = state.playbackIntent.shouldPlay;
         nextIndex += 1;
       }
     }
@@ -434,14 +461,18 @@ export const createPlaybackManager = (
       await engine.reloadSource(primary);
       if (!isCurrentRequest()) return false;
       engine.applyTrackLoudness(normalizedFallback.loudness);
-      if (shouldAutoPlay) {
+      if (state.playbackIntent.shouldPlay) {
         await engine.play();
         if (!isCurrentRequest()) return false;
       }
       if (!(await recoverFailedFmCommit(requestSeq))) return true;
       if (targetPosition > 0) engine.seek(targetPosition);
-      completePlaybackIntent(state, requestSeq, { isPlaying: shouldAutoPlay });
-      setEnginePlaybackStatus(state, shouldAutoPlay ? 'playing' : 'paused', trackId);
+      completePlaybackIntent(state, requestSeq, { isPlaying: state.playbackIntent.shouldPlay });
+      setEnginePlaybackStatus(
+        state,
+        state.playbackIntent.shouldPlay ? 'playing' : 'paused',
+        trackId,
+      );
       return true;
     } catch (error) {
       if (!isCurrentRequest()) return false;
@@ -449,6 +480,152 @@ export const createPlaybackManager = (
     }
 
     return false;
+  };
+
+  const tryMvAudioFallback = async (track: Song): Promise<boolean> => {
+    const requestSeq = state.playbackRequestSeq;
+    const trackId = String(track.id);
+    if (
+      !settingStore.mvAudioFallbackEnabled ||
+      state.currentResolvedSourceKind === 'mv' ||
+      mvFallbackAttemptSeq === requestSeq
+    ) {
+      logger.info('PlayerMvAudio', 'MV audio fallback skipped', {
+        trackId,
+        reason: !settingStore.mvAudioFallbackEnabled ? 'disabled' : 'already-attempted',
+      });
+      return false;
+    }
+    mvFallbackAttemptSeq = requestSeq;
+    state.mvAudioFallbackFailureReason = '';
+    const isCurrentSession = captureMvAudioSession();
+    const isCurrentRequest = () =>
+      requestSeq === state.playbackRequestSeq &&
+      String(state.currentTrackId ?? '') === trackId &&
+      isCurrentSession();
+    const canContinue = () => isCurrentRequest() && settingStore.mvAudioFallbackEnabled;
+    const resolved = await resolveMvAudioSource(track, canContinue, (reason) => {
+      if (canContinue()) state.mvAudioFallbackFailureReason = reason;
+    });
+    // A superseded operation is handled; its caller must not fail the new session.
+    if (!isCurrentRequest()) return true;
+    if (!resolved || !canContinue()) return false;
+
+    clearGaplessPreparedSource();
+    deferredPreResolvedFallback = null;
+    state.climaxRequestSeq += 1;
+    state.climaxMarks = [];
+    state.currentTime = 0;
+    state.currentTimeUpdatedAt = Date.now();
+    state.duration = 0;
+    state.stallRecovering = false;
+    state.playbackEnded = false;
+    state.lastError = null;
+    applyResolvedAudioSource(track, resolved);
+    beginPlaybackIntent(state, {
+      seq: requestSeq,
+      trackId,
+      sourceQueueId: state.currentSourceQueueId,
+      shouldPlay: state.playbackIntent.shouldPlay,
+    });
+    beginNativeTrackLoad(state);
+    const candidates = getAudioCandidateSources(resolved);
+    for (let index = 0; index < candidates.length; index += 1) {
+      if (!canContinue()) return !isCurrentRequest();
+      const source = candidates[index];
+      state.currentPlaybackSource = source;
+      state.currentAudioUrl = source.url;
+      state.currentAudioCandidateIndex = index;
+      beginNativeTrackLoad(state);
+      try {
+        await engine.reloadSource(source);
+        if (!canContinue()) return !isCurrentRequest();
+        engine.applyTrackLoudness(null);
+        engine.setLoopFile(false);
+        engine.setVolume(state.volume);
+        if (state.playbackIntent.shouldPlay) await engine.play();
+        if (!isCurrentRequest()) return true;
+        if (!(await recoverFailedFmCommit(requestSeq))) return true;
+        if (!state.historyLocalRecorded) {
+          state.historyLocalRecorded = true;
+          void useHistoryStore().recordPlay(toRawSong(track));
+        }
+        state.duration = engine.duration;
+        const meta = buildMediaMeta(track);
+        if (meta) engine.updateMediaMetadata({ ...meta, durationMs: state.duration * 1000 });
+        completePlaybackIntent(state, requestSeq, { isPlaying: state.playbackIntent.shouldPlay });
+        setEnginePlaybackStatus(
+          state,
+          state.playbackIntent.shouldPlay ? 'playing' : 'paused',
+          trackId,
+        );
+        engine.updateMediaPlaybackState(buildMediaState(state));
+        clearAutoNextTimer();
+        state.autoNextAttempts = 0;
+        state.autoNextSourceTrackId = trackId;
+        clearPlaybackNotice(trackId);
+        logger.info('PlayerMvAudio', 'Playing catalog MV audio', { trackId });
+        return true;
+      } catch (error) {
+        if (!isCurrentRequest()) return true;
+        const normalized = normalizePlayerErrorPayload(error);
+        if (await handleOutputDeviceError?.(normalized)) return true;
+        if (!isCurrentRequest()) return true;
+        if (!canFallbackToMvAudio(normalized)) return false;
+        logger.warn('PlayerMvAudio', 'MV audio candidate failed', error);
+      }
+    }
+    state.mvAudioFallbackFailureReason = 'MV 音频片源均无法播放';
+    return false;
+  };
+
+  // Synchronous load rejections and asynchronous native errors can describe the
+  // same failure. Only one may consume candidates / resolve an MV for this play.
+  const recoverAudioSource = (options: {
+    error?: unknown;
+    reason?: string;
+    position?: number;
+    trackId?: string;
+    autoPlay?: boolean;
+    audioUrlUnavailable?: boolean;
+  }): Promise<boolean> => {
+    const requestSeq = state.playbackRequestSeq;
+    const isCurrentSession =
+      settingStore.mvAudioFallbackEnabled || state.currentResolvedSourceKind === 'mv'
+        ? captureMvAudioSession()
+        : () => true;
+    const isCurrentRequest = () => requestSeq === state.playbackRequestSeq && isCurrentSession();
+    const normalized = normalizePlayerErrorPayload(options.error);
+    if (!options.audioUrlUnavailable && normalized.errorCode && !canFallbackToMvAudio(normalized)) {
+      return Promise.resolve(false);
+    }
+    if (sourceRecovery?.requestSeq === requestSeq) return sourceRecovery.promise;
+    const promise = Promise.resolve().then(async () => {
+      if (!isCurrentRequest()) return true;
+      if (!options.audioUrlUnavailable) {
+        if (state.currentResolvedSourceKind === 'mv' && !settingStore.mvAudioFallbackEnabled)
+          return false;
+        try {
+          if (await tryNextAudioCandidate(options)) return true;
+        } catch (error) {
+          logger.warn('PlayerPlayback', 'Candidate recovery stopped by non-media error', error);
+          return !isCurrentRequest();
+        }
+        if (!isCurrentRequest()) return true;
+        if (!canFallbackToMvAudio(normalized)) return false;
+      }
+      const track =
+        findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
+        state.currentTrackSnapshot;
+      return track ? tryMvAudioFallback(track) : false;
+    });
+    sourceRecovery = { requestSeq, promise };
+    void promise
+      .finally(() => {
+        if (sourceRecovery?.promise === promise) sourceRecovery = null;
+      })
+      .catch(() => undefined);
+    return promise;
   };
 
   const clearAutoNextTimer = () => {
@@ -1239,6 +1416,7 @@ export const createPlaybackManager = (
     },
   ) => {
     const requestSeq = ++state.playbackRequestSeq;
+    state.mvAudioFallbackFailureReason = '';
     deferredPreResolvedFallback = null;
     fmAdvanceId++;
     pendingFmLoad = options?.fmCandidate ? { requestSeq, candidate: options.fmCandidate } : null;
@@ -1391,6 +1569,8 @@ export const createPlaybackManager = (
     } catch (error) {
       logger.error('PlayerPlayback', 'Resolve track source failed:', error);
       if (requestSeq !== state.playbackRequestSeq) return;
+      if (await recoverAudioSource({ audioUrlUnavailable: true, error })) return;
+      if (requestSeq !== state.playbackRequestSeq) return;
       state.lastError = 'audio-url-unavailable';
       showPlaybackNotice('audio-url-unavailable', track, error);
       applyFailedPlaybackState();
@@ -1430,6 +1610,8 @@ export const createPlaybackManager = (
     }
 
     if (!resolved.url) {
+      if (await recoverAudioSource({ audioUrlUnavailable: true })) return;
+      if (requestSeq !== state.playbackRequestSeq) return;
       state.lastError = 'audio-url-unavailable';
       state.currentTrackSnapshot = toRawSong(track);
       state.currentTrackId = resolvedId;
@@ -1512,7 +1694,8 @@ export const createPlaybackManager = (
         return;
       }
       if (
-        await tryNextAudioCandidate({
+        await recoverAudioSource({
+          error,
           reason: 'play-track-failed',
           trackId: resolvedId,
           autoPlay,
@@ -1954,6 +2137,7 @@ export const createPlaybackManager = (
   };
 
   const stop = () => {
+    state.mvAudioFallbackFailureReason = '';
     fmAdvanceId++;
     pendingFmLoad = null;
     committedFmOccurrence = null;
@@ -2004,14 +2188,19 @@ export const createPlaybackManager = (
   // 进度防跳由 store 的 stallRecovering 护栏保证（UI 停在断点，忽略 reload 期间的归零/回跳）。
   const recoverFromStall = async (position: number) => {
     if (!state.currentTrackId) return;
+    if (sourceRecovery?.requestSeq === state.playbackRequestSeq) return;
     // 用户已暂停 / 正在加载 / 已在恢复中，均不处理
     if (!getPlaybackIsPlaying(state) || getPlaybackIsLoading(state) || state.stallRecovering)
       return;
 
     const trackId = String(state.currentTrackId);
     const requestSeq = state.playbackRequestSeq;
+    const isMvAudio = state.currentResolvedSourceKind === 'mv';
+    const isCurrentSession = isMvAudio ? captureMvAudioSession() : () => true;
     const isCurrentRequest = () =>
-      requestSeq === state.playbackRequestSeq && String(state.currentTrackId ?? '') === trackId;
+      requestSeq === state.playbackRequestSeq &&
+      String(state.currentTrackId ?? '') === trackId &&
+      isCurrentSession();
     const track =
       findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
       state.currentTrackSnapshot;
@@ -2039,7 +2228,7 @@ export const createPlaybackManager = (
     }
     state.stallRecoverAttempts += 1;
 
-    const targetPosition = Math.max(0, Number(position) || state.currentTime || 0);
+    const targetPosition = isMvAudio ? 0 : Math.max(0, Number(position) || state.currentTime || 0);
     let nativeLoadCompleted = false;
 
     // 开启进度防跳护栏：UI 停在断点位置
@@ -2064,11 +2253,15 @@ export const createPlaybackManager = (
       if (triedCandidate) return;
       if (!isCurrentRequest()) return;
 
-      const resolved = await resolver.resolveAudioUrl(track, { forceReload: true });
+      const resolved = isMvAudio
+        ? settingStore.mvAudioFallbackEnabled
+          ? await resolveMvAudioSource(track, isCurrentRequest)
+          : null
+        : await resolver.resolveAudioUrl(track, { forceReload: true });
       if (!isCurrentRequest()) {
         return;
       }
-      if (!resolved.url) {
+      if (!resolved?.url) {
         abortNativeTrackLoad(state);
         state.stallRecovering = false;
         state.lastError = 'audio-url-unavailable';
@@ -2186,6 +2379,7 @@ export const createPlaybackManager = (
     stop,
     recoverFromStall,
     tryNextAudioCandidate,
+    recoverAudioSource,
     prepareGaplessNext,
     activateGaplessPreparedTransition,
     clearGaplessPreparedSource,

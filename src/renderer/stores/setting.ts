@@ -170,6 +170,7 @@ export const useSettingStore = defineStore('setting', {
     lyricFilterEnabled: false,
     lyricFilterPattern: '',
     autoNext: false,
+    mvAudioFallbackEnabled: false,
     autoNextDelaySeconds: 3,
     autoNextMaxAttempts: 10,
     preventSleep: true,

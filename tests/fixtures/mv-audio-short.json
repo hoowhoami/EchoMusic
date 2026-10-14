@@ -1,0 +1,147 @@
+{
+  "status": 1,
+  "data": [
+    [
+      {
+        "album_audio_id": 535280226,
+        "video_id": 12867867,
+        "mv_name": "数鸭子",
+        "singer": "儿歌多多",
+        "duration": 29792,
+        "is_recommend": 1,
+        "is_ugc": 0,
+        "is_short": 0,
+        "is_other": 0,
+        "is_publish": 1,
+        "__status": 1,
+        "tags": [
+          {
+            "tag_id": 54,
+            "parent_id": 76,
+            "is_publish": 1,
+            "tag_name": "儿歌"
+          },
+          {
+            "tag_id": 459,
+            "parent_id": 227,
+            "is_publish": 1,
+            "tag_name": "短片"
+          },
+          {
+            "tag_id": 213,
+            "parent_id": 35,
+            "is_publish": 1,
+            "tag_name": "华语"
+          },
+          {
+            "tag_id": 40,
+            "parent_id": 35,
+            "is_publish": 1,
+            "tag_name": "内地"
+          },
+          {
+            "tag_id": 305,
+            "parent_id": 3,
+            "is_publish": 1,
+            "tag_name": "竖版"
+          },
+          {
+            "tag_id": 29,
+            "parent_id": 3,
+            "is_publish": 1,
+            "tag_name": "短版"
+          },
+          {
+            "tag_id": 64,
+            "parent_id": 58,
+            "is_publish": 0,
+            "tag_name": "其他"
+          },
+          {
+            "tag_id": 143,
+            "parent_id": 142,
+            "is_publish": 1,
+            "tag_name": "国语"
+          },
+          {
+            "tag_id": 1613,
+            "parent_id": 42042,
+            "is_publish": 1,
+            "tag_name": "华语流行"
+          },
+          {
+            "tag_id": 42042,
+            "parent_id": 4,
+            "is_publish": 1,
+            "tag_name": "流行音乐"
+          },
+          {
+            "tag_id": 1614,
+            "parent_id": 42042,
+            "is_publish": 1,
+            "tag_name": "国语流行"
+          },
+          {
+            "tag_id": 374,
+            "parent_id": 42042,
+            "is_publish": 1,
+            "tag_name": "流行"
+          }
+        ],
+        "h264": {
+          "hd_width": 720,
+          "sd_hash": "050EA9B13571E78343375BD3352D136A",
+          "fhd_hash": "D22E4AF7A14BF2E0DDDA0B37F314F985",
+          "sd_filesize": 2380785,
+          "qhd_filesize": 4247826,
+          "qhd_bitrate": 1140662,
+          "sd_bitrate": 639308,
+          "fhd_filesize": 15460165,
+          "ld_bitrate": 536382,
+          "qhd_width": 540,
+          "hd_filesize": 7982337,
+          "qhd_hash": "37258F97CE5C7E68668C01B7CB0FC9E9",
+          "sd_height": 768,
+          "sd_width": 432,
+          "ld_width": 270,
+          "ld_hash": "08B12855559D13EA6B7744279C388E32",
+          "qhd_height": 960,
+          "ld_height": 480,
+          "fhd_height": 1920,
+          "hd_height": 1280,
+          "ld_filesize": 1997487,
+          "fhd_width": 1080,
+          "hd_bitrate": 2143484,
+          "fhd_bitrate": 4151494,
+          "hd_hash": "BCCB0EB1C21F9A98B00E41E2BBED28D6"
+        },
+        "h265": {
+          "hd_filesize": 1474402,
+          "sd_hash": "F8CB2B62341AE2E081F55381418369EF",
+          "fhd_hash": "73263D4DCE3EBA24EEAF281429EFB0DA",
+          "sd_filesize": 979768,
+          "hd_hash": "D6DEE08F303326E04F4908CAB5892557",
+          "qhd_bitrate": 307168,
+          "sd_bitrate": 263095,
+          "fhd_filesize": 6865648,
+          "fhd_bitrate": 1843621,
+          "hd_bitrate": 395918,
+          "qhd_hash": "87FE205D7C4DE64A3CAA80328AAF9407",
+          "qhd_filesize": 1143894
+        },
+        "mkv": {
+          "qhd_width": 540,
+          "sd_hash": "435F8FA7169EB793749A6CE853AF5C40",
+          "sd_height": 768,
+          "sd_filesize": 2343223,
+          "qhd_filesize": 4210247,
+          "qhd_bitrate": 1127430,
+          "sd_bitrate": 627473,
+          "qhd_height": 960,
+          "sd_width": 432,
+          "qhd_hash": "3569C099054ECC93480749DEA3BE33AD"
+        }
+      }
+    ]
+  ]
+}

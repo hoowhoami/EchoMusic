@@ -624,6 +624,7 @@ const controlsFixture = (t, api, user) => {
     '@/utils/songQualityAccess': access,
     '@/utils/song': songUtils,
     '@/utils/share': {},
+    '@/utils/format': { formatCompactBytes: () => '' },
     '@/services/cloudAudioIndex': { getCloudAudioSourceForSong: async () => null },
     '@/icons': {},
   });
@@ -730,6 +731,7 @@ const popoverComponent = (controls, inlineTemplate) => {
   });
   const dependencies = {
     vue,
+    '@/components/ui/tooltip': { vTooltip: {} },
     '@/icons': {},
     '@/composables/usePlayerControls': { usePlayerControls: () => controls },
   };
@@ -1045,3 +1047,17 @@ test(
     assert.equal(f.store.membership.superVip, true);
   },
 );
+
+test('MV audio badge and popup identify the runtime source without selecting an ordinary quality', async (t) => {
+  const f = controlsFixture(t);
+  await f.controls.ensureCurrentTrackCatalogQualities();
+  f.player.currentResolvedSourceKind = 'mv';
+  f.player.currentResolvedAudioQuality = null;
+  assert.equal(f.controls.audioQualityButtonBadge.value, 'MV');
+  const view = await renderQualityPopup(f.controls);
+  assert.match(view.html, /当前播放 MV 音频/);
+  assert.equal(
+    view.buttons.some((button) => /is-active/.test(button)),
+    false,
+  );
+});

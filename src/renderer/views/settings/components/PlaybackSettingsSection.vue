@@ -267,6 +267,20 @@ const volumeNormalizationStatus = computed(() => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">音频播放失败时尝试 MV 音频</h3>
+        <p class="text-sm text-text-secondary">
+          普通音频获取或解码失败后，尝试曲库 MV 音轨并从头播放，可能与原曲版本不同
+        </p>
+      </div>
+      <Switch
+        v-model="settingStore.mvAudioFallbackEnabled"
+        aria-label="音频播放失败时尝试 MV 音频"
+      />
+    </div>
+    <div class="settings-divider"></div>
+
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">自动跳过错误</h3>
         <p class="text-sm text-text-secondary">
           播放失败时停留在当前歌曲，并按设定延迟自动尝试下一首

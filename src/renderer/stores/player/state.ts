@@ -93,6 +93,7 @@ export const createPlayerState = () => ({
   audioEffectError: '',
   audioEffectApplying: false,
   playbackNotice: null as PlaybackNotice | null,
+  mvAudioFallbackFailureReason: '',
   shuffleQueue: null as number[] | null,
   shuffleQueueLength: 0,
   shufflePlayed: new Set<number>(),

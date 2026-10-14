@@ -362,6 +362,7 @@ export const createResolver = (
     options?: { forceReload?: boolean; reuseRelateGoods?: boolean },
   ): Promise<ResolvedAudioSource> => {
     const canReuseCurrentSource =
+      state.currentResolvedSourceKind !== 'mv' &&
       !!track.audioUrl &&
       !options?.forceReload &&
       !!state.currentTrackId &&

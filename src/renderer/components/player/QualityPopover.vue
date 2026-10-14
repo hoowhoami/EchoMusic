@@ -105,7 +105,7 @@ const isPendingQuality = (quality: string) =>
 const selectedQuality = computed(() =>
   !currentTrack.value
     ? requestedAudioQuality.value
-    : isResolvedCloudSource.value
+    : isResolvedCloudSource.value || player.currentResolvedSourceKind === 'mv'
       ? null
       : effectiveAudioQuality.value,
 );
@@ -122,6 +122,7 @@ const isUnavailableQuality = (quality: Parameters<typeof isAudioQualityDisabled>
 const panelStatus = computed(() => {
   if (!currentTrack.value) return '暂无歌曲';
   if (isAudioSourceSwitching.value) return `正在切换至${switchingLabel.value}…`;
+  if (player.currentResolvedSourceKind === 'mv') return '当前播放 MV 音频，歌词时间轴可能不同';
   if (isAudioQualityAccessLoading.value) return '正在查询音质…';
   if (hasAudioQualityAccessError.value) return '权限查询失败';
   if (isResolvedCloudSource.value) return '当前使用云盘文件播放';
@@ -133,9 +134,11 @@ const panelStatus = computed(() => {
 const triggerLabel = computed(() =>
   isAudioSourceSwitching.value
     ? `正在切换至${switchingLabel.value}`
-    : isResolvedCloudSource.value
-      ? '当前使用云盘文件'
-      : '音质',
+    : player.currentResolvedSourceKind === 'mv'
+      ? '当前播放 MV 音频'
+      : isResolvedCloudSource.value
+        ? '当前使用云盘文件'
+        : '音质',
 );
 
 const buttonClass = 'playback-action hover:scale-110 active:scale-90';
@@ -300,7 +303,14 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
   font-size: 11px;
   line-height: 1.5;
   color: var(--color-text-secondary);
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+}
+
+.pm-status > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .pm-divider {
@@ -310,6 +320,7 @@ const buttonClass = 'playback-action hover:scale-110 active:scale-90';
 }
 
 .pm-retry {
+  flex-shrink: 0;
   margin-left: 6px;
   color: var(--color-primary-text);
   cursor: pointer;

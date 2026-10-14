@@ -8,6 +8,7 @@ import * as decisions from '../src/shared/playbackQueueDecision.ts';
 import * as execution from '../src/shared/playbackQueueExecution.ts';
 import * as transitions from '../src/shared/trackTransition.ts';
 import * as stateMachine from '../src/renderer/stores/player/stateMachine.ts';
+import { loadMvAudio } from './helpers/mv-audio.mjs';
 
 const code = transformSync(
   readFileSync(new URL('../src/renderer/stores/player/playback.ts', import.meta.url), 'utf8'),
@@ -63,6 +64,9 @@ function setup({
   fetch,
   playable = () => true,
   timers = { setTimeout, clearTimeout },
+  mvEnabled = false,
+  resolveMv = async () => null,
+  captureMvSession = () => () => true,
 } = {}) {
   const calls = {
     prepared: [],
@@ -79,6 +83,8 @@ function setup({
     history: [],
     loops: [],
     resets: 0,
+    mvResolves: [],
+    plays: 0,
   };
   const songs = ['a', 'b', 'c'].map((id) => ({ id, hash: id, duration: 100 }));
   const queue = reactive({
@@ -109,6 +115,12 @@ function setup({
     shuffleHistory: [],
     shufflePlayed: new Set(),
     seekTimestamp: 0,
+    currentAudioCandidateSources: [],
+    currentAudioCandidateUrls: [],
+    currentAudioCandidateIndex: -1,
+    currentResolvedSourceKind: 'catalog',
+    climaxRequestSeq: 0,
+    volume: 50,
   });
   const settings = {
     effectiveTrackTransitionMode: 'fade',
@@ -117,6 +129,7 @@ function setup({
     compatibilityMode: false,
     playbackStallTimeout: 0,
     syncPreventSleep: noop,
+    mvAudioFallbackEnabled: mvEnabled,
   };
   let requestId = 0;
   const engine = {
@@ -131,7 +144,9 @@ function setup({
       stateMachine.bindNativeTrackLoad(state, 200 + calls.loads.length);
     },
     reloadSource: (source) => engine.setSource(source),
-    play: async () => {},
+    play: async () => {
+      calls.plays++;
+    },
     pause: async () => {},
     seek: (time) => {
       calls.seeks.push(time);
@@ -202,6 +217,14 @@ function setup({
     },
     './queueAdvancePolicy': queuePolicy,
     './stateMachine': stateMachine,
+    './mvAudio': {
+      ...loadMvAudio(),
+      captureMvAudioSession: captureMvSession,
+      resolveMvAudioSource: async (...args) => {
+        calls.mvResolves.push(args[0].id);
+        return resolveMv(...args);
+      },
+    },
   };
   new Function('require', 'module', 'exports', 'window', code)(
     (name) => {
@@ -1529,4 +1552,280 @@ test('round14: pending FM queue creation receives playback ownership and cancels
   finish(true);
   await operation;
   assert.deepEqual(e.calls.history, []);
+});
+
+const resolvedMv = (urls = ['https://mv.test/official.mp4']) => ({
+  url: urls[0],
+  urls,
+  sources: urls.map((url) => ({ url })),
+  sourceKind: 'mv',
+  quality: null,
+  effect: 'none',
+  loudness: null,
+});
+const deferMv = () => {
+  let resolve;
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+};
+
+test('MV fallback is off by default and URL unavailability keeps the existing failure state', async () => {
+  const e = setup({ resolve: async () => ({ url: '' }), resolveMv: async () => resolvedMv() });
+  await e.manager.playTrack('a', e.queue.songs);
+  assert.equal(e.calls.mvResolves.length, 0);
+  assert.equal(e.state.playbackIntent.phase, 'failed');
+});
+
+test('URL resolution failure starts MV audio at zero and retains song identity without caching its URL', async () => {
+  const e = setup({
+    mvEnabled: true,
+    resolve: async () => ({ url: '' }),
+    resolveMv: async () => resolvedMv(),
+  });
+  await e.manager.playTrack('a', e.queue.songs);
+  assert.deepEqual(e.calls.mvResolves, ['a']);
+  assert.equal(e.state.currentTrackId, 'a');
+  assert.equal(e.state.currentTime, 0);
+  assert.equal(e.state.currentResolvedSourceKind, 'mv');
+  assert.equal(e.state.currentResolvedAudioQuality, null);
+  assert.equal(e.state.currentResolvedAudioLoudness, null);
+  assert.equal(e.state.playbackIntent.phase, 'ready');
+  assert.equal(e.queue.songs[0].audioUrl, undefined);
+  assert.equal(e.state.currentTrackSnapshot.audioUrl, undefined);
+  assert.deepEqual(e.calls.history, ['a']);
+});
+
+test('thrown URL request falls back while preserving an initial paused intent', async () => {
+  const e = setup({
+    mvEnabled: true,
+    resolve: async () => {
+      throw new Error('request failed');
+    },
+    resolveMv: async () => resolvedMv(),
+  });
+  await e.manager.playTrack('a', e.queue.songs, { autoPlay: false });
+  assert.equal(e.state.currentResolvedSourceKind, 'mv');
+  assert.equal(e.state.enginePlayback.status, 'paused');
+  assert.equal(e.calls.plays, 0);
+});
+
+test('synchronous ordinary decoder failure falls back to the native MV source', async () => {
+  const e = setup({
+    mvEnabled: true,
+    load: async (source) => {
+      if (typeof source === 'string' || !source.url.includes('mv.test'))
+        throw new Error('failed to create audio decoder');
+    },
+    resolveMv: async () => resolvedMv(),
+  });
+  await e.manager.playTrack('a', e.queue.songs);
+  assert.equal(e.state.currentResolvedSourceKind, 'mv');
+  assert.equal(e.calls.loads.length, 2);
+  assert.equal(e.state.enginePlayback.status, 'playing');
+});
+
+test('ordinary candidates are exhausted before runtime decode failure switches to MV at zero', async () => {
+  let fail = false;
+  const e = setup({
+    mvEnabled: true,
+    resolve: async () => ({
+      url: 'https://audio.test/primary',
+      urls: ['https://audio.test/primary', 'https://audio.test/backup'],
+      quality: 'flac',
+    }),
+    load: async (source) => {
+      if (fail && source.url.includes('audio.test')) throw new Error('decode failed');
+    },
+    resolveMv: async () => resolvedMv(),
+  });
+  await e.manager.playTrack('a', e.queue.songs);
+  e.state.currentTime = 60;
+  e.state.climaxMarks = [{ start: 50, end: 70 }];
+  fail = true;
+  assert.equal(
+    await e.manager.recoverAudioSource({
+      error: { errorCode: 'decode', message: 'failed' },
+      position: 60,
+    }),
+    true,
+  );
+  assert.equal(e.calls.loads[1].url, 'https://audio.test/backup');
+  assert.equal(e.calls.loads[2].url, 'https://mv.test/official.mp4');
+  assert.equal(e.state.currentTime, 0);
+  assert.deepEqual(e.calls.seeks, []);
+  assert.deepEqual(e.state.climaxMarks, []);
+  assert.deepEqual(e.calls.history, ['a']);
+});
+
+test('DSP, output and seek errors do not trigger MV recovery', async () => {
+  const e = setup({ mvEnabled: true, resolveMv: async () => resolvedMv() });
+  await e.manager.playTrack('a', e.queue.songs);
+  for (const errorCode of ['dsp', 'cache', 'output-stream', 'seek']) {
+    assert.equal(
+      await e.manager.recoverAudioSource({ error: { errorCode, message: 'decode failed' } }),
+      false,
+    );
+  }
+  assert.deepEqual(e.calls.mvResolves, []);
+});
+
+test('concurrent native errors share one MV request and honor pause during resolution', async () => {
+  const pending = deferMv();
+  const e = setup({ mvEnabled: true, resolveMv: () => pending.promise });
+  await e.manager.playTrack('a', e.queue.songs);
+  const first = e.manager.recoverAudioSource({ error: { errorCode: 'decode', message: 'failed' } });
+  const second = e.manager.recoverAudioSource({
+    error: { errorCode: 'decode', message: 'failed' },
+  });
+  assert.equal(first, second);
+  await flush();
+  assert.deepEqual(e.calls.mvResolves, ['a']);
+  await e.manager.togglePlay();
+  pending.resolve(resolvedMv());
+  assert.equal(await first, true);
+  assert.equal(e.calls.plays, 1); // original audio only
+  assert.equal(e.state.enginePlayback.status, 'paused');
+});
+
+test('switching songs discards late MV results without failing the new song', async () => {
+  const pending = deferMv();
+  const e = setup({ mvEnabled: true, resolveMv: () => pending.promise });
+  await e.manager.playTrack('a', e.queue.songs);
+  const recovery = e.manager.recoverAudioSource({
+    error: { errorCode: 'decode', message: 'failed' },
+  });
+  await flush();
+  await e.manager.playTrack('b', e.queue.songs);
+  pending.resolve(resolvedMv());
+  assert.equal(await recovery, true);
+  assert.equal(e.state.currentTrackId, 'b');
+  assert.equal(e.state.currentResolvedSourceKind, 'catalog');
+  assert.equal(e.calls.loads.length, 2);
+  assert.equal(e.state.enginePlayback.status, 'playing');
+});
+
+test('account invalidation or disabling the setting prevents a pending MV from loading', async () => {
+  for (const reason of ['account', 'setting']) {
+    const pending = deferMv();
+    let sessionCurrent = true;
+    const e = setup({
+      mvEnabled: true,
+      resolveMv: () => pending.promise,
+      captureMvSession: () => () => sessionCurrent,
+    });
+    await e.manager.playTrack('a', e.queue.songs);
+    const recovery = e.manager.recoverAudioSource({
+      error: { errorCode: 'decode', message: 'failed' },
+    });
+    await flush();
+    if (reason === 'account') sessionCurrent = false;
+    else e.settings.mvAudioFallbackEnabled = false;
+    pending.resolve(resolvedMv());
+    assert.equal(await recovery, reason === 'account');
+    assert.equal(e.calls.loads.length, 1);
+    assert.equal(e.state.currentResolvedSourceKind, 'catalog');
+  }
+});
+
+test('MV candidate exhaustion falls back to the existing failure state without resolving another MV', async () => {
+  const e = setup({
+    mvEnabled: true,
+    resolve: async () => ({ url: '' }),
+    resolveMv: async () => resolvedMv(['https://mv.test/one', 'https://mv.test/two']),
+    load: async () => {
+      throw new Error('decode failed');
+    },
+  });
+  await e.manager.playTrack('a', e.queue.songs);
+  assert.equal(e.state.enginePlayback.status, 'error');
+  assert.equal(e.calls.loads.length, 2);
+  assert.deepEqual(e.calls.mvResolves, ['a']);
+  assert.equal(
+    await e.manager.recoverAudioSource({ error: { errorCode: 'decode', message: 'failed' } }),
+    false,
+  );
+  assert.deepEqual(e.calls.mvResolves, ['a']);
+});
+
+test('asynchronous MV decode failure tries its backup from zero without seeking the old position', async () => {
+  const e = setup({
+    mvEnabled: true,
+    resolve: async () => ({ url: '' }),
+    resolveMv: async () => resolvedMv(['https://mv.test/one', 'https://mv.test/two']),
+  });
+  await e.manager.playTrack('a', e.queue.songs);
+  e.state.currentTime = 60;
+  assert.equal(
+    await e.manager.recoverAudioSource({
+      error: { errorCode: 'decode', message: 'failed' },
+      position: 60,
+    }),
+    true,
+  );
+  assert.equal(e.state.currentPlaybackSource.url, 'https://mv.test/two');
+  assert.equal(e.state.currentTime, 0);
+  assert.deepEqual(e.calls.seeks, []);
+  assert.equal(e.queue.songs[0].audioUrl, undefined);
+});
+
+test('a non-media error in a backup candidate stops recovery before MV resolution', async () => {
+  let fail = false;
+  const e = setup({
+    mvEnabled: true,
+    resolve: async () => ({
+      url: 'https://audio.test/one',
+      urls: ['https://audio.test/one', 'https://audio.test/two'],
+    }),
+    load: async () => {
+      if (fail) throw { errorCode: 'dsp', message: 'DSP failed' };
+    },
+    resolveMv: async () => resolvedMv(),
+  });
+  await e.manager.playTrack('a', e.queue.songs);
+  fail = true;
+  assert.equal(
+    await e.manager.recoverAudioSource({ error: { errorCode: 'decode', message: 'failed' } }),
+    false,
+  );
+  assert.equal(e.calls.mvResolves.length, 0);
+});
+
+test('MV stall recovery refreshes MV addresses rather than reopening ordinary audio', async () => {
+  let regularCalls = 0;
+  const e = setup({
+    mvEnabled: true,
+    resolve: async () => {
+      regularCalls++;
+      return { url: '' };
+    },
+    resolveMv: async () => resolvedMv(),
+  });
+  await e.manager.playTrack('a', e.queue.songs);
+  e.state.currentTime = 60;
+  await e.manager.recoverFromStall(60);
+  assert.equal(regularCalls, 1);
+  assert.equal(e.calls.mvResolves.length, 2);
+  assert.equal(e.state.currentResolvedSourceKind, 'mv');
+  assert.equal(e.state.currentTime, 0);
+  assert.deepEqual(e.calls.seeks, []);
+});
+
+test('MV unavailability feedback belongs to this song and is cleared when another song starts', async () => {
+  const reason = '关联视频均被平台标记为短视频，未找到可用 MV';
+  const e = setup({
+    mvEnabled: true,
+    resolve: async (song) => ({ url: song.id === 'a' ? '' : 'https://audio.test/b' }),
+    resolveMv: async (_track, _current, unavailable) => {
+      unavailable(reason);
+      return null;
+    },
+  });
+  await e.manager.playTrack('a', e.queue.songs);
+  assert.equal(e.state.mvAudioFallbackFailureReason, reason);
+  assert.equal(e.state.enginePlayback.status, 'error');
+  await e.manager.playTrack('b', e.queue.songs);
+  assert.equal(e.state.mvAudioFallbackFailureReason, '');
+  assert.equal(e.state.enginePlayback.status, 'playing');
 });

@@ -455,3 +455,16 @@ test('missing or malformed refreshed permissions do not erase known rights, expl
   assert.equal(track.oldCpy, 1);
   assert.deepEqual(song.getSongPrivilegeTags(track), []);
 });
+
+test('MV fallback rejection is visible alongside the original failure and automatic-next detail', () => {
+  const reason = '关联视频均被平台标记为短视频，未找到可用 MV';
+  const notice = utils.resolvePlaybackNotice({
+    code: 'audio-url-unavailable',
+    track: mapPlaylistSong(favorite),
+    mvAudioFallbackFailureReason: reason,
+    autoNextEnabled: true,
+    autoNextDelaySeconds: 3,
+  });
+  assert.match(notice.reason, /购买|权限/);
+  assert.equal(notice.detail, `${reason}；3 秒后尝试下一首`);
+});

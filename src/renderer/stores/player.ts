@@ -255,6 +255,7 @@ export const usePlayerStore = defineStore(
       }
       const requestSeq = ++state.playbackRequestSeq;
       const refreshTrackId = String(state.currentTrackId);
+      state.mvAudioFallbackFailureReason = '';
       const isRefreshCurrent = () =>
         requestSeq === state.playbackRequestSeq && String(state.currentTrackId) === refreshTrackId;
       const track = findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore);
@@ -635,6 +636,7 @@ export const usePlayerStore = defineStore(
         autoNextDelaySeconds: settingStore.autoNextDelaySeconds,
         isUserNovip,
         error,
+        mvAudioFallbackFailureReason: state.mvAudioFallbackFailureReason,
       });
       if (code.startsWith('audio-effect-')) {
         // Effect feedback stays inline and does not trigger a playback-error toast.
@@ -1462,7 +1464,8 @@ export const usePlayerStore = defineStore(
               }
             }
 
-            const triedFallback = await playbackManager.tryNextAudioCandidate({
+            const triedFallback = await playbackManager.recoverAudioSource({
+              error: detail,
               reason: 'player-error',
               position: state.currentTime,
             });

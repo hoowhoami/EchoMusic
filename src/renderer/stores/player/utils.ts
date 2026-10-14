@@ -271,6 +271,7 @@ export const resolvePlaybackNotice = (params: {
   autoNextDelaySeconds?: number;
   isUserNovip?: boolean;
   error?: unknown;
+  mvAudioFallbackFailureReason?: string;
 }): PlaybackNotice => {
   const trackId = params.track ? String(params.track.id) : null;
   const requiresPurchase = Boolean(params.track && isPaidSong(params.track));
@@ -290,7 +291,12 @@ export const resolvePlaybackNotice = (params: {
     code: params.code,
     title: '播放失败',
     reason,
-    detail: autoNextDetail || resolvePlaybackFailureDetail(reason),
+    detail: [
+      params.mvAudioFallbackFailureReason,
+      autoNextDetail || resolvePlaybackFailureDetail(reason),
+    ]
+      .filter(Boolean)
+      .join('；'),
     trackId,
   });
 

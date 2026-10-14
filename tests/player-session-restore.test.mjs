@@ -396,3 +396,19 @@ test('real player-store init restores the transient queue before publishing meta
     scope.stop();
   }
 });
+
+test('renderer reload restores the MV runtime source and badge state without changing song identity', () => {
+  const { session, transport, cache, owner } = fixture();
+  session.player.currentResolvedSourceKind = 'mv';
+  session.player.currentResolvedAudioQuality = null;
+  session.player.currentResolvedAudioLoudness = null;
+  session.player.currentAudioUrl = 'https://mv.test/official.mp4';
+  session.player.currentPlaybackSource = { url: session.player.currentAudioUrl };
+  cache.sync(session, owner, transport);
+  const fresh = defaults.createPlayerState();
+  assert.equal(renderer.restorePlayerSession(fresh, cache.get(owner, transport)), true);
+  assert.equal(fresh.currentResolvedSourceKind, 'mv');
+  assert.equal(fresh.currentResolvedAudioQuality, null);
+  assert.equal(fresh.currentTrackId, song.id);
+  assert.equal(fresh.currentPlaybackSource.url, 'https://mv.test/official.mp4');
+});
