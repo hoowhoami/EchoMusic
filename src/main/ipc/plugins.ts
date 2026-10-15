@@ -220,7 +220,7 @@ const showPluginOpenDialog = async (options: OpenDialogOptions): Promise<PluginD
 };
 
 export const registerPluginHandlers = (context: IpcContext) => {
-  registerPluginResourceHandlers(context);
+  registerPluginResourceHandlers();
   registerPluginTcpHandlers(assertPluginTcpAccess);
   const refreshPluginAppIcons = (options?: { force?: boolean }): PluginAppIconRefreshResult => {
     refreshAppIconConfig();

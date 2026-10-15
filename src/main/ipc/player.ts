@@ -1,5 +1,6 @@
 import { ipcRegistry } from './registry';
-import { app, dialog } from 'electron';
+import { showOpenDialogSafely } from './dialogHost';
+import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import type { PlayerController, PlayerTransitionSettingsOptions } from '../player/controller';
@@ -114,7 +115,7 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   ipcRegistry.registerHandler(
     'player:select-dsp-provider',
     async (_event, mode: 'headphone' | 'speaker' = 'speaker') => {
-      const result = await dialog.showOpenDialog({
+      const result = await showOpenDialogSafely({
         properties: ['openFile'],
         filters: [{ name: 'EchoMusic 音效引擎', extensions: ['dll', 'dylib', 'so'] }],
       });

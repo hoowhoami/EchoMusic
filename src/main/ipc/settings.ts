@@ -5,7 +5,6 @@ import {
   app,
   net,
   session,
-  dialog,
   type ClientRequest,
   type IncomingMessage,
   type OpenDialogOptions,

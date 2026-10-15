@@ -46,7 +46,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerPluginWindowHandlers();
   registerShareHandlers();
   registerDiagnosticsHandlers();
-  registerCloudHandlers(context);
+  registerCloudHandlers();
   registerSettingsBackupHandlers();
   registerRecognizeHandlers();
   registerOpenccHandlers();

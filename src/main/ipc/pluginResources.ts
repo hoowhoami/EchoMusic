@@ -2,7 +2,6 @@ import { app, session, type Session } from 'electron';
 import { ipcRegistry } from './registry';
 import { showOpenDialogSafely } from './dialogHost';
 import log from '../logger';
-import type { IpcContext } from './types';
 import type { ResourceMethod } from '../../shared/pluginFiles';
 import { PluginResources, setPluginResources } from '../plugins/resources';
 import { getPluginDescriptor, isPluginAccessCurrent, onPluginAccessRevoked } from '../plugins';
@@ -11,7 +10,7 @@ import { getManagedNetworkSession } from '../networkPolicy';
 import { fetchWithElectronSession } from '../electronAxiosAdapter';
 import type { EchoPluginDescriptor } from '../../shared/plugins';
 
-export function registerPluginResourceHandlers(context: IpcContext) {
+export function registerPluginResourceHandlers() {
   const service = new PluginResources({
     root: app.getPath('userData'),
     find: getPluginDescriptor,

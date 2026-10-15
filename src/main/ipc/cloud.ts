@@ -4,7 +4,6 @@ import type { OpenDialogOptions, WebContents } from 'electron';
 import { ipcRegistry } from './registry';
 import { showOpenDialogSafely } from './dialogHost';
 import log from '../logger';
-import type { IpcContext } from './types';
 import type {
   CloudPickFilesResult,
   CloudReadUploadFileDataResult,
@@ -243,7 +242,7 @@ const readAllowedUploadFileData = async (
   }
 };
 
-export const registerCloudHandlers = (context: IpcContext) => {
+export const registerCloudHandlers = () => {
   ipcRegistry.registerHandler(
     'cloud:pick-upload-files',
     async (_event, mode: 'file' | 'folder', multi = true): Promise<CloudPickFilesResult> => {

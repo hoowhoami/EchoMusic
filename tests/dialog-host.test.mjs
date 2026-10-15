@@ -169,6 +169,9 @@ test('标题里已有应用名不重复添加；无标题时保持原样', async
 
 test('置前失败也必须照常弹框，不能把调用方挂住', async () => {
   const h = harness([makeWindow({ visible: false })]);
+  globalThis.__dh.showMainWindow = async () => {
+    throw new Error('showMainWindow 抛错');
+  };
   const result = await showOpenDialogSafely({ properties: ['openFile'] });
 
   assert.equal(h.calls.open.length, 1);
