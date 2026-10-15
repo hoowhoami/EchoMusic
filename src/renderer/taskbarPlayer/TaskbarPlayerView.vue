@@ -62,6 +62,8 @@ const secondary = computed(() => {
   }
   return playback.value?.artist || '双击打开主窗口';
 });
+// 换行动画的触发键：主行或副行任一文本变化都算一次换行，两行作为整块一起滚动。
+const linesKey = computed(() => `${primary.value}\u0000${secondary.value}`);
 const seek = useTaskbarSeek(
   () => playback.value,
   (value) => window.electron?.nowPlaying.command({ type: 'seek', value }),
@@ -225,24 +227,28 @@ onUnmounted(() => {
         </div>
         <div class="details" :class="{ 'has-progress': playback && duration }">
           <div class="copy" :aria-hidden="expanded">
-            <TaskbarLyricLine
-              class="primary"
-              :text="primary"
-              :line="line"
-              :time-ms="timeMs"
-              :end-time-ms="lineEndTimeMs"
-              :word-by-word="settings.wordByWord"
-              :anchor="anchor"
-              @width="primaryWidth = $event"
-            />
-            <TaskbarLyricLine
-              v-if="secondary"
-              class="secondary"
-              :text="secondary"
-              :time-ms="timeMs"
-              :anchor="anchor"
-              @width="secondaryWidth = $event"
-            />
+            <Transition name="taskbar-lines">
+              <div :key="linesKey" class="lines">
+                <TaskbarLyricLine
+                  class="primary"
+                  :text="primary"
+                  :line="line"
+                  :time-ms="timeMs"
+                  :end-time-ms="lineEndTimeMs"
+                  :word-by-word="settings.wordByWord"
+                  :anchor="anchor"
+                  @width="primaryWidth = $event"
+                />
+                <TaskbarLyricLine
+                  v-if="secondary"
+                  class="secondary"
+                  :text="secondary"
+                  :time-ms="timeMs"
+                  :anchor="anchor"
+                  @width="secondaryWidth = $event"
+                />
+              </div>
+            </Transition>
           </div>
           <div class="song-info" :aria-hidden="!expanded">
             <div class="song-title" :title="title">{{ title }}</div>
@@ -350,15 +356,44 @@ body,
   max-height: 100%;
 }
 .copy {
+  position: relative;
   width: 100%;
   min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  line-height: 1.2;
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+/* 换行动画作用在整块歌词上，而不是每一行各自动画。
+   两行放进同一个满高容器里滚动，裁切也只在这一层做——若每行各自在
+   自己的 overflow 盒子里滑动，中途每行都是「上半空、下半新字」，
+   看上去就是每行各动各的、切换时割裂。 */
+.lines {
+  width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: space-evenly;
-  line-height: 1.2;
-  opacity: 1;
-  transition: opacity 180ms ease;
+}
+.taskbar-lines-enter-active,
+.taskbar-lines-leave-active {
+  transition:
+    transform 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.taskbar-lines-leave-active {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.taskbar-lines-enter-from {
+  opacity: 0;
+  transform: translateY(100%);
+}
+.taskbar-lines-leave-to {
+  opacity: 0;
+  transform: translateY(-100%);
 }
 .expanded .copy {
   opacity: 0;
@@ -551,7 +586,9 @@ button:focus-visible {
   .copy,
   .song-info,
   .controls,
-  .controls button {
+  .controls button,
+  .taskbar-lines-enter-active,
+  .taskbar-lines-leave-active {
     transition: none;
   }
 }

@@ -95,26 +95,22 @@ onUnmounted(() => {
     :title="text"
   >
     <span ref="content" class="line-content" :style="{ transform: `translateX(${offset}px)` }">
-      <Transition name="taskbar-line">
-        <span :key="text" class="line-text">
-          <template v-if="chars.length">
-            <span
-              v-for="(char, i) in chars"
-              :key="i"
-              class="character"
-              :style="{
-                backgroundPositionX: computeLyricCharBackgroundPosition(
-                  char.startTime,
-                  char.endTime,
-                  timeMs,
-                ),
-              }"
-              >{{ char.text }}</span
-            >
-          </template>
-          <template v-else>{{ text }}</template>
-        </span>
-      </Transition>
+      <template v-if="chars.length">
+        <span
+          v-for="(char, i) in chars"
+          :key="i"
+          class="character"
+          :style="{
+            backgroundPositionX: computeLyricCharBackgroundPosition(
+              char.startTime,
+              char.endTime,
+              timeMs,
+            ),
+          }"
+          >{{ char.text }}</span
+        >
+      </template>
+      <template v-else>{{ text }}</template>
     </span>
   </div>
 </template>
@@ -142,38 +138,6 @@ onUnmounted(() => {
   display: inline-block;
   flex-shrink: 0;
   transition: transform 160ms linear;
-}
-.line-text {
-  display: inline-block;
-}
-/* 行切换动画与主播放页歌词一致：LyricScroller 的行 opacity 过渡为
-   0.5s cubic-bezier(0.4, 0, 0.2, 1)。key 取行文本——行推进时旧行淡出、
-   新行淡入（离开帧绝对定位叠在原位，形成交叉淡化）；词内时间更新不改
-   key，卡拉OK逐字填充不会重放淡入。 */
-.taskbar-line-enter-active {
-  animation: taskbar-line-in 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.taskbar-line-leave-active {
-  position: absolute;
-  left: 0;
-  top: 0;
-  animation: taskbar-line-out 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
-@keyframes taskbar-line-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes taskbar-line-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
 }
 .character {
   background: linear-gradient(
