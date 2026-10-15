@@ -488,6 +488,12 @@ impl IUIAutomationStructureChangedEventHandler_Impl for StructureHandler_Impl {
     }
 }
 
+/// 解挂后窗口的停放位置：所有显示器可见区域之外。
+///
+/// 取 `-32000` 是 Win32「移出屏幕」的惯用值：SetWindowPos 对 WS_POPUP 按屏幕
+/// 坐标解释它，不会被换算成相对坐标。
+const DETACHED_OFFSCREEN_X: i32 = -32000;
+
 /// 把歌词窗口从任务栏解挂，恢复为顶层窗口。
 ///
 /// 跨进程的父子关系只应在会话存活期间存在。会话结束时若不解除，Chromium 窗口的
@@ -495,6 +501,8 @@ impl IUIAutomationStructureChangedEventHandler_Impl for StructureHandler_Impl {
 /// `NativeThemeObserver` 析构 CHECK 失败；而由我们补发 `WM_DESTROY` 又等于在
 /// explorer 线程上跑 Chromium 宿主，直接拖垮 shell。做法参考 AF-Media-Bar 的
 /// `UndockWindow`。
+///
+/// 解挂后不留下任何「可见的空窗期」：先隐藏，再停放到屏幕外，见函数体。
 ///
 /// 只在仍确实是任务栏子窗口时动手，避免误改 Electron 自己的父子关系。
 ///
@@ -504,6 +512,11 @@ unsafe fn detach(child: HWND) {
     if GetAncestor(child, GA_PARENT).0.is_null() {
         return;
     }
+    // 解挂前必须先隐藏。SetParent(child, NULL) 会让窗口立刻变成桌面上的顶层
+    // 窗口：歌词子窗口的坐标是相对任务栏客户区的（y 通常为 0），换父之后这组
+    // 坐标被当成屏幕坐标，窗口就会跳到屏幕顶部闪一下；紧接着还原的
+    // WS_CAPTION / WS_THICKFRAME 还会给它画出一圈非客户区边框。
+    let _ = ShowWindow(child, SW_HIDE);
     let style = GetWindowLongPtrW(child, GWL_STYLE);
     let ex = GetWindowLongPtrW(child, GWL_EXSTYLE);
     let _ = SetParent(child, None);
@@ -514,6 +527,21 @@ unsafe fn detach(child: HWND) {
         child,
         GWL_EXSTYLE,
         ex & !((WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW).0 as isize),
+    );
+    // 最后把解挂后的窗口挪出可见区域。SW_HIDE 只保证「此刻不可见」，坐标却仍
+    // 是换父时被重解释过的那一组（x 不变、y=0）：此后任何一次迟到的
+    // show / restore / SetWindowPos(SWP_SHOWWINDOW) 都会让它弹到屏幕顶部。
+    // 移出桌面后，这类显示请求就落不到屏幕上了。两个 detach 调用点
+    // （stop() 与工作线程退出）都在会话末尾，窗口随即被销毁或等心跳重建，
+    // 没有布局会依赖这里的坐标。
+    let _ = SetWindowPos(
+        child,
+        None,
+        DETACHED_OFFSCREEN_X,
+        0,
+        0,
+        0,
+        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
     );
 }
 unsafe fn attach(
