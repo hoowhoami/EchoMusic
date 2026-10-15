@@ -1,7 +1,8 @@
 import { ipcRegistry } from './registry';
 import { registerPluginResourceHandlers } from './pluginResources';
 import { registerPluginTcpHandlers } from './pluginTcp';
-import { BrowserWindow, dialog, type OpenDialogOptions, type WebContents } from 'electron';
+import { BrowserWindow, type OpenDialogOptions, type WebContents } from 'electron';
+import { showOpenDialogSafely } from './dialogHost';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -210,14 +211,8 @@ const sanitizeDialogOptions = (
   properties,
 });
 
-const showPluginOpenDialog = async (
-  context: IpcContext,
-  options: OpenDialogOptions,
-): Promise<PluginDialogResult> => {
-  const win = context.getMainWindow();
-  const result = win
-    ? await dialog.showOpenDialog(win, options)
-    : await dialog.showOpenDialog(options);
+const showPluginOpenDialog = async (options: OpenDialogOptions): Promise<PluginDialogResult> => {
+  const result = await showOpenDialogSafely(options);
   return {
     canceled: result.canceled,
     paths: result.filePaths,
@@ -314,7 +309,6 @@ export const registerPluginHandlers = (context: IpcContext) => {
     'plugins:dialog:select-directory',
     (_event, options?: PluginOpenDialogOptions): Promise<PluginDialogResult> =>
       showPluginOpenDialog(
-        context,
         sanitizeDialogOptions(options, [
           'openDirectory',
           ...(options?.multiple ? ['multiSelections' as const] : []),
@@ -325,7 +319,6 @@ export const registerPluginHandlers = (context: IpcContext) => {
     'plugins:dialog:select-files',
     (_event, options?: PluginOpenDialogOptions): Promise<PluginDialogResult> =>
       showPluginOpenDialog(
-        context,
         sanitizeDialogOptions(options, [
           'openFile',
           ...(options?.multiple ? ['multiSelections' as const] : []),
@@ -404,12 +397,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
       event,
       pluginId: string,
       options: PluginProcessLaunchOptions,
-    ): Promise<PluginProcessLaunchResult> =>
-      launchPluginProcess(
-        pluginId,
-        options,
-        BrowserWindow.fromWebContents(event.sender) ?? context.getMainWindow(),
-      ),
+    ): Promise<PluginProcessLaunchResult> => launchPluginProcess(pluginId, options),
   );
   ipcRegistry.registerHandler(
     'plugins:process:terminate',

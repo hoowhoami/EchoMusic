@@ -1,7 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { dialog, type BrowserWindow, type OpenDialogOptions, type WebContents } from 'electron';
+import type { OpenDialogOptions, WebContents } from 'electron';
 import { ipcRegistry } from './registry';
+import { showOpenDialogSafely } from './dialogHost';
 import log from '../logger';
 import type { IpcContext } from './types';
 import type {
@@ -61,7 +62,6 @@ const formatUploadMaxSize = () => `${Math.floor(CLOUD_UPLOAD_MAX_SIZE / 1024 / 1
 const getUploadSizeLimitError = () => `文件为空或超过 ${formatUploadMaxSize()} 限制`;
 
 const showPickDialog = (
-  win: BrowserWindow | null,
   mode: 'file' | 'folder',
   multi = true,
 ): Promise<Electron.OpenDialogReturnValue> => {
@@ -79,7 +79,7 @@ const showPickDialog = (
             { name: '所有文件', extensions: ['*'] },
           ],
         };
-  return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
+  return showOpenDialogSafely(options);
 };
 
 const toScannedUploadFile = async (filePath: string): Promise<ScannedLocalFile | null> => {
@@ -257,10 +257,9 @@ export const registerCloudHandlers = (context: IpcContext) => {
       if (!selection) return canceled();
       selection.generation++;
       const isCurrent = captureUploadSelection(sender, selection);
-      const win = context.getMainWindow();
       let result: Electron.OpenDialogReturnValue;
       try {
-        result = await showPickDialog(win, mode, multi);
+        result = await showPickDialog(mode, multi);
       } catch (error) {
         if (!isCurrent()) return canceled();
         throw error;

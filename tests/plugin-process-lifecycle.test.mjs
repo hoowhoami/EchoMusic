@@ -68,6 +68,13 @@ function fixture(options = {}) {
       }),
     },
     '../logger': { warn() {} },
+    // 原生对话框统一走 dialogHost（不挂父窗口，避免跨线程模态框卡死应用），
+    // 这里只需提供同名导出，行为由 dialog-host.test.mjs 覆盖。
+    '../ipc/dialogHost': {
+      // 透传给 electron mock，保留 options.confirm 这个控制确认结果的钩子；
+      // 「不挂父窗口」的行为由 dialog-host.test.mjs 覆盖。
+      showMessageBoxSafely: async (options) => mocks.electron.dialog.showMessageBox(options),
+    },
     './common': {
       BLOCKED_PLUGIN_PROCESS_ENV_KEYS: new Set(),
       MAX_PLUGIN_PROCESS_ARGS: 64,

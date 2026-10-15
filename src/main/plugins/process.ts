@@ -1,4 +1,5 @@
-import { app, dialog, type BrowserWindow } from 'electron';
+import { app } from 'electron';
+import { showMessageBoxSafely } from '../ipc/dialogHost';
 import { spawn, type ChildProcess } from 'child_process';
 import { createHash } from 'crypto';
 import { constants as fsConstants } from 'fs';
@@ -261,7 +262,6 @@ const rememberPluginProcessConsent = (
 };
 
 const confirmPluginProcessLaunch = async (
-  owner: BrowserWindow | null | undefined,
   plugin: EchoPluginDescriptor,
   executable: string,
   executableHash: string,
@@ -285,10 +285,7 @@ const confirmPluginProcessLaunch = async (
     noLink: true,
     normalizeAccessKeys: true,
   };
-  const result =
-    owner && !owner.isDestroyed()
-      ? await dialog.showMessageBox(owner, options)
-      : await dialog.showMessageBox(options);
+  const result = await showMessageBoxSafely(options);
 
   if (result.response !== 0) return false;
   rememberPluginProcessConsent(plugin, executable, executableHash);
@@ -402,7 +399,6 @@ export const createPluginProcessApi = ({
   const launchPluginProcess = async (
     pluginId: string,
     options: PluginProcessLaunchOptions,
-    owner?: BrowserWindow | null,
   ): Promise<PluginProcessLaunchResult> => {
     if (shuttingDown) return { ok: false, error: '应用正在退出' };
     if (getPluginSafeMode()) return { ok: false, error: '插件安全模式已开启' };
@@ -432,7 +428,6 @@ export const createPluginProcessApi = ({
       };
       assertCurrent();
       const allowed = await confirmPluginProcessLaunch(
-        owner,
         plugin,
         launch.executableRelativePath,
         launch.executableHash,
