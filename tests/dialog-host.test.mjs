@@ -149,6 +149,24 @@ test('销毁的窗口不算可见', async () => {
   assert.equal(h.calls.showMainWindow, 1);
 });
 
+test('标题统一带上应用名：独立窗口没有模态归属，用户才知道是谁在问', async () => {
+  const h = harness();
+  await showOpenDialogSafely({ title: '选择要上传的音乐文件' });
+  await showMessageBoxSafely({ title: '是否覆盖现有备份？' });
+
+  assert.equal(h.calls.open[0][0].title, 'EchoMusic · 选择要上传的音乐文件');
+  assert.equal(h.calls.message[0][0].title, 'EchoMusic · 是否覆盖现有备份？');
+});
+
+test('标题里已有应用名不重复添加；无标题时保持原样', async () => {
+  const h = harness();
+  await showSaveDialogSafely({ title: '创建 EchoMusic 备份' });
+  await showSaveDialogSafely({ properties: ['openFile'] });
+
+  assert.equal(h.calls.save[0][0].title, '创建 EchoMusic 备份');
+  assert.equal(h.calls.save[1][0].title, undefined);
+});
+
 test('置前失败也必须照常弹框，不能把调用方挂住', async () => {
   const h = harness([makeWindow({ visible: false })]);
   const result = await showOpenDialogSafely({ properties: ['openFile'] });

@@ -66,17 +66,34 @@ const runDetached = async <T>(show: () => Promise<T>): Promise<T> => {
   return show();
 };
 
+const APP_LABEL = 'EchoMusic';
+
+/**
+ * 独立窗口的对话框没有模态归属，用户看不出是哪个应用在问。统一在标题前带上
+ * 应用名；标题里已经有就不重复加（设置备份那几条自带 EchoMusic）。
+ *
+ * 放在这里而不是逐个调用点，是为了以后新增对话框不会再退回裸标题。
+ */
+const withAppLabel = <T extends { title?: string }>(options: T): T => {
+  const { title } = options;
+  if (typeof title !== 'string' || !title.trim() || title.includes(APP_LABEL)) return options;
+  return { ...options, title: `${APP_LABEL} · ${title}` };
+};
+
 /** 文件选择对话框（不挂父窗口）。 */
 export const showOpenDialogSafely = (
   options: OpenDialogOptions,
-): Promise<Electron.OpenDialogReturnValue> => runDetached(() => dialog.showOpenDialog(options));
+): Promise<Electron.OpenDialogReturnValue> =>
+  runDetached(() => dialog.showOpenDialog(withAppLabel(options)));
 
 /** 文件保存对话框（不挂父窗口）。 */
 export const showSaveDialogSafely = (
   options: SaveDialogOptions,
-): Promise<Electron.SaveDialogReturnValue> => runDetached(() => dialog.showSaveDialog(options));
+): Promise<Electron.SaveDialogReturnValue> =>
+  runDetached(() => dialog.showSaveDialog(withAppLabel(options)));
 
 /** 消息框（不挂父窗口）。 */
 export const showMessageBoxSafely = (
   options: MessageBoxOptions,
-): Promise<Electron.MessageBoxReturnValue> => runDetached(() => dialog.showMessageBox(options));
+): Promise<Electron.MessageBoxReturnValue> =>
+  runDetached(() => dialog.showMessageBox(withAppLabel(options)));
