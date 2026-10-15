@@ -1,4 +1,5 @@
 import { ipcRegistry } from './registry';
+import { showOpenDialogSafely } from './dialogHost';
 import {
   shell,
   app,
@@ -1118,7 +1119,6 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   ipcRegistry.registerHandler(
     'audio:import-impulse-response',
     async (): Promise<ImportImpulseResponseResult> => {
-      const win = getMainWindow();
       const options: OpenDialogOptions = {
         title: '导入音效文件',
         properties: ['openFile', 'multiSelections'],
@@ -1144,9 +1144,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
           { name: 'All Files', extensions: ['*'] },
         ],
       };
-      const result = win
-        ? await dialog.showOpenDialog(win, options)
-        : await dialog.showOpenDialog(options);
+      const result = await showOpenDialogSafely(options);
 
       if (result.canceled || result.filePaths.length === 0) {
         return { canceled: true };

@@ -1,5 +1,7 @@
-import { app, dialog, session, type Session } from 'electron';
+import { app, session, type Session } from 'electron';
 import { ipcRegistry } from './registry';
+import { showOpenDialogSafely } from './dialogHost';
+import log from '../logger';
 import type { IpcContext } from './types';
 import type { ResourceMethod } from '../../shared/pluginFiles';
 import { PluginResources, setPluginResources } from '../plugins/resources';
@@ -21,10 +23,16 @@ export function registerPluginResourceHandlers(context: IpcContext) {
         title: `${plugin.name} · ${request.access === 'read' ? '读取目录' : '读写目录'} · ${request.purpose}`,
         properties: ['openDirectory', 'createDirectory'],
       };
-      const win = context.getMainWindow();
-      const result = win
-        ? await dialog.showOpenDialog(win, options)
-        : await dialog.showOpenDialog(options);
+      log.info('[PluginResources] 请求选择目录', {
+        pluginId: plugin.id,
+        access: request.access,
+        purpose: request.purpose,
+      });
+      const result = await showOpenDialogSafely(options);
+      log.info('[PluginResources] 目录选择结束', {
+        pluginId: plugin.id,
+        canceled: result.canceled,
+      });
       return result.canceled ? undefined : result.filePaths[0];
     },
     selectFiles: async (plugin, request) => {
@@ -33,10 +41,17 @@ export function registerPluginResourceHandlers(context: IpcContext) {
         properties: ['openFile', ...(request.multiple ? ['multiSelections' as const] : [])],
         filters: request.filters,
       };
-      const win = context.getMainWindow();
-      const result = win
-        ? await dialog.showOpenDialog(win, options)
-        : await dialog.showOpenDialog(options);
+      log.info('[PluginResources] 请求选择文件', {
+        pluginId: plugin.id,
+        multiple: Boolean(request.multiple),
+        purpose: request.purpose,
+      });
+      const result = await showOpenDialogSafely(options);
+      log.info('[PluginResources] 文件选择结束', {
+        pluginId: plugin.id,
+        canceled: result.canceled,
+        count: result.filePaths.length,
+      });
       return result.canceled ? [] : result.filePaths;
     },
   });

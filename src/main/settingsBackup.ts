@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, type OpenDialogOptions } from 'electron';
+import { app, type OpenDialogOptions } from 'electron';
+import { showMessageBoxSafely, showOpenDialogSafely, showSaveDialogSafely } from './ipc/dialogHost';
 import { createHash, randomUUID } from 'crypto';
 import { constants as fsConstants } from 'fs';
 import fs from 'fs/promises';
@@ -355,8 +356,6 @@ const buildSummary = (archive: SettingsBackupArchive): SettingsBackupSummary => 
   pluginNames: (archive.plugins ?? []).map((plugin) => plugin.name),
 });
 
-const getDialogWindow = () => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-
 const removeInspectionTemporaryDirectory = async (inspection: InspectedBackup) => {
   if (!inspection.temporaryDirectory) return;
   await fs.rm(inspection.temporaryDirectory, { recursive: true, force: true }).catch(() => {});
@@ -445,10 +444,7 @@ export const exportSettingsBackup = async (
       buttonLabel: '创建备份',
       filters: [{ name: 'EchoMusic 备份', extensions: [SETTINGS_BACKUP_EXTENSION] }],
     };
-    const win = getDialogWindow();
-    const picked = win
-      ? await dialog.showSaveDialog(win, options)
-      : await dialog.showSaveDialog(options);
+    const picked = await showSaveDialogSafely(options);
     if (picked.canceled || !picked.filePath) return { ok: false, canceled: true };
 
     const archive = await createBackupArchive(request);
@@ -479,10 +475,7 @@ export const inspectSettingsBackup = async (): Promise<SettingsBackupInspectResu
       filters: [{ name: 'EchoMusic 备份', extensions: [SETTINGS_BACKUP_EXTENSION] }],
       properties: ['openFile'],
     };
-    const win = getDialogWindow();
-    const picked = win
-      ? await dialog.showOpenDialog(win, options)
-      : await dialog.showOpenDialog(options);
+    const picked = await showOpenDialogSafely(options);
     const filePath = picked.filePaths[0];
     if (picked.canceled || !filePath) return { ok: false, canceled: true };
     const { archive, digest } = await readArchive(filePath);
@@ -540,10 +533,7 @@ const confirmPluginBackupOperation = async (
     cancelId: 0,
     noLink: true,
   };
-  const win = getDialogWindow();
-  const result = win
-    ? await dialog.showMessageBox(win, options)
-    : await dialog.showMessageBox(options);
+  const result = await showMessageBoxSafely(options);
   return result.response === 1;
 };
 
