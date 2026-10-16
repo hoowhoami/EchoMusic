@@ -24,6 +24,7 @@ import TaskbarLyricLine from './TaskbarLyricLine.vue';
 import type { NowPlayingCommand } from '../../shared/nowPlaying';
 import { useTaskbarSeek } from './useTaskbarSeek';
 import { useTaskbarLyrics } from './useTaskbarLyrics';
+import { resolveContentWidth } from './lyricWidth';
 const { snapshot, playback, lyric, line, nextLine, timeMs, error } = useTaskbarLyrics();
 const settings = ref({ ...DEFAULT_TASKBAR_LYRIC_SETTINGS });
 const dark = ref(true);
@@ -95,6 +96,8 @@ let lastWidth = 0;
 let alive = true;
 let receivedState = false;
 let disposeState: (() => void) | undefined;
+/** 换行动画进行中：期间不收窄窗口宽度，见 resolveContentWidth。 */
+let rolling = false;
 const reportWidth = async () => {
   await nextTick();
   if (!alive) return;
@@ -109,13 +112,21 @@ const reportWidth = async () => {
   const naturalWidth = Math.ceil(
     Math.max(primaryWidth.value, secondaryWidth.value) + coverWidth + padding + 8,
   );
-  width.value = Math.min(
-    maxWidth.value,
-    expanded.value ? maxWidth.value : Math.max(160, naturalWidth),
-  );
+  width.value = resolveContentWidth({
+    natural: naturalWidth,
+    maxWidth: maxWidth.value,
+    expanded: expanded.value,
+    rolling,
+    current: width.value,
+  });
   if (lastWidth === width.value) return;
   lastWidth = width.value;
   window.electron?.taskbarLyric?.setContentWidth(width.value);
+};
+/** 换行动画结束：这时旧行已经滑出，才可以把宽度收到新行的尺寸。 */
+const finishRoll = () => {
+  rolling = false;
+  void reportWidth();
 };
 watch([expanded, maxWidth, primaryWidth, secondaryWidth, settings], reportWidth, { deep: true });
 watch(secondary, (value) => {
@@ -227,7 +238,14 @@ onUnmounted(() => {
         </div>
         <div class="details" :class="{ 'has-progress': playback && duration }">
           <div class="copy" :aria-hidden="expanded">
-            <Transition name="taskbar-lines">
+            <!-- 两个钩子用来在换行动画期间冻结/解冻窗口宽度，规则见 lyricWidth.ts：
+                 新文本一测量完就会把窗口收窄，而旧行还要再向上滑出 0.5s，
+                 这段时间被裁掉的就是旧行的尾巴。 -->
+            <Transition
+              name="taskbar-lines"
+              @before-enter="rolling = true"
+              @after-enter="finishRoll"
+            >
               <div :key="linesKey" class="lines">
                 <TaskbarLyricLine
                   class="primary"
