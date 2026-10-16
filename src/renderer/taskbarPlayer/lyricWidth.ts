@@ -17,7 +17,7 @@ export interface ContentWidthInput {
   current: number;
 }
 
-const MIN_CONTENT_WIDTH = 160;
+export const MIN_CONTENT_WIDTH = 160;
 
 /**
  * 切行动画期间只增不减。

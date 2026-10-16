@@ -24,7 +24,7 @@ import TaskbarLyricLine from './TaskbarLyricLine.vue';
 import type { NowPlayingCommand } from '../../shared/nowPlaying';
 import { useTaskbarSeek } from './useTaskbarSeek';
 import { useTaskbarLyrics } from './useTaskbarLyrics';
-import { resolveContentWidth } from './lyricWidth';
+import { resolveContentWidth, MIN_CONTENT_WIDTH } from './lyricWidth';
 const { snapshot, playback, lyric, line, nextLine, timeMs, error } = useTaskbarLyrics();
 const settings = ref({ ...DEFAULT_TASKBAR_LYRIC_SETTINGS });
 const dark = ref(true);
@@ -32,7 +32,7 @@ const anchor = ref<'left' | 'right'>('left');
 const maxWidth = ref(400);
 const hovered = ref(false);
 const focused = ref(false);
-const width = ref(160);
+const width = ref(MIN_CONTENT_WIDTH);
 const primaryWidth = ref(0);
 const secondaryWidth = ref(0);
 const coverFailed = ref('');
@@ -96,7 +96,15 @@ let lastWidth = 0;
 let alive = true;
 let receivedState = false;
 let disposeState: (() => void) | undefined;
-/** 换行动画进行中：期间不收窄窗口宽度，见 resolveContentWidth。 */
+/**
+ * 换行动画进行中：期间不收窄窗口宽度，见 resolveContentWidth。
+ *
+ * 由过渡的 before-enter / after-enter 驱动，不用定时器。切行过于频繁时前一次
+ * enter 会被打断，Vue 触发的是 enter-cancelled 而非 after-enter——这里**有意不**
+ * 处理 enter-cancelled：打断后紧接着的新过渡会再次 before-enter、并最终以
+ * after-enter 收尾，rolling 不会卡住；若在 enter-cancelled 就复位，反而会在
+ * 连续切行的中途误放行、重现被裁。
+ */
 let rolling = false;
 const reportWidth = async () => {
   await nextTick();
@@ -123,7 +131,13 @@ const reportWidth = async () => {
   lastWidth = width.value;
   window.electron?.taskbarLyric?.setContentWidth(width.value);
 };
-/** 换行动画结束：这时旧行已经滑出，才可以把宽度收到新行的尺寸。 */
+/**
+ * 换行动画结束：这时旧行已经滑出，才可以把宽度收到新行的尺寸。
+ *
+ * 依赖进入与离开用的是同一段 0.5s 过渡（`.taskbar-lines-*-active`）：after-enter
+ * 与新行的 enter 同时开始，与旧行的 leave 才会同时收尾。若将来单独改掉其中一方
+ * 的时长，after-enter 可能早于旧行完全滑出，会重新出现「尾巴被裁一小截」。
+ */
 const finishRoll = () => {
   rolling = false;
   void reportWidth();
