@@ -2,9 +2,11 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <!-- img-src 里的 echo-player-cover: 是内嵌封面协议（见 src/main/player/embeddedMetadata.ts），
+         去掉后内嵌封面会被 CSP 静默拦截，表现为封面空白且无任何报错。 -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self' blob: data: file: http: https:; script-src 'self' blob: 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: http: https:; font-src 'self' data: file: http: https:;"
+      content="default-src 'self' blob: data: file: http: https:; script-src 'self' blob: 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: http: https: echo-player-cover:; font-src 'self' data: file: http: https:;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EchoMusic Plugin Window</title>

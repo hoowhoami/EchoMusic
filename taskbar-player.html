@@ -3,9 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- img-src 里的 echo-player-cover: 是内嵌封面协议（见 src/main/player/embeddedMetadata.ts），
+         去掉后内嵌封面会被 CSP 静默拦截，表现为封面空白且无任何报错。 -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: echo-player-cover:; connect-src 'none'"
     />
     <title>EchoMusic 任务栏歌词</title>
   </head>
