@@ -220,14 +220,14 @@ const selectAction = (action: SleepTimerAction) => {
                 v-for="option in actionOptions"
                 :key="option.value"
                 type="button"
-                class="sleep-timer-action app-focus-ring-soft echo-button-sized echo-button-standard"
+                class="sleep-timer-action app-focus-ring-soft"
                 :class="{ 'is-selected': selectedAction === option.value }"
                 :aria-pressed="selectedAction === option.value"
                 :disabled="busy || (option.value === 'shutdown' && !shutdownSupported)"
                 @click="selectAction(option.value)"
               >
                 <Icon :icon="option.icon" width="18" height="18" />
-                <span class="flex-1 text-left">
+                <span class="min-w-0 flex-1 text-left">
                   <span class="block text-[12px] font-semibold">{{
                     sleepTimerActionLabels[option.value]
                   }}</span>
@@ -342,14 +342,20 @@ const selectAction = (action: SleepTimerAction) => {
   padding-left: 22px;
   border-left: 1px solid var(--sleep-timer-divider);
 }
+/* Two-line choice cards size to their content rather than ordinary button height. */
 .sleep-timer-action {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
+  min-height: 60px;
+  padding: 10px 12px;
   border: 1px solid var(--sleep-timer-border);
   border-radius: var(--radius-control);
   cursor: pointer;
+}
+.sleep-timer-action > svg {
+  flex-shrink: 0;
 }
 .sleep-timer-action:hover {
   background: var(--control-hover-bg);
@@ -418,7 +424,7 @@ const selectAction = (action: SleepTimerAction) => {
   min-height: 108px;
   margin: 0 0 16px;
   padding: 14px 8px;
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-control);
   background: var(--control-muted-bg);
 }
 .sleep-timer-status.is-active {
@@ -449,7 +455,7 @@ const selectAction = (action: SleepTimerAction) => {
   gap: 2px;
   padding: 10px 0;
   border: 1px solid var(--sleep-timer-border);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-control);
   transition:
     background 150ms,
     border-color 150ms;
@@ -462,7 +468,7 @@ const selectAction = (action: SleepTimerAction) => {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--sleep-timer-border);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-control);
   font-size: 12px;
   cursor: pointer;
 }
@@ -518,7 +524,6 @@ const selectAction = (action: SleepTimerAction) => {
 .dark .sleep-timer-custom,
 .dark .sleep-timer-input-row input {
   box-sizing: border-box;
-  height: var(--control-height-compact);
   border-color: var(--sleep-timer-border);
   background: color-mix(in srgb, var(--color-text-main) 3%, var(--color-bg-elevated));
 }
