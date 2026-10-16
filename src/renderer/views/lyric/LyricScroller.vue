@@ -12,6 +12,7 @@ import { useLyricStore, type LyricLine } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { LYRIC_FONT_WEIGHTS } from './skins/config';
+import { hasWordByWordTiming } from '../../../shared/lyrics';
 import { useLyricScroll } from './composables/useLyricScroll';
 import { useYrcAnimation } from './composables/useYrcAnimation';
 import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
@@ -132,12 +133,19 @@ const activeYrcBgStyle = computed(
     `linear-gradient(to right, ${effectivePlayedColor.value} 50%, ${effectiveUnplayedColor.value} 50%)`,
 );
 
-const isYrcLine = (line: { characters: unknown[] }) => (line.characters?.length ?? 0) > 1;
+// 判断行是否有逐字数据：只认源歌词自带的逐字时间戳，估算时间轴整行直显。
+// 副歌词（音译/翻译）的逐字高亮同样以此为前提，与主行一并退回整行直显。
+const isYrcLine = (line: Pick<LyricLine, 'characters' | 'charactersEstimated'>) =>
+  hasWordByWordTiming(line);
 
 // 注音标注（音译显示在每个字上方）所需的字号：比主歌词小一档
 const rubyFontSize = computed(() => `${0.62 * 1.5 * resolvedFontScale.value}rem`);
 // 是否以注音方式渲染该行的音译（需开启注音模式，否则音译作为独立副行显示）
+// 注音把音译标在每个字正上方，只有该行真有逐字时间戳时才成立——否则每个字上方
+// 该放哪个音也是估的。估算行退回整行直显 + 下方音译副行（见下方副行分支的
+// !isRubyLine 兜底），内容不丢，只是不再逐字对齐。
 const isRubyLine = (line: LyricLine) =>
+  isYrcLine(line) &&
   lyricStore.showRomanization &&
   lyricStore.showRomanizationAsRuby &&
   (line.rubyUnits?.length ?? 0) > 0;

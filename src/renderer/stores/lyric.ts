@@ -43,6 +43,11 @@ export interface LyricLine {
   translated?: string;
   romanized?: string;
   characters: LyricCharacter[];
+  /**
+   * characters 是否为估算而来——源歌词没有逐字时间戳，时间轴是按行时长均分或整行
+   * 套一个固定时长得到的。所有歌词表面据此放弃逐字着色，直接整行显示。
+   */
+  charactersEstimated?: boolean;
   // 音译逐字字符（与主歌词 characters 一一映射时间）
   romanizedCharacters?: LyricCharacter[];
   // 翻译逐字字符（按字符比例均分时间）
@@ -536,6 +541,8 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
       const lineContent = krcMatch[3] ?? '';
       const characters: LyricCharacter[] = [];
       const matches = Array.from(lineContent.matchAll(charRegex));
+      // KRC 行没有逐字标签时，字符时间轴由 buildFallbackCharacters 按字数均分估算。
+      let charactersEstimated = false;
 
       if (matches.length > 0) {
         for (const match of matches) {
@@ -554,6 +561,7 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
       } else {
         const text = lineContent.replace(/<.*?>/g, '').trim();
         if (text) {
+          charactersEstimated = true;
           characters.push(...buildFallbackCharacters(text, lineStart, lineDuration));
         }
       }
@@ -563,6 +571,7 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
           time: characters[0].startTime / 1000,
           text: characters.map((c) => c.text).join(''),
           characters,
+          ...(charactersEstimated ? { charactersEstimated: true } : {}),
         });
       }
       continue;
@@ -591,6 +600,8 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
         parsedLines.push({
           time: startTime / 1000,
           text,
+          // 整行当作一个字、固定 3 秒，同样是估算而非逐字数据。
+          charactersEstimated: true,
           characters: [
             {
               text,
@@ -696,6 +707,7 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
       time: line.time,
       text: line.text,
       characters: line.characters,
+      charactersEstimated: line.charactersEstimated,
       translated: translated || undefined,
       romanized: romanized || undefined,
       romanizedCharacters,
