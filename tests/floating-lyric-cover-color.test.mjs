@@ -5,6 +5,7 @@ import { parse, compileScript } from '@vue/compiler-sfc';
 import { transformSync } from 'esbuild';
 import * as vue from 'vue';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../src/shared/desktopLyric.ts';
+import * as lyrics from '../src/shared/lyrics.ts';
 import { DEFAULT_MINI_LYRIC_STYLE, normalizeMiniLyricStyle } from '../src/shared/miniPlayer.ts';
 import * as accentPalette from '../src/shared/accentPalette.ts';
 import { normalizeAccent, contrastRatio, parseAccent } from '../src/shared/accentPalette.ts';
@@ -55,6 +56,7 @@ test('real Mini panel updates both colors and typography without rebuilding lyri
   const { descriptor } = parse(source('renderer/miniPlayer/MiniLyricPanel.vue'));
   const panel = load(compileScript(descriptor, { id: 'mini', inlineTemplate: true }).content, {
     '../../shared/miniPlayer': { normalizeMiniLyricStyle },
+    '../../shared/lyrics': lyrics,
     '@vueuse/core': { useResizeObserver() {} },
   }).default;
   const node = (type, text = '') => ({ type, text, props: {}, children: [], parent: null });
@@ -562,6 +564,7 @@ test('desktop sync coalesces color updates into playback only, including while p
     './store': { useDesktopLyricStore: () => desktop },
     '@/stores/toast': { useToastStore: () => ({}) },
     '../../shared/desktopLyric': shared,
+    '../../shared/lyrics': lyrics,
   });
   const dispose = await sync.initDesktopLyricSync();
   await new Promise((resolve) => setTimeout(resolve, 95));

@@ -157,6 +157,53 @@ test('new main snapshot integration sanitizes and forwards state without an extr
   assert.equal(states[2], null);
 });
 
+test('taskbar window receives the estimated-timings flag through the lyric snapshot', () => {
+  const bar = new EventEmitter();
+  const messages = [];
+  bar.isDestroyed = () => false;
+  bar.isVisible = () => true;
+  bar.webContents = { isDestroyed: () => false, send: (...args) => messages.push(args) };
+  const api = load('../src/main/nowPlaying.ts', {
+    electron: { BrowserWindow: { getAllWindows: () => [bar] } },
+    './ipc/registry': {},
+    './window': { getMainWindow: () => null },
+    './storage/settings': {},
+    '../shared/nowPlaying': load('../src/shared/nowPlaying.ts', {}),
+    '../shared/playback': load('../src/shared/playback.ts', {}),
+    '../shared/opencc': load('../src/shared/opencc.ts', {}),
+    './taskbarThumbnail': { isCoverPreviewEnabled: () => true },
+    './taskbarProgress': {},
+    './thumbar': { updateThumbarPlayback() {} },
+  });
+  api.bindVisibleNowPlayingWindow(bar);
+  api.syncNowPlayingSnapshot({
+    playback,
+    lyric: {
+      lines: [
+        {
+          time: 18.9,
+          text: '檐下风铃还没睡醒',
+          charactersEstimated: true,
+          characters: [{ text: '檐下风铃还没睡醒', startTime: 18900, endTime: 21900 }],
+        },
+        {
+          time: 47.38,
+          text: '锁着她',
+          characters: [
+            { text: '锁', startTime: 47380, endTime: 47650 },
+            { text: '着', startTime: 47650, endTime: 47970 },
+            { text: '她', startTime: 47970, endTime: 50970 },
+          ],
+        },
+      ],
+    },
+  });
+
+  const lines = messages[0][1].lyric.lines;
+  assert.equal(lines[0].charactersEstimated, true, '清洗器不能吞掉估算标记');
+  assert.equal(lines[1].charactersEstimated, undefined, '真实逐字行不带该标记');
+});
+
 test('hidden taskbar window receives no playback pushes and resumes with the latest paused track', () => {
   const bar = new EventEmitter();
   const messages = [];

@@ -6,6 +6,7 @@ import { transformSync } from 'esbuild';
 import * as pinia from 'pinia';
 import * as offset from '../src/shared/lyricOffset.ts';
 import * as opencc from '../src/shared/opencc.ts';
+import { hasWordByWordTiming, normalizeLyricLinePayload } from '../src/shared/lyrics.ts';
 
 function compile(file, mocks, window = {}) {
   const module = { exports: {} };
@@ -34,7 +35,7 @@ const { useLyricStore } = compile('../src/renderer/stores/lyric.ts', {
   '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
   './theme': {},
   '../../shared/lyricOffset': offset,
-    '../../shared/embeddedMetadata': embeddedTags,
+  '../../shared/embeddedMetadata': embeddedTags,
   '../../shared/opencc': opencc,
 });
 
@@ -91,4 +92,41 @@ test('text before the first enhanced LRC timestamp starts at the line timestamp'
     { text: 'Intro ', startTime: 10000, endTime: 10500 },
     { text: '后半句', startTime: 10500, endTime: 11000 },
   ]);
+});
+
+// charactersEstimated 标记「这行没有真实逐字时间戳」。所有歌词表面据此整行直显，
+// 不拿估算值做卡拉OK 高亮——那会让高亮进度与真实演唱完全脱节。
+test('plain LRC marks its whole-line fallback as estimated', () => {
+  const lyric = createStore();
+  lyric.setLyric('[00:18.90]檐下风铃还没睡醒', 'estimated-plain');
+
+  assert.equal(lyric.lines[0].charactersEstimated, true);
+  assert.equal(hasWordByWordTiming(lyric.lines[0]), false);
+});
+
+test('enhanced LRC keeps real per-character timing and is not marked estimated', () => {
+  const lyric = createStore();
+  lyric.setLyric('[00:47.38]<00:47.38>锁<00:47.65>着<00:47.97>她', 'estimated-enhanced');
+
+  assert.equal(lyric.lines[0].charactersEstimated, undefined);
+  assert.equal(hasWordByWordTiming(lyric.lines[0]), true);
+});
+
+test('KRC with per-character tags is real word-by-word data', () => {
+  const lyric = createStore();
+  lyric.setLyric('[18900,4000]<0,400,0>檐<400,400,0>下<800,400,0>风', 'estimated-krc-real');
+
+  assert.equal(lyric.lines.length, 1);
+  assert.equal(lyric.lines[0].charactersEstimated, undefined);
+  assert.equal(hasWordByWordTiming(lyric.lines[0]), true);
+});
+
+test('KRC without per-character tags marks the evenly spread timeline as estimated', () => {
+  const lyric = createStore();
+  lyric.setLyric('[18900,4000]檐下风铃还没睡醒', 'estimated-krc-fallback');
+
+  assert.equal(lyric.lines.length, 1);
+  assert.equal(lyric.lines[0].characters.length, 8, '仍按字数均分出字符，供主歌词页估算着色');
+  assert.equal(lyric.lines[0].charactersEstimated, true);
+  assert.equal(hasWordByWordTiming(lyric.lines[0]), false);
 });
