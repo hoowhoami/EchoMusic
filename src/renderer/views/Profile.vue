@@ -1909,10 +1909,12 @@ onUnmounted(() => {
                 <div class="profile-social-user-main">
                   <div class="profile-social-user-line">
                     <strong>{{ item.nickname }}</strong>
-                    <span v-if="item.meta">{{ item.meta }}</span>
+                    <span v-if="item.meta && item.meta !== '歌手'">{{ item.meta }}</span>
                   </div>
                   <UserIdentityBadges :badges="item.badges" class="profile-social-labels" />
-                  <p>{{ item.description || `ID ${item.userId || '-'}` }}</p>
+                  <p v-if="item.description !== '歌手'">
+                    {{ item.description || `ID ${item.userId || '-'}` }}
+                  </p>
                 </div>
                 <div class="profile-social-user-actions">
                   <Button

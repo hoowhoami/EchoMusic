@@ -98,6 +98,7 @@ function fixture(t) {
     return { status: 1 };
   };
   const deps = {
+    '@/components/ui/tooltip': { vTooltip: {} },
     vue: { ...vue, onMounted() {}, onUnmounted: (fn) => unmounts.push(fn) },
     'vue-router': { useRouter: () => ({ push() {} }) },
     '@/utils/watchUserSession': userSessionWatch,
