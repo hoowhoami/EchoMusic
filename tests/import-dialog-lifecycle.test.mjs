@@ -571,8 +571,16 @@ for (const skip of [false, true]) {
     );
     const pending = f.view.startImport();
     await flush();
-    f.props.open = false;
+    const transitions = [];
+    const stop = vue.watch(
+      () => f.props.open,
+      (value) => transitions.push(value),
+      { flush: 'sync' },
+    );
+    t.after(stop);
+    f.view.dialogOpen.value = false;
     await flush();
+    assert.deepEqual(transitions, skip ? [false] : []);
     assert.equal(f.props.open, !skip);
     assert.equal(f.view.showBackgroundConfirm.value, !skip);
     if (!skip) {
@@ -1001,7 +1009,7 @@ test('completion dismisses an obsolete background confirmation', async (t) => {
   );
   const pending = f.view.startImport();
   await flush();
-  f.props.open = false;
+  f.view.dialogOpen.value = false;
   await flush();
   assert.equal(f.view.showBackgroundConfirm.value, true);
   wait.resolve({ status: 1, data: [task()] });
@@ -1009,4 +1017,30 @@ test('completion dismisses an obsolete background confirmation', async (t) => {
   await flush();
   assert.equal(f.view.showBackgroundConfirm.value, false);
   assert.equal(f.view.summary.value.success, 2);
+});
+
+test('parent closing active import leaves its task in the background without reopening a modal', async (t) => {
+  const f = fixture(t),
+    wait = f.defer(),
+    transitions = [];
+  f.link();
+  f.reply(async (op) =>
+    op === 'query_task_status' ? wait.promise : { status: 1, data: { id: 11 } },
+  );
+  const pending = f.view.startImport();
+  await flush();
+  const stop = vue.watch(
+    () => f.props.open,
+    (value) => transitions.push(value),
+    { flush: 'sync' },
+  );
+  t.after(stop);
+  f.props.open = false;
+  await flush();
+  assert.deepEqual(transitions, [false]);
+  assert.equal(f.view.showBackgroundConfirm.value, false);
+  assert.equal(f.store.status, 'running');
+  wait.resolve({ status: 1, data: [task()] });
+  await pending;
+  assert.equal(f.store.status, 'completed');
 });

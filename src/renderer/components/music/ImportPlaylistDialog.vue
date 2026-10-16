@@ -48,6 +48,24 @@ const PLATFORM_HINTS = ['网易云', 'QQ 音乐', '酷我', '酷狗', '汽水', 
 const props = withDefaults(defineProps<Props>(), { open: false });
 const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>();
 const open = useVModel(props, 'open', emit, { defaultValue: false });
+// 在关闭前确认，保持主弹窗实例和嵌套确认弹窗的焦点、层级顺序稳定。
+const dialogOpen = computed({
+  get: () => open.value,
+  set: (value: boolean) => {
+    if (
+      !value &&
+      step.value === 'progress' &&
+      isImporting.value &&
+      currentDialogRun &&
+      canContinueTask(currentDialogRun)
+    ) {
+      if (settingStore.importBackgroundConfirmDismissed) runInBackground();
+      else showBackgroundConfirm.value = true;
+      return;
+    }
+    open.value = value;
+  },
+});
 
 const playlistStore = usePlaylistStore();
 const userStore = useUserStore();
@@ -272,12 +290,8 @@ watch(
         currentDialogRun &&
         canContinueTask(currentDialogRun)
       ) {
-        if (settingStore.importBackgroundConfirmDismissed) {
-          runInBackground();
-          return;
-        }
-        showBackgroundConfirm.value = true;
-        open.value = true;
+        // 父级实际关闭时保留后台任务，不能重新激活正在退出的弹窗。
+        runInBackground();
         return;
       }
       if (isStarting.value) currentDialogRun?.dismiss();
@@ -715,7 +729,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 
 <template>
   <Dialog
-    v-model:open="open"
+    v-model:open="dialogOpen"
     content-class="import-playlist-dialog"
     show-close
     no-scroll
@@ -893,7 +907,11 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 
     <template #footer>
       <template v-if="step === 'input'">
-        <Button variant="secondary" size="default" :disabled="isStarting" @click="open = false"
+        <Button
+          variant="secondary"
+          size="default"
+          :disabled="isStarting"
+          @click="dialogOpen = false"
           >取消</Button
         >
         <Button

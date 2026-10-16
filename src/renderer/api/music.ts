@@ -220,21 +220,23 @@ export async function getCloudSongUrl(
 
 /**
  * 搜索歌词
- * @param hash 歌曲 hash
- * @param options.duration 歌曲时长（毫秒），来自歌曲自身 duration（秒）转毫秒
- * @param options.albumAudioId 歌曲的 album_audio_id，辅助提升匹配准确度
- * @param options.man 是否返回多个歌词：'no' 获取默认歌词，'yes' 获取歌词候选列表
+ * @param query 使用歌曲 hash 自动匹配，或只用 keywords 手动搜索
+ * @param query.duration 歌曲时长（毫秒），来自歌曲自身 duration（秒）转毫秒
+ * @param query.albumAudioId 歌曲的 album_audio_id，辅助提升匹配准确度
+ * @param query.man 是否返回多个歌词：'no' 获取默认歌词，'yes' 获取歌词候选列表
  */
 export function searchLyric(
-  hash: string,
-  options?: { duration?: number; albumAudioId?: string | number; man?: 'yes' | 'no' },
+  query: (
+    | { hash: string; keywords?: never; albumAudioId?: string | number }
+    | { keywords: string; hash?: never; albumAudioId?: never }
+  ) & { duration?: number; man?: 'yes' | 'no' },
 ) {
   return request.get('/search/lyric', {
     params: {
-      hash,
-      man: options?.man ?? 'no',
-      ...(options?.duration ? { duration: options.duration } : {}),
-      ...(options?.albumAudioId ? { album_audio_id: options.albumAudioId } : {}),
+      ...(query.keywords !== undefined ? { keywords: query.keywords } : { hash: query.hash }),
+      man: query.man ?? 'no',
+      ...(query.duration ? { duration: query.duration } : {}),
+      ...(query.albumAudioId ? { album_audio_id: query.albumAudioId } : {}),
     },
   });
 }

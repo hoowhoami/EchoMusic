@@ -156,6 +156,7 @@ function pageFixture(t) {
     requestOpen: () => {},
   });
   const f = render(t, 'page', {
+    '@/components/ui/tooltip': { vTooltip: {} },
     '@/api/user': {
       getUserCloud: (...args) => {
         requests.push(args);
@@ -1149,4 +1150,75 @@ test('round16: partial upload cancellation cannot refresh the next account', asy
   await operation;
   assert.equal(f.posts.length, 1);
   assert.equal(f.store.changedRevision, 0);
+});
+
+for (const skip of [false, true]) {
+  test(`upload close ${skip ? 'skips' : 'shows'} confirmation before changing the modal open state`, async (t) => {
+    const f = uploadFixture(t),
+      pending = deferred(),
+      transitions = [];
+    f.match(() => pending.promise);
+    f.view.settingStore.cloudUploadBackgroundConfirmDismissed = skip;
+    const operation = f.view.handlePick('file');
+    await flush();
+    const stop = vue.watch(
+      () => f.props.open,
+      (value) => transitions.push(value),
+      { flush: 'sync' },
+    );
+    t.after(stop);
+    f.view.closeDialog();
+    await flush();
+    assert.deepEqual(transitions, skip ? [false] : []);
+    assert.equal(f.props.open, !skip);
+    assert.equal(f.view.showBackgroundConfirm.value, !skip);
+    assert.equal(f.store.status, 'running');
+    if (!skip) {
+      f.view.cancelBackgroundUpload();
+      await flush();
+      assert.equal(f.view.step.value, 'uploading');
+      assert.equal(f.props.open, true);
+      f.view.closeDialog();
+      f.view.confirmBackgroundUpload();
+      assert.deepEqual(transitions, [false]);
+    }
+    pending.resolve(null);
+    await operation;
+    assert.equal(f.store.status, 'completed');
+    assert.equal(f.posts.length, 1);
+  });
+}
+
+test('parent closing an active upload keeps the task running without reopening either modal', async (t) => {
+  const f = uploadFixture(t),
+    pending = deferred();
+  f.match(() => pending.promise);
+  const operation = f.view.handlePick('file');
+  await flush();
+  f.view.closeDialog();
+  assert.equal(f.view.showBackgroundConfirm.value, true);
+  f.props.open = false;
+  await flush();
+  assert.equal(f.props.open, false);
+  assert.equal(f.view.showBackgroundConfirm.value, false);
+  pending.resolve(null);
+  await operation;
+  assert.equal(f.store.status, 'completed');
+});
+
+test('upload finishing while its background confirmation is open returns to results', async (t) => {
+  const f = uploadFixture(t),
+    pending = deferred();
+  f.match(() => pending.promise);
+  const operation = f.view.handlePick('file');
+  await flush();
+  f.view.closeDialog();
+  await flush();
+  assert.equal(f.view.showBackgroundConfirm.value, true);
+  pending.resolve(null);
+  await operation;
+  await flush();
+  assert.equal(f.view.showBackgroundConfirm.value, false);
+  assert.equal(f.props.open, true);
+  assert.equal(f.view.step.value, 'done');
 });

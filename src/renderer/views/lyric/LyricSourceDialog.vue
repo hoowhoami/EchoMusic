@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { vTooltip } from '@/components/ui/tooltip';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, useId, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
+import Input from '@/components/ui/Input.vue';
 import SelectionBadge from '@/components/ui/SelectionBadge.vue';
 import {
   useLyricStore,
@@ -35,6 +36,14 @@ const lyricStore = useLyricStore();
 const playerStore = usePlayerStore();
 const toastStore = useToastStore();
 
+const fieldId = useId();
+const searchTitle = ref('');
+const searchArtist = ref('');
+const searchError = ref('');
+const canSearch = computed(() => Boolean(searchTitle.value.trim() || searchArtist.value.trim()));
+const candidates = ref<LyricSearchCandidate[]>([]);
+const autoCandidateKey = ref('');
+let loadSerial = 0;
 const selectedKey = ref('');
 const previewSerial = ref(0);
 const previewLoading = ref(false);
@@ -51,10 +60,6 @@ const previewState = ref({
 
 const normalizedHash = computed(() => String(props.hash ?? '').trim());
 const durationMs = computed(() => Math.round(Number(props.duration || 0) * 1000));
-const candidates = computed(() =>
-  lyricStore.candidateHash === normalizedHash.value ? lyricStore.candidates : [],
-);
-const displayedCandidates = computed(() => candidates.value);
 const selectedCandidate = computed(
   () =>
     candidates.value.find((candidate) => getLyricCandidateKey(candidate) === selectedKey.value) ??
@@ -132,8 +137,7 @@ const getStaticLyricLines = (raw: string) =>
     });
 
 const pickInitialCandidate = () => {
-  const preferred =
-    currentCandidateKey.value || manualCandidateKey.value || lyricStore.autoCandidateKey;
+  const preferred = currentCandidateKey.value || manualCandidateKey.value || autoCandidateKey.value;
   const matched =
     preferred && candidates.value.some((candidate) => getLyricCandidateKey(candidate) === preferred)
       ? preferred
@@ -142,27 +146,56 @@ const pickInitialCandidate = () => {
     matched || (candidates.value[0] ? getLyricCandidateKey(candidates.value[0]) : '');
 };
 
-const loadCandidates = async (force = false) => {
-  if (!normalizedHash.value) return;
+const loadCandidates = async (mode: 'auto' | 'keywords' = 'auto', force = false) => {
+  const hash = normalizedHash.value;
+  if (!hash || (mode === 'keywords' && !canSearch.value)) return;
+  const serial = ++loadSerial;
   isLoading.value = true;
+  searchError.value = '';
+  candidates.value = [];
+  autoCandidateKey.value = '';
+  selectedKey.value = '';
+  void loadPreview();
   try {
-    const previousSelectedKey = selectedKey.value;
-    await lyricStore.fetchLyricCandidates(normalizedHash.value, {
-      duration: durationMs.value || undefined,
-      albumAudioId: props.albumAudioId || undefined,
-      force,
-    });
+    const result =
+      mode === 'keywords'
+        ? await lyricStore.searchLyricCandidates({
+            title: searchTitle.value,
+            artist: searchArtist.value,
+            duration: durationMs.value || undefined,
+          })
+        : await lyricStore.fetchLyricCandidates(hash, {
+            duration: durationMs.value || undefined,
+            albumAudioId: props.albumAudioId || undefined,
+            force,
+          });
+    if (serial !== loadSerial) return;
+    const remembered = lyricStore.manualLyricMap[hash];
+    candidates.value =
+      mode === 'auto' &&
+      remembered &&
+      !result.some((candidate) => String(candidate.id) === String(remembered.id))
+        ? [remembered, ...result]
+        : result;
+    autoCandidateKey.value = mode === 'auto' ? lyricStore.autoCandidateKey : '';
     pickInitialCandidate();
-    if (selectedKey.value === previousSelectedKey) void loadPreview();
   } catch {
-    toastStore.loadFailed('歌词候选');
+    if (serial === loadSerial) searchError.value = '搜索失败，请重试';
   } finally {
-    isLoading.value = false;
+    if (serial === loadSerial) isLoading.value = false;
   }
+};
+
+const resetSearch = (force = true) => {
+  searchTitle.value = props.title ?? '';
+  searchArtist.value = props.artist ?? '';
+  void loadCandidates('auto', force);
 };
 
 const loadPreview = async () => {
   const candidate = selectedCandidate.value;
+  const serial = ++previewSerial.value;
+  previewLoading.value = false;
   previewLines.value = [];
   previewStaticLines.value = [];
   previewState.value = {
@@ -173,8 +206,6 @@ const loadPreview = async () => {
   };
   if (!candidate) return;
 
-  const serial = previewSerial.value + 1;
-  previewSerial.value = serial;
   previewLoading.value = true;
   try {
     const preview = await lyricStore.previewCandidate(candidate);
@@ -221,9 +252,11 @@ const livePreviewLines = computed(() => {
 const applySelected = async () => {
   const candidate = selectedCandidate.value;
   if (!candidate || !normalizedHash.value) return;
+  const serial = loadSerial;
   isApplying.value = true;
   try {
     const ok = await lyricStore.applyCandidate(normalizedHash.value, candidate, { remember: true });
+    if (serial !== loadSerial) return;
     if (!ok) {
       toastStore.actionFailed('切换歌词');
       return;
@@ -231,39 +264,51 @@ const applySelected = async () => {
     toastStore.success('歌词版本已应用');
     open.value = false;
   } catch {
-    toastStore.actionFailed('切换歌词');
+    if (serial === loadSerial) toastStore.actionFailed('切换歌词');
   } finally {
-    isApplying.value = false;
+    if (serial === loadSerial) isApplying.value = false;
   }
 };
 
 const restoreAuto = async () => {
   if (!normalizedHash.value) return;
+  const serial = loadSerial;
   isApplying.value = true;
   try {
     await lyricStore.restoreAutoLyric(normalizedHash.value, {
       duration: durationMs.value || undefined,
       albumAudioId: props.albumAudioId || undefined,
     });
-    pickInitialCandidate();
+    if (serial !== loadSerial) return;
     toastStore.success('已改为智能推荐');
     open.value = false;
   } catch {
-    toastStore.actionFailed('改为智能推荐');
+    if (serial === loadSerial) toastStore.actionFailed('改为智能推荐');
   } finally {
-    isApplying.value = false;
+    if (serial === loadSerial) isApplying.value = false;
   }
 };
 
 watch(
   [() => open.value, normalizedHash],
   ([isOpen, hash]) => {
-    if (isOpen && hash) void loadCandidates(false);
+    ++loadSerial;
+    candidates.value = [];
+    selectedKey.value = '';
+    void loadPreview();
+    isLoading.value = false;
+    isApplying.value = false;
+    if (isOpen && hash) resetSearch(false);
   },
   { immediate: true },
 );
 
-watch(selectedKey, () => {
+onBeforeUnmount(() => {
+  ++loadSerial;
+  ++previewSerial.value;
+});
+
+watch([selectedKey, candidates], () => {
   if (open.value) void loadPreview();
 });
 </script>
@@ -277,24 +322,41 @@ watch(selectedKey, () => {
     contentClass="lyric-source-dialog"
   >
     <div class="source-dialog">
-      <div class="source-summary">
-        <div class="track-text">
-          <span class="track-title">
-            {{ title || '当前歌曲' }}
-            <template v-if="artist"> - {{ artist }} </template>
-          </span>
+      <form class="source-search" @submit.prevent="loadCandidates('keywords')">
+        <div class="search-field">
+          <label :for="`${fieldId}-title`">歌名</label>
+          <Input
+            :id="`${fieldId}-title`"
+            v-model="searchTitle"
+            placeholder="输入歌名"
+            :disabled="isApplying"
+          />
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="action-icon refresh-btn"
-          tooltip="刷新歌词候选"
-          :disabled="isLoading"
-          @click="loadCandidates(true)"
-        >
-          <Icon :icon="iconRefreshCw" width="14" height="14" />
-        </Button>
-      </div>
+        <div class="search-field">
+          <label :for="`${fieldId}-artist`">歌手</label>
+          <Input
+            :id="`${fieldId}-artist`"
+            v-model="searchArtist"
+            placeholder="输入歌手"
+            :disabled="isApplying"
+          />
+        </div>
+        <div class="search-actions">
+          <Button type="submit" :loading="isLoading" :disabled="!canSearch || isApplying">
+            搜索
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            tooltip="按当前歌曲重新匹配"
+            :disabled="isLoading || isApplying"
+            @click="resetSearch()"
+          >
+            <Icon :icon="iconRefreshCw" width="16" height="16" />
+          </Button>
+        </div>
+      </form>
 
       <div class="source-layout">
         <div class="candidate-list">
@@ -314,14 +376,16 @@ watch(selectedKey, () => {
               </div>
             </div>
           </div>
-          <div v-else-if="candidates.length === 0" class="empty-state">没有找到可选歌词</div>
+          <div v-else-if="candidates.length === 0" class="empty-state" role="status">
+            {{ searchError || '没有找到可选歌词，试试修改歌名或歌手' }}
+          </div>
           <button
-            v-for="candidate in displayedCandidates"
+            v-for="candidate in candidates"
             :key="getLyricCandidateKey(candidate)"
             class="candidate-item"
             :class="{
               active: selectedKey === getLyricCandidateKey(candidate),
-              recommended: lyricStore.autoCandidateKey === getLyricCandidateKey(candidate),
+              recommended: autoCandidateKey === getLyricCandidateKey(candidate),
             }"
             @click="selectedKey = getLyricCandidateKey(candidate)"
           >
@@ -336,7 +400,7 @@ watch(selectedKey, () => {
               </div>
               <div class="candidate-meta">
                 <span
-                  v-if="lyricStore.autoCandidateKey === getLyricCandidateKey(candidate)"
+                  v-if="autoCandidateKey === getLyricCandidateKey(candidate)"
                   class="status-pill recommended-pill"
                 >
                   <Icon :icon="iconSparkles" width="12" height="12" />
@@ -476,33 +540,34 @@ watch(selectedKey, () => {
   flex-direction: column;
   gap: 14px;
   height: min(480px, calc(100vh - 250px));
-  min-height: 360px;
+  min-height: 0;
 }
 
-.source-summary {
+.source-search {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
   min-width: 0;
 }
 
-.track-text {
-  display: block;
+.search-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   min-width: 0;
-  flex: 1;
 }
 
-.refresh-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  justify-self: end;
-  border-radius: var(--radius-control);
+.search-field label {
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 
-.track-title,
+.search-actions {
+  display: flex;
+  gap: 4px;
+}
+
 .candidate-title,
 .preview-title {
   display: block;
@@ -512,10 +577,6 @@ watch(selectedKey, () => {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 700;
-}
-
-.track-title {
-  width: 100%;
 }
 
 .candidate-artist,
@@ -806,10 +867,18 @@ watch(selectedKey, () => {
 @media (max-width: 720px) {
   .source-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 0.8fr) minmax(0, 1fr);
+  }
+}
+@media (max-width: 480px) {
+  .source-search {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
   }
 
-  .source-dialog {
-    height: min(620px, calc(100vh - 180px));
+  .search-actions {
+    grid-column: 1 / -1;
+    justify-content: end;
   }
 }
 </style>

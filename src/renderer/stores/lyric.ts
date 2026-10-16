@@ -733,6 +733,7 @@ export const useLyricStore = defineStore('lyric', {
     detailResolved: false,
     sourceDialogOpen: false,
     candidateHash: '',
+    candidateRequestSerial: 0,
     candidates: [] as LyricSearchCandidate[],
     candidatePreviewMap: {} as Record<string, ParsedLyricPreview | null>,
     candidateDetailMap: {} as Record<string, LyricDetailResponse | null>,
@@ -948,7 +949,8 @@ export const useLyricStore = defineStore('lyric', {
       if (!normalizedHash) return null;
 
       const searchResult = normalizeSearchPayload(
-        await searchLyric(normalizedHash, {
+        await searchLyric({
+          hash: normalizedHash,
           duration: options?.duration,
           albumAudioId: options?.albumAudioId,
           man: 'no',
@@ -962,6 +964,15 @@ export const useLyricStore = defineStore('lyric', {
             : [];
       return pickDefaultCandidate(candidates);
     },
+    // 手动关键词搜索不覆盖 hash 匹配缓存或智能推荐；只有应用后才为当前歌曲保存选择。
+    async searchLyricCandidates(query: { title: string; artist: string; duration?: number }) {
+      const keywords = [query.artist.trim(), query.title.trim()].filter(Boolean).join(' - ');
+      if (!keywords) return [] as LyricSearchCandidate[];
+      const result = normalizeSearchPayload(
+        await searchLyric({ keywords, duration: query.duration, man: 'yes' }),
+      );
+      return sortCandidates(result?.candidates?.length ? result.candidates : (result?.info ?? []));
+    },
     async fetchLyricCandidates(
       hash: string,
       options?: {
@@ -973,13 +984,15 @@ export const useLyricStore = defineStore('lyric', {
     ) {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) return [] as LyricSearchCandidate[];
+      const serial = ++this.candidateRequestSerial;
       if (!options?.force && this.candidateHash === normalizedHash && this.candidates.length > 0) {
         if (options?.hydratePreviews) await this.hydrateCandidatePreviews(this.candidates);
         return this.candidates;
       }
 
       const searchResult = normalizeSearchPayload(
-        await searchLyric(normalizedHash, {
+        await searchLyric({
+          hash: normalizedHash,
           duration: options?.duration,
           albumAudioId: options?.albumAudioId,
           man: 'yes',
@@ -1011,13 +1024,14 @@ export const useLyricStore = defineStore('lyric', {
           ? [autoCandidate, ...candidates.filter((candidate) => candidate !== autoCandidate)]
           : candidates;
 
+      if (serial !== this.candidateRequestSerial) return orderedCandidates;
       this.candidateHash = normalizedHash;
       this.candidates = orderedCandidates;
       this.candidatePreviewMap = {};
       this.candidateDetailMap = {};
       this.autoCandidateKey = autoCandidate ? getLyricCandidateKey(autoCandidate) : '';
       if (options?.hydratePreviews) await this.hydrateCandidatePreviews(candidates);
-      return candidates;
+      return orderedCandidates;
     },
     async resolveCandidateDetail(
       candidate: LyricSearchCandidate,
@@ -1085,8 +1099,9 @@ export const useLyricStore = defineStore('lyric', {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash || !isUsableCandidate(candidate)) return false;
 
+      const serial = ++this.requestSerial;
       const resolved = await this.resolveCandidateDetail(candidate);
-      if (!resolved) return false;
+      if (!resolved || serial !== this.requestSerial) return false;
 
       this.parseLyricContent(resolved.detail, normalizedHash, { detailResolved: true });
       this.currentCandidateKey = getLyricCandidateKey(candidate);

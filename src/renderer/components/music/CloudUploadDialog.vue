@@ -43,6 +43,22 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), { open: false });
 const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>();
 const open = useVModel(props, 'open', emit, { defaultValue: false });
+// 关闭请求先经过业务确认，不能先发出 false 再回弹 true；后者会重建主弹窗，
+// 使它与确认弹窗的视觉层级、FocusScope 和 DismissableLayer 顺序错位。
+const dialogOpen = computed({
+  get: () => open.value,
+  set: (value: boolean) => {
+    if (!value && step.value === 'uploading' && cloudUploadStore.status === 'running') {
+      if (!settingStore.cloudUploadBackgroundConfirmDismissed) {
+        showBackgroundConfirm.value = true;
+        return;
+      }
+      enterBackgroundMode();
+      step.value = 'pick';
+    }
+    open.value = value;
+  },
+});
 
 const userStore = useUserStore();
 const toastStore = useToastStore();
@@ -146,27 +162,19 @@ const resetForNewUpload = () => {
 };
 
 const closeDialog = () => {
-  open.value = false;
+  dialogOpen.value = false;
 };
 
 watch(
   open,
   (v) => {
     if (!v) {
-      // 上传进行中：拦截关闭，弹出后台运行确认（除非已 dismiss）
+      // 父级关闭（如离开页面）不回弹弹窗，仍保留正在运行的后台任务。
       if (step.value === 'uploading' && cloudUploadStore.status === 'running') {
-        if (settingStore.cloudUploadBackgroundConfirmDismissed) {
-          // 跳过确认弹窗时同样转入后台：与确认后行为一致，任务面板可查看/中止
-          enterBackgroundMode();
-          step.value = 'pick';
-          invalidateUi();
-          return;
-        }
-        showBackgroundConfirm.value = true;
-        // 同步回弹，Vue 批量更新后不会渲染关闭态
-        open.value = true;
-        return;
+        enterBackgroundMode();
+        step.value = 'pick';
       }
+      showBackgroundConfirm.value = false;
       // 非上传中关闭：后台任务运行期间不清 allow-list，避免打断正在进行的读取
       if (cloudUploadStore.status !== 'running') {
         clearPickedUploadFiles();
@@ -244,7 +252,7 @@ const confirmBackgroundUpload = () => {
     settingStore.cloudUploadBackgroundConfirmDismissed = true;
   }
   enterBackgroundMode();
-  // 先把 step 切走，避免 watch(open) 再次拦截关闭
+  // 已确认后台运行，直接关闭上传弹窗。
   step.value = 'pick';
   open.value = false;
 };
@@ -252,6 +260,10 @@ const confirmBackgroundUpload = () => {
 const cancelBackgroundUpload = () => {
   showBackgroundConfirm.value = false;
 };
+
+watch([isUploading, () => cloudUploadStore.status], ([uploading, status]) => {
+  if (!uploading || status !== 'running') showBackgroundConfirm.value = false;
+});
 
 const handleBackgroundRun = () => {
   if (cloudUploadStore.status !== 'running') return;
@@ -783,7 +795,7 @@ const statusLabel = (item: CloudUploadItem) => {
 
 <template>
   <Dialog
-    v-model:open="open"
+    v-model:open="dialogOpen"
     title="上传到云盘"
     content-class="cloud-upload-dialog"
     flush-body

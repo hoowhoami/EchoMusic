@@ -96,7 +96,7 @@ function fixture(t, overrides = {}) {
   const api = compile('../src/main/ipc/cloud.ts', {
     'fs/promises': filesystem,
     path,
-    electron: { dialog: { showOpenDialog: (...args) => dialog(...args) } },
+    './dialogHost': { showOpenDialogSafely: (...args) => dialog(...args) },
     './registry': {
       ipcRegistry: { registerHandler: (name, handler) => handlers.set(name, handler) },
     },
