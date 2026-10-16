@@ -1158,6 +1158,7 @@ export const usePlayerStore = defineStore(
           }
           engine.adoptPreparedSource(state.currentPlaybackSource ?? state.currentAudioUrl);
           engine.adoptPreparedTrackLoudness(state.currentResolvedAudioLoudness);
+          void playbackManager.completeEmbeddedMetadata();
           const track = state.currentTrackSnapshot!;
           const mediaMeta = buildMediaMeta(track);
           if (mediaMeta)
@@ -1375,6 +1376,7 @@ export const usePlayerStore = defineStore(
           }
           // 新文件真正加载完成，解除切歌加载护栏，放行后续进度回报
           if (!bindNativeTrackLoad(state, payloadSeq)) return;
+          void playbackManager.completeEmbeddedMetadata();
           state.playbackEnded = false;
           setEnginePlaybackStatus(state, 'loading');
           // 补回加载窗口内被丢弃的真实时长，避免进度条最大值停留在 0

@@ -1,6 +1,5 @@
 import { app, nativeImage, type BrowserWindow, type NativeImage } from 'electron';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
 import { getNativePlatform, type NativePlatform } from './native/platform';
 import { getMainAppSettings } from './storage/settings';
 import log from './logger';
@@ -81,10 +80,12 @@ function detach(): void {
   attached = false;
   target = null;
 }
-export function setTaskbarCover(value: Buffer | null): void {
+export function setTaskbarCover(value: Buffer | null, resourceKey: string): void {
   if (process.platform !== 'win32') return;
   const next = value?.length ? value : null;
-  const key = next ? createHash('sha256').update(next).digest('hex') : '';
+  // The downloader already caches by resource URL. Embedded URLs additionally
+  // contain the native worker's content hash; do not hash the image again here.
+  const key = next ? resourceKey : '';
   if (sourceKey === key) return;
   sourceKey = key;
   cover = null;

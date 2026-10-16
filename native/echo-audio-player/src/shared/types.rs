@@ -45,6 +45,8 @@ pub struct PacketCacheStats {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TrackSwitchInfo {
+    pub(crate) embedded_metadata:
+        Option<std::sync::Arc<crate::embedded_metadata::EmbeddedMetadata>>,
     pub url: String,
     pub audio_stream_ordinal: Option<usize>,
     pub seq: u64,
@@ -62,6 +64,7 @@ pub struct TrackSwitchInfo {
 impl TrackSwitchInfo {
     pub fn new(url: String, audio_stream_ordinal: Option<usize>, seq: u64, duration: f64) -> Self {
         Self {
+            embedded_metadata: None,
             url,
             audio_stream_ordinal,
             seq,

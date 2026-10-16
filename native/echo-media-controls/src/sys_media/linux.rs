@@ -295,7 +295,7 @@ impl SystemMediaControls for LinuxMediaControls {
                 artist: payload.artist.clone(),
                 album: payload.album.clone(),
                 duration_ms: payload.duration_ms,
-                cover_data: payload.cover_data.clone(),
+                cover_data: payload.cover_data.as_ref().map(|data| data.to_vec()),
             });
         }
     }

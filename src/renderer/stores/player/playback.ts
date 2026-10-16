@@ -1,5 +1,6 @@
 import logger from '@/utils/logger';
 import type { Song } from '@/models/song';
+import { createEmbeddedMetadataCompleter } from './embeddedMetadata';
 import {
   buildNextTrackDecisionKey,
   findPlaybackSourceQueue,
@@ -111,6 +112,58 @@ export const createPlaybackManager = (
   handleOutputDeviceError?: (error: unknown) => Promise<boolean>,
   onGaplessTrackEnded?: () => void,
 ) => {
+  const completeEmbeddedMetadata = createEmbeddedMetadataCompleter({
+    read: async (seq, includeCover) => {
+      const metadata = await engine.getEmbeddedMetadata(seq, includeCover);
+      logger.info('PlayerMetadata', 'Current reader metadata', {
+        seq,
+        title: metadata?.title,
+        artist: metadata?.artist,
+        hasAlbum: Boolean(metadata?.album),
+        hasCover: Boolean(metadata?.coverUrl),
+        lyricCharacters: metadata?.lyric?.length ?? 0,
+        duration: state.duration,
+      });
+      return metadata;
+    },
+    lyrics: lyricStore,
+    current: () => ({
+      seq: state.nativeTrackSeq,
+      requestSeq: state.playbackRequestSeq,
+      song: state.currentTrackSnapshot,
+      duration: state.duration,
+    }),
+    captureSession: captureMvAudioSession,
+    commit: (previous, next) => {
+      state.currentTrackSnapshot = toRawSong(next);
+      const patch = Object.fromEntries(
+        Object.entries(next).filter(
+          ([key, value]) => key !== 'embeddedMetadata' && value !== previous[key as keyof Song],
+        ),
+      );
+      // Only lightweight display fields may escape the current reader snapshot.
+      if (Object.keys(patch).length) {
+        const replace = (songs: Song[]) =>
+          toRawSongList(
+            songs.map((song) =>
+              song.id === previous.id && song.hash === previous.hash
+                ? toRawSong({ ...song, ...patch })
+                : song,
+            ),
+          );
+        const previousList = state.currentPlaylist;
+        const queue = playlistStore.getQueueById(state.currentSourceQueueId ?? '');
+        const nextList = previousList ? replace(previousList) : null;
+        if (nextList) state.currentPlaylist = nextList;
+        if (queue)
+          queue.songs = nextList && queue.songs === previousList ? nextList : replace(queue.songs);
+      }
+      const metadata = buildMediaMeta(next);
+      if (metadata) engine.updateMediaMetadata({ ...metadata, durationMs: state.duration * 1000 });
+    },
+    onError: (error) =>
+      logger.warn('PlayerPlayback', 'Optional embedded metadata unavailable', error),
+  });
   let gaplessPreparingKey = '';
   let gaplessPreparingRequestId: number | null = null;
   let gaplessPreparingRegistration: Promise<void> | null = null;
@@ -1125,6 +1178,7 @@ export const createPlaybackManager = (
     state.historyLocalRecorded = true;
     void useHistoryStore().recordPlay(snapshot);
     void resolver.fetchClimaxMarks(targetTrack);
+    void completeEmbeddedMetadata();
     const notice = formatTrackTransitionNotice(transition, state.currentTime);
     if (notice) useToastStore().show(notice, 'info', 3200);
     return true;
@@ -2149,6 +2203,7 @@ export const createPlaybackManager = (
     state.autoNextAttempts = 0;
     state.autoNextSourceTrackId = null;
     state.currentTrackSnapshot = null;
+    if (lyricStore.currentCandidateKey === 'embedded') lyricStore.clear();
     state.historyUploadCommitted = false;
     state.historyUploadTrackId = null;
     engine.reset();
@@ -2364,6 +2419,7 @@ export const createPlaybackManager = (
   };
 
   return {
+    completeEmbeddedMetadata,
     applyFailedPlaybackState,
     clearAutoNextTimer,
     skipToNextAfterFailure,

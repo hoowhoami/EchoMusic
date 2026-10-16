@@ -166,6 +166,7 @@ function ipcFixture() {
     },
   };
   const { registerPlayerIpc } = compile('../src/main/ipc/player.ts', {
+    './dialogHost': {},
     './registry': { ipcRegistry: { registerHandler: (key, fn) => handlers.set(key, fn) } },
     electron: { app: { getPath: () => '/tmp' }, dialog: {} },
     '../player': { restartPlayer: async () => ref.current },
@@ -173,6 +174,7 @@ function ipcFixture() {
     '../player/audioEffectCommand': {},
     '../player/dspProviderRegistry': { DspProviderRegistry: class {} },
     '../player/session': host,
+    '../player/embeddedMetadata': { registerEmbeddedCoverProtocol() {} },
     '../logger': { warn() {} },
   });
   registerPlayerIpc(ref);

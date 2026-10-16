@@ -1,3 +1,4 @@
+import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -33,6 +34,7 @@ const { useLyricStore } = compile('../src/renderer/stores/lyric.ts', {
   '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
   './theme': {},
   '../../shared/lyricOffset': offset,
+    '../../shared/embeddedMetadata': embeddedTags,
   '../../shared/opencc': opencc,
 });
 

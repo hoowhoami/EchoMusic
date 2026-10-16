@@ -323,6 +323,7 @@ function pageFixture(t, loggedIn = true) {
     '@/utils/song': { getSongQualityTags: () => [] },
     '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': sessionModule.exports,
+    '@/components/ui/tooltip': { vTooltip: {} },
     '@/icons': {},
   };
   const mod = { exports: {} };

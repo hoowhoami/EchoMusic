@@ -79,3 +79,11 @@ test('every boolean desktop lyric setting round-trips through persistence', () =
     assert.equal(getDesktopLyricSettings()[key], !value, `${key} was not persisted`);
   }
 });
+
+test('desktop lyric traditional variant mode survives persisted settings normalization', () => {
+  kv.clear();
+  persistDesktopLyricSettings({ textConversionMode: 'traditional-variants' });
+  const saved = getDesktopLyricSettings();
+  assert.equal(saved.textConversionMode, 'traditional-variants');
+  assert.equal(kv.size, 1);
+});

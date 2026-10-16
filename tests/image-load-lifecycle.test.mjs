@@ -174,3 +174,21 @@ test('Cover: a theme/plugin fallback URL change accepts only the new fallback', 
   f.api.handleLoad(current);
   assert.equal(f.status(), 'success');
 });
+
+for (const name of ['Image', 'Cover']) {
+  test(`${name}: recreated embedded cover version retries a previously failed resource`, async (t) => {
+    const base = 'echo-player-cover://artwork/' + 'a'.repeat(64) + '.png';
+    const f = fixture(t, name, base + '?v=1000');
+    f.api.handleError(f.attach());
+    await vue.nextTick();
+    const previous = f.attach();
+    f.setSource(base + '?v=2000');
+    await vue.nextTick();
+    assert.equal(f.source(), base + '?v=2000');
+    assert.equal(f.status(), 'loading');
+    f.api.handleError(previous);
+    assert.equal(f.status(), 'loading');
+    f.api.handleLoad(f.attach());
+    assert.equal(f.status(), 'success');
+  });
+}

@@ -295,7 +295,7 @@ impl SystemMediaControls for MacMediaControls {
             // 封面
             if let Some(ref data) = payload.cover_data {
                 if !data.is_empty() {
-                    let ns_data = NSData::from_vec(data.clone());
+                    let ns_data = NSData::from_vec(data.to_vec());
                     let img = NSImage::alloc();
                     if let Some(img) = NSImage::initWithData(img, &ns_data) {
                         let img_size = img.size();

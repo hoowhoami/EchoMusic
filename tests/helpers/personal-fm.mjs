@@ -1,3 +1,4 @@
+import * as embeddedTags from '../../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
@@ -31,6 +32,7 @@ const session = load('../../src/renderer/utils/userSession.ts');
 export const constants = load('../../src/renderer/stores/playlist/constants.ts');
 export const songUtils = load('../../src/renderer/utils/song.ts');
 export const helpers = load('../../src/renderer/stores/playlist/helpers.ts', {
+  '../../../shared/embeddedMetadata': embeddedTags,
   vue,
   '@/utils/song': songUtils,
   './constants': constants,

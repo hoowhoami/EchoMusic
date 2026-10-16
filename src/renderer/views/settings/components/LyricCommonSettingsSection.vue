@@ -25,6 +25,7 @@ const textConversionOptions = [
   { label: '原文', value: 'none' },
   { label: '转简体', value: 'simplified' },
   { label: '转繁体', value: 'traditional' },
+  { label: '转异体繁体', value: 'traditional-variants' },
   { label: '转台湾正体', value: 'traditional-tw' },
   { label: '转香港繁体', value: 'traditional-hk' },
 ];

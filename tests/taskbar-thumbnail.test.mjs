@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { runInNewContext } from 'node:vm';
 import { transformSync } from 'esbuild';
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
 function setup({ enabled = true, platform = 'win32', available = true, fail = false } = {}) {
@@ -46,7 +45,6 @@ function setup({ enabled = true, platform = 'win32', available = true, fail = fa
       },
     },
     'node:path': { join },
-    'node:crypto': { createHash },
     './native/platform': { getNativePlatform: () => (available ? native : null) },
     './logger': { default: { warn() {} }, __esModule: true },
     './storage/settings': { getMainAppSettings: () => ({ taskbarCoverPreview: enabled }) },
@@ -89,33 +87,33 @@ test('DWM starts with a local fallback bitmap, without a network request or JS m
 test('covers decode only on change and long edge is bounded without changing aspect ratio', () => {
   const f = setup();
   f.api.setupTaskbarThumbnail(f.window());
-  f.api.setTaskbarCover(Buffer.from('album'));
-  f.api.setTaskbarCover(Buffer.from('album'));
+  f.api.setTaskbarCover(Buffer.from('album'), 'album');
+  f.api.setTaskbarCover(Buffer.from('album'), 'album');
   assert.equal(f.decodes.filter((v) => v === 'album').length, 1);
   assert.deepEqual(f.calls.at(-1), ['cover', Buffer.from('album'), 512, 256]);
 });
 test('missing and invalid covers replace the previous album with the local fallback', () => {
   const f = setup();
   f.api.setupTaskbarThumbnail(f.window());
-  f.api.setTaskbarCover(Buffer.from('first'));
-  f.api.setTaskbarCover(null);
+  f.api.setTaskbarCover(Buffer.from('first'), 'first');
+  f.api.setTaskbarCover(null, '');
   assert.equal(f.calls.at(-1)[1].toString(), 'EchoMusic');
   const count = f.calls.length;
-  f.api.setTaskbarCover(Buffer.alloc(0));
+  f.api.setTaskbarCover(Buffer.alloc(0), '');
   assert.equal(f.calls.length, count);
-  f.api.setTaskbarCover(Buffer.from('invalid'));
+  f.api.setTaskbarCover(Buffer.from('invalid'), 'invalid');
   assert.equal(f.calls.at(-1)[1].toString(), 'EchoMusic');
 });
 test('toggle detaches native subclass and resumes with the latest bounded cover', () => {
   const f = setup({ enabled: false });
   f.api.setupTaskbarThumbnail(f.window());
-  f.api.setTaskbarCover(Buffer.from('first'));
+  f.api.setTaskbarCover(Buffer.from('first'), 'first');
   assert.equal(f.calls.length, 0);
   f.api.setCoverPreviewEnabled(true);
   assert.equal(f.calls.at(-1)[0], 'enable');
   f.api.setCoverPreviewEnabled(false);
   assert.deepEqual(f.calls.at(-1), ['disable']);
-  f.api.setTaskbarCover(Buffer.from('second'));
+  f.api.setTaskbarCover(Buffer.from('second'), 'second');
   f.api.setCoverPreviewEnabled(true);
   assert.deepEqual(f.calls.at(-1), ['enable', '1', Buffer.from('second'), 512, 256]);
 });
@@ -124,7 +122,7 @@ test('window replacement detaches old HWND, late close cannot detach new HWND', 
     old = f.window(1),
     next = f.window(2);
   f.api.setupTaskbarThumbnail(old);
-  f.api.setTaskbarCover(Buffer.from('album'));
+  f.api.setTaskbarCover(Buffer.from('album'), 'album');
   f.api.setupTaskbarThumbnail(next);
   old.emit('closed');
   assert.equal(f.calls.at(-1)[1], '2');

@@ -1,3 +1,4 @@
+use napi::bindgen_prelude::Buffer;
 use napi_derive::napi;
 
 /// 歌曲元数据
@@ -10,7 +11,7 @@ pub struct MetadataPayload {
     /// 专辑名
     pub album: String,
     /// 封面图片原始字节
-    pub cover_data: Option<Vec<u8>>,
+    pub cover_data: Option<Buffer>,
     /// 歌曲时长，单位毫秒
     pub duration_ms: Option<f64>,
 }

@@ -16,10 +16,21 @@ import { DspProviderRegistry } from '../player/dspProviderRegistry';
 import log from '../logger';
 import { createPlayerSessionCache } from '../player/session';
 import type { PlayerRuntimeSession } from '../../shared/playerSession';
+import type { EmbeddedMetadataRequest } from '../../shared/embeddedMetadata';
+import { registerEmbeddedCoverProtocol } from '../player/embeddedMetadata';
 
 export type PlayerRef = { current: PlayerController | null };
 
 export function registerPlayerIpc(ref: PlayerRef): void {
+  registerEmbeddedCoverProtocol();
+  ipcRegistry.registerHandler(
+    'player:get-embedded-metadata',
+    async (_event, request: EmbeddedMetadataRequest) => {
+      if (getOutputHost()?.ownsTransport) return null;
+      if (!Number.isSafeInteger(request?.seq) || request.seq <= 0) return null;
+      return ref.current?.getEmbeddedMetadata(request.seq, request.includeCover === true) ?? null;
+    },
+  );
   const sessions = createPlayerSessionCache();
   let sessionRevision = 0;
   const getSessionOwner = () => {

@@ -32,7 +32,7 @@ const toPlain = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const PERSONAL_FM_PREFERENCES_STORAGE_KEY = 'personal-fm:preferences';
 
 const toStorageQueue = (queue: PlaybackQueueState) => {
-  const storageQueue = { ...queue };
+  const storageQueue = { ...queue, songs: toRawSongList(queue.songs) };
   delete storageQueue.playbackRevision;
   return storageQueue;
 };
@@ -271,7 +271,7 @@ export const usePlaylistStore = defineStore('playlist', {
       void window.electron.storage.appendPlaybackQueueItems(
         toPlain({
           queue: toStorageQueueMeta(queue),
-          songs,
+          songs: toRawSongList(songs),
           activeQueueId: this.activeQueueId,
           lastNonFmQueueId: this.lastNonFmQueueId,
         }),
@@ -321,7 +321,7 @@ export const usePlaylistStore = defineStore('playlist', {
       void window.electron.storage.reorderPlaybackQueueItems(
         toPlain({
           queueId: queue.id,
-          songs: queue.songs,
+          songs: toRawSongList(queue.songs),
           updatedAt: queue.updatedAt,
         }),
       );

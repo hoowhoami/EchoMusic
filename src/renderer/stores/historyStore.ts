@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { Song } from '@/models/song';
 import type { StorageHistoryEntry } from '../../shared/storage';
+import { withoutEmbeddedMetadata } from '../../shared/embeddedMetadata';
 import logger from '@/utils/logger';
 import { completeSongMetadata } from '@/services/songMetadata';
 import { needsSongMetadata } from '@/utils/mappers/songMetadata';
@@ -23,7 +24,7 @@ const EXIT_ANIM_MS = 250;
 
 const toLocalEntry = (entry: StorageHistoryEntry): LocalHistoryEntry => ({
   song: {
-    ...(entry.song as Song),
+    ...withoutEmbeddedMetadata(entry.song as Song),
     historyKey: entry.historyKey,
     lastPlayedAt: entry.lastPlayedAt,
     playCount: entry.playCount,
@@ -157,6 +158,7 @@ export const useHistoryStore = defineStore('history', () => {
 
   /** 记录一次播放，由 player 在 play 事件触发时调用 */
   const recordPlay = async (song: Song) => {
+    song = withoutEmbeddedMetadata(song);
     const requestGeneration = generation;
     if (!hydrated.value) await hydrate();
     if (requestGeneration !== generation) return;

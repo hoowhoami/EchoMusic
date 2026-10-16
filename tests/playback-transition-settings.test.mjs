@@ -8,6 +8,7 @@ import * as decisions from '../src/shared/playbackQueueDecision.ts';
 import * as execution from '../src/shared/playbackQueueExecution.ts';
 import * as transitions from '../src/shared/trackTransition.ts';
 import * as stateMachine from '../src/renderer/stores/player/stateMachine.ts';
+import * as embeddedMetadata from '../src/renderer/stores/player/embeddedMetadata.ts';
 import { loadMvAudio } from './helpers/mv-audio.mjs';
 
 const code = transformSync(
@@ -67,6 +68,8 @@ function setup({
   mvEnabled = false,
   resolveMv = async () => null,
   captureMvSession = () => () => true,
+  metadata = async () => null,
+  lyrics = { clear: noop, setLyric: noop, fetchLyrics: noop },
 } = {}) {
   const calls = {
     prepared: [],
@@ -85,6 +88,7 @@ function setup({
     resets: 0,
     mvResolves: [],
     plays: 0,
+    metadata: [],
   };
   const songs = ['a', 'b', 'c'].map((id) => ({ id, hash: id, duration: 100 }));
   const queue = reactive({
@@ -134,6 +138,10 @@ function setup({
   let requestId = 0;
   const engine = {
     duration: 100,
+    getEmbeddedMetadata: (seq, includeCover) => {
+      calls.metadata.push([seq, includeCover]);
+      return metadata(seq, includeCover);
+    },
     beginSourceChange: noop,
     reset: () => calls.resets++,
     setPlaybackRate: noop,
@@ -142,6 +150,7 @@ function setup({
       calls.loads.push(source);
       if (load) await load(source);
       stateMachine.bindNativeTrackLoad(state, 200 + calls.loads.length);
+      void manager.completeEmbeddedMetadata();
     },
     reloadSource: (source) => engine.setSource(source),
     play: async () => {
@@ -217,6 +226,7 @@ function setup({
     },
     './queueAdvancePolicy': queuePolicy,
     './stateMachine': stateMachine,
+    './embeddedMetadata': embeddedMetadata,
     './mvAudio': {
       ...loadMvAudio(),
       captureMvAudioSession: captureMvSession,
@@ -240,7 +250,7 @@ function setup({
     engine,
     playlist,
     settings,
-    { clear: noop, fetchLyrics: noop },
+    lyrics,
     {
       resolveAudioUrl: resolve ?? (async (song) => ({ url: `https://audio.test/${song.id}.flac` })),
       fetchClimaxMarks: noop,
@@ -1828,4 +1838,85 @@ test('MV unavailability feedback belongs to this song and is cleared when anothe
   await e.manager.playTrack('b', e.queue.songs);
   assert.equal(e.state.mvAudioFallbackFailureReason, '');
   assert.equal(e.state.enginePlayback.status, 'playing');
+});
+
+test('optional metadata does not hold playback and changes only the active queue song', async () => {
+  let finish;
+  const pending = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const e = setup({ metadata: () => pending });
+  await e.manager.playTrack('b', e.queue.songs);
+  assert.equal(e.calls.plays, 1, 'play must complete while metadata remains pending');
+  assert.equal(e.calls.metadata.length, 1);
+  assert.equal(e.state.currentTrackSnapshot.artist, undefined);
+  finish({
+    artist: 'Embedded singer',
+    album: 'Embedded album',
+    coverUrl: 'echo-player-cover://artwork/test.png',
+  });
+  await flush();
+  assert.equal(e.state.currentTrackSnapshot.artist, 'Embedded singer');
+  assert.equal(e.queue.songs[1].albumName, 'Embedded album');
+  assert.equal(e.queue.songs[0].artist, undefined);
+  assert.equal(e.queue.songs[2].artist, undefined);
+});
+
+test('prepared songs receive metadata only after the real playback boundary', async () => {
+  const e = setup({ metadata: async () => ({ artist: 'Embedded singer' }) });
+  await e.manager.prepareGaplessNext();
+  await flush();
+  assert.equal(e.calls.metadata.length, 0);
+  assert.equal(e.queue.songs[1].artist, undefined);
+  e.manager.activateGaplessPreparedTransition(101);
+  await flush();
+  assert.deepEqual(e.calls.metadata, [[101, true]]);
+  assert.equal(e.state.currentTrackSnapshot.artist, 'Embedded singer');
+});
+
+test('playing and replaying songs keeps native lyric text only on the current snapshot', async () => {
+  const lyric = '内嵌歌词'.repeat(10000);
+  const e = setup({ metadata: async (seq) => ({ artist: 'Embedded singer', lyric: `${seq}:${lyric}` }) });
+  for (const id of ['a', 'b', 'c', 'a']) {
+    await e.manager.playTrack(id, e.queue.songs);
+    await flush();
+    assert.ok(e.state.currentTrackSnapshot.embeddedMetadata.lyric.endsWith(lyric));
+    assert.equal(e.state.currentTrackSnapshot.id, id);
+    for (const song of [...e.queue.songs, ...e.state.currentPlaylist]) {
+      assert.equal(song.embeddedMetadata, undefined);
+      assert.equal(song.lyric, undefined);
+    }
+    const readCount = e.calls.metadata.length;
+    await e.manager.completeEmbeddedMetadata();
+    assert.equal(e.calls.metadata.length, readCount);
+  }
+  assert.equal(e.calls.metadata.length, 4);
+});
+
+test('metadata containing only reader tags does not replace queue arrays', async () => {
+  let finish;
+  const pending = new Promise(resolve => { finish = resolve; });
+  const e = setup({ metadata: () => pending });
+  e.queue.songs[1].title = 'Catalog title';
+  e.queue.songs[1].name = 'Catalog title';
+  e.queue.songs[1].artist = 'Catalog artist';
+  e.queue.songs[1].album = 'Catalog album';
+  e.queue.songs[1].coverUrl = 'Catalog cover';
+  await e.manager.playTrack('b', e.queue.songs);
+  const queueSongs = e.queue.songs, playlist = e.state.currentPlaylist;
+  finish({ title: 'Tag title', artist: 'Tag singer', lyric: 'Native lyrics' });
+  await flush();
+  assert.equal(e.state.currentTrackSnapshot.embeddedMetadata.lyric, 'Native lyrics');
+  assert.equal(e.queue.songs, queueSongs);
+  assert.equal(e.state.currentPlaylist, playlist);
+  assert.equal(e.queue.songs[1].embeddedMetadata, undefined);
+});
+
+test('stop releases the displayed embedded lyric along with the active snapshot', () => {
+  let clears = 0;
+  const e = setup({ lyrics: { currentCandidateKey: 'embedded', clear: () => clears++, fetchLyrics: noop } });
+  e.state.currentTrackSnapshot = { id: 'a', embeddedMetadata: { lyric: 'Native lyrics' } };
+  e.manager.stop();
+  assert.equal(e.state.currentTrackSnapshot, null);
+  assert.equal(clears, 1);
 });

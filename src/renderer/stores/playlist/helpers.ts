@@ -1,6 +1,7 @@
 import { markRaw, toRaw } from 'vue';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
+import { withoutEmbeddedMetadata } from '../../../shared/embeddedMetadata';
 import { isSameSong } from '@/utils/song';
 import { DEFAULT_PLAYBACK_QUEUE_ID, PERSONAL_FM_MODE } from './constants';
 import type {
@@ -88,8 +89,12 @@ export const dedupeSongs = (songs: Song[]): Song[] => {
 export const toRawSong = (song: Song): Song => markRaw(toRaw(song));
 
 export const toRawSongList = (songs: Song[] = []): Song[] => {
-  if ((songs as { __v_skip?: boolean }).__v_skip === true) return songs;
-  return markRaw(songs.map(toRawSong));
+  if (
+    (songs as { __v_skip?: boolean }).__v_skip === true &&
+    !songs.some((song) => song.embeddedMetadata !== undefined)
+  )
+    return songs;
+  return markRaw(songs.map((song) => toRawSong(withoutEmbeddedMetadata(toRaw(song)))));
 };
 
 export const normalizePlaybackQueueRuntime = (queue: PlaybackQueueState): PlaybackQueueState => {

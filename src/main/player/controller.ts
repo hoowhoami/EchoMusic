@@ -13,6 +13,8 @@ import type { AudioEffectPlaybackOptions } from '../../shared/audio';
 import { normalizeConvolutionMix } from '../../shared/audioEffectSupport';
 import { registerNativeLogHandler } from '../native/logging';
 import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/playerError';
+import type { EmbeddedTrackMetadata } from '../../shared/embeddedMetadata';
+import { getEmbeddedCoverCache } from './embeddedMetadata';
 import type {
   PlayerAudioGraphParameterPatch,
   PlayerAudioGraphPlanPatch,
@@ -318,6 +320,15 @@ interface PlayerAddon {
   ) => void;
   registerEventHandler(callback: (err: Error | null, event: PlayerAddonEvent) => void): void;
   loadFile(url: string, seq?: number): Promise<void>;
+  getEmbeddedMetadata(
+    seq: number,
+    coverCacheDir?: string,
+  ): Promise<
+    | (Omit<EmbeddedTrackMetadata, 'coverUrl'> & {
+        coverFile?: string;
+      })
+    | null
+  >;
   beginSourceChange(): void;
   loadMkvTrack(url: string, trackId: number, seq?: number): Promise<void>;
   switchSource(url: string, trackId: number | null, seq?: number): Promise<[number, number]>;
@@ -477,6 +488,42 @@ export class PlayerController extends EventEmitter {
     if (!nativeState) return this.currentState;
     this.applyNativePlaybackState(nativeState);
     return this.currentState;
+  }
+
+  async getEmbeddedMetadata(
+    seq: number,
+    includeCover: boolean,
+  ): Promise<EmbeddedTrackMetadata | null> {
+    const addon = this.addon;
+    const requestId = this.sourceRequestSeq;
+    const isCurrent = () =>
+      addon === this.addon &&
+      requestId === this.sourceRequestSeq &&
+      seq === this.activeTrackSeq &&
+      this.pendingLoadSeq === null;
+    if (!addon || !isCurrent()) return null;
+    try {
+      const coverCache = includeCover ? getEmbeddedCoverCache() : undefined;
+      const metadata = await addon.getEmbeddedMetadata(seq, coverCache?.directory);
+      if (!metadata) return null;
+      let coverUrl: string | undefined;
+      if (coverCache && metadata.coverFile) {
+        // Artwork/cache failure must not discard otherwise usable text tags.
+        // Also enforce the disk budget for files completed after a track switch.
+        coverUrl = await coverCache.adopt(metadata.coverFile).catch(() => undefined);
+      }
+      if (!isCurrent()) return null;
+      return {
+        title: metadata.title,
+        artist: metadata.artist,
+        album: metadata.album,
+        lyric: metadata.lyric,
+        coverUrl,
+      };
+    } catch (error) {
+      log.debug('[PlayerController] Embedded metadata unavailable:', error);
+      return null;
+    }
   }
 
   start(): boolean {

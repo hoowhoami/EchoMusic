@@ -12,3 +12,9 @@ ffmpeg -f lavfi -i 'sine=frequency=660:sample_rate=44100:duration=13.5' \
   -af 'adelay=1000:all=1,apad=pad_dur=1.5' -ac 2 -sample_fmt s16 \
   -c:a flac -map_metadata -1 gapless-silence.flac
 ```
+
+`embedded-metadata.flac` contains 20 seconds of a generated 440 Hz stereo tone, a one-pixel
+PNG attachment, Chinese title/artist/album tags and an LRC lyrics tag. It is used by
+`tests/embedded-metadata-native.test.mjs` to exercise local playback, HTTP Range,
+metadata export without extra reads, and prepared-source activation. It contains
+no third-party recording or artwork.

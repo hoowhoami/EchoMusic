@@ -1,3 +1,4 @@
+import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -42,6 +43,7 @@ const { useLyricStore } = compile('../src/renderer/stores/lyric.ts', {
   '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
   './theme': {},
   '../../shared/lyricOffset': offset,
+    '../../shared/embeddedMetadata': embeddedTags,
   '../../shared/opencc': opencc,
 });
 const store = () => useLyricStore(pinia.createPinia());

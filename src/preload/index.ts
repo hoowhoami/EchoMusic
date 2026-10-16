@@ -718,6 +718,8 @@ contextBridge.exposeInMainWorld('electron', {
       invokeWithPlainPayload<SettingsBackupImportResult>('settings-backup:import', request),
   },
   player: {
+    getEmbeddedMetadata: (request: import('../shared/embeddedMetadata').EmbeddedMetadataRequest) =>
+      invokeWithPlainPayload('player:get-embedded-metadata', request),
     beginSourceChange: () => ipcRenderer.invoke('player:begin-source-change'),
     load: (url: string, requestId?: number) => ipcRenderer.invoke('player:load', url, requestId),
     loadMkvTrack: (url: string, trackId: number, requestId?: number) =>

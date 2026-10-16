@@ -5,6 +5,7 @@ mod decoder;
 mod device;
 mod dispatcher;
 mod dsp;
+mod embedded_metadata;
 mod events;
 mod exclusive;
 mod filter;
@@ -146,6 +147,7 @@ struct PlayerRuntime {
     current_url: Option<String>,
     current_audio_stream_ordinal: Option<usize>,
     current_seq: u64,
+    embedded_metadata: Option<Arc<embedded_metadata::EmbeddedMetadata>>,
     latest_load_seq: u64,
     dsp_settings: DspSettings,
     spectrum_config: SpectrumConfig,
@@ -206,6 +208,7 @@ impl PlaybackCoreState {
 
 struct PreparedSource {
     session: PlaybackSession,
+    embedded_metadata: Arc<embedded_metadata::EmbeddedMetadata>,
     url: String,
     audio_stream_ordinal: Option<usize>,
     seq: u64,
@@ -302,6 +305,7 @@ impl PlayerRuntime {
             current_url: None,
             current_audio_stream_ordinal: None,
             current_seq: 0,
+            embedded_metadata: None,
             latest_load_seq: 0,
             dsp_settings: DspSettings::default(),
             spectrum_analyzer: spectrum::SpectrumAnalyzer::new(spectrum_config.clone()),
@@ -335,6 +339,7 @@ impl PlayerRuntime {
     }
 
     fn stop_session(&mut self) {
+        self.embedded_metadata = None;
         self.cancel_idle_output_release();
         self.cancel_pending_seek_restart();
         self.cancel_pending_gapless_prepare();
@@ -758,6 +763,7 @@ fn prepare_source(
     if start_position > 0.0 {
         decoder.seek(start_position)?;
     }
+    let embedded_metadata = decoder.embedded_metadata();
     let duration = decoder.duration_secs();
     let source_sample_rate = decoder.mix_sample_rate();
     let output_sample_rate =
@@ -1054,6 +1060,7 @@ fn prepare_source(
     session.decode_commands = Some(decode_commands);
     Ok(PreparedSource {
         session,
+        embedded_metadata,
         url,
         audio_stream_ordinal,
         seq,
@@ -1088,6 +1095,7 @@ fn prepare_initial_filter_graph(
 fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) {
     let PreparedSource {
         session,
+        embedded_metadata,
         url,
         audio_stream_ordinal,
         seq,
@@ -1106,6 +1114,7 @@ fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) 
     runtime.current_url = Some(url.clone());
     runtime.current_audio_stream_ordinal = audio_stream_ordinal;
     runtime.current_seq = seq;
+    runtime.embedded_metadata = Some(embedded_metadata);
     runtime.latest_load_seq = runtime.latest_load_seq.max(seq);
     runtime.state.duration = duration;
     runtime.state.time_pos = start_position;
@@ -1152,6 +1161,7 @@ fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
             runtime.current_url = Some(info.url.clone());
             runtime.current_audio_stream_ordinal = info.audio_stream_ordinal;
             runtime.current_seq = info.seq;
+            runtime.embedded_metadata = info.embedded_metadata;
             runtime.latest_load_seq = runtime.latest_load_seq.max(info.seq);
             runtime.state.duration = info.duration;
             let start_position = if info.start_position_secs.is_finite() {
@@ -1227,6 +1237,7 @@ fn replace_source_async(
                 runtime.current_url = Some(failed_url);
                 runtime.current_audio_stream_ordinal = audio_stream_ordinal;
                 runtime.current_seq = seq;
+                runtime.embedded_metadata = None;
                 runtime.latest_load_seq = runtime.latest_load_seq.max(seq);
                 runtime.state.duration = 0.0;
                 runtime.state.time_pos = 0.0;
@@ -1341,6 +1352,7 @@ pub(crate) fn activate_gapless_next_decoder(
     shared.set_normalization_gain_db(next.normalization_gain_db);
     let mut info =
         TrackSwitchInfo::new(next.url, next.audio_stream_ordinal, next.seq, next.duration);
+    info.embedded_metadata = Some(next.decoder.embedded_metadata());
     info.transition = Some(events::TrackTransitionInfo {
         mode: "gapless".to_string(),
         overlap_secs: 0.0,
@@ -1654,8 +1666,9 @@ impl Task for SwitchSourceTask {
             ));
         };
 
+        type SwitchResult = (f64, f64, f64, Arc<embedded_metadata::EmbeddedMetadata>);
         let mut timings = SourceSwitchTimings::default();
-        let operation = (|| -> napi::Result<(f64, f64, f64)> {
+        let operation = (|| -> napi::Result<SwitchResult> {
             prepare_source_switch_worker(
                 &shared,
                 &commands,
@@ -1689,6 +1702,7 @@ impl Task for SwitchSourceTask {
             )
             .map_err(source_error)?;
             timings.open_ms = open_started.elapsed().as_millis();
+            let embedded_metadata = decoder.embedded_metadata();
             let duration = decoder.duration_secs();
 
             let mut seek_position_secs = shared.position_secs();
@@ -1769,10 +1783,10 @@ impl Task for SwitchSourceTask {
                     })
                 })?;
             timings.handoff_ms = handoff_started.elapsed().as_millis();
-            Ok((switch_position, duration, switch_at_secs))
+            Ok((switch_position, duration, switch_at_secs, embedded_metadata))
         })();
 
-        let (switch_position, duration, switch_at_secs) = match operation {
+        let (switch_position, duration, switch_at_secs, embedded_metadata) = match operation {
             Ok(output) => output,
             Err(err) => {
                 // A timed-out hand-off may still be queued on the decoder worker.
@@ -1812,6 +1826,7 @@ impl Task for SwitchSourceTask {
             retire_prepared_next_background(runtime.prepared_next.take(), "source-switch-commit");
             runtime.current_url = Some(url.clone());
             runtime.current_audio_stream_ordinal = audio_stream;
+            runtime.embedded_metadata = Some(embedded_metadata);
             // The output session survives a seamless switch. Its telemetry must
             // advance with the runtime context, or the host drops every tick as stale.
             bind_seamless_source_context(runtime, &session_shared, seq);
@@ -1928,6 +1943,7 @@ impl Task for LoadFileTask {
                 );
                 match new_decoder {
                     Ok(decoder) => {
+                        let embedded_metadata = decoder.embedded_metadata();
                         let duration = decoder.duration_secs();
                         let source_sample_format = decoder.source_sample_format();
                         let preferred_output_sample_format = plan
@@ -2040,6 +2056,7 @@ impl Task for LoadFileTask {
                             runtime.current_url = Some(url.clone());
                             runtime.current_audio_stream_ordinal = audio_stream;
                             runtime.current_seq = seq;
+                            runtime.embedded_metadata = Some(embedded_metadata);
                             runtime.state.duration = duration;
                             runtime.state.time_pos = 0.0;
                             runtime.state.playing = false;
@@ -2419,12 +2436,13 @@ fn arm_prepared_transition(runtime: &mut PlayerRuntime, prepared: PreparedNextSo
         return false;
     };
     let generation = session.shared.current_decode_generation();
-    let info = TrackSwitchInfo::new(
+    let mut info = TrackSwitchInfo::new(
         prepared.url.clone(),
         prepared.audio_stream_ordinal,
         prepared.seq,
         prepared.duration,
     );
+    info.embedded_metadata = Some(prepared.decoder.embedded_metadata());
     let armed = armed_transition_from_prepared(
         plan,
         prepared.decoder,
@@ -2638,8 +2656,9 @@ impl Task for CommitPreparedNextSourceTask {
         let transition_fade_frames =
             ((f64::from(sample_rate) * transition_ms / 1_000.0).round() as usize).max(1);
         let (reply_tx, reply_rx) = sync_channel(1);
-        let info =
+        let mut info =
             TrackSwitchInfo::new(next.url, next.audio_stream_ordinal, next.seq, next.duration);
+        info.embedded_metadata = Some(next.decoder.embedded_metadata());
         // A manual skip should not wait for the old decoder/output queues to drain. Fade the
         // currently audible tail first; SwitchTrack then resets those queues and starts the
         // already-open decoder in the same output session.
@@ -3009,6 +3028,17 @@ pub fn set_volume(volume: f64) -> napi::Result<()> {
     cancel_runtime_fade();
     USER_VOLUME_BITS.store(normalized.to_bits(), Ordering::Release);
     set_session_volume(volume)
+}
+
+#[napi]
+pub fn get_embedded_metadata(
+    seq: f64,
+    cover_cache_dir: Option<String>,
+) -> AsyncTask<embedded_metadata::GetEmbeddedMetadataTask> {
+    AsyncTask::new(embedded_metadata::GetEmbeddedMetadataTask {
+        seq,
+        cover_cache_dir,
+    })
 }
 
 #[napi]

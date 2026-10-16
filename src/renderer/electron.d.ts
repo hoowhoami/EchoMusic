@@ -924,6 +924,9 @@ export interface IElectronAPI {
     onEvent: (func: (event: { type: string; payload?: unknown }) => void) => () => void;
   };
   player: {
+    getEmbeddedMetadata: (
+      request: import('../shared/embeddedMetadata').EmbeddedMetadataRequest,
+    ) => Promise<import('../shared/embeddedMetadata').EmbeddedTrackMetadata | null>;
     beginSourceChange: () => Promise<number>;
     load: (url: string, requestId?: number) => Promise<{ seq: number; duration: number } | null>;
     loadMkvTrack: (

@@ -19,10 +19,12 @@ const code = transformSync(
   { loader: 'ts', format: 'cjs' },
 ).code;
 
-function setup({ coverBuffer = Buffer.from('cover') } = {}) {
+function setup({ coverBuffer = Buffer.from('cover'), embeddedFilePath } = {}) {
   const handlers = new Map();
   const fetches = [];
   const taskbarCovers = [];
+  const nativePayloads = [];
+  const fileReads = [];
   const ipcMain = {
     handle: (channel, handler) => handlers.set(channel, handler),
     on: () => {},
@@ -32,7 +34,9 @@ function setup({ coverBuffer = Buffer.from('cover') } = {}) {
   const nativeControls = {
     initialize: () => {},
     shutdown: () => {},
-    updateMetadata: async () => {},
+    updateMetadata: async (payload) => {
+      nativePayloads.push(payload);
+    },
     updatePlayState: () => {},
     updateTimeline: () => {},
     registerEventHandler: () => {},
@@ -40,21 +44,33 @@ function setup({ coverBuffer = Buffer.from('cover') } = {}) {
   const mocks = {
     electron: { ipcMain, app: { getVersion: () => '0.0.0' } },
     'node:module': { createRequire: () => () => nativeControls },
+    'node:fs/promises': {
+      readFile: async (filePath) => {
+        fileReads.push(filePath);
+        return coverBuffer;
+      },
+    },
     path: { join: (...parts) => parts.join('/'), default: { join: (...p) => p.join('/') } },
     '../shared/abortError': { isAbortError: () => false },
     './logger': { default: { warn() {}, error() {}, info() {} }, __esModule: true },
     './native/logging': { registerNativeLogHandler: () => {} },
     './taskbarThumbnail': { setTaskbarCover: (value) => taskbarCovers.push(value) },
+    './player/embeddedMetadata': {
+      getEmbeddedCoverCache: () => ({
+        resolve: async () => (embeddedFilePath ? { filePath: embeddedFilePath } : null),
+      }),
+    },
     './networkPolicy': {
       networkFetch: async (url, init) => {
         fetches.push({ url, headers: init?.headers });
         return {
           ok: true,
           status: 200,
-          arrayBuffer: async () => coverBuffer.buffer.slice(
-            coverBuffer.byteOffset,
-            coverBuffer.byteOffset + coverBuffer.byteLength,
-          ),
+          arrayBuffer: async () =>
+            coverBuffer.buffer.slice(
+              coverBuffer.byteOffset,
+              coverBuffer.byteOffset + coverBuffer.byteLength,
+            ),
         };
       },
     },
@@ -74,20 +90,23 @@ function setup({ coverBuffer = Buffer.from('cover') } = {}) {
     },
   });
   module.exports.initMediaControls(() => null);
-  return { handlers, fetches, taskbarCovers };
+  return { handlers, fetches, taskbarCovers, nativePayloads, fileReads };
 }
 
 async function updateMetadata(setupResult, payload = {}) {
   const handler = setupResult.handlers.get('media-control:update-metadata');
   assert.ok(handler, 'media-control:update-metadata was not registered');
-  await handler({}, {
-    title: '歌名',
-    artist: '歌手',
-    album: '专辑',
-    coverUrl: 'https://imge.kugou.com/stdmusic/400/20250328/abc.jpg',
-    durationMs: 200000,
-    ...payload,
-  });
+  await handler(
+    {},
+    {
+      title: '歌名',
+      artist: '歌手',
+      album: '专辑',
+      coverUrl: 'https://imge.kugou.com/stdmusic/400/20250328/abc.jpg',
+      durationMs: 200000,
+      ...payload,
+    },
+  );
 }
 
 test('the cover request never advertises WebP', async () => {
@@ -117,4 +136,15 @@ test('a cover-less metadata update does not download anything', async () => {
   const f = setup();
   await updateMetadata(f, { coverUrl: '' });
   assert.equal(f.fetches.length, 0);
+});
+
+test('embedded system artwork is read asynchronously and passed to native as the same Buffer', async () => {
+  const cover = Buffer.alloc(8 * 1024 * 1024);
+  const f = setup({ coverBuffer: cover, embeddedFilePath: '/cache/embedded-covers/art.png' });
+  await updateMetadata(f, { coverUrl: 'echo-player-cover://artwork/' + 'a'.repeat(64) + '.png' });
+  assert.equal(f.fetches.length, 0);
+  assert.deepEqual(f.fileReads, ['/cache/embedded-covers/art.png']);
+  assert.equal(f.nativePayloads.length, 1);
+  assert.equal(f.nativePayloads[0].coverData, cover, 'do not expand artwork into a number array');
+  assert.equal(f.taskbarCovers[0], cover);
 });

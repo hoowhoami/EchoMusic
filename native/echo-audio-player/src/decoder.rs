@@ -75,6 +75,7 @@ pub enum DecodeCommand {
 
 pub struct DecoderData {
     reader: AudioReader,
+    embedded_metadata: Arc<crate::embedded_metadata::EmbeddedMetadata>,
     interrupt: Arc<AtomicBool>,
     duration: Option<Duration>,
     pending_playback_restart_position: Option<f64>,
@@ -113,13 +114,15 @@ impl DecoderData {
         source: Box<dyn ReadSeek>,
         packet_cache: PacketCacheOptions,
     ) -> Result<Self, String> {
-        let reader = AudioReader::new_with_audio_stream_packet_cache_and_interrupt(
+        let mut reader = AudioReader::new_with_audio_stream_packet_cache_and_interrupt(
             source,
             audio_stream_ordinal,
             packet_cache,
             interrupt.clone(),
         )
         .map_err(|err| format!("failed to create audio decoder: {err}"))?;
+        let embedded_metadata =
+            crate::embedded_metadata::EmbeddedMetadata::from_reader(&mut reader);
         let duration = reader.duration();
         let source_info = reader.source_info();
         let source_sample_format = source_sample_format(source_info);
@@ -127,6 +130,7 @@ impl DecoderData {
         let mix_sample_rate = mix_sample_rate.unwrap_or_else(|| source_sample_rate(source_info));
         Ok(Self {
             reader,
+            embedded_metadata,
             interrupt,
             duration,
             pending_playback_restart_position: None,
@@ -136,6 +140,10 @@ impl DecoderData {
             source_sample_format,
             discard_before_secs: None,
         })
+    }
+
+    pub(crate) fn embedded_metadata(&self) -> Arc<crate::embedded_metadata::EmbeddedMetadata> {
+        self.embedded_metadata.clone()
     }
 
     pub fn duration_secs(&self) -> f64 {

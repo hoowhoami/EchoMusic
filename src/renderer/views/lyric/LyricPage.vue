@@ -743,7 +743,7 @@ onUnmounted(() => {
         </LyricPlayerControls>
       </div>
 
-      <!-- 歌词工具按钮：固定在右侧中间 -->
+      <!-- 歌词工具按钮：从右上方固定起点排列 -->
       <div
         v-if="!isCollapsed"
         class="lyric-page-tools no-drag"
@@ -865,8 +865,11 @@ onUnmounted(() => {
       v-model:open="lyricStore.sourceDialogOpen"
       :hash="currentTrackLyricHash"
       :duration="playerStore.duration || currentTrack?.duration || 0"
-      :title="currentTrack?.name"
+      :title="currentTrack?.name || currentTrack?.title"
       :artist="currentTrack?.artist"
+      :embedded-title="currentTrack?.embeddedMetadata?.title"
+      :embedded-artist="currentTrack?.embeddedMetadata?.artist"
+      :embedded-lyric="currentTrack?.embeddedMetadata?.lyric"
       :album-audio-id="currentTrack?.albumAudioId ?? currentTrack?.mixSongId"
     />
 
@@ -1124,20 +1127,22 @@ onUnmounted(() => {
 /* 歌词工具按钮 */
 .lyric-page-tools {
   position: fixed;
-  top: 50%;
+  top: max(104px, calc(35px / var(--window-zoom-factor, 1) + 58px));
   right: 16px;
-  transform: translateY(-50%);
+  bottom: 112px;
   z-index: 60;
-  display: grid;
-  grid-template-rows: auto auto;
-  gap: 180px;
-  align-items: start;
-  justify-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+  overflow-y: auto;
+  scrollbar-width: none;
   transition: opacity 0.2s ease;
 }
 
 .lyric-page-tools-group {
   display: flex;
+  flex-shrink: 0;
   flex-direction: column;
   align-items: center;
   gap: 8px;

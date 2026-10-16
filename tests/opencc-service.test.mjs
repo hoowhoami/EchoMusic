@@ -1,5 +1,7 @@
+import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import * as vue from 'vue';
@@ -9,7 +11,9 @@ import * as offset from '../src/shared/lyricOffset.ts';
 import * as lyrics from '../src/shared/lyrics.ts';
 import * as nowPlaying from '../src/shared/nowPlaying.ts';
 import * as desktopLyric from '../src/shared/desktopLyric.ts';
+import * as miniPlayer from '../src/shared/miniPlayer.ts';
 import * as lruMap from '../src/renderer/utils/lruMap.ts';
+import * as accentPalette from '../src/shared/accentPalette.ts';
 
 function compile(file, dependencies, window = {}) {
   const module = { exports: {} };
@@ -30,6 +34,7 @@ function compile(file, dependencies, window = {}) {
 }
 
 const conversion = compile('../src/shared/lyricTextConversion.ts', { './opencc': opencc });
+const lyricColor = compile('../src/shared/lyricColor.ts', { './accentPalette': accentPalette });
 const line = (text) => ({ time: 0, text, characters: [] });
 const traditional = (texts) =>
   texts.map(
@@ -200,6 +205,7 @@ function store(service) {
     '@/services/opencc': service,
     './theme': {},
     '../../shared/lyricOffset': offset,
+    '../../shared/embeddedMetadata': embeddedTags,
     '../../shared/opencc': opencc,
   });
   return useLyricStore(pinia.createPinia());
@@ -319,6 +325,8 @@ async function syncFixture(t, service, targets = ['nowPlaying', 'miniPlayer', 'd
     '@/stores/playlist/helpers': { resolveFavoriteSongKey: () => 'a' },
     '../../shared/nowPlaying': nowPlaying,
     '../../shared/desktopLyric': desktopLyric,
+    '../../shared/lyricColor': lyricColor,
+    '../../shared/miniPlayer': miniPlayer,
     '../../shared/lyrics': {
       ...lyrics,
       normalizeLyricLinePayload: (line) => {
@@ -371,21 +379,23 @@ test('a mode change is synchronized even when conversion leaves the display refe
   lyric.setLyric('[00:00.000]Hello', 'a');
   await settle();
   const original = lyric.displayLines;
-  lyric.setTextConversionMode('traditional-hk');
-  await settle();
-  assert.strictEqual(lyric.displayLines, original);
-  assert.equal(
-    patches.nowPlaying.filter((p) => p.lyric?.lines).at(-1).lyric.textConversionMode,
-    'traditional-hk',
-  );
-  assert.equal(
-    patches.miniPlayer.filter((p) => p.lyric?.lines).at(-1).lyric.textConversionMode,
-    'traditional-hk',
-  );
-  assert.equal(
-    patches.desktopLyric.filter((p) => p.settings).at(-1).settings.textConversionMode,
-    'traditional-hk',
-  );
+  for (const mode of ['traditional-hk', 'traditional-variants']) {
+    lyric.setTextConversionMode(mode);
+    await settle();
+    assert.strictEqual(lyric.displayLines, original);
+    assert.equal(
+      patches.nowPlaying.filter((p) => p.lyric?.lines).at(-1).lyric.textConversionMode,
+      mode,
+    );
+    assert.equal(
+      patches.miniPlayer.filter((p) => p.lyric?.lines).at(-1).lyric.textConversionMode,
+      mode,
+    );
+    assert.equal(
+      patches.desktopLyric.filter((p) => p.settings).at(-1).settings.textConversionMode,
+      mode,
+    );
+  }
 });
 
 test('Mini progress ticks never normalize the full lyric collection', async (t) => {
@@ -406,4 +416,70 @@ test('Mini progress ticks never normalize the full lyric collection', async (t) 
   }
   assert.equal(fixture.normalizations(), baseline);
   assert.ok(fixture.patches.miniPlayer.some((p) => p.playback?.currentTime === 1.5));
+});
+
+test('traditional variants are accepted by shared settings and native profile guards', () => {
+  assert.equal(
+    opencc.normalizeLyricTextConversionMode('traditional-variants'),
+    'traditional-variants',
+  );
+  assert.equal(opencc.resolveOpenccProfile('traditional-variants'), 's2t-variants');
+  assert.equal(opencc.isOpenccProfile('s2t-variants'), true);
+  assert.equal(opencc.isOpenccProfile('invented-profile'), false);
+  const modes = opencc.LYRIC_TEXT_CONVERSION_MODES;
+  assert.equal(modes.indexOf('traditional-variants'), modes.indexOf('traditional') + 1);
+});
+
+test('real native variant display preserves timed segments, ruby and romanization with isolated caches', async () => {
+  const native = createRequire(import.meta.url)('../native/echo-opencc');
+  const calls = [];
+  const service = setup((texts, profile) => {
+    calls.push(profile);
+    return native.convertBatch(texts, profile);
+  });
+  const text = '因为这里的群峰';
+  const characters = [...text].map((text, i) => ({
+    text,
+    startTime: i * 100,
+    endTime: (i + 1) * 100,
+    highlighted: false,
+  }));
+  const source = [
+    {
+      time: 0,
+      text,
+      characters,
+      translated: '因为群众',
+      romanized: 'yin wei',
+      romanizedCharacters: [{ text: 'yin wei', startTime: 0, endTime: 100 }],
+      rubyUnits: characters.map((char, i) => ({
+        text: char.text,
+        ruby: 'annotation',
+        startTime: char.startTime,
+        endTime: char.endTime,
+        charStart: i,
+        chars: [char],
+      })),
+    },
+  ];
+  const original = await service.convertLyricLinesForDisplay(source, 'traditional');
+  const variants = await service.convertLyricLinesForDisplay(source, 'traditional-variants');
+  assert.equal(original[0].text, '因為這裡的群峰');
+  assert.equal(variants[0].text, '因爲這裏的羣峯');
+  assert.equal(variants[0].translated, '因爲羣衆');
+  assert.equal(variants[0].characters.map((c) => c.text).join(''), variants[0].text);
+  assert.equal(variants[0].rubyUnits.map((u) => u.text).join(''), variants[0].text);
+  assert.deepEqual(
+    variants[0].characters.map((c) => [c.startTime, c.endTime]),
+    characters.map((c) => [c.startTime, c.endTime]),
+  );
+  assert.deepEqual(variants[0].romanizedCharacters, source[0].romanizedCharacters);
+  assert.equal(variants[0].romanized, 'yin wei');
+  assert.equal(source[0].text, text);
+  assert.strictEqual(
+    await service.convertLyricLinesForDisplay(source, 'traditional-variants'),
+    variants,
+  );
+  assert.strictEqual(await service.convertLyricLinesForDisplay(source, 'traditional'), original);
+  assert.deepEqual(calls, ['s2t', 's2t-variants']);
 });

@@ -2,12 +2,14 @@ import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { app } from 'electron';
 import { createRequire } from 'node:module';
+import { readFile } from 'node:fs/promises';
 import path from 'path';
 import { isAbortError } from '../shared/abortError';
 import log from './logger';
 import { registerNativeLogHandler } from './native/logging';
 import { setTaskbarCover } from './taskbarThumbnail';
 import { networkFetch } from './networkPolicy';
+import { getEmbeddedCoverCache } from './player/embeddedMetadata';
 
 // native addon 类型（与自动生成的 index.d.ts 对齐）
 interface NativeMediaControls {
@@ -17,7 +19,7 @@ interface NativeMediaControls {
     title: string;
     artist: string;
     album: string;
-    coverData?: number[];
+    coverData?: Buffer;
     durationMs?: number;
   }): Promise<void>;
   updatePlayState(payload: { status: string; playbackRate: number }): void;
@@ -111,8 +113,11 @@ function loadNativeModule(): NativeMediaControls | null {
 /** 下载图片为 Buffer */
 async function downloadCoverImage(url: string, signal?: AbortSignal): Promise<Buffer | null> {
   if (!url) return null;
-
   try {
+    if (url.startsWith('echo-player-cover:')) {
+      const image = await getEmbeddedCoverCache().resolve(url);
+      return image ? await readFile(image.filePath, { signal }) : null;
+    }
     const controller = new AbortController();
     let timeout: NodeJS.Timeout | null = setTimeout(() => controller.abort(), 5000);
     const abortDownload = () => controller.abort();
@@ -263,16 +268,16 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
 
       // DWM 的有界位图缓存先更新，避免被 SMTC 的异步元数据更新挡住。
       // 无封面时显示本地图标，不能继续沿用上一首歌的封面。
-      setTaskbarCover(coverData);
+      setTaskbarCover(coverData, payload.coverUrl ?? '');
 
       try {
-        // native addon 期望 coverData 为 number[]（NAPI-RS 的 Vec<u8> 映射）
-        // 异步：封面解码/重编码在工作线程执行，不阻塞主进程
+        // N-API holds the Buffer until its worker finishes. Do not expand image
+        // bytes into a JS number[] or copy them into a native Vec on main.
         await controls.updateMetadata({
           title: payload.title,
           artist: payload.artist,
           album: payload.album,
-          coverData: coverData ? Array.from(coverData) : undefined,
+          coverData: coverData ?? undefined,
           durationMs: payload.durationMs,
         });
       } catch (err) {

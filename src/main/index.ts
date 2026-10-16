@@ -1,6 +1,10 @@
 import { app, protocol } from 'electron';
 protocol.registerSchemesAsPrivileged([
   {
+    scheme: 'echo-player-cover',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+  },
+  {
     scheme: 'echo-plugin-media',
     privileges: {
       standard: true,

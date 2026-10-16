@@ -1,3 +1,4 @@
+import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -25,6 +26,7 @@ const logger = { debug() {}, info() {}, warn() {}, error() {} };
 const constants = compile('../src/renderer/stores/playlist/constants.ts');
 const songUtils = compile('../src/renderer/utils/song.ts');
 const helpers = compile('../src/renderer/stores/playlist/helpers.ts', {
+  '../../../shared/embeddedMetadata': embeddedTags,
   vue,
   '@/utils/song': songUtils,
   './constants': constants,

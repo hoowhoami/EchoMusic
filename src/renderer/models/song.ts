@@ -71,6 +71,8 @@ export interface Song {
   cloudAudioSource?: CloudAudioSource;
   source?: string;
   lyric?: string;
+  /** Current reader tags for lyric selection; runtime only, excluded from queues/history. */
+  embeddedMetadata?: { title?: string; artist?: string; lyric?: string };
   lyricSnippet?: string;
   privilege?: number;
   payType?: number;

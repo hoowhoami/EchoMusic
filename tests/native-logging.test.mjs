@@ -169,6 +169,12 @@ test('audio player registers the bridge before initialization, including after r
     electron: { app: {} },
     '../logger': logger,
     '../native/logging': bridge,
+    './embeddedMetadata': {
+      getEmbeddedCoverCache: () => ({
+        directory: '/cache/embedded-covers',
+        adopt: async () => undefined,
+      }),
+    },
     '../networkSettings': { refreshNetworkSettingsFromStorage: () => ({}) },
     '../storage/persistedStores': { getPersistedRendererSettings: () => ({}) },
     '../networkPolicy': {},
@@ -219,6 +225,7 @@ for (const fallback of [false, true]) {
       },
     };
     const module = load('../src/main/mediaControls.ts', {
+      './player/embeddedMetadata': { getEmbeddedCoverCache: () => ({ resolve: async () => null }) },
       electron: { app: { isPackaged: false }, ipcMain: { handle: noop } },
       'node:module': {
         createRequire: () => (path) => {

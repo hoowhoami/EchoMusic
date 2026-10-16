@@ -36,10 +36,13 @@ function compile(file, mocks, window) {
   );
   return module.exports;
 }
-function controllerFixture(proxy = async () => []) {
+function controllerFixture(proxy = async () => [], adoptCover = async () => undefined) {
   const { PlayerController } = compile('../src/main/player/controller.ts', {
     electron: { app: {} },
     '../logger': logger,
+    './embeddedMetadata': {
+      getEmbeddedCoverCache: () => ({ directory: '/cache/embedded-covers', adopt: adoptCover }),
+    },
     '../native/logging': compile('../src/main/native/logging.ts', { '../logger': logger }),
     '../networkSettings': {},
     '../storage/persistedStores': {},
@@ -485,4 +488,71 @@ test('renderer discards residual outgoing EOF and repeated EOF after an adopted 
   state.playbackEnded = false;
   events.ended({ trackSeq: 2 });
   assert.equal(advances, 1, 'a residual EOF after stop cannot restart FM');
+});
+
+test('controller exports current native tags and caches only requested artwork', async () => {
+  const puts = [];
+  const { controller, addon } = controllerFixture(undefined, async (data) => {
+    puts.push(data);
+    return 'echo-player-cover://artwork/cover.png';
+  });
+  controller.activeTrackSeq = 71;
+  controller.pendingLoadSeq = null;
+  const coverFile = 'cached-cover.png';
+  const reads = [];
+  addon.getEmbeddedMetadata = (seq, cacheDir) => {
+    reads.push([seq, cacheDir]);
+    return { title: 'Title', artist: 'Singer', album: 'Album', lyric: '[00:01]Lyrics', coverFile };
+  };
+  const text = await controller.getEmbeddedMetadata(71, false);
+  assert.equal(text.lyric, '[00:01]Lyrics');
+  assert.equal(text.coverUrl, undefined);
+  assert.equal(puts.length, 0);
+  const all = await controller.getEmbeddedMetadata(71, true);
+  assert.equal(all.coverUrl, 'echo-player-cover://artwork/cover.png');
+  assert.deepEqual(puts, [coverFile]);
+  assert.equal(await controller.getEmbeddedMetadata(70, true), null);
+  assert.deepEqual(reads, [
+    [71, undefined],
+    [71, '/cache/embedded-covers'],
+  ]);
+});
+
+test('cover persistence failure retains tags; source changes discard a pending export', async () => {
+  const pending = defer();
+  const { controller, addon } = controllerFixture(undefined, () => pending.promise);
+  controller.activeTrackSeq = 71;
+  controller.pendingLoadSeq = null;
+  addon.getEmbeddedMetadata = () => ({ artist: 'Singer', coverFile: 'cached-cover.png' });
+  const first = controller.getEmbeddedMetadata(71, true);
+  await flush();
+  pending.reject(new Error('disk unavailable'));
+  assert.equal((await first).artist, 'Singer');
+  const gate = defer();
+  const next = controllerFixture(undefined, () => gate.promise);
+  next.controller.activeTrackSeq = 72;
+  next.controller.pendingLoadSeq = null;
+  next.addon.getEmbeddedMetadata = addon.getEmbeddedMetadata;
+  const stale = next.controller.getEmbeddedMetadata(72, true);
+  await flush();
+  next.controller.pendingLoadSeq = 73;
+  gate.resolve('echo-player-cover://artwork/stale.png');
+  assert.equal(await stale, null);
+});
+
+test('late native artwork is still counted in the disk budget without updating another track', async () => {
+  const gate = defer();
+  const adopted = [];
+  const { controller, addon } = controllerFixture(undefined, async (name) => {
+    adopted.push(name);
+    return 'echo-player-cover://artwork/late.png';
+  });
+  controller.activeTrackSeq = 71;
+  controller.pendingLoadSeq = null;
+  addon.getEmbeddedMetadata = () => gate.promise;
+  const pending = controller.getEmbeddedMetadata(71, true);
+  controller.pendingLoadSeq = 72;
+  gate.resolve({ artist: 'Old singer', coverFile: 'late.png' });
+  assert.equal(await pending, null);
+  assert.deepEqual(adopted, ['late.png']);
 });

@@ -1,3 +1,4 @@
+import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import { userIdentity } from './helpers/user-identity.mjs';
 import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
@@ -27,6 +28,7 @@ const logger = { debug() {}, info() {}, warn() {}, error() {} };
 const constants = compile('../src/renderer/stores/playlist/constants.ts');
 const songUtils = compile('../src/renderer/utils/song.ts');
 const helpers = compile('../src/renderer/stores/playlist/helpers.ts', {
+  '../../../shared/embeddedMetadata': embeddedTags,
   vue,
   '@/utils/song': songUtils,
   './constants': constants,
@@ -693,3 +695,32 @@ for (const raw of [[], null]) {
     assert.equal(refreshes, 1);
   });
 }
+
+test('queue persistence excludes current-reader payloads from replace, append and reorder', () => {
+  const previousWindow = globalThis.window;
+  const writes = [];
+  globalThis.window = { electron: { storage: {
+    replacePlaybackQueue: (payload) => writes.push(payload.queue.songs),
+    appendPlaybackQueueItems: (payload) => writes.push(payload.songs),
+    reorderPlaybackQueueItems: (payload) => writes.push(payload.songs),
+  } } };
+  try {
+    const { store } = setup();
+    store.playbackStorageReady = true;
+    const current = { ...track(7), embeddedMetadata: { title: 'Native title', lyric: 'Native lyrics' } };
+    const queue = helpers.buildPlaybackQueueState({ queueId: 'runtime-test' }, []);
+    queue.songs = [current];
+    store.persistQueueToStorage(queue);
+    store.persistQueueAppendToStorage(queue, [current]);
+    store.persistQueueReorderToStorage(queue);
+    assert.equal(writes.length, 3);
+    for (const songs of writes) {
+      assert.equal(songs[0].embeddedMetadata, undefined);
+      assert.equal(songs[0].id, current.id);
+    }
+    assert.equal(current.embeddedMetadata.lyric, 'Native lyrics');
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});

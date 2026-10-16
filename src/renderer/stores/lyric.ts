@@ -7,6 +7,7 @@ import { resolvePluginLyric } from '@/plugins/lyrics';
 import { convertLyricLinesForDisplay } from '@/services/opencc';
 import { useThemeStore } from './theme';
 import { normalizeGlobalLyricOffsetMs, normalizeLyricOffsetMs } from '../../shared/lyricOffset';
+import { resolveMaskedMetadata } from '../../shared/embeddedMetadata';
 import {
   normalizeLyricTextConversionMode,
   type LyricTextConversionMode,
@@ -193,6 +194,61 @@ const sortCandidates = (candidates: LyricSearchCandidate[]): LyricSearchCandidat
 // 排序后取第一条作为默认歌词
 const pickDefaultCandidate = (candidates: LyricSearchCandidate[]): LyricSearchCandidate | null =>
   candidates[0] ?? null;
+
+type LyricMatchOptions = {
+  duration?: number;
+  albumAudioId?: string | number;
+  title?: string;
+  artist?: string;
+  embeddedTitle?: string;
+  embeddedArtist?: string;
+};
+
+const lyricSearchKeywords = (title = '', artist = '') =>
+  [artist.trim(), title.trim()].filter(Boolean).join(' - ');
+
+const usableSearchCandidates = (payload: unknown): LyricSearchCandidate[] => {
+  const result = normalizeSearchPayload(payload);
+  return (result?.candidates?.length ? result.candidates : (result?.info ?? [])).filter(
+    isUsableCandidate,
+  );
+};
+
+// 保留原有 hash 和歌曲名称匹配，内嵌名称只作为后续补充。
+const searchAutomaticLyricCandidates = async (
+  hash: string,
+  options: LyricMatchOptions,
+  man: 'yes' | 'no',
+  isCurrent: () => boolean = () => true,
+) => {
+  let query: Parameters<typeof searchLyric>[0] = {
+    hash,
+    duration: options.duration,
+    albumAudioId: options.albumAudioId,
+    man,
+  };
+  let candidates = usableSearchCandidates(await searchLyric(query));
+  const triedKeywords = new Set<string>();
+  for (const embedded of [false, true]) {
+    if (candidates.length > 0 || !isCurrent()) break;
+    // Read live options after each await: native tags can arrive during the hash lookup.
+    const title = embedded
+      ? options.embeddedTitle || options.title
+      : resolveMaskedMetadata(options.title, options.embeddedTitle);
+    const artist = embedded
+      ? options.embeddedArtist || options.artist
+      : resolveMaskedMetadata(options.artist, options.embeddedArtist);
+    if (embedded && !options.embeddedTitle && !options.embeddedArtist) continue;
+    if (!title?.trim()) continue;
+    const keywords = lyricSearchKeywords(title, artist);
+    const key = keywords.replace(/\s+/g, ' ').toLowerCase();
+    if (triedKeywords.has(key)) continue;
+    triedKeywords.add(key);
+    query = { keywords, duration: options.duration, man };
+    candidates = usableSearchCandidates(await searchLyric(query));
+  }
+  return { candidates, query };
+};
 
 const decodeLanguageLine = (
   line: string,
@@ -677,15 +733,29 @@ export function testLyricFilter(text: string, enabled: boolean, pattern: string)
   }
 }
 
-// 同一 hash 的在途歌词请求去重：避免切歌瞬间 playTrack 与歌词页 watch 各自触发，
+// 同一歌曲及匹配信息的在途请求去重：避免 playTrack 与歌词页 watch 各自触发，
 // 导致对同一首歌并发多次 searchLyric/getLyric，挤占本地服务器、拖慢音频首包。
-let inflightLyricHash: string | null = null;
+type LyricFetchOptions = LyricMatchOptions & {
+  preserveCurrent?: boolean;
+  force?: boolean;
+  track?: Song;
+  isCurrent?: () => boolean;
+};
+let inflightLyricRequest: {
+  key: string;
+  serial: number;
+  update: (options: LyricFetchOptions) => void;
+} | null = null;
+let inflightManualRequest: { hash: string; serial: number } | null = null;
 const inflightCandidateDetailMap = new Map<string, Promise<CandidateLyricDetail | null>>();
 const lyricResultCache = new Map<string, CachedLyricResult>();
 const LYRIC_RESULT_CACHE_LIMIT = 32;
 
-const getLyricResultCacheKey = (hash: string, candidate?: LyricSearchCandidate | null) =>
-  `${hash}:${candidate ? getLyricCandidateKey(candidate) : 'auto'}`;
+const getLyricResultCacheKey = (
+  hash: string,
+  candidate?: LyricSearchCandidate | null,
+  keywords = '',
+) => `${hash}:${candidate ? getLyricCandidateKey(candidate) : `auto:${keywords}`}`;
 
 const rememberLyricResult = (key: string, value: CachedLyricResult) => {
   if (!key) return;
@@ -733,6 +803,7 @@ export const useLyricStore = defineStore('lyric', {
     detailResolved: false,
     sourceDialogOpen: false,
     candidateHash: '',
+    candidateMatchKey: '',
     candidateRequestSerial: 0,
     candidates: [] as LyricSearchCandidate[],
     candidatePreviewMap: {} as Record<string, ParsedLyricPreview | null>,
@@ -740,6 +811,7 @@ export const useLyricStore = defineStore('lyric', {
     autoCandidateKey: '',
     currentCandidateKey: '',
     manualLyricMap: {} as Record<string, ManualLyricSelection>,
+    embeddedLyricSelectionMap: {} as Record<string, boolean>,
     // 每首歌的歌词时间偏移（毫秒），key 为歌曲 hash/id
     timeOffsetMap: {} as Record<string, number>,
     // 所有歌曲共用的时间校准；与单曲微调叠加，切歌和重置单曲时保留。
@@ -923,6 +995,34 @@ export const useLyricStore = defineStore('lyric', {
     setLyric(content: string, hash = '') {
       this.parseLyricContent({ decodeContent: content }, hash, { detailResolved: false });
     },
+    useEmbeddedLyric(hash: string, content?: string): boolean {
+      const lyric = content?.trim();
+      if (!lyric) return false;
+      this.requestSerial += 1;
+      if (
+        this.loadedHash === hash &&
+        this.currentCandidateKey === 'embedded' &&
+        this.rawLyric === lyric
+      ) {
+        this.isLoading = false;
+        this.tips = this.lines.length ? '使用内嵌歌词' : '使用内嵌文本歌词';
+        return true;
+      }
+      this.parseLyricContent({ decodeContent: lyric }, hash, { detailResolved: false });
+      this.currentCandidateKey = 'embedded';
+      this.tips = this.lines.length ? '使用内嵌歌词' : '使用内嵌文本歌词';
+      return true;
+    },
+    previewEmbeddedLyric(content: string): ParsedLyricPreview {
+      return parseLyricDetailPayload({ decodeContent: content });
+    },
+    applyEmbeddedLyric(hash: string, content: string): boolean {
+      const normalizedHash = hash.trim();
+      if (!normalizedHash || !this.useEmbeddedLyric(normalizedHash, content)) return false;
+      delete this.manualLyricMap[normalizedHash];
+      this.embeddedLyricSelectionMap[normalizedHash] = true;
+      return true;
+    },
     parseLyricContent(
       payload: LyricDetailResponse,
       hash = '',
@@ -943,41 +1043,32 @@ export const useLyricStore = defineStore('lyric', {
     // 默认歌词解析（man=no）：仅返回最佳匹配候选，不触碰弹窗候选列表状态
     async resolveDefaultLyricTarget(
       hash: string,
-      options?: { duration?: number; albumAudioId?: string | number },
+      options?: LyricMatchOptions & { isCurrent?: () => boolean },
     ): Promise<LyricSearchCandidate | null> {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) return null;
 
-      const searchResult = normalizeSearchPayload(
-        await searchLyric({
-          hash: normalizedHash,
-          duration: options?.duration,
-          albumAudioId: options?.albumAudioId,
-          man: 'no',
-        }),
+      const { candidates } = await searchAutomaticLyricCandidates(
+        normalizedHash,
+        options ?? {},
+        'no',
+        options?.isCurrent,
       );
-      const candidates =
-        Array.isArray(searchResult?.candidates) && searchResult.candidates.length > 0
-          ? searchResult.candidates
-          : Array.isArray(searchResult?.info)
-            ? searchResult.info
-            : [];
       return pickDefaultCandidate(candidates);
     },
     // 手动关键词搜索不覆盖 hash 匹配缓存或智能推荐；只有应用后才为当前歌曲保存选择。
     async searchLyricCandidates(query: { title: string; artist: string; duration?: number }) {
-      const keywords = [query.artist.trim(), query.title.trim()].filter(Boolean).join(' - ');
+      const keywords = lyricSearchKeywords(query.title, query.artist);
       if (!keywords) return [] as LyricSearchCandidate[];
-      const result = normalizeSearchPayload(
-        await searchLyric({ keywords, duration: query.duration, man: 'yes' }),
+      return sortCandidates(
+        usableSearchCandidates(
+          await searchLyric({ keywords, duration: query.duration, man: 'yes' }),
+        ),
       );
-      return sortCandidates(result?.candidates?.length ? result.candidates : (result?.info ?? []));
     },
     async fetchLyricCandidates(
       hash: string,
-      options?: {
-        duration?: number;
-        albumAudioId?: string | number;
+      options?: LyricMatchOptions & {
         force?: boolean;
         hydratePreviews?: boolean;
       },
@@ -985,33 +1076,40 @@ export const useLyricStore = defineStore('lyric', {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) return [] as LyricSearchCandidate[];
       const serial = ++this.candidateRequestSerial;
-      if (!options?.force && this.candidateHash === normalizedHash && this.candidates.length > 0) {
+      const matchKey = getLyricResultCacheKey(
+        normalizedHash,
+        null,
+        JSON.stringify([
+          options?.title,
+          options?.artist,
+          options?.embeddedTitle,
+          options?.embeddedArtist,
+        ]),
+      );
+      if (
+        !options?.force &&
+        this.candidateHash === normalizedHash &&
+        this.candidateMatchKey === matchKey &&
+        this.candidates.length > 0
+      ) {
         if (options?.hydratePreviews) await this.hydrateCandidatePreviews(this.candidates);
         return this.candidates;
       }
 
-      const searchResult = normalizeSearchPayload(
-        await searchLyric({
-          hash: normalizedHash,
-          duration: options?.duration,
-          albumAudioId: options?.albumAudioId,
-          man: 'yes',
-        }),
+      const { candidates, query } = await searchAutomaticLyricCandidates(
+        normalizedHash,
+        options ?? {},
+        'yes',
+        () => serial === this.candidateRequestSerial,
       );
-      const candidates = sortCandidates(
-        Array.isArray(searchResult?.candidates) && searchResult.candidates.length > 0
-          ? searchResult.candidates
-          : Array.isArray(searchResult?.info)
-            ? searchResult.info
-            : [],
-      );
+      if (serial !== this.candidateRequestSerial) return candidates;
 
       // 智能推荐标记“默认歌词”：再取一次 man=no 的最佳匹配，按候选 id 在列表中定位。
       // accesskey 跨请求可能变化，故只能用 id 匹配；匹配不到时回退为列表首条。
-      const defaultTarget = await this.resolveDefaultLyricTarget(normalizedHash, {
-        duration: options?.duration,
-        albumAudioId: options?.albumAudioId,
-      });
+      // 沿用实际命中的查询，关键词回退后无需再发一次已失败的 hash 查询。
+      const defaultTarget = candidates.length
+        ? pickDefaultCandidate(usableSearchCandidates(await searchLyric({ ...query, man: 'no' })))
+        : null;
       const defaultId = defaultTarget?.id != null ? String(defaultTarget.id) : '';
       const autoCandidate =
         (defaultId
@@ -1026,6 +1124,7 @@ export const useLyricStore = defineStore('lyric', {
 
       if (serial !== this.candidateRequestSerial) return orderedCandidates;
       this.candidateHash = normalizedHash;
+      this.candidateMatchKey = matchKey;
       this.candidates = orderedCandidates;
       this.candidatePreviewMap = {};
       this.candidateDetailMap = {};
@@ -1100,31 +1199,35 @@ export const useLyricStore = defineStore('lyric', {
       if (!normalizedHash || !isUsableCandidate(candidate)) return false;
 
       const serial = ++this.requestSerial;
-      const resolved = await this.resolveCandidateDetail(candidate);
-      if (!resolved || serial !== this.requestSerial) return false;
+      const request = { hash: normalizedHash, serial };
+      inflightManualRequest = request;
+      try {
+        const resolved = await this.resolveCandidateDetail(candidate);
+        if (!resolved || serial !== this.requestSerial) return false;
 
-      this.parseLyricContent(resolved.detail, normalizedHash, { detailResolved: true });
-      this.currentCandidateKey = getLyricCandidateKey(candidate);
-      rememberLyricResult(getLyricResultCacheKey(normalizedHash, candidate), {
-        detail: resolved.detail,
-        currentCandidateKey: this.currentCandidateKey,
-      });
-      if (options?.remember) {
-        this.manualLyricMap[normalizedHash] = compactCandidate(candidate);
+        this.parseLyricContent(resolved.detail, normalizedHash, { detailResolved: true });
+        this.currentCandidateKey = getLyricCandidateKey(candidate);
+        rememberLyricResult(getLyricResultCacheKey(normalizedHash, candidate), {
+          detail: resolved.detail,
+          currentCandidateKey: this.currentCandidateKey,
+        });
+        delete this.embeddedLyricSelectionMap[normalizedHash];
+        if (options?.remember) {
+          this.manualLyricMap[normalizedHash] = compactCandidate(candidate);
+        }
+        return true;
+      } finally {
+        if (inflightManualRequest === request) inflightManualRequest = null;
       }
-      return true;
     },
-    async restoreAutoLyric(
-      hash: string,
-      options?: { duration?: number; albumAudioId?: string | number },
-    ) {
+    async restoreAutoLyric(hash: string, options?: LyricMatchOptions & { track?: Song }) {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) return;
       delete this.manualLyricMap[normalizedHash];
+      delete this.embeddedLyricSelectionMap[normalizedHash];
       this.currentCandidateKey = '';
       await this.fetchLyrics(normalizedHash, {
-        duration: options?.duration,
-        albumAudioId: options?.albumAudioId,
+        ...options,
         force: true,
       });
     },
@@ -1161,16 +1264,8 @@ export const useLyricStore = defineStore('lyric', {
         }
       });
     },
-    async fetchLyrics(
-      hash: string,
-      options?: {
-        preserveCurrent?: boolean;
-        duration?: number;
-        albumAudioId?: string | number;
-        force?: boolean;
-        track?: Song;
-      },
-    ) {
+    async fetchLyrics(hash: string, options?: LyricFetchOptions) {
+      if (options?.isCurrent && !options.isCurrent()) return;
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) {
         this.clear('', '暂无歌词');
@@ -1178,29 +1273,71 @@ export const useLyricStore = defineStore('lyric', {
       }
 
       if (
+        inflightManualRequest?.hash === normalizedHash &&
+        inflightManualRequest.serial === this.requestSerial
+      )
+        return;
+      const manualCandidate = this.manualLyricMap[normalizedHash];
+      if (
+        this.embeddedLyricSelectionMap[normalizedHash] &&
+        !isUsableCandidate(manualCandidate) &&
+        this.useEmbeddedLyric(normalizedHash, options?.track?.embeddedMetadata?.lyric)
+      )
+        return;
+
+      if (
         this.loadedHash === normalizedHash &&
         (this.lines.length > 0 || Boolean(this.rawLyric)) &&
-        !options?.force &&
-        (!options?.preserveCurrent || this.detailResolved)
+        this.detailResolved &&
+        this.currentCandidateKey !== 'embedded' &&
+        !options?.force
       ) {
         return;
       }
 
-      // 同一 hash 已有在途请求时跳过，避免并发重复拉取
-      if (inflightLyricHash === normalizedHash && !options?.force) {
+      const cacheKey = getLyricResultCacheKey(
+        normalizedHash,
+        isUsableCandidate(manualCandidate) ? manualCandidate : null,
+      );
+      if (
+        inflightLyricRequest?.key === cacheKey &&
+        inflightLyricRequest.serial === this.requestSerial &&
+        !options?.force
+      ) {
+        inflightLyricRequest.update(options ?? {});
         return;
       }
 
+      const match: LyricMatchOptions = {};
+      const updateOptions = (next: LyricFetchOptions) => {
+        options = { ...options, ...next };
+        const track = options.track;
+        Object.assign(match, {
+          duration: options.duration,
+          albumAudioId: options.albumAudioId ?? track?.albumAudioId ?? track?.mixSongId,
+          title: options.title ?? track?.name ?? track?.title,
+          artist: options.artist ?? track?.artist,
+          embeddedTitle: options.embeddedTitle ?? track?.embeddedMetadata?.title,
+          embeddedArtist: options.embeddedArtist ?? track?.embeddedMetadata?.artist,
+        });
+      };
+      updateOptions(options ?? {});
       const requestSerial = this.requestSerial + 1;
       this.requestSerial = requestSerial;
-      inflightLyricHash = normalizedHash;
+      const ownsRequest = () =>
+        requestSerial === this.requestSerial && (!options?.isCurrent || options.isCurrent());
+      const request = { key: cacheKey, serial: requestSerial, update: updateOptions };
+      inflightLyricRequest = request;
+      const tryEmbeddedFallback = () =>
+        ownsRequest() &&
+        this.useEmbeddedLyric(normalizedHash, options?.track?.embeddedMetadata?.lyric);
 
-      const shouldPreserveCurrentLines =
+      const shouldPreserveCurrentLyrics =
         Boolean(options?.preserveCurrent) &&
         this.loadedHash === normalizedHash &&
-        this.lines.length > 0;
+        (this.lines.length > 0 || Boolean(this.rawLyric));
 
-      if (shouldPreserveCurrentLines) {
+      if (shouldPreserveCurrentLyrics) {
         this.isLoading = true;
         this.tips = '歌词加载中...';
       } else {
@@ -1208,11 +1345,6 @@ export const useLyricStore = defineStore('lyric', {
       }
 
       try {
-        const manualCandidate = this.manualLyricMap[normalizedHash];
-        const cacheKey = getLyricResultCacheKey(
-          normalizedHash,
-          isUsableCandidate(manualCandidate) ? manualCandidate : null,
-        );
         const cached = !options?.force ? lyricResultCache.get(cacheKey) : null;
         if (cached) {
           this.parseLyricContent(cached.detail, normalizedHash, { detailResolved: true });
@@ -1232,7 +1364,7 @@ export const useLyricStore = defineStore('lyric', {
             force: Boolean(options?.force),
             preserveCurrent: Boolean(options?.preserveCurrent),
           });
-          if (requestSerial !== this.requestSerial) return true;
+          if (!ownsRequest()) return true;
           if (!pluginLyric) return false;
 
           const detail = { decodeContent: pluginLyric.decodeContent };
@@ -1250,45 +1382,45 @@ export const useLyricStore = defineStore('lyric', {
           return;
         }
 
-        const albumAudioId =
-          options?.albumAudioId ?? options?.track?.albumAudioId ?? options?.track?.mixSongId;
         const target = isUsableCandidate(manualCandidate)
           ? manualCandidate
-          : await this.resolveDefaultLyricTarget(normalizedHash, {
-              duration: options?.duration,
-              albumAudioId,
-            });
-        if (requestSerial !== this.requestSerial) return;
+          : await this.resolveDefaultLyricTarget(
+              normalizedHash,
+              Object.assign(match, {
+                isCurrent: ownsRequest,
+              }),
+            );
+        if (!ownsRequest()) return;
 
         if (!target?.id || !target.accesskey) {
           if (!preferPluginLyric && (await tryResolvePluginLyric())) {
             return;
           }
-          if (options?.preserveCurrent && this.lines.length > 0) {
+          if (shouldPreserveCurrentLyrics) {
             this.isLoading = false;
             this.loadedHash = normalizedHash;
             this.tips = '歌词已加载';
-            this.detailResolved = false;
             return;
           }
+          if (tryEmbeddedFallback()) return;
           this.clear(normalizedHash, '暂无歌词');
           return;
         }
 
         const resolved = await this.resolveCandidateDetail(target);
-        if (requestSerial !== this.requestSerial) return;
+        if (!ownsRequest()) return;
 
         if (!resolved) {
           if (!preferPluginLyric && (await tryResolvePluginLyric())) {
             return;
           }
-          if (options?.preserveCurrent && this.lines.length > 0) {
+          if (shouldPreserveCurrentLyrics) {
             this.isLoading = false;
             this.loadedHash = normalizedHash;
             this.tips = '歌词已加载';
-            this.detailResolved = false;
             return;
           }
+          if (tryEmbeddedFallback()) return;
           this.clear(normalizedHash, '暂无歌词');
           return;
         }
@@ -1301,19 +1433,19 @@ export const useLyricStore = defineStore('lyric', {
           currentCandidateKey,
         });
       } catch (error) {
-        if (requestSerial !== this.requestSerial) return;
+        if (!ownsRequest()) return;
         logger.error('LyricStore', 'Fetch lyrics failed', error, { hash: normalizedHash });
-        if (options?.preserveCurrent && this.lines.length > 0) {
+        if (shouldPreserveCurrentLyrics) {
           this.isLoading = false;
           this.loadedHash = normalizedHash;
           this.tips = '歌词已加载';
-          this.detailResolved = false;
           return;
         }
+        if (tryEmbeddedFallback()) return;
         this.clear(normalizedHash, '歌词加载失败');
       } finally {
         // 仅当当前在途标记仍属于本次请求时才清除，避免误清后续请求
-        if (inflightLyricHash === normalizedHash) inflightLyricHash = null;
+        if (inflightLyricRequest === request) inflightLyricRequest = null;
       }
     },
   },
@@ -1330,6 +1462,7 @@ export const useLyricStore = defineStore('lyric', {
       'timeOffsetMap',
       'globalTimeOffsetMs',
       'manualLyricMap',
+      'embeddedLyricSelectionMap',
     ],
   },
 });

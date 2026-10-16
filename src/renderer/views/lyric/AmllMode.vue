@@ -18,6 +18,7 @@ import {
 } from './skins/config';
 import { buildAmllLyricLines } from './amll/convertLyrics';
 import { afterPaint } from '@/utils/afterPaint';
+import LyricScroller from './LyricScroller.vue';
 
 const lyricStore = useLyricStore();
 const playerStore = usePlayerStore();
@@ -318,7 +319,14 @@ const playerAreaStyle = computed(() =>
     </section>
 
     <!-- 右侧：AMLL 歌词引擎 -->
-    <section ref="playerAreaRef" class="amll-player-area" :style="playerAreaStyle"></section>
+    <section class="amll-player-area" :style="playerAreaStyle">
+      <div
+        v-show="lyricStore.displayLines.length > 0"
+        ref="playerAreaRef"
+        class="amll-engine-host"
+      ></div>
+      <LyricScroller v-if="lyricStore.displayLines.length === 0" />
+    </section>
   </div>
 </template>
 
@@ -392,6 +400,11 @@ const playerAreaStyle = computed(() =>
   min-width: 0;
   min-height: 0;
   position: relative;
+}
+
+.amll-engine-host {
+  width: 100%;
+  height: 100%;
 }
 
 @media (max-width: 768px) {

@@ -242,6 +242,11 @@ impl AudioReader {
     pub fn cover(&self) -> Option<AudioCover> {
         self.cover.clone()
     }
+
+    /// Transfer already-parsed artwork without copying its payload.
+    pub fn take_cover(&mut self) -> Option<AudioCover> {
+        self.cover.take()
+    }
 }
 
 /// A wrapper combining an [`AudioReader`] and a [`Resampler`].

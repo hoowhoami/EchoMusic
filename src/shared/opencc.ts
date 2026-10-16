@@ -1,12 +1,18 @@
-export type OpenccProfile = 's2t' | 't2s' | 's2tw' | 's2hk';
+export type OpenccProfile = 's2t' | 's2t-variants' | 't2s' | 's2tw' | 's2hk';
 
 export type LyricTextConversionMode =
-  'none' | 'simplified' | 'traditional' | 'traditional-tw' | 'traditional-hk';
+  | 'none'
+  | 'simplified'
+  | 'traditional'
+  | 'traditional-variants'
+  | 'traditional-tw'
+  | 'traditional-hk';
 
 export const LYRIC_TEXT_CONVERSION_MODES: readonly LyricTextConversionMode[] = [
   'none',
   'simplified',
   'traditional',
+  'traditional-variants',
   'traditional-tw',
   'traditional-hk',
 ];
@@ -14,6 +20,7 @@ export const LYRIC_TEXT_CONVERSION_MODES: readonly LyricTextConversionMode[] = [
 const MODE_TO_PROFILE: Record<Exclude<LyricTextConversionMode, 'none'>, OpenccProfile> = {
   simplified: 't2s',
   traditional: 's2t',
+  'traditional-variants': 's2t-variants',
   'traditional-tw': 's2tw',
   'traditional-hk': 's2hk',
 };
@@ -31,4 +38,8 @@ export const resolveOpenccProfile = (mode: LyricTextConversionMode): OpenccProfi
 };
 
 export const isOpenccProfile = (value: unknown): value is OpenccProfile =>
-  value === 's2t' || value === 't2s' || value === 's2tw' || value === 's2hk';
+  value === 's2t' ||
+  value === 's2t-variants' ||
+  value === 't2s' ||
+  value === 's2tw' ||
+  value === 's2hk';

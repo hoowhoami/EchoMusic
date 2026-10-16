@@ -204,3 +204,21 @@ test('media playback state can force a timeline refresh for rate and seek change
     playbackRate: 2,
   });
 });
+
+test('engine forwards metadata IPC for the active reader and rejects a late response after source invalidation', async () => {
+  const { engine, bridge } = engineFixture();
+  engine.adoptPreparedSource('http://cdn/current.flac');
+  const pending = defer();
+  const calls = [];
+  bridge.getEmbeddedMetadata = (request) => {
+    calls.push(request);
+    return pending.promise;
+  };
+  const result = engine.getEmbeddedMetadata(10, false);
+  engine.beginSourceChange();
+  pending.resolve({ artist: 'Old artist' });
+  assert.equal(await result, null);
+  assert.deepEqual(calls, [{ seq: 10, includeCover: false }]);
+  assert.equal(await engine.getEmbeddedMetadata(10, true), null);
+  assert.equal(calls.length, 1);
+});

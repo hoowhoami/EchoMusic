@@ -1,3 +1,4 @@
+import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import { userIdentity } from './helpers/user-identity.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -251,8 +252,9 @@ function historyFixture(completeSongMetadata = async (songs) => songs) {
   const writes = [];
   const storage = {
     getHistoryEntries: () => load.promise,
-    recordHistoryPlay: () => {
+    recordHistoryPlay: (payload) => {
       const task = deferred();
+      task.payload = payload;
       writes.push(task);
       return task.promise;
     },
@@ -262,6 +264,7 @@ function historyFixture(completeSongMetadata = async (songs) => songs) {
   const store = compile(
     '../src/renderer/stores/historyStore.ts',
     {
+      '../../shared/embeddedMetadata': embeddedTags,
       '@/utils/logger': logger,
       '@/services/songMetadata': { completeSongMetadata },
       '@/utils/mappers/songMetadata': { needsSongMetadata: (song) => !!song.albumAudioId },
@@ -505,4 +508,19 @@ test('clearing persistence waits for older writes before deleting', async () => 
     s.calls.map(([type]) => type),
     ['set', 'delete'],
   );
+});
+
+test('history excludes native reader snapshots from stored and retained songs', async () => {
+  const f = historyFixture();
+  const current = { id: 'native-song', hash: 'native-hash', embeddedMetadata: { lyric: 'Native lyrics' } };
+  const recording = f.store.recordPlay(current);
+  f.load.resolve([]);
+  await flush();
+  assert.equal(f.writes.length, 1);
+  assert.equal(f.writes[0].payload.song.embeddedMetadata, undefined);
+  f.writes[0].resolve({ song: current, historyKey: 'native:1', lastPlayedAt: 1, playCount: 1 });
+  await recording;
+  f.clock.run();
+  assert.equal(f.store.entries[0].song.embeddedMetadata, undefined);
+  assert.equal(current.embeddedMetadata.lyric, 'Native lyrics');
 });

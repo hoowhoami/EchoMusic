@@ -17,7 +17,7 @@ const CACHE_MAX_BYTES = 2 * 1024 * 1024;
 const conversionCache = new Map<string, string>();
 let cacheBytes = 0;
 const inFlight = new Map<string, Promise<string>>();
-// At most four profiles per source; old lyric arrays and their results can be collected.
+// One result per supported profile; old lyric arrays and their results can be collected.
 const displayCache = new WeakMap<
   readonly LyricLinePayload[],
   Map<OpenccProfile, Promise<LyricLinePayload[]>>

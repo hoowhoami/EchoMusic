@@ -15,6 +15,7 @@ export type { TrackLoudness } from '../../shared/loudness';
 import { DEFAULT_PLAYER_VOLUME, matchesPendingSeekTarget } from '../../shared/playback';
 import type { PlaybackSource } from '@/stores/player/types';
 import type { TrackTransitionPlaybackInfo } from '../../shared/trackTransition';
+import type { EmbeddedTrackMetadata } from '../../shared/embeddedMetadata';
 
 export interface PlayerEngineEvents {
   timeUpdate?: (currentTime: number, payload?: PlayerPlaybackContext) => void;
@@ -415,6 +416,16 @@ export class PlayerEngine {
     this.events.durationChange?.(0);
 
     await this.loadSource(playbackSource);
+  }
+
+  async getEmbeddedMetadata(
+    seq: number,
+    includeCover: boolean,
+  ): Promise<EmbeddedTrackMetadata | null> {
+    const revision = this.sourceRevision;
+    if (this.sourcePending) return null;
+    const metadata = await player?.getEmbeddedMetadata({ seq, includeCover });
+    return revision === this.sourceRevision && !this.sourcePending ? (metadata ?? null) : null;
   }
 
   /** Invalidate transport work immediately, including the URL-resolution window. */

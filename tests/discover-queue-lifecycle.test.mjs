@@ -1,3 +1,4 @@
+import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -39,6 +40,7 @@ const discoverActions = compile('../src/renderer/stores/playlist/discoverActions
   './constants': constants,
 });
 const helpers = compile('../src/renderer/stores/playlist/helpers.ts', {
+  '../../../shared/embeddedMetadata': embeddedTags,
   vue,
   '@/utils/song': songUtils,
   './constants': constants,
