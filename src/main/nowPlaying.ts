@@ -136,6 +136,7 @@ const sanitizeLyricLine = (line: unknown): LyricLinePayload | null => {
     translated: toOptionalString(line.translated),
     romanized: toOptionalString(line.romanized),
     characters,
+    ...(line.charactersEstimated ? { charactersEstimated: true } : {}),
     ...(translatedCharacters?.length ? { translatedCharacters } : {}),
     ...(romanizedCharacters?.length ? { romanizedCharacters } : {}),
     ...(rubyUnits?.length ? { rubyUnits } : {}),

@@ -154,6 +154,7 @@ const normalizeLinePayload = (
     startTime: Number(char.startTime) || 0,
     endTime: Number(char.endTime) || Number(char.startTime) || 0,
   })),
+  ...(line.charactersEstimated ? { charactersEstimated: true } : {}),
   ...(line.translatedCharacters?.length
     ? {
         translatedCharacters: line.translatedCharacters.map((char) => ({

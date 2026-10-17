@@ -34,6 +34,7 @@ import {
   type LyricCharacterPayload,
   type LyricLinePayload,
 } from '../../shared/desktopLyric';
+import { hasWordByWordTiming } from '../../shared/lyrics';
 import { buildFontFamily } from '../../shared/font';
 import { resolveCoverLyricColor } from '../../shared/lyricColor';
 import {
@@ -195,8 +196,12 @@ const updateYrcDomManual = (timelineMs: number) => {
     cachedYrcLineKey = '';
   }
 
-  // 当前行副歌词逐字填充（翻译/音译，与播放页歌词一致）——不依赖主行是否有逐字数据
-  const secondaryLines = renderLines.filter((line) => line.kind === 'secondary' && line.karaoke);
+  // 当前行副歌词逐字填充（翻译/音译，与播放页歌词一致）——不依赖主行**自己**是否有
+  // 逐字数据，但仍要求主行的时间轴不是估算来的：主行若是估算行，副行的时间跨度也是
+  // 按猜测均分的，填充没有意义。
+  const secondaryLines = renderLines.filter(
+    (line) => line.kind === 'secondary' && line.karaoke && isYrcLine(line.line),
+  );
   for (const secondaryLine of secondaryLines) {
     const secondaryContainer = lineRefs.get(secondaryLine.key);
     if (!secondaryContainer) continue;
@@ -555,6 +560,10 @@ const renderLyricLines = computed<RenderLine[]>(() => {
         line: {
           time: current.time,
           text,
+          // 副行的字符时间轴是按主行时长**均分**得来的（见 stores/lyric 的
+          // translatedCharacters）。主行若是估算行，这个跨度本身也是猜的，
+          // 副行再逐字填充就纯属表演，故沿用主行的标记一并整行直显。
+          charactersEstimated: current.charactersEstimated,
           characters: karaoke
             ? chars!.map((c) => ({ ...c }))
             : [
@@ -739,11 +748,16 @@ const updateReducedMotion = () => {
   reducedMotion.value = Boolean(reducedMotionQuery?.matches);
   notifyLyricEffectHost();
 };
-// 判断行是否有逐字数据
-const isYrcLine = (line: LyricLinePayload) => (line.characters?.length ?? 0) > 0;
+// 判断行是否有逐字数据：只认源歌词自带的逐字时间戳，估算时间轴整行直显。
+// 副歌词（翻译/音译）由 makeSecondary 单独造行且不带该标记，因此其逐字填充
+// 仍保持与主行无关的既有行为（见副歌词填充处的说明）。
+const isYrcLine = (line: LyricLinePayload) => hasWordByWordTiming(line);
 // 注音模式：音译逐字标注在主歌词每个字上方（需开启音译、开启注音模式且该行有注音配对时）
 // 竖排布局下注音列无法正确排列，回退到普通副歌词行
 const isRubyLine = (line: LyricLinePayload) => {
+  // 注音需要逐字时间戳：否则每个字上方该标哪个音同样是估算，逐字对齐没有意义。
+  // 估算行退回整行直显，音译仍由独立的副歌词行展示。
+  if (!isYrcLine(line)) return false;
   if (isVerticalLayout.value) return false;
   const mode = lyricsMode.value;
   return (

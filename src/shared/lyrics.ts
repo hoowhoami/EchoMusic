@@ -25,6 +25,11 @@ export type LyricLinePayload = {
   translated?: string;
   romanized?: string;
   characters: LyricCharacterPayload[];
+  /**
+   * characters 是否为估算而来（源歌词没有逐字时间戳）。所有歌词表面据此放弃
+   * 逐字着色，直接整行显示。
+   */
+  charactersEstimated?: boolean;
   translatedCharacters?: LyricCharacterPayload[];
   /** 音译逐字（独立副行模式下的音译逐字卡拉OK 数据） */
   romanizedCharacters?: LyricCharacterPayload[];
@@ -46,6 +51,7 @@ type RawLine = {
   translated?: unknown;
   romanized?: unknown;
   characters?: readonly RawChar[];
+  charactersEstimated?: unknown;
   translatedCharacters?: readonly RawChar[];
   romanizedCharacters?: readonly RawChar[];
   rubyUnits?: readonly RawRubyUnit[];
@@ -85,8 +91,26 @@ export const normalizeLyricLinePayload = (line: RawLine): LyricLinePayload => {
     translated: line?.translated ? String(line.translated) : undefined,
     romanized: line?.romanized ? String(line.romanized) : undefined,
     characters: (line?.characters ?? []).map(normalizeChar),
+    ...(line?.charactersEstimated ? { charactersEstimated: true } : {}),
     ...(translatedCharacters?.length ? { translatedCharacters } : {}),
     ...(romanizedCharacters?.length ? { romanizedCharacters } : {}),
     ...(rubyUnits?.length ? { rubyUnits } : {}),
   };
+};
+
+/**
+ * 该行是否带有真实的逐字时间戳。
+ *
+ * 源歌词只有行级时间戳时，解析层会按行时长均分（或整行套固定时长）凑出 characters。
+ * 那些时间轴是猜的：着色进度与真实演唱毫无关系，逐字高亮反而在误导。对这类行应当
+ * 整行直显，而不是拿估算值做卡拉OK 效果。
+ *
+ * 任务栏歌词、mini 歌词、主歌词页、桌面歌词共用此判定，避免各处各写一套而逐渐跑偏。
+ */
+export const hasWordByWordTiming = (
+  line: Pick<LyricLinePayload, 'characters' | 'charactersEstimated'> | null | undefined,
+): boolean => {
+  if (!line || line.charactersEstimated) return false;
+  // 清洗层在缺 characters 时会补一个 endTime 为 0 的占位字符，不能当作逐字数据。
+  return (line.characters ?? []).some((char) => char.endTime > char.startTime);
 };

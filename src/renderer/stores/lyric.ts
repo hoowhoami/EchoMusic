@@ -43,6 +43,11 @@ export interface LyricLine {
   translated?: string;
   romanized?: string;
   characters: LyricCharacter[];
+  /**
+   * characters 是否为估算而来——源歌词没有逐字时间戳，时间轴是按行时长均分或整行
+   * 套一个固定时长得到的。所有歌词表面据此放弃逐字着色，直接整行显示。
+   */
+  charactersEstimated?: boolean;
   // 音译逐字字符（与主歌词 characters 一一映射时间）
   romanizedCharacters?: LyricCharacter[];
   // 翻译逐字字符（按字符比例均分时间）
@@ -352,6 +357,97 @@ const buildEnhancedLrcCharacters = (body: string, lineStart: number): LyricChara
 
 const compactLyricText = (text: string): string => text.replace(/\s+/g, '');
 
+/** LRC 行首时间戳 `[mm:ss.xx]`，两处解析复用同一形态，避免正则漂移。 */
+const LRC_LINE_STAMP = /^\[(\d+):(\d+(?:\.\d+)?)\]/;
+
+/**
+ * 行内逐字时间戳不属于歌词文本。增强 LRC 的正文形如
+ * `<00:47.38>锁<00:47.65>着`，直接拿去和译文比较会永远不相等，配对与格式判定
+ * 都必须先剥掉。
+ */
+const lyricBodyText = (body: string): string =>
+  compactLyricText(body.replace(ENHANCED_LRC_TAG, ''));
+
+/**
+ * 译文行与原词行允许的时间戳偏差。有些内嵌标签工具会把译文单独四舍五入，
+ * 与原词差上几十毫秒；要求毫秒级完全相等会把这类文件整份判为不匹配。
+ */
+const PAIRED_TIMESTAMP_TOLERANCE_MS = 250;
+
+/**
+ * 两条 LRC 行是否构成「原词 + 译文」：时间戳几乎相同、且文本不同。
+ *
+ * 格式判定与解析循环共用这一处——两者必须一致，否则会出现「判定认可却配不上」
+ * 或「配上了却没被认可」的错位。文本不同这条是承重的：漏掉它，回声句会被当译文。
+ */
+const isPairedFollowUp = (
+  previous: { time: number; text: string },
+  next: { time: number; text: string },
+): boolean =>
+  Math.abs(next.time - previous.time) <= PAIRED_TIMESTAMP_TOLERANCE_MS &&
+  next.text !== previous.text;
+
+/**
+ * 「双行同时间戳」的内嵌 LRC：第一行原词、第二行译文共用一个时间戳，例如
+ *
+ *   [00:53.02]Baby just let me let go
+ *   [00:53.02]允许我离开
+ *
+ * 只有整份歌词**系统性**成对时才认定。普通歌词也会偶有两句同时间戳的回声句，
+ * 零星碰上就把它们当译文会让原文凭空多出一行重复内容，因此要求：至少两对，
+ * 且成对行占绝大多数。真实文件里存在未译文的行（间奏标记、末尾衬词），所以
+ * 未成对上限按总量放宽到三成，而不是死卡一两行。两条文本相同也不算一对。
+ */
+const hasPairedTimestampLayout = (sourceLines: readonly string[]): boolean => {
+  let lineCount = 0;
+  let pairs = 0;
+  let unpaired = 0;
+  // 待配对的上一行。译文必须与原词**紧邻**——中间隔了空行就不能配，否则下一句
+  // 原词会被当成译文吞掉，整行歌词凭空消失。
+  let pending: { time: number; text: string } | null = null;
+
+  for (const sourceLine of sourceLines) {
+    const match = sourceLine.match(LRC_LINE_STAMP);
+    if (!match) continue;
+    const time = Math.round(
+      (Number.parseInt(match[1] ?? '0', 10) * 60 + Number.parseFloat(match[2] ?? '0')) * 1000,
+    );
+    const text = lyricBodyText(sourceLine.slice(match[0].length));
+    if (!text) {
+      // 空行打断相邻性；解析循环里也这么处理，两边必须一致。
+      pending = null;
+      continue;
+    }
+    lineCount += 1;
+
+    const current = { time, text };
+    if (pending && isPairedFollowUp(pending, current)) {
+      pairs += 1;
+      pending = null;
+      continue;
+    }
+    if (pending) unpaired += 1;
+    pending = current;
+  }
+  if (pending) unpaired += 1;
+
+  const entries = lineCount;
+
+  const allowedUnpaired = Math.max(2, Math.round(entries * 0.3));
+  const accepted = pairs >= 2 && unpaired <= allowedUnpaired;
+  // 只在「有候选对却被否决」时留痕：这正是格式看着像、判定却说不是的情况，
+  // 也是最该记录的一类。正常内嵌歌词不刷屏。
+  if (!accepted && pairs > 0) {
+    logger.info('LyricStore', 'Paired-timestamp layout rejected', {
+      entries,
+      pairs,
+      unpaired,
+      allowedUnpaired,
+    });
+  }
+  return accepted;
+};
+
 const stripEmbeddedSecondaryText = (characters: LyricCharacter[], textToStrip: string): boolean => {
   const suffix = compactLyricText(textToStrip);
   if (!suffix || characters.length === 0) return false;
@@ -501,7 +597,10 @@ const resolveLyricColor = (value: string, fallback: string): string => {
   return value || fallback;
 };
 
-const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPreview => {
+const parseLyricDetailPayload = (
+  payload: LyricDetailResponse,
+  options?: { pairDuplicateTimestamps?: boolean },
+): ParsedLyricPreview => {
   const content = String(payload.decodeContent ?? payload.lyric ?? '')
     .replace(/^\uFEFF/, '')
     .replace(/&apos;/g, "'")
@@ -526,16 +625,27 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
     : {};
   const charRegex = /<(\d+),(\d+),\d+>([^<]+)/g;
   const parsedLines: LyricLine[] = [];
+  // 仅内嵌歌词会尝试「双行同时间戳」：该格式由内嵌标签工具生成，网络歌词里
+  // 偶发的同时间戳回声句不该被当成译文。
+  const usePairedTimestamps = Boolean(
+    options?.pairDuplicateTimestamps && hasPairedTimestampLayout(sourceLines),
+  );
+  // 上一条 LRC 解析结果，供同时间戳的下一行认领为译文。
+  let lastLrcEntry: { time: number; line: LyricLine } | null = null;
 
   for (const sourceLine of sourceLines) {
     const krcMatch = sourceLine.match(/^\[(\d+),(\d+)\](.*)$/);
 
     if (krcMatch) {
+      // KRC 与 LRC 是两种格式，交替出现时不能跨格式配对译文。
+      lastLrcEntry = null;
       const lineStart = Number.parseInt(krcMatch[1], 10);
       const lineDuration = Number.parseInt(krcMatch[2], 10);
       const lineContent = krcMatch[3] ?? '';
       const characters: LyricCharacter[] = [];
       const matches = Array.from(lineContent.matchAll(charRegex));
+      // KRC 行没有逐字标签时，字符时间轴由 buildFallbackCharacters 按字数均分估算。
+      let charactersEstimated = false;
 
       if (matches.length > 0) {
         for (const match of matches) {
@@ -554,6 +664,7 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
       } else {
         const text = lineContent.replace(/<.*?>/g, '').trim();
         if (text) {
+          charactersEstimated = true;
           characters.push(...buildFallbackCharacters(text, lineStart, lineDuration));
         }
       }
@@ -563,34 +674,55 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
           time: characters[0].startTime / 1000,
           text: characters.map((c) => c.text).join(''),
           characters,
+          ...(charactersEstimated ? { charactersEstimated: true } : {}),
         });
       }
       continue;
     }
 
-    const lrcMatch = sourceLine.match(/^\[(\d+):(\d+(?:\.\d+)?)\](.*)$/);
+    const lrcMatch = sourceLine.match(LRC_LINE_STAMP);
     if (lrcMatch) {
       const minutes = Number.parseInt(lrcMatch[1], 10);
       const seconds = Number.parseFloat(lrcMatch[2]);
       const startTime = Math.round((minutes * 60 + seconds) * 1000);
-      const body = lrcMatch[3] ?? '';
+      const body = sourceLine.slice(lrcMatch[0].length);
+      const compacted = lyricBodyText(body);
+
+      // 双行同时间戳：与上一条 LRC 构成「原词 + 译文」时，认作上一条的译文。
+      if (
+        usePairedTimestamps &&
+        lastLrcEntry &&
+        compacted &&
+        isPairedFollowUp(
+          { time: lastLrcEntry.time, text: compactLyricText(lastLrcEntry.line.text) },
+          { time: startTime, text: compacted },
+        )
+      ) {
+        lastLrcEntry.line.translated = body.replace(ENHANCED_LRC_TAG, '').trim();
+        lastLrcEntry = null;
+        continue;
+      }
 
       // 增强模式带行内逐字时间戳，按逐字解析；否则整行作为一个字符
       const enhancedCharacters = buildEnhancedLrcCharacters(body, startTime);
       if (enhancedCharacters.length > 0) {
-        parsedLines.push({
+        const entry: LyricLine = {
           time: enhancedCharacters[0].startTime / 1000,
           text: enhancedCharacters.map((c) => c.text).join(''),
           characters: enhancedCharacters,
-        });
+        };
+        parsedLines.push(entry);
+        lastLrcEntry = { time: startTime, line: entry };
         continue;
       }
 
       const text = body.trim();
       if (text) {
-        parsedLines.push({
+        const entry: LyricLine = {
           time: startTime / 1000,
           text,
+          // 整行当作一个字、固定 3 秒，同样是估算而非逐字数据。
+          charactersEstimated: true,
           characters: [
             {
               text,
@@ -599,7 +731,13 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
               highlighted: false,
             },
           ],
-        });
+        };
+        parsedLines.push(entry);
+        lastLrcEntry = { time: startTime, line: entry };
+      } else {
+        // 空行打断相邻性，与 hasPairedTimestampLayout 的处理保持一致；否则残留的
+        // 待配对行会把下一句原词吞成译文。
+        lastLrcEntry = null;
       }
     }
   }
@@ -613,6 +751,9 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
     const translationLine = translationLyrics?.[index];
     if (Array.isArray(translationLine) && translationLine.length > 0) {
       translated = String(translationLine[0] ?? '').trim();
+    } else if (line.translated) {
+      // 双行同时间戳解析出的译文；[language:] 块优先，两者通常不会同时存在。
+      translated = line.translated;
     }
 
     const romanizationLine = romanizationLyrics?.[index];
@@ -696,6 +837,7 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
       time: line.time,
       text: line.text,
       characters: line.characters,
+      charactersEstimated: line.charactersEstimated,
       translated: translated || undefined,
       romanized: romanized || undefined,
       romanizedCharacters,
@@ -1008,13 +1150,16 @@ export const useLyricStore = defineStore('lyric', {
         this.tips = this.lines.length ? '使用内嵌歌词' : '使用内嵌文本歌词';
         return true;
       }
-      this.parseLyricContent({ decodeContent: lyric }, hash, { detailResolved: false });
+      this.parseLyricContent({ decodeContent: lyric }, hash, {
+        detailResolved: false,
+        pairDuplicateTimestamps: true,
+      });
       this.currentCandidateKey = 'embedded';
       this.tips = this.lines.length ? '使用内嵌歌词' : '使用内嵌文本歌词';
       return true;
     },
     previewEmbeddedLyric(content: string): ParsedLyricPreview {
-      return parseLyricDetailPayload({ decodeContent: content });
+      return parseLyricDetailPayload({ decodeContent: content }, { pairDuplicateTimestamps: true });
     },
     applyEmbeddedLyric(hash: string, content: string): boolean {
       const normalizedHash = hash.trim();
@@ -1026,10 +1171,12 @@ export const useLyricStore = defineStore('lyric', {
     parseLyricContent(
       payload: LyricDetailResponse,
       hash = '',
-      options?: { detailResolved?: boolean },
+      options?: { detailResolved?: boolean; pairDuplicateTimestamps?: boolean },
     ) {
       this.resetLyricsState({ hash, tips: '暂无歌词' });
-      const parsed = parseLyricDetailPayload(payload);
+      const parsed = parseLyricDetailPayload(payload, {
+        pairDuplicateTimestamps: options?.pairDuplicateTimestamps,
+      });
       this.lines = parsed.lines;
       void this.refreshDisplayLines();
       this.rawLyric = parsed.rawLyric;

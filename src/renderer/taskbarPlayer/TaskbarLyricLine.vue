@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { LyricLinePayload } from '../../shared/lyrics';
+import { hasWordByWordTiming } from '../../shared/lyrics';
 import { computeLyricCharBackgroundPosition } from '@/composables/useLyricTimeline';
 const props = defineProps<{
   text: string;
@@ -14,11 +15,12 @@ const emit = defineEmits<{ width: [number] }>();
 const viewport = ref<HTMLElement>();
 const content = ref<HTMLElement>();
 const overflow = ref(0);
-const chars = computed(() =>
-  props.wordByWord && props.line?.characters?.some((char) => char.endTime > char.startTime)
-    ? props.line.characters
-    : [],
-);
+// 非逐字歌词整行直显：估算出来的字符时间轴只会让高亮进度与真实演唱脱节。
+const chars = computed(() => {
+  const line = props.line;
+  if (!props.wordByWord || !line || !hasWordByWordTiming(line)) return [];
+  return line.characters;
+});
 const scrollDistance = computed(() => {
   if (!overflow.value) return 0;
   if (!chars.value.length) {
