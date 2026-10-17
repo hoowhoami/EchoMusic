@@ -257,16 +257,54 @@ test('a single-character genuine line still counts as word-by-word', () => {
   assert.equal(desktopIsYrcLine(singleChar), true);
 });
 
-// 桌面歌词的副歌词（翻译/音译）由 normalizeLinePayload 之外的一段逻辑单独造行，
-// 不带 charactersEstimated——这是刻意保留的既有行为（副歌词逐字填充不依赖主行
-// 是否有逐字数据）。这条用例把该边界钉住：别顺手把它也标成估算。
-test('the desktop lyric secondary lines keep their own karaoke timing', () => {
-  const secondary = {
-    time: 1,
-    text: 'On the way',
-    characters: [{ text: 'O', startTime: 1000, endTime: 1400 }],
-  };
-  assert.equal(hasWordByWordTiming(secondary), true);
+// 桌面歌词的副歌词（翻译/音译）由 makeSecondary 单独造行。它沿用主行的
+// charactersEstimated：主行若是估算行，副行的时间跨度也是按猜测均分的，逐字填充
+// 同样没有意义；主行有真实逐字数据时，副行仍按原有行为填充。
+const desktopViewSource = readSource('../src/renderer/desktopLyric/DesktopLyricView.vue');
+const makeSecondaryFactory = new Function(
+  'current',
+  'idx',
+  'safeEnd',
+  'renderScopeKey',
+  `${
+    transformSync(
+      desktopViewSource.slice(
+        desktopViewSource.indexOf('const makeSecondary ='),
+        desktopViewSource.indexOf('const result: RenderLine[] ='),
+      ),
+      { loader: 'ts' },
+    ).code
+  };return makeSecondary;`,
+);
+
+// makeSecondary 依赖外层的 current/idx/safeEnd/renderScopeKey，这里把它们作为闭包注入。
+const secondaryOf = (primary, chars) => {
+  const makeSecondary = makeSecondaryFactory(
+    primary,
+    0,
+    primary.characters[primary.characters.length - 1]?.endTime ?? 0,
+    { value: 'scope' },
+  );
+  return makeSecondary('secondary-key', '译文', chars).line;
+};
+
+test('desktop secondary lines follow the primary line timing quality', () => {
+  // 走 karaoke 分支（传入副行字符），这正是原先会显示估算填充的路径。
+  const estimatedChars = [
+    { text: '允', startTime: 18900, endTime: 19900 },
+    { text: '许', startTime: 19900, endTime: 20900 },
+  ];
+  const estimatedSecondary = secondaryOf(estimatedLine, estimatedChars);
+  assert.equal(estimatedSecondary.charactersEstimated, true, '估算行的译文副行不应逐字填充');
+  assert.equal(hasWordByWordTiming(estimatedSecondary), false);
+
+  const genuineChars = [
+    { text: '锁', startTime: 47380, endTime: 47650 },
+    { text: '着', startTime: 47650, endTime: 47970 },
+  ];
+  const genuineSecondary = secondaryOf(genuineLine, genuineChars);
+  assert.equal(genuineSecondary.charactersEstimated, undefined);
+  assert.equal(hasWordByWordTiming(genuineSecondary), true, '真实逐字行的译文副行仍应填充');
 });
 
 // 桌面歌词的 sync.ts 有自己的 normalizeLinePayload，是第四道逐字段重建的边界。
