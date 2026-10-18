@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useResizeObserver } from '@vueuse/core';
+import { hasWordByWordTiming } from '../../shared/lyrics';
 import {
   normalizeMiniLyricStyle,
   type MiniPlayerLyricStyle,
@@ -59,14 +60,17 @@ const lyricBackgroundStyle = computed(() =>
 );
 
 // 注音模式：音译逐字标注在主歌词每个字上方（需开启音译、开启注音模式且该行有注音配对时）
+// 同时要求该行真有逐字时间戳——估算行上每个字上方该标哪个音也是估的。
+// 关闭后 resolveLyricSecondaryLines 会把音译降级为普通副行，内容不丢。
 const isRubyLine = (line: MiniPlayerLyricPayload['lines'][number]) =>
+  hasWordTiming(line) &&
   Boolean(props.lyric?.wantRomanization) &&
   Boolean(props.lyric?.showRomanizationAsRuby) &&
   (line.rubyUnits?.length ?? 0) > 0;
 
-// 是否有逐字数据
-const isYrcLine = (line: MiniPlayerLyricPayload['lines'][number]) =>
-  (line.characters?.length ?? 0) > 0;
+// 该行是否带真实逐字时间戳。估算时间轴的行整行直显：强行套上卡拉OK 渐变，
+// 颜色会永远停在未播放态，看起来像非活跃行。
+const hasWordTiming = (line: MiniPlayerLyricPayload['lines'][number]) => hasWordByWordTiming(line);
 
 // 音译注音开关：仅当正在显示音译时可切换
 const canShowRubyToggle = computed(
@@ -97,6 +101,9 @@ const applyActiveLineKaraoke = () => {
   const line = lyricLines.value[index];
   const root = lineElementRefs.get(index);
   if (!root || !line || !props.visible) return;
+  // 估算行整行直显，不做着色；注音单元的时间轴同样派生自估算的 characters，
+  // 否则同一行会出现「主文本无高亮、音译却在扫」的不一致。
+  if (!hasWordByWordTiming(line)) return;
 
   const seekMs = props.timelineMs || 0;
   const words = Array.from(root.querySelectorAll<HTMLElement>('.mini-karaoke-word'));
@@ -454,7 +461,10 @@ onBeforeUnmount(() => {
             <template v-if="isRubyLine(entry.line)">
               <div
                 class="mini-lyric-primary mini-lyric-ruby"
-                :class="{ 'mini-lyric-karaoke': entry.index === activeLyricIndex }"
+                :class="{
+                  'mini-lyric-karaoke':
+                    entry.index === activeLyricIndex && hasWordTiming(entry.line),
+                }"
               >
                 <span
                   v-for="(unit, ui) in entry.line.rubyUnits"
@@ -474,7 +484,7 @@ onBeforeUnmount(() => {
               </div>
             </template>
 
-            <template v-else-if="isYrcLine(entry.line) && entry.index === activeLyricIndex">
+            <template v-else-if="hasWordTiming(entry.line) && entry.index === activeLyricIndex">
               <div class="mini-lyric-primary mini-lyric-karaoke">
                 <span
                   v-for="(char, ci) in entry.line.characters"
@@ -490,7 +500,9 @@ onBeforeUnmount(() => {
               v-for="(secondaryLine, secondaryIndex) in entry.secondaryLines"
               :key="secondaryIndex"
               class="mini-lyric-secondary"
-              :class="{ 'mini-lyric-karaoke': entry.index === activeLyricIndex }"
+              :class="{
+                'mini-lyric-karaoke': entry.index === activeLyricIndex && hasWordTiming(entry.line),
+              }"
             >
               <template
                 v-if="

@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { transformSync } from 'esbuild';
 import { parse, compileScript } from 'vue/compiler-sfc';
 import * as vue from 'vue';
+import { hasWordByWordTiming } from '../src/shared/lyrics.ts';
 
 const filename = 'src/renderer/taskbarPlayer/TaskbarLyricLine.vue';
 const { descriptor } = parse(readFileSync(filename, 'utf8'), { filename });
@@ -13,13 +14,13 @@ const code = transformSync(compileScript(descriptor, { id: 'taskbar-line-test' }
   format: 'cjs',
 }).code;
 
-function harness(anchor, wordByWord = false) {
+function harness(anchor, wordByWord = false, lineOverride) {
   let mounted;
   let resized;
   const frames = [];
   const props = vue.reactive({
     text: '很长的歌词末尾必须完整显示',
-    line: {
+    line: lineOverride ?? {
       time: 1,
       characters: [
         { text: '很长的歌词', startTime: 1000, endTime: 3000 },
@@ -44,6 +45,7 @@ function harness(anchor, wordByWord = false) {
         };
       if (name === '@/composables/useLyricTimeline')
         return { computeLyricCharBackgroundPosition() {} };
+      if (name === '../../shared/lyrics') return { hasWordByWordTiming };
       throw new Error(`Unexpected dependency: ${name}`);
     },
     ResizeObserver: class {
@@ -120,4 +122,37 @@ test('short plain lines reserve proportional reading time; missing timing stays 
   assert.equal(h.right(), 0);
   h.props.endTimeMs = undefined;
   assert.equal(h.left(), 0);
+});
+
+// 非逐字歌词（源歌词只有行级时间戳）即便开着逐字开关也要整行直显：估算出来的
+// 字符时间轴只会让高亮进度与真实演唱脱节，不如不闪。
+test('estimated characters render the line as plain text even with word-by-word on', () => {
+  const h = harness('left', true, {
+    time: 1,
+    charactersEstimated: true,
+    characters: [{ text: '很长的歌词末尾必须完整显示', startTime: 1000, endTime: 4000 }],
+  });
+
+  assert.equal(h.state.chars.value.length, 0, '不产生逐字着色片段，走整行直显分支');
+  // 整行直显时改用阅读尾句的平移节奏：行首不偏移，行尾在切行前完整露出。
+  h.props.timeMs = 1000;
+  assert.equal(h.left(), 0, '行首不偏移');
+  h.props.timeMs = 5500;
+  assert.equal(h.right(), 0, '行尾完整可见，而不是停在估算的逐字位置');
+});
+
+test('genuine word-by-word characters keep per-character colouring', () => {
+  const genuine = harness('left', true);
+  assert.equal(genuine.state.chars.value.length, 3);
+
+  const estimated = harness('left', true, {
+    time: 1,
+    charactersEstimated: true,
+    characters: [
+      { text: '很长的歌词', startTime: 1000, endTime: 3000 },
+      { text: '末尾必须', startTime: 3000, endTime: 5000 },
+      { text: '完整显示', startTime: 5000, endTime: 7000 },
+    ],
+  });
+  assert.equal(estimated.state.chars.value.length, 0);
 });
