@@ -72,3 +72,4 @@ cloudflare/**/*.dev.vars
 cloudflare/**/*.local.toml
 
 .planning
+.agentsroom
