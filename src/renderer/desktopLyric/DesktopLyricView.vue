@@ -196,8 +196,12 @@ const updateYrcDomManual = (timelineMs: number) => {
     cachedYrcLineKey = '';
   }
 
-  // 当前行副歌词逐字填充（翻译/音译，与播放页歌词一致）——不依赖主行是否有逐字数据
-  const secondaryLines = renderLines.filter((line) => line.kind === 'secondary' && line.karaoke);
+  // 当前行副歌词逐字填充（翻译/音译，与播放页歌词一致）——不依赖主行**自己**是否有
+  // 逐字数据，但仍要求主行的时间轴不是估算来的：主行若是估算行，副行的时间跨度也是
+  // 按猜测均分的，填充没有意义。
+  const secondaryLines = renderLines.filter(
+    (line) => line.kind === 'secondary' && line.karaoke && isYrcLine(line.line),
+  );
   for (const secondaryLine of secondaryLines) {
     const secondaryContainer = lineRefs.get(secondaryLine.key);
     if (!secondaryContainer) continue;
@@ -556,6 +560,10 @@ const renderLyricLines = computed<RenderLine[]>(() => {
         line: {
           time: current.time,
           text,
+          // 副行的字符时间轴是按主行时长**均分**得来的（见 stores/lyric 的
+          // translatedCharacters）。主行若是估算行，这个跨度本身也是猜的，
+          // 副行再逐字填充就纯属表演，故沿用主行的标记一并整行直显。
+          charactersEstimated: current.charactersEstimated,
           characters: karaoke
             ? chars!.map((c) => ({ ...c }))
             : [
