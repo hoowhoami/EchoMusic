@@ -352,7 +352,13 @@ export interface IElectronAPI {
     clearUploadFiles: () => Promise<{ ok: true }>;
   };
   tray: {
-    syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) => void;
+    syncPlayback: (payload: {
+      isPlaying?: boolean;
+      playMode?: PlayMode;
+      volume?: number;
+      trackTitle?: string;
+      trackArtist?: string;
+    }) => void;
     onSetPlayMode: (func: (playMode: PlayMode) => void) => () => void;
   };
   power: {
