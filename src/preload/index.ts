@@ -485,8 +485,13 @@ contextBridge.exposeInMainWorld('electron', {
     clearUploadFiles: () => ipcRenderer.invoke('cloud:clear-upload-files') as Promise<{ ok: true }>,
   },
   tray: {
-    syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) =>
-      sendWithPlainPayload('tray:sync-playback', payload),
+    syncPlayback: (payload: {
+      isPlaying?: boolean;
+      playMode?: PlayMode;
+      volume?: number;
+      trackTitle?: string;
+      trackArtist?: string;
+    }) => sendWithPlainPayload('tray:sync-playback', payload),
     onSetPlayMode: (func: (playMode: PlayMode) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, playMode: PlayMode) => func(playMode);
       ipcRenderer.on('tray:set-play-mode', listener);

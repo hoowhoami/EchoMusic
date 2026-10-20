@@ -11,6 +11,8 @@ export const registerTrayHandlers = () => {
         ...(typeof payload.isPlaying === 'boolean' ? { isPlaying: payload.isPlaying } : {}),
         ...(payload.playMode ? { playMode: payload.playMode } : {}),
         ...(typeof payload.volume === 'number' ? { volume: payload.volume } : {}),
+        ...(typeof payload.trackTitle === 'string' ? { trackTitle: payload.trackTitle } : {}),
+        ...(typeof payload.trackArtist === 'string' ? { trackArtist: payload.trackArtist } : {}),
       });
     },
   );

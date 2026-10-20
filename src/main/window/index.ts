@@ -152,7 +152,12 @@ export async function showMainWindow(focus = true, forceRaise = false) {
 
   if (forceRaise || !wasVisible || wasMinimized || !wasFocused) {
     win.moveTop();
-    if (focus) win.focus();
+    if (focus) {
+      win.focus();
+      // macOS 的 show/moveTop/focus 都不会激活处于后台的应用，从托盘唤起时
+      // 窗口会一直压在当前活跃应用的窗口之下，必须显式抢激活才能置前。
+      if (process.platform === 'darwin') app.focus({ steal: true });
+    }
   }
 }
 

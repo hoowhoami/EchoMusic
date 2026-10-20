@@ -37,6 +37,8 @@ let playbackState: TrayPlaybackState = {
   isPlaying: false,
   playMode: 'list',
   volume: DEFAULT_PLAYER_VOLUME,
+  trackTitle: '',
+  trackArtist: '',
 };
 
 const playModeLabelMap: Record<PlayMode, string> = {
@@ -177,8 +179,21 @@ const createDesktopLyricMenuItems = (): MenuItemConstructorOptions[] => {
   ];
 };
 
+/** 参考主流播放器，在托盘菜单顶部置灰展示「歌名 - 歌手」；无曲目时隐藏。 */
+const createNowPlayingMenuItem = (): MenuItemConstructorOptions | null => {
+  const title = playbackState.trackTitle.trim();
+  if (!title) return null;
+  const artist = playbackState.trackArtist.trim();
+  return {
+    label: artist ? `${title} - ${artist}` : title,
+    enabled: false,
+  };
+};
+
 const createTrayMenu = () => {
+  const nowPlayingItem = createNowPlayingMenuItem();
   return Menu.buildFromTemplate([
+    ...(nowPlayingItem ? [nowPlayingItem] : []),
     {
       label: '打开主窗口',
       click: () => void trayContext?.showMainWindow(),

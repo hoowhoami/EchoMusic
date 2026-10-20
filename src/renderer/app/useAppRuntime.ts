@@ -40,10 +40,15 @@ export function useAppRuntime(isMiniPlayerRoute: Readonly<Ref<boolean>>) {
   const syncTrayPlayback = () => {
     const activePlayer = player.value;
     if (!activePlayer) return;
+    const track = activePlayer.currentTrackSnapshot;
     window.electron?.tray?.syncPlayback({
       isPlaying: activePlayer.isPlaying,
       playMode: activePlayer.playMode,
       volume: activePlayer.volume,
+      trackTitle: track ? String(track.name || track.title || '未知歌曲') : '',
+      trackArtist: String(
+        track?.artist || track?.artists?.map((item) => item.name).join(' / ') || '',
+      ),
     });
   };
 
@@ -188,6 +193,12 @@ export function useAppRuntime(isMiniPlayerRoute: Readonly<Ref<boolean>>) {
   );
   watch(
     () => [player.value?.playMode, player.value?.volume],
+    () => {
+      if (!isMiniPlayerRoute.value) syncTrayPlayback();
+    },
+  );
+  watch(
+    () => player.value?.currentTrackId,
     () => {
       if (!isMiniPlayerRoute.value) syncTrayPlayback();
     },
