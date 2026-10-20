@@ -311,14 +311,17 @@ test('a KRC line between two LRC lines stops the pairing', () => {
       '[00:10.10]译文一',
       '[00:20.00]原词二',
       '[00:20.00]译文二',
+      '[00:30.00]原词三',
+      '[00:30.00]译文三',
     ].join('\n'),
   );
 
-  assert.equal(lyric.lines.length, 4, 'KRC 打断了配对，第一对的两行各自成行');
+  assert.equal(lyric.lines.length, 5, 'KRC 打断了配对，后面仍有两对有效译文');
   assert.equal(lyric.lines[0].text, '原词一');
   assert.equal(lyric.lines[0].translated, undefined, '不得跨 KRC 配上译文');
   assert.equal(lyric.lines[2].text, '译文一');
   assert.equal(lyric.lines[3].translated, '译文二', 'KRC 之后的对仍正常配对');
+  assert.equal(lyric.lines[4].translated, '译文三');
 });
 
 test('an empty line between the pair stops the following line from being swallowed', () => {
@@ -366,6 +369,63 @@ test('a lyric whose only pair is broken is not treated as the doubled format', (
     ['原词A', '原词B', '原词C', '译文C'],
   );
   assert.equal(lyric.hasTranslation, false, '不成格式就不该冒出译文');
+});
+
+test('timed empty lines do not hide unpaired lyrics from format detection', () => {
+  const lyric = createStore();
+  const content = [
+    '[00:01.00]First voice',
+    '[00:01.10]Second voice',
+    '[00:02.00]Third voice',
+    '[00:02.10]Fourth voice',
+    ...Array.from({ length: 8 }, (_, i) =>
+      [`[00:${10 + i}.00]Solo ${i}`, `[00:${10 + i}.50]`].join('\n'),
+    ),
+  ].join('\n');
+
+  lyric.useEmbeddedLyric('mostly-solo-with-gaps', content);
+  assert.equal(lyric.lines.length, 12, 'two coincidental pairs cannot override eight solo lines');
+  assert.equal(lyric.hasTranslation, false);
+  const preview = lyric.previewEmbeddedLyric(content);
+  assert.deepEqual(
+    preview.lines.map(({ text }) => text),
+    lyric.lines.map(({ text }) => text),
+  );
+  assert.ok(preview.lines.every((line) => line.translated === undefined));
+  assert.equal(preview.hasTranslation, false);
+});
+
+for (const separator of ['', '   ', '[ar:Artist]', '[10100,2000]<0,500,0>Interlude']) {
+  test(`pair detection does not count across a separator: ${JSON.stringify(separator)}`, () => {
+    const lyric = createStore();
+    lyric.useEmbeddedLyric(
+      'separated-pair',
+      [
+        '[00:10.00]First',
+        separator,
+        '[00:10.10]Second',
+        '[00:20.00]Third',
+        '[00:20.00]Fourth',
+      ].join('\n'),
+    );
+    assert.equal(lyric.hasTranslation, false, 'only one adjacent pair remains');
+    assert.equal(lyric.lines.at(-1).text, 'Fourth');
+  });
+}
+
+test('a blank separator preserves both original lines even in an otherwise paired lyric', () => {
+  const lyric = createStore();
+  lyric.useEmbeddedLyric(
+    'paired-with-blank',
+    ['[00:10.00]First voice', '', '[00:10.10]Second voice', PAIRED_LRC].join('\n'),
+  );
+  assert.deepEqual(
+    lyric.lines.map(({ text }) => text),
+    ['First voice', 'Second voice', 'Baby just let me let go', 'You were the shadow'],
+  );
+  assert.equal(lyric.lines[0].translated, undefined);
+  assert.equal(lyric.lines[1].translated, undefined);
+  assert.equal(lyric.lines[2].translated, '允许我离开');
 });
 
 test('a normal embedded LRC is untouched by the pairing rule', () => {
