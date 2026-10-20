@@ -428,6 +428,33 @@ test('a blank separator preserves both original lines even in an otherwise paire
   assert.equal(lyric.lines[2].translated, '允许我离开');
 });
 
+test('a timestamp-only enhanced line is a separator, not lyric text', () => {
+  // 只剩行内时间戳的行与空行等价；若被当成正文建行，下一句原词会被吞成译文。
+  const lyric = createStore();
+  lyric.useEmbeddedLyric(
+    'tag-only-line',
+    [
+      '[00:10.00]原词一',
+      '[00:10.00]<00:10.00>',
+      '[00:10.10]原词二',
+      '[00:20.00]原词三',
+      '[00:20.00]译文三',
+      '[00:30.00]原词四',
+      '[00:30.00]译文四',
+    ].join('\n'),
+  );
+
+  assert.deepEqual(
+    lyric.lines.map(({ text }) => text),
+    ['原词一', '原词二', '原词三', '原词四'],
+  );
+  assert.equal(lyric.lines[0].translated, undefined);
+  assert.equal(lyric.lines[1].translated, undefined);
+  assert.equal(lyric.lines[2].translated, '译文三');
+  assert.equal(lyric.lines[3].translated, '译文四');
+  assert.equal(lyric.hasTranslation, true);
+});
+
 test('a normal embedded LRC is untouched by the pairing rule', () => {
   const lyric = createStore();
   lyric.useEmbeddedLyric(
