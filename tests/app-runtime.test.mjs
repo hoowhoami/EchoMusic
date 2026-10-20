@@ -36,7 +36,8 @@ function setup(t, { mini = false, hydration, desktopSync, autoPlay = false } = {
   const events = [],
     disposals = [],
     timers = new Map(),
-    unmounts = [];
+    unmounts = [],
+    trayPayloads = [];
   let mount;
   const record = (name) => () => {
     events.push(name);
@@ -159,7 +160,13 @@ function setup(t, { mini = false, hydration, desktopSync, autoPlay = false } = {
     },
     clearTimeout: (id) => timers.delete(id),
     electron: {
-      tray: { syncPlayback: record('tray.sync'), onSetPlayMode: subscribe('tray.mode') },
+      tray: {
+        syncPlayback: (payload) => {
+          events.push('tray.sync');
+          trayPayloads.push(payload);
+        },
+        onSetPlayMode: subscribe('tray.mode'),
+      },
       power: { onResume: subscribe('power.resume') },
     },
   };
@@ -171,8 +178,84 @@ function setup(t, { mini = false, hydration, desktopSync, autoPlay = false } = {
     unmounts.forEach((fn) => fn());
   };
   t.after(stop);
-  return { mount: () => mount(), stop, player, activePlayer, events, disposals, timers };
+  return {
+    mount: () => mount(),
+    stop,
+    player,
+    activePlayer,
+    events,
+    disposals,
+    timers,
+    trayPayloads,
+  };
 }
+
+test('tray refreshes asynchronously completed metadata without a playback or track ID change', async (t) => {
+  const f = setup(t);
+  f.activePlayer.currentTrackSnapshot = {
+    id: 'song',
+    hash: 'hash',
+    name: '未知歌曲',
+    title: '未知歌曲',
+    artist: '未知歌手',
+  };
+  f.activePlayer.isPlaying = true;
+  await f.mount();
+  await vue.nextTick();
+  const before = f.trayPayloads.length;
+  const metadata = deferred();
+  const { createEmbeddedMetadataCompleter } = load(
+    '../src/renderer/stores/player/embeddedMetadata.ts',
+  );
+  const complete = createEmbeddedMetadataCompleter({
+    read: () => metadata.promise,
+    lyrics: { fetchLyrics: async () => {} },
+    current: () => ({ seq: 1, requestSeq: 1, song: f.activePlayer.currentTrackSnapshot }),
+    captureSession: () => () => true,
+    commit: (_previous, next) => {
+      f.activePlayer.currentTrackSnapshot = next;
+    },
+    onError: (error) => {
+      throw error;
+    },
+  });
+  const completion = complete();
+  metadata.resolve({ title: '标签歌名', artist: '标签歌手' });
+  await completion;
+  await vue.nextTick();
+  assert.equal(f.activePlayer.currentTrackId, 'song');
+  assert.equal(f.activePlayer.isPlaying, true);
+  assert.equal(f.trayPayloads.length, before + 1);
+  assert.equal(f.trayPayloads.at(-1).trackTitle, '标签歌名');
+  assert.equal(f.trayPayloads.at(-1).trackArtist, '标签歌手');
+});
+
+test('tray follows display fields and clearing the snapshot without resending cover changes', async (t) => {
+  const f = setup(t);
+  f.activePlayer.currentTrackSnapshot = {
+    title: '标题',
+    artist: '',
+    artists: [{ name: '歌手甲' }, { name: '歌手乙' }],
+  };
+  await f.mount();
+  await vue.nextTick();
+  assert.equal(f.trayPayloads.at(-1).trackTitle, '标题');
+  assert.equal(f.trayPayloads.at(-1).trackArtist, '歌手甲 / 歌手乙');
+  const before = f.trayPayloads.length;
+  f.activePlayer.currentTrackSnapshot = {
+    ...f.activePlayer.currentTrackSnapshot,
+    coverUrl: 'updated-cover',
+  };
+  await vue.nextTick();
+  assert.equal(f.trayPayloads.length, before);
+  f.activePlayer.currentTrackSnapshot.artists = [{ name: '歌手丙' }];
+  await vue.nextTick();
+  assert.equal(f.trayPayloads.at(-1).trackArtist, '歌手丙');
+  f.activePlayer.currentTrackSnapshot = null;
+  await vue.nextTick();
+  assert.equal(f.trayPayloads.at(-1).trackTitle, '');
+  assert.equal(f.trayPayloads.at(-1).trackArtist, '');
+});
 
 test('main startup preserves hydration order and owns each auxiliary-window publisher once', async (t) => {
   const f = setup(t);

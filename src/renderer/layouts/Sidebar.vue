@@ -823,7 +823,6 @@ watch(
 
         <Scrollbar
           class="sidebar-content no-drag"
-          hide-scrollbar
           :scrollbar-inset="3"
           :content-props="{ class: 'sidebar-rail-scroll-content' }"
         >
@@ -989,7 +988,7 @@ watch(
           </div>
         </div>
 
-        <Scrollbar class="sidebar-content no-drag" hide-scrollbar :scrollbar-inset="3">
+        <Scrollbar class="sidebar-content no-drag" :scrollbar-inset="3">
           <SidebarShortcuts />
           <div v-if="allMenuGroups.length" class="sidebar-menu-groups">
             <div v-for="group in allMenuGroups" :key="group.id" class="mb-1.5 last:mb-0">
