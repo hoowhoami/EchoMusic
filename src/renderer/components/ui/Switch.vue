@@ -65,7 +65,7 @@ const handleUpdate = (next: unknown) => {
 
 .switch-thumb {
   @apply block h-4 w-4 shrink-0 rounded-full bg-white shadow-sm transition-transform;
-  @apply data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-1;
+  @apply data-[state=checked]:translate-x-[22px] data-[state=unchecked]:translate-x-1;
 }
 
 .switch-root[data-size='sm'] {
