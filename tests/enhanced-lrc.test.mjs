@@ -26,23 +26,154 @@ function compile(file, mocks, window = {}) {
   return module.exports;
 }
 
-const { useLyricStore } = compile('../src/renderer/stores/lyric.ts', {
-  pinia,
-  '@/api/music': {},
-  '@/utils/logger': { info() {}, warn() {}, error() {}, debug() {} },
-  '@/utils/color': { DEFAULT_ACCENT: '#0071e3' },
-  '@/plugins/lyrics': {},
-  '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
-  './theme': {},
-  '../../shared/lyricOffset': offset,
-  '../../shared/embeddedMetadata': embeddedTags,
-  '../../shared/opencc': opencc,
-});
+const { useLyricStore } = compile(
+  '../src/renderer/stores/lyric.ts',
+  {
+    pinia,
+    '@/api/music': {},
+    '@/utils/logger': { info() {}, warn() {}, error() {}, debug() {} },
+    '@/utils/color': { DEFAULT_ACCENT: '#0071e3' },
+    '@/plugins/lyrics': {},
+    '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
+    './theme': {},
+    '../../shared/lyricOffset': offset,
+    '../../shared/embeddedMetadata': embeddedTags,
+    '../../shared/opencc': opencc,
+  },
+  { atob: globalThis.atob },
+);
 
 const createStore = () => useLyricStore(pinia.createPinia());
 
 const simplifyCharacters = (line) =>
   line.characters.map(({ text, startTime, endTime }) => ({ text, startTime, endTime }));
+
+test('multiple leading LRC timestamps repeat the text in playback order', () => {
+  const lyric = createStore();
+  lyric.setLyric('[00:01.00][00:03.50]Chorus\n[00:02.00]Verse', 'repeated');
+  assert.deepEqual(
+    lyric.lines.map(({ time, text }) => [time, text]),
+    [
+      [1, 'Chorus'],
+      [2, 'Verse'],
+      [3.5, 'Chorus'],
+    ],
+  );
+  assert.deepEqual(simplifyCharacters(lyric.lines[2]), [
+    { text: 'Chorus', startTime: 3500, endTime: 6500 },
+  ]);
+  assert.equal(hasWordByWordTiming(lyric.lines[2]), false);
+});
+
+test('repeated enhanced LRC shifts every word timing independently', () => {
+  const lyric = createStore();
+  lyric.setLyric(
+    '[00:01.00][00:05.00]<00:01.00>Hello <00:01.50>world<00:02.00>',
+    'repeated-enhanced',
+  );
+  assert.equal(lyric.lines.length, 2);
+  assert.deepEqual(simplifyCharacters(lyric.lines[1]), [
+    { text: 'Hello ', startTime: 5000, endTime: 5500 },
+    { text: 'world', startTime: 5500, endTime: 6000 },
+  ]);
+  assert.equal(hasWordByWordTiming(lyric.lines[1]), true);
+  lyric.lines[1].characters[0].highlighted = true;
+  assert.equal(lyric.lines[0].characters[0].highlighted, false);
+});
+
+test('embedded repeated originals pair only with the same sequence of translation timestamps', () => {
+  const lyric = createStore();
+  const content = [
+    '[00:01.00][00:11.00]Hello',
+    '[00:01.04][00:11.04]你好',
+    '[00:03.00][00:13.00]Goodbye',
+    '[00:03.00][00:13.00]再见',
+  ].join('\n');
+  lyric.useEmbeddedLyric('repeated-translation', content);
+  assert.deepEqual(
+    lyric.lines.map(({ time, text, translated }) => [time, text, translated]),
+    [
+      [1, 'Hello', '你好'],
+      [3, 'Goodbye', '再见'],
+      [11, 'Hello', '你好'],
+      [13, 'Goodbye', '再见'],
+    ],
+  );
+  assert.equal(lyric.lines[2].translatedCharacters[0].startTime, 11000);
+  assert.deepEqual(lyric.previewEmbeddedLyric(content).lines, [...lyric.lines]);
+});
+
+test('mismatched repeated timestamps do not swallow independent lines as translations', () => {
+  const lyric = createStore();
+  lyric.useEmbeddedLyric(
+    'mismatched-repeat',
+    [
+      '[00:01.00][00:11.00]First',
+      '[00:01.00][00:12.00]Second',
+      '[00:03.00][00:13.00]Third',
+      '[00:03.00]Fourth',
+      '[00:20.00]Hello',
+      '[00:20.00]你好',
+      '[00:30.00]Goodbye',
+      '[00:30.00]再见',
+      '[00:40.00]Night',
+      '[00:40.00]夜晚',
+      '[00:50.00]Morning',
+      '[00:50.00]早晨',
+    ].join('\n'),
+  );
+  assert.equal(lyric.lines.length, 11);
+  assert.equal(lyric.lines.filter((line) => line.text === 'Second').length, 2);
+  assert.equal(lyric.lines.find((line) => line.text === 'Fourth').translated, undefined);
+  assert.equal(lyric.lines.find((line) => line.text === 'Hello').translated, '你好');
+});
+
+test('repeated stamps support fractional seconds, out-of-order tags and empty bodies', () => {
+  const lyric = createStore();
+  lyric.setLyric(
+    '[01:02.345][00:02][00:02]Again\n[00:04][00:05]\n[00:06]Text [brackets]',
+    'formats',
+  );
+  assert.deepEqual(
+    lyric.lines.map(({ time, text }) => [time, text]),
+    [
+      [2, 'Again'],
+      [6, 'Text [brackets]'],
+      [62.345, 'Again'],
+    ],
+  );
+});
+
+test('source-indexed language metadata stays attached through repeat expansion and sorting', () => {
+  const lyric = createStore();
+  const language = Buffer.from(
+    JSON.stringify({
+      content: [
+        { type: 1, lyricContent: [['Hello'], ['Goodbye']] },
+        { type: 0, lyricContent: [['ni', 'hao'], ['bye']] },
+      ],
+    }),
+  ).toString('base64');
+  lyric.setLyric(
+    [`[language:${language}]`, '[00:01][00:11]<00:01>你<00:01.50>好<00:02>', '[00:03]Bye'].join(
+      '\n',
+    ),
+    'repeated-language',
+  );
+  assert.deepEqual(
+    lyric.lines.map(({ time, translated, romanized }) => [time, translated, romanized]),
+    [
+      [1, 'Hello', 'nihao'],
+      [3, 'Goodbye', 'bye'],
+      [11, 'Hello', 'nihao'],
+    ],
+  );
+  const repeated = lyric.lines[2];
+  assert.equal(repeated.romanizedCharacters[0].startTime, 11000);
+  assert.equal(repeated.translatedCharacters[0].startTime, 11000);
+  assert.equal(repeated.rubyUnits[0].startTime, 11000);
+  assert.equal(repeated.rubyUnits[0].chars[0], repeated.characters[0]);
+});
 
 test('plain LRC without inline timestamps keeps the existing whole-line fallback', () => {
   const lyric = createStore();
