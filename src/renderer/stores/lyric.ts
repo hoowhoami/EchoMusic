@@ -360,6 +360,17 @@ const compactLyricText = (text: string): string => text.replace(/\s+/g, '');
 /** LRC 行首时间戳 `[mm:ss.xx]`，两处解析复用同一形态，避免正则漂移。 */
 const LRC_LINE_STAMP = /^\[(\d+):(\d+(?:\.\d+)?)\]/;
 
+/** One LRC source line may schedule the same text at several chorus positions. */
+const readLrcLine = (source: string): { times: number[]; body: string } | null => {
+  const times: number[] = [];
+  let body = source;
+  for (let match = body.match(LRC_LINE_STAMP); match; match = body.match(LRC_LINE_STAMP)) {
+    times.push(parseEnhancedLrcTagTime(match[1], match[2]));
+    body = body.slice(match[0].length);
+  }
+  return times.length ? { times: [...new Set(times)], body } : null;
+};
+
 /**
  * 行内逐字时间戳不属于歌词文本。增强 LRC 的正文形如
  * `<00:47.38>锁<00:47.65>着`，直接拿去和译文比较会永远不相等，配对与格式判定
@@ -381,10 +392,13 @@ const PAIRED_TIMESTAMP_TOLERANCE_MS = 250;
  * 或「配上了却没被认可」的错位。文本不同这条是承重的：漏掉它，回声句会被当译文。
  */
 const isPairedFollowUp = (
-  previous: { time: number; text: string },
-  next: { time: number; text: string },
+  previous: { times: number[]; text: string },
+  next: { times: number[]; text: string },
 ): boolean =>
-  Math.abs(next.time - previous.time) <= PAIRED_TIMESTAMP_TOLERANCE_MS &&
+  previous.times.length === next.times.length &&
+  previous.times.every(
+    (time, index) => Math.abs(next.times[index] - time) <= PAIRED_TIMESTAMP_TOLERANCE_MS,
+  ) &&
   next.text !== previous.text;
 
 /**
@@ -403,19 +417,16 @@ const hasPairedTimestampLayout = (sourceLines: readonly string[]): boolean => {
   let pairs = 0;
   // 待配对的上一行。译文必须与原词**紧邻**——中间隔了空行就不能配，否则下一句
   // 原词会被当成译文吞掉，整行歌词凭空消失。
-  let pending: { time: number; text: string } | null = null;
+  let pending: { times: number[]; text: string } | null = null;
 
   for (const sourceLine of sourceLines) {
-    const match = sourceLine.match(LRC_LINE_STAMP);
-    if (!match) {
+    const lrc = readLrcLine(sourceLine);
+    if (!lrc) {
       // 无时间戳的空行、元信息和 KRC 行同样打断相邻性。
       pending = null;
       continue;
     }
-    const time = Math.round(
-      (Number.parseInt(match[1] ?? '0', 10) * 60 + Number.parseFloat(match[2] ?? '0')) * 1000,
-    );
-    const text = lyricBodyText(sourceLine.slice(match[0].length));
+    const text = lyricBodyText(lrc.body);
     if (!text) {
       // 空行打断相邻性；解析循环里也这么处理，两边必须一致。
       pending = null;
@@ -423,7 +434,7 @@ const hasPairedTimestampLayout = (sourceLines: readonly string[]): boolean => {
     }
     lineCount += 1;
 
-    const current = { time, text };
+    const current = { times: lrc.times, text };
     if (pending && isPairedFollowUp(pending, current)) {
       pairs += 1;
       pending = null;
@@ -628,13 +639,15 @@ const parseLyricDetailPayload = (
     : {};
   const charRegex = /<(\d+),(\d+),\d+>([^<]+)/g;
   const parsedLines: LyricLine[] = [];
+  // Expand only after source-indexed [language:] metadata has been applied.
+  const lrcTimes = new Map<LyricLine, number[]>();
   // 仅内嵌歌词会尝试「双行同时间戳」：该格式由内嵌标签工具生成，网络歌词里
   // 偶发的同时间戳回声句不该被当成译文。
   const usePairedTimestamps = Boolean(
     options?.pairDuplicateTimestamps && hasPairedTimestampLayout(sourceLines),
   );
   // 上一条 LRC 解析结果，供同时间戳的下一行认领为译文。
-  let lastLrcEntry: { time: number; line: LyricLine } | null = null;
+  let lastLrcEntry: { times: number[]; line: LyricLine } | null = null;
 
   for (const sourceLine of sourceLines) {
     const krcMatch = sourceLine.match(/^\[(\d+),(\d+)\](.*)$/);
@@ -683,12 +696,10 @@ const parseLyricDetailPayload = (
       continue;
     }
 
-    const lrcMatch = sourceLine.match(LRC_LINE_STAMP);
-    if (lrcMatch) {
-      const minutes = Number.parseInt(lrcMatch[1], 10);
-      const seconds = Number.parseFloat(lrcMatch[2]);
-      const startTime = Math.round((minutes * 60 + seconds) * 1000);
-      const body = sourceLine.slice(lrcMatch[0].length);
+    const lrc = readLrcLine(sourceLine);
+    if (lrc) {
+      const startTime = lrc.times[0];
+      const body = lrc.body;
       const compacted = lyricBodyText(body);
 
       // 只有时间戳、没有正文（包括只剩行内时间戳）的行与空行等价。检测循环
@@ -704,8 +715,8 @@ const parseLyricDetailPayload = (
         lastLrcEntry &&
         compacted &&
         isPairedFollowUp(
-          { time: lastLrcEntry.time, text: compactLyricText(lastLrcEntry.line.text) },
-          { time: startTime, text: compacted },
+          { times: lastLrcEntry.times, text: compactLyricText(lastLrcEntry.line.text) },
+          { times: lrc.times, text: compacted },
         )
       ) {
         lastLrcEntry.line.translated = body.replace(ENHANCED_LRC_TAG, '').trim();
@@ -722,7 +733,8 @@ const parseLyricDetailPayload = (
           characters: enhancedCharacters,
         };
         parsedLines.push(entry);
-        lastLrcEntry = { time: startTime, line: entry };
+        lrcTimes.set(entry, lrc.times);
+        lastLrcEntry = { times: lrc.times, line: entry };
         continue;
       }
 
@@ -743,7 +755,8 @@ const parseLyricDetailPayload = (
           ],
         };
         parsedLines.push(entry);
-        lastLrcEntry = { time: startTime, line: entry };
+        lrcTimes.set(entry, lrc.times);
+        lastLrcEntry = { times: lrc.times, line: entry };
       }
     } else {
       lastLrcEntry = null;
@@ -752,7 +765,7 @@ const parseLyricDetailPayload = (
 
   let hasTranslation = false;
   let hasRomanization = false;
-  const lines = parsedLines.map((line, index) => {
+  const lines = parsedLines.flatMap((line, index) => {
     let translated = '';
     let romanized = '';
 
@@ -841,18 +854,32 @@ const parseLyricDetailPayload = (
 
     const romanTokens = resolveRomanTokens({ romanizedCharacters, romanized });
 
-    return {
-      time: line.time,
-      text: line.text,
-      characters: line.characters,
-      charactersEstimated: line.charactersEstimated,
-      translated: translated || undefined,
-      romanized: romanized || undefined,
-      romanizedCharacters,
-      translatedCharacters,
-      rubyUnits: buildRubyUnits(line.characters, romanTokens.tokens, romanTokens.joiner),
-    };
+    const times = lrcTimes.get(line) ?? [line.time * 1000];
+    return times.map((time) => {
+      const offset = time - times[0];
+      const shift = (characters: LyricCharacter[]) =>
+        offset === 0
+          ? characters
+          : characters.map((char) => ({
+              ...char,
+              startTime: char.startTime + offset,
+              endTime: char.endTime + offset,
+            }));
+      const characters = shift(line.characters);
+      return {
+        time: (Math.round(line.time * 1000) + offset) / 1000,
+        text: line.text,
+        characters,
+        charactersEstimated: line.charactersEstimated,
+        translated: translated || undefined,
+        romanized: romanized || undefined,
+        romanizedCharacters: romanizedCharacters && shift(romanizedCharacters),
+        translatedCharacters: translatedCharacters && shift(translatedCharacters),
+        rubyUnits: buildRubyUnits(characters, romanTokens.tokens, romanTokens.joiner),
+      };
+    });
   });
+  lines.sort((a, b) => a.time - b.time);
 
   return {
     lines,
