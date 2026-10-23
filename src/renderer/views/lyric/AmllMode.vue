@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import { OpeningLyricPlayer } from './amll/OpeningLyricPlayer';
+import type { LyricLineMouseEvent } from '@applemusic-like-lyrics/core';
 import '@applemusic-like-lyrics/core/style.css';
 import { useLyricStore } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
@@ -167,10 +168,37 @@ const handleVisibilityChange = () => {
   }
 };
 
+const handleLineClick = (event: Event) => {
+  const lineEvent = event as LyricLineMouseEvent;
+  // Core forwards native click detail, so the second click identifies a double-click
+  // without timers or depending on its internal lyric DOM/class names.
+  if (lineEvent.button !== 0 || lineEvent.detail !== 2) return;
+  const line = lineEvent.line.getLine();
+  // Core advances the display start for its entrance animation; word timing
+  // retains the actual singing position, including the whole-line fallback.
+  const timeMs = line.words[0]?.startTime ?? line.startTime;
+  if (!Number.isFinite(timeMs)) return;
+  lineEvent.preventDefault();
+  lineEvent.stopPropagation();
+  playerStore.seek(timeMs / 1000);
+  if (!playerStore.isPlaying) playerStore.togglePlay();
+  const player = playerRef.value;
+  player?.resetScroll();
+  const timelineMs = timeline.getTimelineMs(
+    { clock: playerStore.playbackClock },
+    lyricStore.currentTimeOffset,
+    0,
+  );
+  player?.setCurrentTime(timelineMs, true);
+  lastAppliedTimeMs = timelineMs;
+  requestFrame();
+};
+
 const initializePlayer = () => {
   const host = playerAreaRef.value;
   if (!host?.isConnected) return;
   const player = new OpeningLyricPlayer();
+  player.addEventListener('line-click', handleLineClick);
   host.appendChild(player.getElement());
   player.initializeViewport();
   // 缩减视口外预渲染行数，减少每帧需要更新样式的 DOM 元素数量。
@@ -219,6 +247,7 @@ onUnmounted(() => {
   rafId = null;
   const player = playerRef.value;
   if (player) {
+    player.removeEventListener('line-click', handleLineClick);
     player.dispose();
   }
   playerRef.value = null;
