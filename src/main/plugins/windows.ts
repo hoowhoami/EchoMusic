@@ -1,6 +1,7 @@
 import { ipcRegistry } from '../ipc/registry';
 import { BrowserWindow, app, screen } from 'electron';
 import { syncMacDockVisibility } from '../macBackgroundMode';
+import { installWindowBackgroundThrottling } from '../windowBackgroundThrottling';
 import { join } from 'path';
 import type {
   PluginShowOnTopOptions,
@@ -289,12 +290,13 @@ const createPluginWindow = async (
       enableWebSQL: false,
       webSecurity: false,
       allowRunningInsecureContent: true,
-      backgroundThrottling: true,
+      backgroundThrottling: true, // Initial hidden state; show/hide policy is installed below.
       zoomFactor: 1.0,
       partition: `persist:plugin-window-${descriptor.pluginId}-${descriptor.id}`,
     },
   });
 
+  installWindowBackgroundThrottling(win);
   const record: PluginWindowRecord = {
     pluginId: descriptor.pluginId,
     windowId: descriptor.id,

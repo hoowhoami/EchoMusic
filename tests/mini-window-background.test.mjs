@@ -1,3 +1,4 @@
+import * as throttling from '../src/main/windowBackgroundThrottling.ts';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
@@ -53,6 +54,7 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
   const app = Object.assign(new EventEmitter(), {
     isPackaged: true,
     setLoginItemSettings: noop,
+    focus: noop,
     quit: () => app.emit('before-quit'),
     dock: { hide: noop, show: () => dockShow() },
   });
@@ -60,6 +62,7 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
     constructor(options) {
       super();
       this.options = options;
+      this.throttled = options.webPreferences.backgroundThrottling;
       this.bounds = { x: 0, y: 0, ...options };
       this.visible = false;
       this.focused = false;
@@ -69,6 +72,9 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
         isDestroyed: () => this.destroyed,
         send: noop,
         setWindowOpenHandler: noop,
+        setBackgroundThrottling: (value) => {
+          this.throttled = value;
+        },
       });
       windows.push(this);
     }
@@ -135,6 +141,8 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
   };
   const registry = { ipcRegistry: { registerListener: noop, registerHandler: noop } };
   const mocks = {
+    '../windowBackgroundThrottling': throttling,
+    './windowBackgroundThrottling': throttling,
     'node:os': { release: () => '25.0.0' },
     path: { join },
     electron: {
@@ -249,6 +257,25 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
     },
   };
 }
+
+test('mini and main switch throttling independently across mode changes', async () => {
+  const e = await setup();
+  assert.equal(e.main.throttled, false);
+  await e.miniApi.showMiniPlayerWindow();
+  const mini = e.miniApi.getMiniPlayerWindow();
+  assert.equal(e.main.throttled, true);
+  assert.equal(mini.throttled, false);
+  mini.emit('blur');
+  assert.equal(mini.throttled, false);
+  mini.hide();
+  assert.equal(mini.throttled, true);
+  mini.showInactive();
+  assert.equal(mini.throttled, false);
+  await e.miniApi.toggleMiniPlayerWindow();
+  await settle();
+  assert.equal(mini.isDestroyed(), true);
+  assert.equal(e.main.throttled, false);
+});
 
 test('two mini toggles while restoring the Dock return to the main window', async () => {
   const e = await setup();

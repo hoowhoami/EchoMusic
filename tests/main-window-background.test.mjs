@@ -1,3 +1,4 @@
+import * as throttling from '../src/main/windowBackgroundThrottling.ts';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
@@ -52,6 +53,7 @@ async function setup({
   };
   const app = Object.assign(new EventEmitter(), {
     setLoginItemSettings: noop,
+    focus: noop,
     quit() {
       quitCalls++;
       app.emit('before-quit');
@@ -68,6 +70,7 @@ async function setup({
     constructor(options) {
       super();
       this.options = options;
+      this.throttled = options.webPreferences.backgroundThrottling;
     }
     visible = false;
     focused = false;
@@ -81,6 +84,9 @@ async function setup({
       isDestroyed: () => this.destroyed,
       send: noop,
       setWindowOpenHandler: noop,
+      setBackgroundThrottling: (value) => {
+        this.throttled = value;
+      },
     });
     isDestroyed() {
       return this.destroyed;
@@ -128,6 +134,7 @@ async function setup({
     }
     restore() {
       this.minimized = false;
+      this.emit('restore');
     }
     moveTop() {
       events.push('window:move-top');
@@ -138,6 +145,8 @@ async function setup({
     }
   }
   const mocks = {
+    '../windowBackgroundThrottling': throttling,
+    './windowBackgroundThrottling': throttling,
     'node:os': { release: () => '25.0.0' },
     path: { join },
     electron: {
@@ -657,14 +666,36 @@ test('minimized startup stays hidden even with saved maximization until explicit
   const e = await setup({ startMinimized: true, isMaximized: true });
   assert.equal(e.win.options.paintWhenInitiallyHidden, false);
   assert.equal(e.win.options.webPreferences.backgroundThrottling, true);
+  assert.equal(e.win.throttled, true);
   assert.equal(e.win.isVisible(), false);
   assert.equal(e.statePersistenceEnabled(), false);
   assert.deepEqual(e.events, []);
   await e.api.restoreWindow();
   assert.equal(e.win.isVisible(), true);
+  assert.equal(e.win.throttled, false);
   assert.equal(e.events[0], 'window:maximize');
   assert.equal(e.statePersistenceEnabled(), true);
 });
+
+for (const platform of ['win32', 'darwin', 'linux']) {
+  test(`${platform} main window throttles only while hidden or minimized`, async () => {
+    const e = await setup({ platform });
+    assert.equal(e.win.throttled, false);
+    e.win.emit('blur');
+    assert.equal(e.win.throttled, false);
+    e.win.minimized = true;
+    e.win.emit('minimize');
+    assert.equal(e.win.throttled, true);
+    await e.api.showMainWindow();
+    assert.equal(e.win.throttled, false);
+    e.api.hideMainWindow();
+    assert.equal(e.win.throttled, true);
+    e.win.emit('restore');
+    assert.equal(e.win.throttled, true, 'restore must not animate a hidden window');
+    await e.api.showMainWindow();
+    assert.equal(e.win.throttled, false);
+  });
+}
 
 test('an early restore request waits for the mounted page', async () => {
   const e = await setup({ finishStartup: false });

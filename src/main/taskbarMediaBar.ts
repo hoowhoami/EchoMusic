@@ -13,6 +13,7 @@ import {
 } from '../shared/taskbar';
 import log from './logger';
 import { bindVisibleNowPlayingWindow } from './nowPlaying';
+import { installWindowBackgroundThrottling } from './windowBackgroundThrottling';
 
 let win: BrowserWindow | null = null;
 let creating: Promise<void> | null = null;
@@ -155,11 +156,12 @@ async function createBar(): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: true,
+      backgroundThrottling: true, // Initial hidden state; show/hide policy is installed below.
       zoomFactor: 1,
       disableDialogs: true,
     },
   });
+  installWindowBackgroundThrottling(candidate);
   win = candidate;
   // 新窗口的区域是空的；缓存沿用旧值会误判「形状没变」而跳过真正的设置。
   appliedShape = '';

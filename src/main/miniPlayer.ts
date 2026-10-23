@@ -24,6 +24,7 @@ import { getActiveWindowMode, setActiveWindowMode } from './window/mode';
 import { getMainAppSettings, setMainAppSetting } from './storage/settings';
 import { WindowDragController } from './windowDrag';
 import { syncMacDockVisibility } from './macBackgroundMode';
+import { installWindowBackgroundThrottling } from './windowBackgroundThrottling';
 
 const MINI_PLAYER_WIDTH = MINI_PLAYER_DIMENSIONS.width;
 const MINI_PLAYER_HEIGHT = MINI_PLAYER_DIMENSIONS.collapsedHeight;
@@ -568,13 +569,14 @@ export const ensureMiniPlayerWindow = async (canPresent = () => true) => {
       enableWebSQL: false,
       webSecurity: false,
       allowRunningInsecureContent: true,
-      backgroundThrottling: true,
+      backgroundThrottling: true, // Initial hidden state; show/hide policy is installed below.
       zoomFactor: 1.0,
       // Chromium shares host zoom within a session; Mini has a fixed DIP layout.
       partition: 'persist:mini-player',
     },
   });
 
+  installWindowBackgroundThrottling(win);
   miniPlayerWindow = win;
   miniPlayerWindowUsesPanel = shouldUseMiniPlayerPanel();
   miniPlayerExpanded = false;

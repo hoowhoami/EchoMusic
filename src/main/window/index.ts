@@ -23,6 +23,7 @@ import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from '
 import { ipcRegistry } from '../ipc/registry';
 import { applyWindowAppIcon, resolveWindowIconPath } from '../appIcons';
 import { logMainMemory } from '../diagnostics/memory';
+import { installWindowBackgroundThrottling } from '../windowBackgroundThrottling';
 import { resolveMainWindowPlacement, resolveWaylandWindowSize } from '../windowSizing';
 import { isWaylandWindowingBackend } from '../../shared/windowing';
 import { trackMainWindowState } from './state';
@@ -495,11 +496,12 @@ export async function createWindow() {
       enableWebSQL: false,
       webSecurity: false, // 禁用 CORS 限制
       allowRunningInsecureContent: true, // 允许混合内容
-      backgroundThrottling: true,
+      backgroundThrottling: true, // Initial hidden state; show/hide policy is installed below.
       zoomFactor: zoomLevelToFactor(normalizeZoomLevel(getMainAppSettings().windowZoomLevel)),
       devTools: devToolsEnabled, // 控制是否允许打开开发者工具
     },
   });
+  installWindowBackgroundThrottling(win);
   // Windows cannot give a transparent window WS_THICKFRAME (Windows 10 clear/frost).
   // Electron then emulates fullscreen and maximize with SetBounds: isFullScreen()
   // stays false and native maximize requests can be swallowed.

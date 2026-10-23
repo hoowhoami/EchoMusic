@@ -1,3 +1,4 @@
+import * as throttling from '../src/main/windowBackgroundThrottling.ts';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
@@ -19,6 +20,7 @@ function fixture(platform, alwaysOnTop = false) {
       this.options = options;
       this.throttled = options.webPreferences.backgroundThrottling;
       this.webContents = {
+        isDestroyed: () => this.destroyed,
         setBackgroundThrottling: (value) => {
           this.throttled = value;
           this.changes.push(value);
@@ -39,6 +41,7 @@ function fixture(platform, alwaysOnTop = false) {
       this.topmost = value;
     }
     setSkipTaskbar() {}
+    setVisibleOnAllWorkspaces() {}
   }
   const dependencies = {
     electron: { BrowserWindow: Window, app: { isPackaged: true } },
@@ -49,8 +52,9 @@ function fixture(platform, alwaysOnTop = false) {
       getDesktopLyricSettings: () => ({ alwaysOnTop }),
       getDesktopLyricWindowLimits: () => ({}),
     },
+    '../windowBackgroundThrottling': throttling,
     '../networkPolicy': {},
-    '../macBackgroundMode': {},
+    '../macBackgroundMode': { syncMacDockVisibility() {} },
     '../windowBoundsPersistence': { bindWindowBoundsPersistenceEvents() {} },
   };
   const module = { exports: {} };
@@ -67,39 +71,31 @@ function fixture(platform, alwaysOnTop = false) {
   return module.exports;
 }
 
-for (const alwaysOnTop of [false, true]) {
-  test(`Windows desktop lyric stays unthrottled when shown (alwaysOnTop=${alwaysOnTop})`, () => {
-    const api = fixture('win32', alwaysOnTop);
-    const win = api.createDesktopLyricWindow();
-    assert.equal(win.throttled, false);
-    assert.equal(win.options.alwaysOnTop, alwaysOnTop);
-    win.emit('ready-to-show');
-    assert.equal(win.throttled, false);
-    api.syncWindowPresentation(!alwaysOnTop);
-    assert.equal(win.topmost, !alwaysOnTop);
-    assert.equal(win.throttled, false, 'z-order must not pause the lyric animation');
-    win.emit('blur');
-    assert.equal(win.throttled, false, 'loss of focus is not an explicit hide');
-    win.emit('hide');
-    assert.equal(win.throttled, true, 'explicitly hidden lyrics can save resources');
-    win.emit('show');
-    assert.equal(win.throttled, false, 'restoring lyrics resumes normal frame production');
-    assert.equal(api.createDesktopLyricWindow(), win);
-    assert.equal(win.listenerCount('show'), 1, 'reusing the window must not duplicate listeners');
-    assert.equal(win.listenerCount('hide'), 1);
-    win.destroyed = true;
-    const replacement = api.createDesktopLyricWindow();
-    assert.notEqual(replacement, win);
-    assert.equal(replacement.throttled, false);
-  });
-}
-
-for (const platform of ['linux', 'darwin']) {
-  test(`${platform} retains the default background throttling policy`, () => {
-    const win = fixture(platform).createDesktopLyricWindow();
-    assert.equal(win.throttled, true);
-    win.emit('hide');
-    win.emit('show');
-    assert.deepEqual(win.changes, []);
-  });
+for (const platform of ['win32', 'darwin', 'linux']) {
+  for (const alwaysOnTop of [false, true]) {
+    test(`${platform} desktop lyric stays unthrottled when shown (alwaysOnTop=${alwaysOnTop})`, () => {
+      const api = fixture(platform, alwaysOnTop);
+      const win = api.createDesktopLyricWindow();
+      assert.equal(win.throttled, true);
+      assert.equal(win.options.alwaysOnTop, alwaysOnTop);
+      win.emit('ready-to-show');
+      assert.equal(win.throttled, false);
+      api.syncWindowPresentation(!alwaysOnTop);
+      assert.equal(win.topmost, !alwaysOnTop);
+      assert.equal(win.throttled, false, 'z-order must not pause the lyric animation');
+      win.emit('blur');
+      assert.equal(win.throttled, false, 'loss of focus is not an explicit hide');
+      win.emit('hide');
+      assert.equal(win.throttled, true, 'explicitly hidden lyrics can save resources');
+      win.emit('show');
+      assert.equal(win.throttled, false, 'restoring lyrics resumes normal frame production');
+      assert.equal(api.createDesktopLyricWindow(), win);
+      assert.equal(win.listenerCount('show'), 1, 'reusing the window must not duplicate listeners');
+      assert.equal(win.listenerCount('hide'), 1);
+      win.destroyed = true;
+      const replacement = api.createDesktopLyricWindow();
+      assert.notEqual(replacement, win);
+      assert.equal(replacement.throttled, true);
+    });
+  }
 }

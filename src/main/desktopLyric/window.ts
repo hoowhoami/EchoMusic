@@ -10,6 +10,7 @@ import {
 } from './store';
 import { registerNetworkSession } from '../networkPolicy';
 import { syncMacDockVisibility } from '../macBackgroundMode';
+import { installWindowBackgroundThrottling } from '../windowBackgroundThrottling';
 import {
   bindWindowBoundsPersistenceEvents,
   shouldFlushWindowBounds,
@@ -201,9 +202,7 @@ export const createDesktopLyricWindow = () => {
       enableWebSQL: false,
       webSecurity: false,
       allowRunningInsecureContent: true,
-      // Windows may classify a lyric behind a transparent window as occluded.
-      // It still needs frames even without focus or the always-on-top setting.
-      backgroundThrottling: process.platform !== 'win32',
+      backgroundThrottling: true, // Initial hidden state; show/hide policy is installed below.
       zoomFactor: 1.0,
       partition: 'persist:desktop-lyric',
     },
@@ -211,11 +210,7 @@ export const createDesktopLyricWindow = () => {
 
   desktopLyricWindow = win;
 
-  if (process.platform === 'win32') {
-    // Actual hiding can save resources; occlusion or blur must not freeze lyrics.
-    win.on('hide', () => win.webContents.setBackgroundThrottling(true));
-    win.on('show', () => win.webContents.setBackgroundThrottling(false));
-  }
+  installWindowBackgroundThrottling(win);
 
   win.once('ready-to-show', () => {
     // 只有在内容准备就绪后才显示，避免灰色/黑色闪烁

@@ -1,3 +1,4 @@
+import * as throttling from '../src/main/windowBackgroundThrottling.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EventEmitter } from 'node:events';
@@ -74,6 +75,7 @@ function setup({
     constructor(options) {
       super();
       this.options = options;
+      this.throttled = options.webPreferences.backgroundThrottling;
       this.bounds = { x: 0, y: 0, width: options.width, height: options.height };
       this.visible = false;
       this.dead = false;
@@ -83,12 +85,19 @@ function setup({
       this.webContents = Object.assign(new EventEmitter(), {
         id: windows.length + 2,
         setWindowOpenHandler() {},
+        isDestroyed: () => this.dead,
+        setBackgroundThrottling: (value) => {
+          this.throttled = value;
+        },
         send: (...args) => this.sent.push(args),
       });
       windows.push(this);
     }
     isDestroyed() {
       return this.dead;
+    }
+    isMinimized() {
+      return false;
     }
     isVisible() {
       assert.equal(this.nativeDead, false, 'native host must be alive');
@@ -106,9 +115,11 @@ function setup({
     }
     showInactive() {
       this.visible = true;
+      this.emit('show');
     }
     hide() {
       this.visible = false;
+      this.emit('hide');
     }
     getNativeWindowHandle() {
       const h = Buffer.alloc(8);
@@ -179,6 +190,7 @@ function setup({
               }
             : null,
       },
+      './windowBackgroundThrottling': throttling,
       './nowPlaying': {
         bindVisibleNowPlayingWindow(_win, available) {
           isBarAvailable = available;
@@ -254,12 +266,14 @@ test('concurrent enable creates one hidden window, then shows only after a valid
   assert.equal(f.sessions.length, 1);
   const win = f.windows[0];
   assert.equal(win.visible, false);
+  assert.equal(win.throttled, true);
   assert.equal(win.options.alwaysOnTop, undefined);
   assert.equal(win.options.movable, false);
   assert.equal(win.options.thickFrame, false);
   assert.equal(win.options.webPreferences.nodeIntegration, false);
   f.sessions[0].emit();
   assert.equal(win.visible, true);
+  assert.equal(win.throttled, false);
   assert.equal(win.bounds.width, 400);
   assert.equal(win.bounds.x, 8);
   f.api.cleanupTaskbarPlayer();
@@ -317,6 +331,7 @@ test('crowded, fullscreen and failed layouts hide, valid space restores without 
   assert.equal(win.visible, true);
   s.emit({ ...layout(), available: false });
   assert.equal(win.visible, false);
+  assert.equal(win.throttled, true);
   s.emit({
     ...layout(),
     left: { x: 0, y: 0, width: 100, height: 48 },
@@ -325,6 +340,7 @@ test('crowded, fullscreen and failed layouts hide, valid space restores without 
   assert.equal(win.visible, false);
   s.emit();
   assert.equal(win.visible, true);
+  assert.equal(win.throttled, false);
   f.main.isFullScreen = () => true;
   f.main.emit('enter-full-screen');
   assert.equal(win.visible, false);
