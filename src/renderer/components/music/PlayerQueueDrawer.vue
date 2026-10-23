@@ -1338,7 +1338,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   color: var(--color-text-secondary);
-  background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
+  background: transparent;
   opacity: 0;
   pointer-events: none;
   transition: all 0.2s ease;
@@ -1352,7 +1352,7 @@ onBeforeUnmount(() => {
 
 .queue-remove:hover {
   color: var(--state-danger);
-  background: color-mix(in srgb, var(--state-danger) 12%, transparent);
+  background: transparent;
 }
 
 .queue-empty-container {

@@ -316,11 +316,11 @@ defineExpose({
   justify-content: center;
   border-radius: var(--radius-control);
   color: var(--color-text-secondary);
+  background: transparent;
   opacity: 0;
   transition:
     opacity 0.16s ease,
-    color 0.16s ease,
-    background-color 0.16s ease;
+    color 0.16s ease;
 }
 
 .queue-row:hover .queue-remove,
@@ -330,7 +330,7 @@ defineExpose({
 
 .queue-remove:hover {
   color: #ef4444;
-  background: color-mix(in srgb, #ef4444 12%, transparent);
+  background: transparent;
 }
 
 .queue-empty-container {
