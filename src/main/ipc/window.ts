@@ -4,7 +4,7 @@ import type { WindowFrameState } from '../../shared/windowFrame';
 import { ipcRegistry } from './registry';
 import {
   getMainWindowClientCornerRadius,
-  hideMainWindow,
+  hideMainWindowToBackground,
   quitApplication,
   requestMainWindowClose,
   showMainWindow,
@@ -124,7 +124,7 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     const browserWindow = getMainWindow();
     if (!browserWindow) return;
     if (browserWindow.isVisible()) {
-      hideMainWindow();
+      hideMainWindowToBackground();
     } else {
       void restoreActiveWindowMode();
     }

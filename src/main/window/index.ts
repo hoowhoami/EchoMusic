@@ -169,16 +169,26 @@ export function quitApplication() {
 
 export function requestMainWindowClose() {
   if (!canUseMainWindow(win)) return;
-  windowPresentationRevision++;
-  cancelPendingBackgroundClose();
 
   if (isQuitting || closePreferences.closeBehavior === 'exit') {
+    windowPresentationRevision++;
+    cancelPendingBackgroundClose();
     quitApplication();
     return;
   }
 
+  hideMainWindowToBackground();
+}
+
+// 隐藏主窗口；关闭行为为「最小化到托盘」时按偏好进入 macOS 后台模式。
+export function hideMainWindowToBackground() {
+  if (!canUseMainWindow(win)) return;
+  windowPresentationRevision++;
+  cancelPendingBackgroundClose();
+
   if (
     process.platform !== 'darwin' ||
+    closePreferences.closeBehavior !== 'tray' ||
     (!closePreferences.hideDockInBackground && !closePreferences.hideMenuBarInBackground)
   ) {
     hideMainWindow();
