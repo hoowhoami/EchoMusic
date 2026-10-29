@@ -62,7 +62,6 @@ export const DEFAULT_SHORTCUT_LABELS: Record<string, string> = {
   toggleFavorite: '⌘L',
   togglePlayMode: '⌘P',
   toggleMiniPlayer: '⌘I',
-  toggleWindow: '⌘W',
   toggleSidebar: '⌘B',
 };
 

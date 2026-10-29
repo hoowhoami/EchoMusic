@@ -58,7 +58,7 @@ const handleResetBoth = (command: ShortcutCommand) => {
           <p class="text-sm text-text-secondary">{{ item.desc }}</p>
         </div>
         <div class="shortcut-cell shortcut-cell-offset">
-          <div class="shortcut-input-wrap">
+          <div v-if="!item.globalOnly" class="shortcut-input-wrap">
             <input
               class="shortcut-input"
               :class="{ recording: isRecording(item.command, 'local') }"
