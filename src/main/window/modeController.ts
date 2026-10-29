@@ -1,6 +1,7 @@
+import type { BrowserWindow } from 'electron';
 import { closeMiniPlayerWindow, getMiniPlayerWindow, showMiniPlayerWindow } from '../miniPlayer';
 import { getActiveWindowMode, setActiveWindowMode } from './mode';
-import { showMainWindow } from './index';
+import { hideMainWindowToBackground, showMainWindow } from './index';
 
 export const restoreActiveWindowMode = async () => {
   if (getActiveWindowMode() === 'mini') {
@@ -8,6 +9,18 @@ export const restoreActiveWindowMode = async () => {
     return;
   }
   await showMainWindow();
+};
+
+/**
+ * 「显示 / 隐藏窗口」：主窗口在最前并获得焦点时隐藏到后台；
+ * 被其他窗口挡住或已隐藏时显示并置前。
+ */
+export const toggleMainWindow = async (mainWindow: BrowserWindow) => {
+  if (mainWindow.isVisible() && mainWindow.isFocused()) {
+    hideMainWindowToBackground();
+    return;
+  }
+  await restoreActiveWindowMode();
 };
 
 /**

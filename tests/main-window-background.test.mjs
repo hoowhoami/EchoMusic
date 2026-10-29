@@ -333,6 +333,49 @@ for (const entry of ['native', 'request']) {
   });
 }
 
+for (const hideDockInBackground of [false, true]) {
+  for (const hideMenuBarInBackground of [false, true]) {
+    test(`hiding to background matches tray close: Dock hidden=${hideDockInBackground}, menu bar hidden=${hideMenuBarInBackground}`, async () => {
+      const e = await setup({ hideDockInBackground, hideMenuBarInBackground });
+      e.api.hideMainWindowToBackground();
+      assert.equal(e.win.isVisible(), false);
+      assert.equal(e.quitCalls, 0);
+      const hasHiddenIcon = hideDockInBackground || hideMenuBarInBackground;
+      assert.equal(e.background.isMacBackgroundMode(), hasHiddenIcon);
+      assert.deepEqual(e.events, [
+        'window:hide',
+        ...(hasHiddenIcon ? [`tray:${!hideMenuBarInBackground}`] : []),
+        ...(hideDockInBackground ? ['dock:hide'] : []),
+      ]);
+      e.events.length = 0;
+      await e.api.restoreWindow();
+      assert.equal(e.win.isVisible(), true);
+      assert.equal(e.background.isMacBackgroundMode(), false);
+      assert.equal(e.events.includes('dock:show'), hideDockInBackground);
+    });
+  }
+}
+
+test('hiding to background with exit behavior only hides the window', async () => {
+  const e = await setup({ behavior: 'exit' });
+  e.api.hideMainWindowToBackground();
+  assert.equal(e.win.isVisible(), false);
+  assert.equal(e.win.isDestroyed(), false);
+  assert.equal(e.quitCalls, 0);
+  assert.equal(e.background.isMacBackgroundMode(), false);
+  assert.deepEqual(e.events, ['window:hide']);
+});
+
+test('fullscreen hide to background waits for AppKit to leave the Space', async () => {
+  const e = await setup();
+  e.settleFullscreen(true);
+  e.api.hideMainWindowToBackground();
+  assert.deepEqual(e.win.fullscreenRequests, [false]);
+  assert.deepEqual(e.events, []);
+  e.settleFullscreen(false);
+  assert.deepEqual(e.events, ['window:hide', 'tray:false', 'dock:hide']);
+});
+
 test('fullscreen close waits for AppKit to leave the Space before hiding icons', async () => {
   const e = await setup();
   e.settleFullscreen(true);

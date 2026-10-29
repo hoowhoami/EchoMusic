@@ -395,7 +395,10 @@ export const resolveShortcutMap = (scope: 'local' | 'global'): ShortcutMap => {
     toggleMiniPlayer: labelToAccelerator(
       bindings.toggleMiniPlayer ?? defaults.toggleMiniPlayer ?? '',
     ),
-    toggleWindow: labelToAccelerator(bindings.toggleWindow ?? defaults.toggleWindow ?? ''),
+    toggleWindow:
+      scope === 'global'
+        ? labelToAccelerator(bindings.toggleWindow ?? defaults.toggleWindow ?? '')
+        : '',
     toggleSidebar: labelToAccelerator(bindings.toggleSidebar ?? defaults.toggleSidebar ?? ''),
   };
 };
