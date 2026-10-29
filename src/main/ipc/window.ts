@@ -4,12 +4,11 @@ import type { WindowFrameState } from '../../shared/windowFrame';
 import { ipcRegistry } from './registry';
 import {
   getMainWindowClientCornerRadius,
-  hideMainWindowToBackground,
   quitApplication,
   requestMainWindowClose,
   showMainWindow,
 } from '../window';
-import { restoreActiveWindowMode } from '../window/modeController';
+import { toggleMainWindow } from '../window/modeController';
 import { showMiniPlayerWindowOnTop } from '../miniPlayer';
 import type {
   PluginHostWindowResult,
@@ -122,12 +121,7 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
 
   ipcRegistry.registerListener('window-toggle', () => {
     const browserWindow = getMainWindow();
-    if (!browserWindow) return;
-    if (browserWindow.isVisible()) {
-      hideMainWindowToBackground();
-    } else {
-      void restoreActiveWindowMode();
-    }
+    if (browserWindow) void toggleMainWindow(browserWindow);
   });
 
   ipcRegistry.registerListener('quit-app', () => {
