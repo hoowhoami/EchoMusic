@@ -1,4 +1,4 @@
-import { reactive } from 'vue';
+import { reactive, shallowRef } from 'vue';
 import { toRecord } from '../../shared/object';
 import logger from '@/utils/logger';
 import type { CommunityAudioEffect, CommunityAudioEffectSort } from '@/api/audioEffect';
@@ -25,6 +25,10 @@ const state = reactive({
   syncedAt: 0,
   hydrated: false,
 });
+
+// 缓存内容变更的标量版本号：市场列表 computed 改为依赖本标量（配合 toRaw 快照），
+// 时长逐条回填等高频写入不再逐条击穿全量 filter+sort，批量变更后统一失效一次。
+export const plazaCacheRevision = shallowRef(0);
 
 let hydration: Promise<void> | undefined;
 let writes = Promise.resolve();
@@ -60,6 +64,7 @@ export const hydrateEffectPlazaCache = (): Promise<void> =>
       state.effects = { ...effects, ...state.effects };
       state.syncedAt = typeof saved.syncedAt === 'number' ? saved.syncedAt : 0;
       state.hydrated = true;
+      plazaCacheRevision.value += 1;
     } catch (error) {
       logger.warn('EffectPlazaCache', 'Read plaza cache failed', error);
       state.hydrated = true;
@@ -106,6 +111,7 @@ export const mergeMarketEffects = (
         { ...existing, ...item, ranks }
       : { ...item, ranks };
   });
+  plazaCacheRevision.value += 1;
   schedulePersist();
 };
 
@@ -113,6 +119,7 @@ export const setEffectDuration = (id: number, seconds: number) => {
   const entry = state.effects[String(id)];
   if (!entry || !Number.isFinite(seconds) || seconds <= 0) return;
   entry.duration = seconds;
+  plazaCacheRevision.value += 1;
   schedulePersist();
 };
 

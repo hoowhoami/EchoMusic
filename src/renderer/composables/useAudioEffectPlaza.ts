@@ -1,9 +1,9 @@
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, toRaw, watch } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { usePlayerStore } from '@/stores/player';
 import { useToastStore } from '@/stores/toast';
 import { ensureEffectPlazaSync, plazaSyncState } from '@/utils/effectPlazaSync';
-import { effectPlazaCacheState } from '@/stores/audioEffectPlazaCache';
+import { effectPlazaCacheState, plazaCacheRevision } from '@/stores/audioEffectPlazaCache';
 import type { AudioEffectSupport } from '../../shared/audioEffectSupport';
 import {
   getArtistAudioEffects,
@@ -69,10 +69,15 @@ export const useAudioEffectPlaza = () => {
   const currentPage = computed(() => pages[pageKey.value] ?? emptyPage<CommunityAudioEffect>());
 
   // 音效市场：列表/排序/搜索全部由本地持久化缓存派生，网络层只负责后台同步。
-  const sortCacheEntries = (sort: CommunityAudioEffectSort) =>
-    Object.values(effectPlazaCacheState.effects)
+  // 依赖 revision 标量 + toRaw 快照读取：时长逐条回填（effectPlazaSync 每解析一条
+  // 调用一次 setEffectDuration）不再逐条击穿全量 filter+sort，仅批量 bump 后重算一次。
+  const sortCacheEntries = (sort: CommunityAudioEffectSort) => {
+    void plazaCacheRevision.value;
+    const effects = toRaw(effectPlazaCacheState).effects;
+    return Object.values(effects)
       .filter((entry) => entry.ranks[sort] !== undefined)
       .sort((a, b) => (a.ranks[sort] ?? 0) - (b.ranks[sort] ?? 0));
+  };
 
   const marketItems = computed<CommunityAudioEffect[]>(() => sortCacheEntries(marketSort.value));
 
@@ -80,9 +85,10 @@ export const useAudioEffectPlaza = () => {
   const marketSearchResults = computed<CommunityAudioEffect[] | null>(() => {
     const query = searchQuery.value.trim().toLowerCase();
     if (!query) return null;
+    void plazaCacheRevision.value;
     const sort = marketSort.value;
     return (
-      Object.values(effectPlazaCacheState.effects)
+      Object.values(toRaw(effectPlazaCacheState).effects)
         .filter((entry) =>
           [entry.name, entry.author, entry.tagName, ...entry.labels].some((value) =>
             value.toLowerCase().includes(query),
@@ -109,7 +115,9 @@ export const useAudioEffectPlaza = () => {
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
   };
   const effectDurationText = (effect: CommunityAudioEffect) => {
-    const cached = effectPlazaCacheState.effects[String(effect.id)];
+    // 与列表一致的 revision 依赖：时长回填后随批量失效刷新，而非订阅单条 entry
+    void plazaCacheRevision.value;
+    const cached = toRaw(effectPlazaCacheState).effects[String(effect.id)];
     return cached?.duration ? formatDuration(cached.duration) : '';
   };
   // 强制重新全量同步（刷新按钮）。
