@@ -6,8 +6,6 @@ import { markRaw, computed, ref, onMounted, onUnmounted, watch, nextTick } from 
 import { useResizeObserver } from '@vueuse/core';
 import type { SongArtist } from '@/models/song';
 import type { IconifyIcon } from '@iconify/types';
-import { SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
-import SliderRoot from '@/components/ui/SliderRoot.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import PlayModePopover from '@/components/player/PlayModePopover.vue';
 import SleepTimerPopover from '@/components/player/SleepTimerPopover.vue';
@@ -15,15 +13,13 @@ import QualityPopover from '@/components/player/QualityPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
 import CastPopover from '@/components/player/CastPopover.vue';
+import PlayerProgress from '@/components/player/PlayerProgress.vue';
 import PlayerBarMoreMenu from './PlayerBarMoreMenu.vue';
-import ProgressBusyOverlay from '@/components/player/ProgressBusyOverlay.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Badge from '@/components/ui/Badge.vue';
 import { getPlayerBarBadgeTone } from './playerBarActions';
 import Button from '@/components/ui/Button.vue';
-import { useDeferredSeek } from '@/composables/useDeferredSeek';
 import { useLyricPagePreload } from '@/composables/useLyricPagePreload';
-import { usePlaybackProgressStatus } from '@/composables/usePlaybackProgressStatus';
 import PlayerBarActionIcon from './PlayerBarActionIcon.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import VolumeIcon from '@/components/player/VolumeIcon.vue';
@@ -95,9 +91,6 @@ const {
 } = usePlayerControls();
 
 const isPlaybackLoading = computed(() => player.playbackIsLoading);
-const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } = usePlaybackProgressStatus(
-  () => player.playbackProgressBusyReason,
-);
 
 const artistList = computed(() => {
   if (!currentTrack.value) return [];
@@ -110,13 +103,6 @@ const artistList = computed(() => {
     .filter((name) => name.length > 0)
     .map((name) => ({ name }));
 });
-
-const formatTime = (seconds: number) => {
-  if (!seconds || isNaN(seconds)) return '00:00';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-};
 
 const navigateToLyric = () => {
   player.toggleLyricView(true);
@@ -162,20 +148,6 @@ const actionCapacity = ref<PlayerBarPlacementCapacity>({
   left: 3,
   center: 7,
   right: 3,
-});
-
-const {
-  pendingSeekTime,
-  isDragging: isDraggingSeek,
-  progressValue,
-  handleStart: handleSeekStart,
-  handleValueUpdate: handleSeek,
-  handleCommit: handleSeekCommit,
-  handleEnd: handleSeekEnd,
-  handleCancel: handleSeekCancel,
-} = useDeferredSeek({
-  getCurrentTime: () => player.currentTime,
-  seek: (time) => player.seek(time),
 });
 
 const queueBadge = computed(() => {
@@ -749,68 +721,8 @@ onUnmounted(() => {
             </div>
           </template>
         </div>
-        <!-- 进度条系统 - 动态伸缩至最大值 -->
-        <div class="w-full max-w-120 flex items-center gap-3 px-1 h-3.5 min-w-0">
-          <span
-            class="text-[10px] font-medium text-text-secondary w-9 shrink-0 text-right tabular-nums"
-            >{{
-              formatTime(
-                isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : player.currentTime,
-              )
-            }}</span
-          >
-          <SliderRoot
-            :model-value="progressValue"
-            :max="player.duration || 100"
-            :step="0.1"
-            :aria-busy="isProgressBusy"
-            :aria-label="progressAriaLabel"
-            class="echo-slider echo-slider-progress relative flex items-center flex-1 min-w-0 h-4 group/progress"
-            :data-dragging="isDraggingSeek"
-            @update:model-value="handleSeek"
-            @pointerdown.capture="handleSeekStart"
-            @value-commit="handleSeekCommit"
-            @pointerup="handleSeekEnd"
-            @pointercancel="handleSeekCancel"
-          >
-            <SliderTrack class="echo-slider-track">
-              <div class="climax-mark-layer">
-                <template
-                  v-for="(mark, index) in player.climaxMarks"
-                  :key="`${mark.start}-${index}`"
-                >
-                  <span
-                    class="climax-tick"
-                    :style="{ left: `calc(${(mark.start * 100).toFixed(3)}% - 1px)` }"
-                  >
-                  </span>
-                  <span
-                    v-if="mark.end > mark.start"
-                    class="climax-tick"
-                    :style="{ left: `calc(${(mark.end * 100).toFixed(3)}% - 1px)` }"
-                  >
-                  </span>
-                </template>
-              </div>
-              <SliderRange class="echo-slider-range">
-                <ProgressBusyOverlay v-if="isProgressBusy" />
-              </SliderRange>
-            </SliderTrack>
-            <SliderThumb
-              class="echo-slider-thumb"
-              :aria-label="progressAriaLabel"
-              :aria-valuetext="
-                formatTime(
-                  isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : player.currentTime,
-                )
-              "
-            />
-          </SliderRoot>
-          <span
-            class="text-[10px] font-medium text-text-secondary w-9 shrink-0 text-left tabular-nums"
-            >{{ formatTime(player.duration) }}</span
-          >
-        </div>
+        <!-- 进度条系统：独立子组件，currentTime 高频更新不触发 PlayerBar 整体重渲染 -->
+        <PlayerProgress />
       </div>
       <!-- 3. 右侧：功能选项 - 弹性增长 -->
       <div
@@ -919,25 +831,6 @@ onUnmounted(() => {
   transition:
     background-color 0.3s ease,
     border-color 0.3s ease;
-}
-
-.climax-mark-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.climax-tick {
-  position: absolute;
-  top: calc(50% - 3px);
-  width: 2px;
-  height: 6px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--color-primary) 80%, transparent);
-}
-
-:global(.dark) .climax-tick {
-  background: color-mix(in srgb, var(--color-primary) 65%, transparent);
 }
 
 .player-actions {
