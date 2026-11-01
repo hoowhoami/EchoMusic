@@ -54,7 +54,7 @@ jobs:
           # Ad-hoc Mac builds cannot use Squirrel.Mac automatic installation.
           # Keep src/shared/manualUpdate.ts in manual mode until Developer ID
           # signing is configured; existing ad-hoc installs need a manual migration.
-          - os: macos-14
+          - os: macos-26
             rust_target: aarch64-apple-darwin
             electron_builder_args: '--mac --arm64 --config.mac.identity=-'
             artifact_name: EchoMusic-macOS-arm64
@@ -62,7 +62,7 @@ jobs:
               release/EchoMusic-*.zip
               release/EchoMusic-*.dmg
               release/latest-mac.yml
-          - os: macos-14
+          - os: macos-26
             rust_target: x86_64-apple-darwin
             electron_builder_args: '--mac --x64 --config.mac.identity=-'
             artifact_name: EchoMusic-macOS-x64

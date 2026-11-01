@@ -59,7 +59,7 @@ jobs:
           node <<'NODE' >> "$GITHUB_OUTPUT"
           const selected = [
             process.env.MACOS_ARM64 === 'true' && {
-              os: 'macos-14',
+              os: 'macos-26',
               rust_target: 'aarch64-apple-darwin',
               platform: 'macos',
               arch: 'arm64',
@@ -67,7 +67,7 @@ jobs:
               include_platform_adaptor: true
             },
             process.env.MACOS_X64 === 'true' && {
-              os: 'macos-14',
+              os: 'macos-26',
               rust_target: 'x86_64-apple-darwin',
               platform: 'macos',
               arch: 'x64',
