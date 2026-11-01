@@ -450,3 +450,47 @@
 - 5 路并行静态审查，逐文件阅读 + 模式 grep 交叉验证（`deep:\s*true`、`$subscribe`、`setInterval`、`Sync(`、`JSON.stringify`、`v-for`、`addEventListener`、`unwrap()`、`Mutex`、`clone()` 等）。
 - 所有结论基于实际读到的代码，标注文件:行号；未运行程序（用户指示静态审查）。
 - 已知历史问题（歌词行切换 122ms 长帧）作为对照验证了修复现状。
+
+---
+
+## 附录 B：本分支实施记录（perf/optimization）
+
+以下修复已在 `perf/optimization` 分支实施（每项一个 commit，未 push）：
+
+| Commit | 对应条目 | 内容 |
+|---|---|---|
+| `da5ab389` | — | 本审查报告 |
+| `58c1b44c` | R-H1 / R-H2 / R-M3 | `helpers.ts` 新增 `buildSongMatchKeySet`/`songMatchesKeySet`（与 `isSameSong` + id 兜底语义一致的键集），替换 `appendToPlaybackQueue`、`addSongsToPlaylist`、`applyFavoriteChange`、`removeSongsFromKnownList` 的 O(n×m) 双重扫描 |
+| `03e34f36` | R-M5 / R-M4 | lyric 三个持久化 map（timeOffsetMap/manualLyricMap/embeddedLyricSelectionMap）写入时按 512 上限淘汰最早条目；内存诊断 interval 回调到期自停 |
+| `ba73867e` | R-M7 / R-M6 | 歌词过滤正则按 pattern 缓存编译结果（含失败缓存）；本地快捷键 keydown 以 bindings+defaults 签名缓存解析映射 |
+| `5f75702e` | C-H3 | 任务栏逐字歌词采样按累计截止节流至 ~30fps（对齐 AmllMode 标准） |
+| `e811ea96` | C-M5 / C-M6 / C-M2 | 播放队列虚拟行 key 改为数据身份（重复条目追加序号保唯一）；SongCard `.song-action` 的 `will-change: transform` 改 `scale`；nowPlaying/desktopLyric 同步层移除 3 处冗余 `deep: true` |
+| `543228b9` | P-H3（部分）/ M-L1 / M-L2 / M-M7 | music-metadata、node-stream-zip、font-list 惰性加载；`PlayerController.available` 缓存 addon 探测；CHANGELOG 读取一次性缓存；任务栏歌词心跳增加 `win.isVisible()` 短路 |
+| `5d29dff1` | M-M2 | thumbar 注册表明暗查询 `execSync` → `execFile` 异步（启动先按深色渲染、异步刷新） |
+| `4b2e31a9` | C-M8（部分） | `SettingsDialog` 改 `defineAsyncComponent` 移出首屏 entry chunk |
+| `e4c35508` | C-H1 | 进度条拆分为独立 `PlayerProgress.vue`（时间文本/Slider/climaxMarks/拖拽 seek/忙碌态全部自包含），timeupdate 不再触发 PlayerBar 整体重渲染 |
+| `8c2ea865` | P-M5 | preload 窗口缩放几何同步 rAF 合帧（resize/geometrychange） |
+| `f58dbb78` | R-M1 | 运行时会话同步 watch 标量化：以 PLAYER_SESSION_KEYS 全字段引用 + 队列 revision/currentTrackId/updatedAt + intent 相位为签名，去除 deep traverse 与全队列 JSON 序列化的无差别触发 |
+| `5cbf7aa7` | R-M2 | `appendQueueSong` 旧队列已规整时走 `concat` 增量追加，仅处理新增歌曲 |
+| `57df2e45` | R-H3 | 音效市场列表/搜索/时长文本改为依赖 `plazaCacheRevision` 标量 + `toRaw` 快照，逐条时长回填不再击穿全量 filter+sort |
+| `db6444a0` | C-H2（保守版） | 桌面歌词自管 rAF 限帧 30fps；副歌词逐字元素按行 key 缓存（主行 key 变化时统一失效） |
+| `2b7fcfa3` | C-L5 / C-L6 | PlayerBar 歌手列表稳定 key（id/name）；LyricScroller 的 playbackClock watch 在 rAF 循环运行期间短路 |
+| `9c094cec` | — | 清理未使用导入与解构剔除写法（部分为 main 上已有问题） |
+
+**验证**：全部改动文件 `vue-tsc --noEmit` 通过、eslint 清零；`vite build` 产物构建正常（见下）。
+
+**本分支未实施项及原因**：
+
+| 条目 | 原因 |
+|---|---|
+| P-H2 preload JSON 往返去除 | 回归面覆盖全部 300+ IPC 通道（含嵌套 TypedArray 语义），需要运行时回归验证，不宜在静态分支盲改；建议专项处理 |
+| P-H1 桌面歌词窗口解耦（去 vue-router / 拆插件运行时子集） | 涉及入口架构与插件歌词源能力边界，需逐窗口回归 |
+| C-M8（manualChunks） | 需要回归验证循环依赖与 chunk 边界，建议配合 `ANALYZE_BUNDLE=1` 单独做 |
+| C-H2（测量移出帧内） | 需 ResizeObserver 重构滚动测量时机，与逐字动画行为强耦合，留待运行时验证 |
+| C-M4 评论区虚拟滚动 | 嵌套楼层结构窗口化，工作量大 |
+| M-H1 存储层 async 化 / M-H2 扫描 worker 化 / M-H3 备份 worker 化 | 架构级改动（native addon 接口 / worker 线程），需专项 |
+| M-M3 nowPlaying 快照 patch 化 | 与 desktopPatch 模式对接需要双端协议对齐 |
+| native 各项（N-M1~M8） | Rust 改动需全量 cargo 构建与音频回归，另行专项 |
+| server 各项（S-H1/H2 等） | server 为第三方 KuGouMusicApi 子模块，建议上游处理 |
+| @pixi 死依赖删除（C-L1） | 需更新 lockfile（依赖安装须由用户手动执行） |
+
