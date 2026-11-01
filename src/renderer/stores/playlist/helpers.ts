@@ -237,6 +237,15 @@ export const appendQueueSong = (queue: PlaybackQueueState, song: Song): boolean 
   const key = resolveSongQueueKey(song);
   const exists = queue.songs.some((item) => resolveSongQueueKey(item) === key);
   if (exists) return false;
-  queue.songs = toRawSongList([...queue.songs, song]);
+  const rawSong = toRawSong(withoutEmbeddedMetadata(toRaw(song)));
+  const existing = queue.songs as Song[] & { __v_skip?: boolean };
+  // 旧队列数组已 markRaw 且歌曲不含 embeddedMetadata 时走增量 concat，
+  // 避免触发 toRawSongList 对整条队列逐首重建对象（FM 逐首追加时的 O(n) 分配）；
+  // 否则退回全量规整路径保持行为一致。
+  if (existing.__v_skip === true && !existing.some((item) => item.embeddedMetadata !== undefined)) {
+    queue.songs = markRaw(existing.concat(rawSong));
+  } else {
+    queue.songs = toRawSongList([...queue.songs, rawSong]);
+  }
   return true;
 };
