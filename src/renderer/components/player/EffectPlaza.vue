@@ -8,6 +8,7 @@ import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
+import Input from '@/components/ui/Input.vue';
 import OnlineAudioEffectCard from './OnlineAudioEffectCard.vue';
 import type { AudioEffectPlazaState, EffectPlazaCategory } from '@/composables/useAudioEffectPlaza';
 import type { CommunityAudioEffectSort } from '@/api/audioEffect';
@@ -37,7 +38,15 @@ const description = computed(
 const loading = computed(() =>
   props.plaza.isBrandDirectory
     ? props.plaza.brands.loading || props.plaza.common.loading
-    : props.plaza.currentPage.loading,
+    : props.plaza.category === 'market'
+      ? props.plaza.plazaSyncState.active
+      : props.plaza.currentPage.loading,
+);
+// 音效市场计数：同步中显示进度，完成后显示缓存条目数。
+const marketStatusText = computed(() =>
+  props.plaza.plazaSyncState.active
+    ? props.plaza.plazaSyncState.label
+    : `${props.plaza.marketList.length} 个音效`,
 );
 const scroll = ref<InstanceType<typeof Scrollbar> | null>(null);
 watch(
@@ -49,6 +58,9 @@ const refresh = () => {
   if (props.plaza.isBrandDirectory) {
     void props.plaza.loadBrands(true);
     void props.plaza.loadCommon();
+  } else if (props.plaza.category === 'market') {
+    // 音效市场强制重新全量同步；时长与位次在后台补齐。
+    props.plaza.refreshMarket();
   } else void props.plaza.loadEffects(true);
 };
 </script>
@@ -87,7 +99,19 @@ const refresh = () => {
           </TabsTrigger>
         </TabsList>
       </Tabs>
-      <span v-if="plaza.currentPage.loaded">{{ plaza.currentPage.total }} 个音效</span>
+      <span class="plaza-sync-hint" :class="{ 'is-active': plaza.plazaSyncState.active }">
+        {{ marketStatusText }}
+      </span>
+    </div>
+    <div v-if="plaza.category === 'market'" class="plaza-search">
+      <Input
+        :model-value="plaza.searchQuery"
+        size="compact"
+        type="search"
+        placeholder="搜索音效名称 / 作者 / 标签"
+        aria-label="搜索音效"
+        @update:model-value="plaza.setSearch"
+      />
     </div>
     <div v-else-if="plaza.category === 'headphone' && plaza.selectedBrand" class="plaza-tools">
       <button
@@ -179,67 +203,98 @@ const refresh = () => {
         </template>
 
         <template v-else>
-          <OnlineAudioEffectCard
-            v-for="effect in plaza.currentPage.items"
-            :key="effect.id"
-            :effect="effect"
-            :plaza="plaza"
-          />
-          <div v-if="plaza.currentPage.error" class="plaza-state" role="status">
-            <span>{{ plaza.currentPage.error }}</span
-            ><button
-              type="button"
-              class="soft-neutral-action echo-button-sized echo-button-standard"
-              @click="plaza.loadEffects(plaza.currentPage.retryReset)"
+          <template v-if="plaza.category === 'market'">
+            <OnlineAudioEffectCard
+              v-for="effect in plaza.marketList"
+              :key="effect.id"
+              :effect="effect"
+              :plaza="plaza"
+            />
+            <div v-if="plaza.searchQuery && !plaza.marketList.length" class="plaza-state">
+              <Icon :icon="iconHeadphones" width="24" /><span>没有匹配的音效</span>
+            </div>
+            <div
+              v-else-if="!plaza.marketList.length && plaza.plazaSyncState.active"
+              class="plaza-state"
             >
-              重试
-            </button>
-          </div>
-          <div
-            v-else-if="plaza.currentPage.loading && !plaza.currentPage.items.length"
-            class="plaza-state"
-          >
-            <Icon :icon="iconLoader2" width="20" class="plaza-spin" />正在加载音效…
-          </div>
-          <div
-            v-else-if="plaza.currentPage.loaded && !plaza.currentPage.items.length"
-            class="plaza-state"
-          >
-            <Icon :icon="iconHeadphones" width="24" /><span
-              >暂无{{
-                plaza.category === 'artist'
-                  ? '歌手音效'
-                  : plaza.category === 'headphone'
-                    ? '该品牌的耳机音效'
-                    : '市场音效'
-              }}</span
-            ><button
-              type="button"
-              class="soft-neutral-action echo-button-sized echo-button-standard"
-              @click="refresh"
+              <Icon :icon="iconLoader2" width="20" class="plaza-spin" />{{
+                plaza.plazaSyncState.label
+              }}
+            </div>
+            <div v-else-if="!plaza.marketList.length" class="plaza-state">
+              <Icon :icon="iconHeadphones" width="24" /><span>音效列表尚未同步</span
+              ><button
+                type="button"
+                class="soft-neutral-action echo-button-sized echo-button-standard"
+                @click="plaza.refreshMarket()"
+              >
+                重新同步
+              </button>
+            </div>
+            <div v-else-if="plaza.plazaSyncState.active" class="plaza-inline-state" role="status">
+              <Icon :icon="iconLoader2" width="13" class="plaza-spin" />{{
+                plaza.plazaSyncState.label
+              }}
+            </div>
+            <p v-else-if="!plaza.searchQuery" class="plaza-end">已展示全部音效</p>
+          </template>
+          <template v-else>
+            <OnlineAudioEffectCard
+              v-for="effect in plaza.currentPage.items"
+              :key="effect.id"
+              :effect="effect"
+              :plaza="plaza"
+            />
+            <div v-if="plaza.currentPage.error" class="plaza-state" role="status">
+              <span>{{ plaza.currentPage.error }}</span
+              ><button
+                type="button"
+                class="soft-neutral-action echo-button-sized echo-button-standard"
+                @click="plaza.loadEffects(plaza.currentPage.retryReset)"
+              >
+                重试
+              </button>
+            </div>
+            <div
+              v-else-if="plaza.currentPage.loading && !plaza.currentPage.items.length"
+              class="plaza-state"
             >
-              重新加载
+              <Icon :icon="iconLoader2" width="20" class="plaza-spin" />正在加载音效…
+            </div>
+            <div
+              v-else-if="plaza.currentPage.loaded && !plaza.currentPage.items.length"
+              class="plaza-state"
+            >
+              <Icon :icon="iconHeadphones" width="24" /><span
+                >暂无{{ plaza.category === 'artist' ? '歌手音效' : '该品牌的耳机音效' }}</span
+              ><button
+                type="button"
+                class="soft-neutral-action echo-button-sized echo-button-standard"
+                @click="refresh"
+              >
+                重新加载
+              </button>
+            </div>
+            <button
+              v-if="plaza.currentPage.hasMore && !plaza.currentPage.error"
+              type="button"
+              class="plaza-more soft-secondary-action echo-button-sized echo-button-standard"
+              :disabled="plaza.currentPage.loading"
+              @click="plaza.loadEffects()"
+            >
+              {{ plaza.currentPage.loading ? '加载中…' : '加载更多' }}
             </button>
-          </div>
-          <button
-            v-if="plaza.currentPage.hasMore && !plaza.currentPage.error"
-            type="button"
-            class="plaza-more soft-secondary-action echo-button-sized echo-button-standard"
-            :disabled="plaza.currentPage.loading"
-            @click="plaza.loadEffects()"
-          >
-            {{ plaza.currentPage.loading ? '加载中…' : '加载更多' }}
-          </button>
-          <p
-            v-else-if="
-              plaza.currentPage.items.length &&
-              !plaza.currentPage.loading &&
-              !plaza.currentPage.error
-            "
-            class="plaza-end"
-          >
-            已展示全部音效
-          </p>
+            <p
+              v-else-if="
+                plaza.currentPage.items.length &&
+                !plaza.currentPage.loading &&
+                !plaza.currentPage.error
+              "
+              class="plaza-end"
+            >
+              已展示全部音效
+            </p>
+          </template>
         </template>
       </div>
     </Scrollbar>
@@ -323,6 +378,18 @@ const refresh = () => {
 .plaza-sorts {
   width: 220px;
   max-width: 100%;
+}
+.plaza-sync-hint {
+  flex-shrink: 0;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.plaza-sync-hint.is-active {
+  color: var(--color-primary-text);
+}
+.plaza-search {
+  flex-shrink: 0;
+  margin: 0 12px 9px;
 }
 .plaza-back {
   --button-height: var(--control-height-small);
