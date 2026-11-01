@@ -1,4 +1,5 @@
 import type { LocalAudioMetadata } from './localMusic';
+import type { MarketplaceErrorDetail } from './networkErrorClassifier';
 
 export type PluginWindowType = 'floating';
 export type PluginWindowPosition = 'center' | 'top-center';
@@ -907,6 +908,8 @@ export interface PluginMarketplaceSource {
   updatedAt: number;
   lastFetchedAt: number;
   lastError: string;
+  /** 网络错误的分类详情（仅抓取失败时存在），供「显示详情」弹窗展示。 */
+  lastErrorDetail?: MarketplaceErrorDetail | null;
 }
 
 export interface PluginMarketplaceSourceInput {

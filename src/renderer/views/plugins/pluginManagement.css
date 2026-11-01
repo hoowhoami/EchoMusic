@@ -194,6 +194,28 @@
   color: rgb(251, 191, 36);
 }
 
+.marketplace-source-error-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.marketplace-source-detail-btn {
+  flex-shrink: 0;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.marketplace-source-detail-btn:hover {
+  background: rgba(245, 158, 11, 0.14);
+}
+
 .plugin-empty-state {
   @apply py-16 text-center flex flex-col items-center justify-center;
 }
@@ -684,13 +706,37 @@
 }
 
 .plugin-source-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   color: rgb(180, 83, 9);
   font-size: 0.75rem;
   font-weight: 600;
 }
 
+.plugin-source-error > span {
+  min-width: 0;
+}
+
 .dark .plugin-source-error {
   color: rgb(251, 191, 36);
+}
+
+.plugin-source-detail-btn {
+  flex-shrink: 0;
+  padding: 0.125rem 0.375rem;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.plugin-source-detail-btn:hover {
+  background: rgba(245, 158, 11, 0.14);
 }
 
 .plugin-source-actions {
@@ -795,6 +841,39 @@
   align-items: center;
   gap: 0.75rem;
   width: 100%;
+}
+
+/* 网络错误详情弹窗：原始错误信息区块的标题行与复制按钮 */
+.plugin-error-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+}
+
+.plugin-error-detail-heading h4 {
+  margin: 0;
+}
+
+.plugin-error-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.plugin-error-copy-btn:hover {
+  background: var(--control-muted-bg);
+  color: var(--color-text-main);
 }
 
 .dialog-content.plugin-settings-dialog {

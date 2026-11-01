@@ -57,6 +57,7 @@ import {
   applyGithubAcceleratorUrl as applyGithubProxyUrl,
   runGithubAcceleratorFallback,
 } from '../../shared/githubAccelerator';
+import { attachFetchErrorContext, classifyNetworkError } from '../../shared/networkErrorClassifier';
 import { getKvStorage } from '../storage/kv';
 import { onKvChange } from '../storage/kvEvents';
 import { createPluginMetadataRegistry } from './metadata';
@@ -1296,6 +1297,7 @@ const normalizeMarketplaceSource = (
     updatedAt: Number(source?.updatedAt) || now,
     lastFetchedAt: Number(source?.lastFetchedAt) || 0,
     lastError: String(source?.lastError || ''),
+    lastErrorDetail: source?.lastErrorDetail ?? null,
   };
 };
 
@@ -1587,14 +1589,24 @@ const fetchMarketplaceText = async (url: string, githubProxyUrl?: string, forceN
     headers.Pragma = 'no-cache';
   }
   const fetchText = async (targetUrl: string) => {
-    const response = await fetchWithTimeout(
-      targetUrl,
-      { headers },
-      PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
-      '插件源请求超时，请检查网络或 GitHub 加速地址',
-    );
-    if (!response.ok) throw new Error(`请求失败 (${response.status})`);
-    return response.text();
+    try {
+      const response = await fetchWithTimeout(
+        targetUrl,
+        { headers },
+        PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
+        '插件源请求超时，请检查网络或 GitHub 加速地址',
+      );
+      if (!response.ok) {
+        throw attachFetchErrorContext(new Error(`请求失败 (${response.status})`), {
+          statusCode: response.status,
+          failedUrl: targetUrl,
+        });
+      }
+      return await response.text();
+    } catch (error) {
+      // 附带实际失败的 URL，供错误分类与「显示详情」弹窗展示。
+      throw attachFetchErrorContext(error, { failedUrl: targetUrl });
+    }
   };
   return runGithubAcceleratorFallback({
     acceleratorEnabled: acceleratedUrl !== bustedUrl,
@@ -1697,6 +1709,8 @@ const fetchMarketplaceSourceCatalog = async (
           result.failedCount > 0
             ? `部分插件刷新失败，已使用缓存 ${result.recoveredCount}/${result.failedCount}`
             : '',
+        // 刷新成功（或仅部分插件降级）后清除网络错误详情，避免残留旧的失败记录。
+        lastErrorDetail: null,
       },
       plugins: result.plugins.map((plugin) => ({
         ...plugin,
@@ -1704,10 +1718,13 @@ const fetchMarketplaceSourceCatalog = async (
       })),
     };
   } catch (error) {
+    // 将原始错误分类为友好文案，原始信息保留在 lastErrorDetail 供「显示详情」弹窗查看。
+    const detail = classifyNetworkError(error, { url: source.url });
     return {
       source: {
         ...source,
-        lastError: error instanceof Error ? error.message : '插件源刷新失败',
+        lastError: detail.title,
+        lastErrorDetail: detail,
         updatedAt: Date.now(),
       },
       plugins: previousPlugins
@@ -1934,7 +1951,13 @@ export const listPluginMarketplace = async (
     if (replacements.size) setMarketplaceCache(cache);
     nextSources = sources.map((source) => {
       const result = fetched.find((item) => item.source.id === source.id);
-      return result ? { ...source, lastError: result.source.lastError } : source;
+      return result
+        ? {
+            ...source,
+            lastError: result.source.lastError,
+            lastErrorDetail: result.source.lastErrorDetail ?? null,
+          }
+        : source;
     });
     log.info('[PluginUpdates] installed plugin check finished', {
       installedCount: installedIds.size,

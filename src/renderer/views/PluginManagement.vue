@@ -18,6 +18,7 @@ import InstalledPluginCard from '@/views/plugins/InstalledPluginCard.vue';
 import PluginAuthorizedFilesDialog from '@/views/plugins/PluginAuthorizedFilesDialog.vue';
 import PluginLocalInstallOverlay from '@/views/plugins/PluginLocalInstallOverlay.vue';
 import MarketplacePluginCard from '@/views/plugins/MarketplacePluginCard.vue';
+import MarketplaceErrorDetailDialog from '@/views/plugins/MarketplaceErrorDetailDialog.vue';
 import PluginSourceDialog from '@/views/plugins/PluginSourceDialog.vue';
 import { usePluginFailures } from '@/views/plugins/usePluginFailures';
 import { usePluginLocalInstall } from '@/views/plugins/usePluginLocalInstall';
@@ -44,6 +45,8 @@ import {
 } from '@/plugins/runtime';
 import { useToastStore } from '@/stores/toast';
 import { getPluginFeatureTags } from '@/views/plugins/pluginPresentation';
+import type { MarketplaceErrorDetail } from '../../shared/networkErrorClassifier';
+import type { PluginMarketplaceSource } from '../../shared/plugins';
 
 const route = useRoute();
 const toastStore = useToastStore();
@@ -102,6 +105,17 @@ const {
   installMarketplacePlugin,
   updateAllMarketplacePlugins,
 } = usePluginMarketplace({ route, activeView, isActive });
+
+// 在线插件加载失败的「显示详情」弹窗状态。
+const isMarketplaceErrorDetailOpen = ref(false);
+const marketplaceErrorDetailSource = ref<PluginMarketplaceSource | null>(null);
+const marketplaceErrorDetail = computed<MarketplaceErrorDetail | null>(
+  () => marketplaceErrorDetailSource.value?.lastErrorDetail ?? null,
+);
+const openMarketplaceErrorDetail = (source: PluginMarketplaceSource) => {
+  marketplaceErrorDetailSource.value = source;
+  isMarketplaceErrorDetailOpen.value = true;
+};
 
 const records = computed(() => pluginRuntimeState.records);
 const pluginCountLabel = computed(() => {
@@ -511,11 +525,26 @@ const getPluginAccentStyle = (pluginId: string) => {
             </Button>
           </div>
 
-          <div v-if="marketplaceSourceErrors.length > 0" class="marketplace-source-errors">
+          <!-- 在线插件源加载失败提示：展示分类后的友好文案，支持查看原始错误详情 -->
+          <div
+            v-for="errorSource in marketplaceSourceErrors"
+            :key="errorSource.id"
+            class="marketplace-source-errors"
+          >
             <Icon :icon="iconTriangleAlert" width="15" height="15" />
-            <span>
-              {{ marketplaceSourceErrors[0].name }}：{{ marketplaceSourceErrors[0].lastError }}
+            <span class="marketplace-source-error-text">
+              {{ errorSource.name }}：{{
+                errorSource.lastErrorDetail?.title || errorSource.lastError
+              }}
             </span>
+            <button
+              v-if="errorSource.lastErrorDetail"
+              type="button"
+              class="marketplace-source-detail-btn"
+              @click="openMarketplaceErrorDetail(errorSource)"
+            >
+              显示详情
+            </button>
           </div>
 
           <div class="plugin-content-heading">
@@ -632,6 +661,14 @@ const getPluginAccentStyle = (pluginId: string) => {
       @add="addMarketplaceSource"
       @patch="patchMarketplaceSource"
       @remove="removeMarketplaceSource"
+      @error-detail="openMarketplaceErrorDetail"
+    />
+
+    <!-- 在线插件加载失败详情弹窗 -->
+    <MarketplaceErrorDetailDialog
+      v-model:open="isMarketplaceErrorDetailOpen"
+      :source-name="marketplaceErrorDetailSource?.name ?? ''"
+      :detail="marketplaceErrorDetail"
     />
 
     <!-- 卸载对话框 -->
