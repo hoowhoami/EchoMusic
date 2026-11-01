@@ -165,11 +165,16 @@ const setActive = (active: boolean) => {
   stopTimer();
   if (!active || suspendedForRelaunch) return;
 
+  const settingStore = useSettingStore();
   void sampleMemory('diagnostic:start');
-  timer = window.setInterval(
-    () => void sampleMemory('diagnostic:interval'),
-    MEMORY_DIAGNOSTICS_INTERVAL_MS,
-  );
+  timer = window.setInterval(() => {
+    // 诊断窗口到期后自停：临时诊断（如 10 分钟）若设置值不再变化，采样任务不能永久驻留。
+    if (!(settingStore.logDiagnosticUntil > Date.now())) {
+      setActive(false);
+      return;
+    }
+    void sampleMemory('diagnostic:interval');
+  }, MEMORY_DIAGNOSTICS_INTERVAL_MS);
 };
 
 export const suspendRendererMemoryDiagnosticsForRelaunch = () => {

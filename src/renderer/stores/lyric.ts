@@ -193,6 +193,18 @@ const compactCandidate = (candidate: LyricSearchCandidate): ManualLyricSelection
   adjust: candidate.adjust,
 });
 
+/** 按歌曲 hash 记录的持久化 map 容量上限：这些 map 随使用只增不减，超出即淘汰最早写入的条目。 */
+const PERSISTED_LYRIC_MAP_LIMIT = 512;
+
+const setPersistedLyricMapEntry = <T>(map: Record<string, T>, key: string, value: T): void => {
+  map[key] = value;
+  const keys = Object.keys(map);
+  const overflow = keys.length - PERSISTED_LYRIC_MAP_LIMIT;
+  if (overflow <= 0) return;
+  // Record 的字符串键按插入序排列（重复写入不改变位置），移除最早的 overflow 条即可
+  for (let i = 0; i < overflow; i += 1) delete map[keys[i]];
+};
+
 // 保持接口返回的原始顺序
 const sortCandidates = (candidates: LyricSearchCandidate[]): LyricSearchCandidate[] => candidates;
 
@@ -1168,7 +1180,7 @@ export const useLyricStore = defineStore('lyric', {
       const current = this.currentTrackTimeOffset;
       if (!Number.isFinite(deltaMs)) return current;
       const next = normalizeLyricOffsetMs(current + deltaMs);
-      this.timeOffsetMap[this.loadedHash] = next;
+      setPersistedLyricMapEntry(this.timeOffsetMap, this.loadedHash, next);
       return next;
     },
     // 重置当前歌曲的歌词时间偏移
@@ -1229,7 +1241,7 @@ export const useLyricStore = defineStore('lyric', {
       const normalizedHash = hash.trim();
       if (!normalizedHash || !this.useEmbeddedLyric(normalizedHash, content)) return false;
       delete this.manualLyricMap[normalizedHash];
-      this.embeddedLyricSelectionMap[normalizedHash] = true;
+      setPersistedLyricMapEntry(this.embeddedLyricSelectionMap, normalizedHash, true);
       return true;
     },
     parseLyricContent(
@@ -1428,7 +1440,7 @@ export const useLyricStore = defineStore('lyric', {
         });
         delete this.embeddedLyricSelectionMap[normalizedHash];
         if (options?.remember) {
-          this.manualLyricMap[normalizedHash] = compactCandidate(candidate);
+          setPersistedLyricMapEntry(this.manualLyricMap, normalizedHash, compactCandidate(candidate));
         }
         return true;
       } finally {
