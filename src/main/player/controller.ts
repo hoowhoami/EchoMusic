@@ -470,8 +470,14 @@ export class PlayerController extends EventEmitter {
     audioTrackId: 0,
   };
 
+  private resolvedAddonPath: string | null | undefined;
+
   get available(): boolean {
-    return this.resolveAddonPath() !== null;
+    // addon 路径运行期不变，首次解析后缓存，避免热路径反复 existsSync
+    if (this.resolvedAddonPath === undefined) {
+      this.resolvedAddonPath = this.resolveAddonPath();
+    }
+    return this.resolvedAddonPath !== null;
   }
 
   get currentState(): PlayerState {

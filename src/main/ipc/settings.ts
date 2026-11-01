@@ -15,7 +15,7 @@ import fs from 'fs';
 import { execFile } from 'child_process';
 import { dirname, extname, join, resolve, sep, basename } from 'path';
 import { autoUpdater, CancellationToken } from 'electron-updater';
-import { getFonts } from 'font-list';
+
 import { coerce as semverCoerce, gt as semverGt, valid as semverValid } from 'semver';
 import type {
   AppInfoResult,
@@ -807,6 +807,21 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
 
   const isDev = !app.isPackaged;
 
+  // CHANGELOG 内容运行期不变，读取一次后缓存，避免每次更新事件/IPC 都同步读整个文件
+  let changelogCache: string | null = null;
+  const readChangelogContent = (): string => {
+    if (changelogCache !== null) return changelogCache;
+    const changelogPath = isDev
+      ? join(process.cwd(), 'CHANGELOG.md')
+      : join(process.resourcesPath, 'CHANGELOG.md');
+    try {
+      changelogCache = fs.readFileSync(changelogPath, 'utf-8');
+    } catch {
+      changelogCache = '';
+    }
+    return changelogCache;
+  };
+
   // 更新状态的单一可信来源（供渲染层在重新打开弹窗时恢复进度）
   let lastCheckResult: UpdateCheckResult | null = null;
   let downloadState: UpdateDownloadResult = { status: 'idle' };
@@ -934,25 +949,19 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
 
   const readCurrentVersionChangelog = (): string => {
     const version = app.getVersion();
-    const changelogPath = isDev
-      ? join(process.cwd(), 'CHANGELOG.md')
-      : join(process.resourcesPath, 'CHANGELOG.md');
-    try {
-      const content = fs.readFileSync(changelogPath, 'utf-8');
-      // 提取顶部声明（第一个 ## 之前，去掉 # 标题行）
-      const headerMatch = content.match(/^([\s\S]*?)(?=\n## \[)/);
-      const header = (headerMatch?.[1] || '').replace(/^#\s+.*$/gm, '').trim();
-      // 提取当前版本的内容（包含 ## 标题行）
-      const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const versionMatch = content.match(
-        new RegExp(`(## \\[${escaped}\\][^\\n]*\\n[\\s\\S]*?)(?=\\n## \\[|$)`),
-      );
-      const versionBody = versionMatch?.[1]?.trim() || '';
-      if (!header && !versionBody) return '';
-      return [header, versionBody].filter(Boolean).join('\n\n');
-    } catch {
-      return '';
-    }
+    const content = readChangelogContent();
+    if (!content) return '';
+    // 提取顶部声明（第一个 ## 之前，去掉 # 标题行）
+    const headerMatch = content.match(/^([\s\S]*?)(?=\n## \[)/);
+    const header = (headerMatch?.[1] || '').replace(/^#\s+.*$/gm, '').trim();
+    // 提取当前版本的内容（包含 ## 标题行）
+    const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const versionMatch = content.match(
+      new RegExp(`(## \\[${escaped}\\][^\\n]*\\n[\\s\\S]*?)(?=\\n## \\[|$)`),
+    );
+    const versionBody = versionMatch?.[1]?.trim() || '';
+    if (!header && !versionBody) return '';
+    return [header, versionBody].filter(Boolean).join('\n\n');
   };
 
   const sendToRenderer = (channel: string, data: unknown) => {
@@ -1169,16 +1178,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   // --- IPC handlers ---
   ipcRegistry.registerHandler('app:get-info', () => getAppInfo());
 
-  ipcRegistry.registerHandler('app:get-changelog', () => {
-    const changelogPath = isDev
-      ? join(process.cwd(), 'CHANGELOG.md')
-      : join(process.resourcesPath, 'CHANGELOG.md');
-    try {
-      return fs.readFileSync(changelogPath, 'utf-8');
-    } catch {
-      return '';
-    }
-  });
+  ipcRegistry.registerHandler('app:get-changelog', () => readChangelogContent());
 
   ipcRegistry.registerHandler(
     'audio:import-impulse-response',
@@ -1617,6 +1617,8 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   // 获取系统全部字体
   ipcRegistry.registerHandler('get-all-fonts', async () => {
     try {
+      // font-list 依赖原生枚举，仅在用户打开字体设置时惰性加载，避免启动开销
+      const { getFonts } = await import('font-list');
       const fonts = await getFonts({ disableQuoting: true });
       return fonts;
     } catch (error) {

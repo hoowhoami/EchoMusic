@@ -1,6 +1,15 @@
 import { basename, extname } from 'path';
-import { parseFile } from 'music-metadata';
 import type { LocalAudioMetadata } from '../../shared/localMusic';
+
+// music-metadata 依赖树较重（strtok3/token-types/file-type 等），仅扫描本地音乐/云盘上传时需要，
+// 惰性加载避免拖慢主进程冷启动。
+let parseFileImpl: typeof import('music-metadata').parseFile | null = null;
+const loadParseFile = async () => {
+  if (!parseFileImpl) {
+    ({ parseFile: parseFileImpl } = await import('music-metadata'));
+  }
+  return parseFileImpl;
+};
 
 export const resolveAudioTitleAndArtist = (
   fileName: string,
@@ -30,6 +39,7 @@ export const resolveAudioTitleAndArtist = (
 };
 
 export const readAudioMetadata = async (filePath: string): Promise<LocalAudioMetadata> => {
+  const parseFile = await loadParseFile();
   const parsed = await parseFile(filePath, {
     duration: true,
     skipCovers: true,
