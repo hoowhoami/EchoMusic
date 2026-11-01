@@ -24,8 +24,10 @@ use windows::Win32::Media::Audio;
 use windows::Win32::System::Threading;
 
 const WASAPI_EVENT_WAIT_MS: u32 = 10;
-const WASAPI_EXCLUSIVE_DEVICE_RELEASE_TIMEOUT: Duration = Duration::from_millis(1500);
-const WASAPI_EXCLUSIVE_DEVICE_RELEASE_RETRY: Duration = Duration::from_millis(50);
+// 端点释放（含独占流拆除后音频引擎的异步收尾）期间，共享与独占初始化都可能
+// 拿到 AUDCLNT_E_DEVICE_IN_USE，统一等待重试而不是立即判失败。
+const WASAPI_DEVICE_RELEASE_TIMEOUT: Duration = Duration::from_millis(1500);
+const WASAPI_DEVICE_RELEASE_RETRY: Duration = Duration::from_millis(50);
 
 struct EventHandle(HANDLE);
 
@@ -523,18 +525,20 @@ fn open_wasapi_output(
                 aligned_buffer_frames = Some(frames);
             }
             Err(err)
-                if share_mode == WasapiShareMode::Exclusive
-                    && is_wasapi_device_in_use(&err)
-                    && wait_started_at.elapsed() < WASAPI_EXCLUSIVE_DEVICE_RELEASE_TIMEOUT =>
+                if is_wasapi_device_in_use(&err)
+                    && wait_started_at.elapsed() < WASAPI_DEVICE_RELEASE_TIMEOUT =>
             {
                 if !logged_device_wait {
                     emit(PlayerEvent::log(
                         "info",
-                        "WASAPI exclusive output waiting for endpoint release".to_string(),
+                        format!(
+                            "WASAPI {} output waiting for endpoint release",
+                            share_mode.label()
+                        ),
                     ));
                     logged_device_wait = true;
                 }
-                thread::sleep(WASAPI_EXCLUSIVE_DEVICE_RELEASE_RETRY);
+                thread::sleep(WASAPI_DEVICE_RELEASE_RETRY);
             }
             Err(err) => {
                 return Err(WasapiOutputFailure::from_client_error(

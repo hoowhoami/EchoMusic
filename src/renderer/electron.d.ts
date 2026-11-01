@@ -49,6 +49,8 @@ import type {
   DownloadCommunityAudioEffectResult,
   DspProviderRecord,
   ImportImpulseResponseResult,
+  ResolveCommunityEffectDurationRequest,
+  ResolveCommunityEffectDurationResult,
   SpatialAudioEffectEntry,
 } from '../shared/audio';
 import type {
@@ -298,6 +300,9 @@ export interface IElectronAPI {
     downloadCommunityAudioEffect: (
       payload: DownloadCommunityAudioEffectRequest,
     ) => Promise<DownloadCommunityAudioEffectResult>;
+    resolveCommunityEffectDuration: (
+      payload: ResolveCommunityEffectDurationRequest,
+    ) => Promise<ResolveCommunityEffectDurationResult>;
     deleteAudioEffect: (filePath: string) => Promise<boolean>;
     reconcileAudioEffects: (files: SpatialAudioEffectEntry[]) => Promise<SpatialAudioEffectEntry[]>;
   };

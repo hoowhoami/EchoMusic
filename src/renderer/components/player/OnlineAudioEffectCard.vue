@@ -53,7 +53,10 @@ const userCount = (count: number) =>
         <strong data-tooltip-label>{{ effect.name }}</strong>
         <span
           >{{ effect.artistName || effect.brandName || effect.author || '音效创作者' }} ·
-          {{ plaza.typeLabel(effect) }}</span
+          {{ plaza.typeLabel(effect)
+          }}<template v-if="plaza.effectDurationText(effect)">
+            · {{ plaza.effectDurationText(effect) }}</template
+          ></span
         >
         <small v-if="unavailable" class="effect-requirement">{{ unavailableReason }}</small>
         <small v-else-if="effect.userCount">{{ userCount(effect.userCount) }}</small>
