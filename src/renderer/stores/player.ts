@@ -1183,27 +1183,66 @@ export const usePlayerStore = defineStore(
         }
       }
       disposeRuntimeSessionSync?.();
+      // 会话同步标量化：全部 SESSION 字段（playerSession.ts 的 PLAYER_SESSION_KEYS）
+      // 与队列状态均为整体替换更新，引用/标量浅比较即可覆盖原 deep traverse 的触发面，
+      // 避免对含整个队列数组的 session 做深度遍历，以及队列引用变化时
+      // 每次都全队列 JSON 序列化 + IPC。
       disposeRuntimeSessionSync = watch(
-        () => ({
-          session: capturePlayerSession(
-            state,
-            playlistStore.getQueueById(state.currentSourceQueueId),
-          ),
-          ready: state.playbackIntent.phase === 'ready' && !state.awaitingTrackLoad,
-        }),
-        ({ session, ready }) => {
+        () => {
+          const queue = playlistStore.getQueueById(state.currentSourceQueueId);
+          return [
+            state.currentTrackId,
+            state.currentSourceQueueId,
+            state.currentTrackSnapshot,
+            state.currentPlaylist,
+            state.nativeTrackSeq,
+            state.currentAudioUrl,
+            state.currentPlaybackSource,
+            state.currentAudioCandidateUrls,
+            state.currentAudioCandidateSources,
+            state.currentAudioCandidateIndex,
+            state.currentResolvedAudioQuality,
+            state.currentResolvedAudioEffect,
+            state.currentResolvedAudioLoudness,
+            state.currentResolvedSourceKind,
+            state.currentAudioQualityOverride,
+            state.currentCatalogSourceOverrideTrackId,
+            state.currentCloudSourceOverrideTrackId,
+            state.historyUploadCommitted,
+            state.historyUploadTrackId,
+            state.historyLocalRecorded,
+            state.climaxMarks,
+            queue,
+            queue?.playbackRevision,
+            queue?.currentTrackId,
+            queue?.updatedAt,
+            state.playbackIntent.phase,
+            state.awaitingTrackLoad,
+          ];
+        },
+        () => {
           const bridge = window.electron?.player;
+          const ready = state.playbackIntent.phase === 'ready' && !state.awaitingTrackLoad;
           let request: Promise<void> | undefined;
           if (!state.currentTrackId) {
             request = bridge?.syncRuntimeSession?.(null);
           } else if (ready && state.nativeTrackSeq && state.currentAudioUrl) {
-            request = bridge?.syncRuntimeSession?.(JSON.parse(JSON.stringify(session)));
+            request = bridge?.syncRuntimeSession?.(
+              JSON.parse(
+                JSON.stringify(
+                  capturePlayerSession(
+                    state,
+                    playlistStore.getQueueById(state.currentSourceQueueId),
+                  ),
+                ),
+              ),
+            );
           }
           void request?.catch((error) =>
             logger.warn('Player', 'Failed to sync live playback session', error),
           );
         },
-        { deep: true, immediate: true },
+        { immediate: true },
       );
       audioManager.setVolume(state.volume);
       engine.setPlaybackRate(state.playbackRate);
