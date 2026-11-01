@@ -10,7 +10,7 @@ import {
   watch,
   type ComponentPublicInstance,
 } from 'vue';
-import { useRafFn, useWindowSize } from '@vueuse/core';
+import { useWindowSize } from '@vueuse/core';
 import {
   iconLock,
   iconLockOpen,
@@ -91,6 +91,8 @@ const reducedMotion = ref(false);
 let cachedYrcElements: HTMLElement[] = [];
 let cachedRubyElements: HTMLElement[] = [];
 let cachedYrcLineKey = '';
+// 副歌词行逐字元素缓存（与主行 cachedYrcElements 同一失效策略：行切换时统一清空）
+const secondaryWordsCache = new Map<string, HTMLElement[]>();
 const lyricTimeline = createLyricTimeline();
 const stableLyricIndex = createStableLyricIndex();
 
@@ -115,13 +117,41 @@ const refreshTimelineState = (options?: { resetStable?: boolean }) => {
   return timelineMs;
 };
 
-// 每帧推进播放游标
-const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
+// 每帧推进播放游标：自管 rAF 并把刷新率限制到 30fps（累计截止调度，长帧不突发补算）。
+// 桌面歌词窗口常驻播放，60/120fps 的逐字 DOM 写入收益甚微而成本线性放大，
+// 与播放页 AmllMode 的限帧标准保持一致。
+const LYRIC_FRAME_INTERVAL_MS = 1000 / 30;
+let seekRafId = 0;
+let seekNextDeadline: number | null = null;
+const seekTick = (timestamp: number) => {
+  seekRafId = 0;
+  if (seekNextDeadline !== null && timestamp + 0.001 < seekNextDeadline) {
+    seekRafId = requestAnimationFrame(seekTick);
+    return;
+  }
+  const deadline = seekNextDeadline ?? timestamp;
+  const intervals = Math.max(
+    1,
+    Math.floor((timestamp - deadline + 0.001) / LYRIC_FRAME_INTERVAL_MS) + 1,
+  );
+  seekNextDeadline = deadline + intervals * LYRIC_FRAME_INTERVAL_MS;
   const timelineMs = refreshTimelineState();
   updateYrcDomManual(timelineMs);
   updateScrollManual(timelineMs);
   notifyLyricEffectHost();
-});
+};
+const pauseSeek = () => {
+  if (seekRafId) {
+    cancelAnimationFrame(seekRafId);
+    seekRafId = 0;
+  }
+  seekNextDeadline = null;
+};
+const resumeSeek = () => {
+  if (seekRafId) return;
+  seekNextDeadline = null;
+  seekRafId = requestAnimationFrame(seekTick);
+};
 
 const updateYrcDomManual = (timelineMs: number) => {
   const renderLines = renderLyricLines.value;
@@ -134,7 +164,7 @@ const updateYrcDomManual = (timelineMs: number) => {
   if (activeRenderLine && isYrcLine(activeRenderLine.line)) {
     const key = activeRenderLine.key;
     if (key !== cachedYrcLineKey) {
-      // 重新查找 DOM
+      // 重新查找 DOM；行切换同时使副行逐字元素缓存失效
       const container = lineRefs.get(key);
       if (container) {
         cachedYrcElements = Array.from(container.querySelectorAll('.word'));
@@ -145,6 +175,7 @@ const updateYrcDomManual = (timelineMs: number) => {
         cachedRubyElements = [];
         cachedYrcLineKey = '';
       }
+      secondaryWordsCache.clear();
     }
 
     if (cachedYrcElements.length > 0 || cachedRubyElements.length > 0) {
@@ -205,7 +236,13 @@ const updateYrcDomManual = (timelineMs: number) => {
   for (const secondaryLine of secondaryLines) {
     const secondaryContainer = lineRefs.get(secondaryLine.key);
     if (!secondaryContainer) continue;
-    const secondaryWords = secondaryContainer.querySelectorAll<HTMLElement>('.word');
+    // 与主行 cachedYrcElements 相同的按行缓存：逐帧 querySelectorAll 是
+    // 桌面歌词帧预算的主要浪费点之一；行切换（主行 key 变化）时统一失效。
+    let secondaryWords = secondaryWordsCache.get(secondaryLine.key);
+    if (!secondaryWords) {
+      secondaryWords = Array.from(secondaryContainer.querySelectorAll<HTMLElement>('.word'));
+      secondaryWordsCache.set(secondaryLine.key, secondaryWords);
+    }
     const transChars = secondaryLine.line.characters;
     for (let i = 0; i < secondaryWords.length; i++) {
       const char = transChars[i];
@@ -774,6 +811,7 @@ const resetLyricDomCache = () => {
   cachedYrcElements = [];
   cachedRubyElements = [];
   cachedYrcLineKey = '';
+  secondaryWordsCache.clear();
 };
 const setLineRef = (el: Element | ComponentPublicInstance | null, key: string) => {
   if (el) lineRefs.set(key, el as HTMLElement);
