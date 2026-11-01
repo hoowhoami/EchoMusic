@@ -330,7 +330,8 @@ export const initNowPlayingSync = async () => {
         () => resolveCurrentPlaybackQueue()?.songs?.length ?? 0,
       ],
       scheduleProgressSync,
-      { deep: true },
+      // favorites/currentTrackSnapshot 均为整体替换更新（无字段级原地修改），无需 deep traverse
+      {},
     ),
     watch(
       [

@@ -484,7 +484,8 @@ export const initDesktopLyricSync = async () => {
       () => {
         scheduleProgressSync();
       },
-      { immediate: true, deep: true },
+      // 监视源均为标量或整体替换的对象（currentTrackSnapshot），deep traverse 冗余
+      { immediate: true },
     ),
   );
 
@@ -531,7 +532,8 @@ export const initDesktopLyricSync = async () => {
       () => {
         void syncSettingsSnapshot();
       },
-      { immediate: true, deep: true },
+      // desktopLyricStore.settings 恒为整体替换更新，getter 引用变化即可触发，deep 冗余
+      { immediate: true },
     ),
   );
 

@@ -47,13 +47,27 @@ const { containerRef, visibleStart, visibleEnd, totalSize, offset, refresh } = u
   active: computed(() => true),
 });
 
+// 队列行稳定 key：数据身份（historyKey/id + hash）。不含行 index，
+// 删除/插入时其余行的 key 保持不变，避免可见行整行卸载重建（封面闪烁）；
+// 重复入队的同曲追加出现序号保证唯一。
+const rowKeys = computed(() => {
+  const counts = new Map<string, number>();
+  return props.queue.songs.map((data) => {
+    const base = `${data.historyKey ?? data.id}:${data.hash ?? ''}`;
+    const seen = counts.get(base) ?? 0;
+    counts.set(base, seen + 1);
+    return seen === 0 ? base : `${base}#${seen}`;
+  });
+});
+
 const items = computed(() => {
   const start = visibleStart.value;
   const end = visibleEnd.value;
-  if (start >= end) return [] as Array<{ data: Song; index: number }>;
+  if (start >= end) return [] as Array<{ data: Song; index: number; key: string }>;
   return props.queue.songs.slice(start, end).map((data, index) => ({
     data,
     index: start + index,
+    key: rowKeys.value[start + index],
   }));
 });
 
@@ -129,7 +143,7 @@ defineExpose({
         <div :style="offsetStyle" class="queue-virtual-offset">
           <div
             v-for="entry in items"
-            :key="`${entry.data.historyKey ?? entry.data.id}:${entry.data.hash ?? ''}:${entry.index}`"
+            :key="entry.key"
             class="queue-row"
             :data-queue-row="true"
             :data-song-id="String(entry.data.id)"
