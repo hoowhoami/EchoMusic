@@ -180,11 +180,44 @@ export const resolveFavoriteSongKeys = (song: Song | null | undefined): string[]
 export const buildPlaylistTrackPayload = (song: Song): string =>
   `${song.name}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
 
+/**
+ * 生成与 isSameSong（含可选 id 兜底）匹配语义完全一致的身份键集。
+ * isSameSong 匹配 = 双方 mixSongId 均非 '0' 且相等，或双方 hash 均非空且相等；
+ * 键集交集判断与之等价，用于把批量场景的 O(n×m) 双重扫描降为 O(n+m)。
+ */
+export const addSongToMatchKeySet = (song: Song, keys: Set<string>, includeId: boolean): void => {
+  const mixSongId = String(song.mixSongId ?? '0');
+  if (mixSongId !== '0') keys.add(`mx:${mixSongId}`);
+  const hash = String(song.hash ?? '')
+    .trim()
+    .toLowerCase();
+  if (hash) keys.add(`hash:${hash}`);
+  if (includeId) keys.add(`id:${String(song.id)}`);
+};
+
+export const buildSongMatchKeySet = (songs: Song[], includeId = false): Set<string> => {
+  const keys = new Set<string>();
+  for (const song of songs) addSongToMatchKeySet(song, keys, includeId);
+  return keys;
+};
+
+/** 判断单曲是否命中键集（与 isSameSong 同样的身份规范化）。 */
+export const songMatchesKeySet = (song: Song, keys: Set<string>): boolean => {
+  const mixSongId = String(song.mixSongId ?? '0');
+  if (mixSongId !== '0' && keys.has(`mx:${mixSongId}`)) return true;
+  const hash = String(song.hash ?? '')
+    .trim()
+    .toLowerCase();
+  if (hash && keys.has(`hash:${hash}`)) return true;
+  const id = String(song.id);
+  if (keys.has(`id:${id}`)) return true;
+  return false;
+};
+
 export const removeSongsFromKnownList = (existing: Song[], songs: Song[]): Song[] => {
   if (existing.length === 0 || songs.length === 0) return existing.slice();
-  return existing.filter(
-    (item) => !songs.some((song) => isSameSong(item, song) || String(item.id) === String(song.id)),
-  );
+  const removedKeys = buildSongMatchKeySet(songs, true);
+  return existing.filter((item) => !songMatchesKeySet(item, removedKeys));
 };
 
 export const mergeQueueSongs = (existing: Song[], incoming: Song[]): Song[] => {

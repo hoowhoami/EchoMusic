@@ -1,5 +1,4 @@
 import type { Song } from '@/models/song';
-import { isSameSong } from '@/utils/song';
 import { reconcileQueuedNextForQueueReplacement } from '../../../shared/playbackQueueDecision';
 import {
   DEFAULT_PLAYBACK_QUEUE_ID,
@@ -10,9 +9,12 @@ import {
   PERSONAL_FM_QUEUE_ID,
 } from './constants';
 import {
+  addSongToMatchKeySet,
   buildPlaybackQueueState,
+  buildSongMatchKeySet,
   bumpPlaybackQueueRevision,
   normalizePlaybackQueueRuntime,
+  songMatchesKeySet,
   toRawSongList,
 } from './helpers';
 import type { PlaybackQueueState, SetPlaybackQueueOptions } from './types';
@@ -366,9 +368,14 @@ export const queueActions = {
         !isTransientPlaybackQueue(previousActiveQueueId) ||
         isTransientPlaybackQueue(targetQueue.id));
     if (targetQueue.songs.length === 0 && (targetQueue.songCount ?? 0) > 0) {
-      const incoming = songs.filter(
-        (song, index, list) => list.findIndex((item) => isSameSong(item, song)) === index,
-      );
+      // incoming 自身去重：与 isSameSong 语义一致的键集，避免 O(m²) 的 findIndex 双重扫描。
+      const incoming: Song[] = [];
+      const seenKeys = buildSongMatchKeySet([], false);
+      for (const song of songs) {
+        if (songMatchesKeySet(song, seenKeys)) continue;
+        addSongToMatchKeySet(song, seenKeys, false);
+        incoming.push(song);
+      }
       if (incoming.length === 0) return 0;
       targetQueue.songCount = Math.max(0, targetQueue.songCount ?? 0) + incoming.length;
       bumpPlaybackQueueRevision(targetQueue);
@@ -400,10 +407,14 @@ export const queueActions = {
     const nextList = targetQueue.songs.slice();
     const addedSongs: Song[] = [];
     let addedCount = 0;
+    // 键集与 isSameSong + id 兜底的匹配语义一致；新入队歌曲的键同步加入，
+    // 保持原实现对 incoming 内部重复项同样去重的行为。
+    const existingKeys = buildSongMatchKeySet(nextList, true);
     songs.forEach((song) => {
-      if (nextList.some((item) => isSameSong(item, song) || String(item.id) === String(song.id))) {
+      if (songMatchesKeySet(song, existingKeys)) {
         return;
       }
+      addSongToMatchKeySet(song, existingKeys, true);
       nextList.push(song);
       addedSongs.push(song);
       addedCount += 1;
