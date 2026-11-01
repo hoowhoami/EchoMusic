@@ -1,4 +1,11 @@
-import { app, Menu, type MenuItemConstructorOptions, type WebContents } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  type BaseWindow,
+  type MenuItemConstructorOptions,
+  type WebContents,
+} from 'electron';
 import { getDevToolsEnabledSetting } from './storage/settings';
 
 const isMac = process.platform === 'darwin';
@@ -6,6 +13,7 @@ const appDisplayName = 'EchoMusic';
 
 interface ApplicationMenuOptions {
   openSettings?: () => void | Promise<void>;
+  closeWindow?: (window: BaseWindow) => void;
 }
 
 const buildMacApplicationMenu = (options: ApplicationMenuOptions = {}) => {
@@ -50,6 +58,13 @@ const buildMacApplicationMenu = (options: ApplicationMenuOptions = {}) => {
       submenu: [
         { role: 'minimize', label: '最小化' },
         { role: 'zoom', label: '缩放' },
+        {
+          label: '关闭窗口',
+          accelerator: 'Command+W',
+          click: (_item, focusedWindow) => {
+            if (focusedWindow) options.closeWindow?.(focusedWindow);
+          },
+        },
         { type: 'separator' },
         { role: 'front', label: '前置所有窗口' },
       ],
@@ -79,6 +94,8 @@ export const configureWebContentsShortcuts = (
 
     const key = input.key.toLowerCase();
     const isSettingsShortcut = (input.control || input.meta) && key === ',';
+    const isCloseWindowShortcut =
+      input.control && !input.alt && !input.shift && !input.meta && key === 'w';
     const isDevToolsShortcut =
       key === 'f12' ||
       ((input.control || input.meta) && input.shift && key === 'i') ||
@@ -87,6 +104,14 @@ export const configureWebContentsShortcuts = (
     if (!isMac && isSettingsShortcut) {
       event.preventDefault();
       void options.openSettings?.();
+      return;
+    }
+
+    if (!isMac && isCloseWindowShortcut) {
+      const window = BrowserWindow.fromWebContents(webContents);
+      if (!window) return;
+      event.preventDefault();
+      options.closeWindow?.(window);
       return;
     }
 

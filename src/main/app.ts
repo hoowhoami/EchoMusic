@@ -1,10 +1,10 @@
-import { app, BrowserWindow, dialog, globalShortcut } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, type BaseWindow } from 'electron';
 import { initLogger, setDiagnosticStateListener } from './logger';
 import log from './logger';
 import { startEventLoopMonitor, stopEventLoopMonitor } from './eventLoopMonitor';
 import { initApiServer } from './server';
 import { registerIpcHandlers } from './ipc';
-import { createWindow, getMainWindow } from './window';
+import { createWindow, getMainWindow, requestMainWindowClose } from './window';
 import { restoreActiveWindowMode, showMainWindowMode } from './window/modeController';
 import { setActiveWindowMode } from './window/mode';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
@@ -126,9 +126,15 @@ if (!gotTheLock) {
     getMainWindow()?.webContents.send('app:open-settings');
   };
 
+  // ⌘W / Ctrl+W 与主窗口关闭按钮一致；其他窗口有各自的关闭入口
+  const closeWindowFromShortcut = (window: BaseWindow) => {
+    if (window === getMainWindow()) requestMainWindowClose();
+  };
+
   app.on('web-contents-created', (_event, contents) => {
     configureWebContentsShortcuts(contents, {
       openSettings: openSettingsFromNativeShell,
+      closeWindow: closeWindowFromShortcut,
     });
   });
 
@@ -146,6 +152,7 @@ if (!gotTheLock) {
     }
     configureApplicationMenu({
       openSettings: openSettingsFromNativeShell,
+      closeWindow: closeWindowFromShortcut,
     });
     await logMainMemory('ready:start');
 

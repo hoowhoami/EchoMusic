@@ -124,6 +124,7 @@ export function useSettingsShortcuts() {
       const currentDefaults = getDefaultState(currentScope);
       const conflictEntry = shortcutItems.find((item) => {
         if (item.command === recording.value?.command) return false;
+        if (currentScope === 'local' && item.globalOnly) return false;
         const existingLabel = resolveLabel(currentBindings, currentDefaults, item.command);
         return existingLabel && areShortcutLabelsEquivalent(existingLabel, label);
       });
@@ -186,6 +187,7 @@ export function useSettingsShortcuts() {
       if (current === undefined) return false;
       return current !== (settingStore.defaultGlobalShortcutLabels[command] ?? '');
     }
+    if (shortcutItems.find((item) => item.command === command)?.globalOnly) return false;
     const current = shortcutBindings.value[command];
     if (current === undefined) return false;
     return current !== (settingStore.defaultShortcutLabels[command] ?? '');

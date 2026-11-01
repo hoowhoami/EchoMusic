@@ -40,6 +40,8 @@ export interface ShortcutItem {
   command: ShortcutCommand;
   title: string;
   desc: string;
+  /** 仅提供全局快捷键：应用内快捷键只在窗口获得焦点时响应，无法承担该命令 */
+  globalOnly?: boolean;
 }
 
 export interface ShortcutRecordingState {

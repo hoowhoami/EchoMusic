@@ -59,7 +59,12 @@ export const shortcutItems: ShortcutItem[] = [
     desc: '在列表循环、单曲循环、随机播放之间切换',
   },
   { command: 'toggleMiniPlayer', title: 'Mini 模式切换', desc: '在主窗口和 Mini 模式之间切换' },
-  { command: 'toggleWindow', title: '显示 / 隐藏窗口', desc: '切换主窗口的显示和隐藏状态' },
+  {
+    command: 'toggleWindow',
+    title: '显示 / 隐藏窗口',
+    desc: '切换主窗口的显示和隐藏状态',
+    globalOnly: true,
+  },
   { command: 'toggleSidebar', title: '侧边栏开关', desc: '展开或收起侧边栏' },
   { command: 'toggleMainLyric', title: '播放页歌词开关', desc: '打开或关闭播放页歌词' },
   { command: 'toggleDesktopLyric', title: '桌面歌词开关', desc: '打开或关闭桌面歌词窗口' },

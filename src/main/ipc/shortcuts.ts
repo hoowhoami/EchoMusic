@@ -1,7 +1,7 @@
 import { globalShortcut, type BrowserWindow, type WebContents } from 'electron';
 import { ipcRegistry } from './registry';
-import { hideMainWindow, showMainWindow } from '../window';
-import { restoreActiveWindowMode } from '../window/modeController';
+import { showMainWindow } from '../window';
+import { toggleMainWindow } from '../window/modeController';
 import { toggleMiniPlayerWindow } from '../miniPlayer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
@@ -112,9 +112,7 @@ const handleShortcutTrigger = (
   if (!isEligible(getMainWindow())) return;
   if (command === 'toggleWindow') {
     const win = getMainWindow();
-    if (!win) return;
-    if (win.isVisible()) hideMainWindow();
-    else void restoreActiveWindowMode();
+    if (win) void toggleMainWindow(win);
     return;
   }
   if (command === 'toggleMiniPlayer') {
