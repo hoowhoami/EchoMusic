@@ -1838,6 +1838,16 @@ ipcRenderer.on('window-background:changed', () => {
   syncWindowZoomGeometry();
   window.requestAnimationFrame(syncWindowZoomGeometry);
 });
-controlsOverlay?.addEventListener('geometrychange', syncWindowZoomGeometry);
-window.addEventListener('resize', syncWindowZoomGeometry);
+let syncGeometryFrame = 0;
+// 拖拽缩放期间 resize/geometrychange 每帧触发，rAF 合帧避免每帧重复
+// 读取 WCO 矩形并写 CSS 变量（读写交错会造成布局抖动）
+const scheduleWindowZoomGeometrySync = () => {
+  if (syncGeometryFrame) return;
+  syncGeometryFrame = requestAnimationFrame(() => {
+    syncGeometryFrame = 0;
+    syncWindowZoomGeometry();
+  });
+};
+controlsOverlay?.addEventListener('geometrychange', scheduleWindowZoomGeometrySync);
+window.addEventListener('resize', scheduleWindowZoomGeometrySync);
 window.addEventListener('DOMContentLoaded', syncWindowZoomGeometry, { once: true });
