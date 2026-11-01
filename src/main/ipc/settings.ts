@@ -37,8 +37,11 @@ import {
   type DownloadCommunityAudioEffectRequest,
   type DownloadCommunityAudioEffectResult,
   type ImportImpulseResponseResult,
+  type ResolveCommunityEffectDurationRequest,
+  type ResolveCommunityEffectDurationResult,
   type SpatialAudioEffectEntry,
 } from '../../shared/audio';
+import { parseWavHeaderDuration } from '../media/wavDuration';
 import type { LogSettings } from '../../shared/logging';
 import { formatUpdateCheckError, isUpdateSignatureError } from '../../shared/updateError';
 import { normalizeUpdateNotes, resolveUpdateNotes } from '../../shared/updateNotes';
@@ -97,6 +100,8 @@ const VPF_MAGIC = Buffer.from('ViPER4WindowsX', 'ascii');
 const VPF_SECTION_SIZES = [0x170, 0x2e4, 0x2e8, 0x31c] as const;
 const MAX_COMMUNITY_AUDIO_PENDING_WRITE_BYTES = 4 * 1024 * 1024;
 const COMMUNITY_AUDIO_DOWNLOAD_TIMEOUT_MS = 30_000;
+// 解析音效时长只需读取 WAV 头部片段；fmt/data 元信息位于文件最前面。
+const COMMUNITY_AUDIO_HEAD_BYTES = 64 * 1024;
 const MAX_COMMUNITY_AUDIO_REDIRECTS = 5;
 const COMMUNITY_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const communityAudioEffectDownloads = new Map<
@@ -405,6 +410,7 @@ const requestCommunityAudioResource = (
   sourceUrl: URL,
   signal: AbortSignal,
   { networkSession }: CommunityAudioNetworkContext,
+  headers?: Record<string, string>,
 ): Promise<CommunityAudioDownloadResponse> =>
   new Promise((resolve, reject) => {
     let settled = false;
@@ -414,6 +420,7 @@ const requestCommunityAudioResource = (
       method: 'GET',
       session: networkSession,
       redirect: 'manual',
+      headers,
     });
 
     const rejectOnce = (error: unknown) => {
@@ -511,6 +518,64 @@ const writeCommunityAudioResource = (
       writeQueue.catch(rejectOnce);
     });
   });
+
+// 仅读取音效资源头部若干字节（Range 请求），用于解析 WAV 时长；
+// 服务器不支持 Range 时会返回 200 全量响应，读满 limit 即提前断开。
+const readCommunityAudioHead = (sourceUrl: URL, limit: number): Promise<Buffer | null> => {
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), COMMUNITY_AUDIO_DOWNLOAD_TIMEOUT_MS);
+  return (async () => {
+    try {
+      const networkContext = await getCommunityAudioNetworkContext();
+      const { request, response } = await requestCommunityAudioResource(
+        sourceUrl,
+        abortController.signal,
+        networkContext,
+        { Range: `bytes=0-${limit - 1}` },
+      );
+      const statusCode = response.statusCode ?? 0;
+      if (statusCode !== 206 && statusCode !== 200) {
+        request.abort();
+        return null;
+      }
+      return await new Promise<Buffer>((resolve) => {
+        const chunks: Buffer[] = [];
+        let received = 0;
+        const finish = () => {
+          // 拉满即断开；Promise 重复 resolve 无副作用。
+          request.abort();
+          resolve(Buffer.concat(chunks));
+        };
+        response.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+          received += chunk.length;
+          if (received >= limit) finish();
+        });
+        response.on('end', finish);
+        response.on('error', finish);
+        request.on('error', finish);
+      });
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
+};
+
+// 依次尝试各资源地址，解析出第一个可用的 WAV 时长（秒）。
+const resolveCommunityEffectDuration = async (urls: string[]): Promise<number | null> => {
+  for (const rawUrl of urls) {
+    // 只校验协议与域名；个别资源地址可能不带音频后缀。
+    const parsed = normalizeCommunityAudioResourceUrl(rawUrl, null, false);
+    if (!parsed) continue;
+    const head = await readCommunityAudioHead(parsed, COMMUNITY_AUDIO_HEAD_BYTES);
+    if (!head) continue;
+    const duration = parseWavHeaderDuration(head);
+    if (duration && Number.isFinite(duration) && duration > 0) return duration;
+  }
+  return null;
+};
 
 const downloadCommunityAudioResourceCandidate = async (
   sourceUrl: URL,
@@ -1179,6 +1244,20 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       _event,
       payload: DownloadCommunityAudioEffectRequest,
     ): Promise<DownloadCommunityAudioEffectResult> => downloadCommunityAudioEffect(payload),
+  );
+
+  ipcRegistry.registerHandler(
+    'audio:resolve-community-effect-duration',
+    async (
+      _event,
+      payload: ResolveCommunityEffectDurationRequest,
+    ): Promise<ResolveCommunityEffectDurationResult> => {
+      const urls = Array.isArray(payload?.urls)
+        ? payload.urls.filter((url): url is string => typeof url === 'string' && !!url)
+        : [];
+      const duration = await resolveCommunityEffectDuration(urls);
+      return duration ? { duration } : {};
+    },
   );
 
   ipcRegistry.registerHandler('audio:delete-audio-effect', async (_event, filePath: string) => {

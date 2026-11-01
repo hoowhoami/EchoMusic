@@ -32,6 +32,16 @@ export interface DownloadCommunityAudioEffectResult {
   error?: string;
 }
 
+export interface ResolveCommunityEffectDurationRequest {
+  /** 依次尝试的音效 IR 资源地址；任一解析成功即返回。 */
+  urls: string[];
+}
+
+export interface ResolveCommunityEffectDurationResult {
+  /** 音效时长（秒）；资源不可解析时缺省。 */
+  duration?: number;
+}
+
 export interface AudioEffectPlaybackOptions {
   providerPath?: string | null;
   providerPresetJson?: string | null;

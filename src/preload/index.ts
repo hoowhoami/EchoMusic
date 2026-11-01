@@ -41,6 +41,8 @@ import type {
   DownloadCommunityAudioEffectResult,
   DspProviderRecord,
   ImportImpulseResponseResult,
+  ResolveCommunityEffectDurationRequest,
+  ResolveCommunityEffectDurationResult,
   SpatialAudioEffectEntry,
 } from '../shared/audio';
 import type {
@@ -400,6 +402,11 @@ contextBridge.exposeInMainWorld('electron', {
     downloadCommunityAudioEffect: (payload: DownloadCommunityAudioEffectRequest) =>
       invokeWithPlainPayload<DownloadCommunityAudioEffectResult>(
         'audio:download-community-audio-effect',
+        payload,
+      ),
+    resolveCommunityEffectDuration: (payload: ResolveCommunityEffectDurationRequest) =>
+      invokeWithPlainPayload<ResolveCommunityEffectDurationResult>(
+        'audio:resolve-community-effect-duration',
         payload,
       ),
     deleteAudioEffect: (filePath: string) =>
@@ -807,13 +814,15 @@ contextBridge.exposeInMainWorld('electron', {
     onTimeUpdate: (
       func: (
         payload:
-          number | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
+          | number
+          | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
       ) => void,
     ) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
         payload:
-          number | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
+          | number
+          | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
       ) => func(payload);
       ipcRenderer.on('player:time-update', listener);
       return () => ipcRenderer.removeListener('player:time-update', listener);

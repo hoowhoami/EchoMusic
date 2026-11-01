@@ -2,13 +2,14 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { usePlayerStore } from '@/stores/player';
 import { useToastStore } from '@/stores/toast';
+import { ensureEffectPlazaSync, plazaSyncState } from '@/utils/effectPlazaSync';
+import { effectPlazaCacheState } from '@/stores/audioEffectPlazaCache';
 import type { AudioEffectSupport } from '../../shared/audioEffectSupport';
 import {
   getArtistAudioEffects,
   getAudioEffectBrands,
   getHeadphoneAudioEffects,
   getCommonHeadphoneAudioEffect,
-  getCommunityAudioEffects,
   getCommunityImpulseResponseUrls,
   getCommunityVpfUrls,
   type AudioEffectBrand,
@@ -67,8 +68,59 @@ export const useAudioEffectPlaza = () => {
   );
   const currentPage = computed(() => pages[pageKey.value] ?? emptyPage<CommunityAudioEffect>());
 
+  // 音效市场：列表/排序/搜索全部由本地持久化缓存派生，网络层只负责后台同步。
+  const sortCacheEntries = (sort: CommunityAudioEffectSort) =>
+    Object.values(effectPlazaCacheState.effects)
+      .filter((entry) => entry.ranks[sort] !== undefined)
+      .sort((a, b) => (a.ranks[sort] ?? 0) - (b.ranks[sort] ?? 0));
+
+  const marketItems = computed<CommunityAudioEffect[]>(() => sortCacheEntries(marketSort.value));
+
+  const searchQuery = ref('');
+  const marketSearchResults = computed<CommunityAudioEffect[] | null>(() => {
+    const query = searchQuery.value.trim().toLowerCase();
+    if (!query) return null;
+    const sort = marketSort.value;
+    return (
+      Object.values(effectPlazaCacheState.effects)
+        .filter((entry) =>
+          [entry.name, entry.author, entry.tagName, ...entry.labels].some((value) =>
+            value.toLowerCase().includes(query),
+          ),
+        )
+        // 未同步到位次的条目排尾部，避免搜索结果顺序抖动。
+        .sort(
+          (a, b) =>
+            (a.ranks[sort] ?? Number.MAX_SAFE_INTEGER) - (b.ranks[sort] ?? Number.MAX_SAFE_INTEGER),
+        )
+    );
+  });
+  // 搜索激活时列表内容替换为搜索结果。
+  const marketList = computed(() => marketSearchResults.value ?? marketItems.value);
+  const setSearch = (value: string) => {
+    searchQuery.value = value;
+  };
+  const clearSearch = () => {
+    searchQuery.value = '';
+  };
+
+  const formatDuration = (seconds: number) => {
+    const total = Math.round(seconds);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  };
+  const effectDurationText = (effect: CommunityAudioEffect) => {
+    const cached = effectPlazaCacheState.effects[String(effect.id)];
+    return cached?.duration ? formatDuration(cached.duration) : '';
+  };
+  // 强制重新全量同步（刷新按钮）。
+  const refreshMarket = () => {
+    void ensureEffectPlazaSync(true);
+  };
+
   const loadEffects = async (reset = false) => {
     if (isBrandDirectory.value) return;
+    // 音效市场不走网络分页：列表由本地缓存派生，数据由后台同步器负责写入。
+    if (category.value === 'market') return;
     if (!pages[pageKey.value]) pages[pageKey.value] = emptyPage<CommunityAudioEffect>();
     const state = pages[pageKey.value];
     if (state.loading) return;
@@ -76,17 +128,15 @@ export const useAudioEffectPlaza = () => {
     // Capture the request's destination before awaiting. Late responses never overwrite another tab.
     const source = category.value;
     const brandId = selectedBrand.value?.id;
-    const sort = marketSort.value;
     state.loading = true;
     state.error = '';
     state.retryReset = reset;
     try {
+      // 音效市场已在函数入口拦截，这里只剩歌手音效与耳机音效两条网络路径。
       const result =
         source === 'artist'
           ? await getArtistAudioEffects(nextPage, PAGE_SIZE)
-          : source === 'market'
-            ? await getCommunityAudioEffects(nextPage, PAGE_SIZE, sort)
-            : await getHeadphoneAudioEffects(brandId!, nextPage, PAGE_SIZE);
+          : await getHeadphoneAudioEffects(brandId!, nextPage, PAGE_SIZE);
       const items = reset ? [] : state.items;
       const seen = new Set(items.map((item) => item.id));
       state.items = [
@@ -152,6 +202,9 @@ export const useAudioEffectPlaza = () => {
     if (isBrandDirectory.value) {
       if (!brands.loaded && !brands.error) void loadBrands(true);
       if (!common.loaded && !common.error) void loadCommon();
+    } else if (category.value === 'market') {
+      // 打开音效市场即触发后台同步（幂等；缓存新鲜时仅补缺失时长）。
+      void ensureEffectPlazaSync();
     } else if (!currentPage.value.loaded && !currentPage.value.error) {
       void loadEffects(true);
     }
@@ -268,6 +321,14 @@ export const useAudioEffectPlaza = () => {
     isBrandDirectory,
     pageKey,
     downloadingId,
+    // 音效市场本地缓存派生状态。
+    marketList,
+    searchQuery,
+    setSearch,
+    clearSearch,
+    plazaSyncState,
+    refreshMarket,
+    effectDurationText,
     selectCategory: (value: EffectPlazaCategory) => {
       category.value = value;
     },
