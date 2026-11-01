@@ -1453,7 +1453,11 @@ export const useLyricStore = defineStore('lyric', {
         });
         delete this.embeddedLyricSelectionMap[normalizedHash];
         if (options?.remember) {
-          setPersistedLyricMapEntry(this.manualLyricMap, normalizedHash, compactCandidate(candidate));
+          setPersistedLyricMapEntry(
+            this.manualLyricMap,
+            normalizedHash,
+            compactCandidate(candidate),
+          );
         }
         return true;
       } finally {

@@ -2,7 +2,6 @@ import { markRaw, toRaw } from 'vue';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { withoutEmbeddedMetadata } from '../../../shared/embeddedMetadata';
-import { isSameSong } from '@/utils/song';
 import { DEFAULT_PLAYBACK_QUEUE_ID, PERSONAL_FM_MODE } from './constants';
 import type {
   PersonalFmMode,

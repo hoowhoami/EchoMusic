@@ -529,9 +529,7 @@ export const registerLocalShortcuts = () => {
       localShortcutMatchCache = { signature, combos: buildLocalShortcutCombos() };
     }
     const pressed = buildShortcut(event);
-    const matched = localShortcutMatchCache.combos.find(([, combos]) =>
-      combos.includes(pressed),
-    );
+    const matched = localShortcutMatchCache.combos.find(([, combos]) => combos.includes(pressed));
     if (!matched) return;
     event.preventDefault();
     executeShortcutCommand(matched[0]);

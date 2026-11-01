@@ -97,12 +97,14 @@ const artistList = computed(() => {
   if (currentTrack.value.artists && currentTrack.value.artists.length > 0)
     return currentTrack.value.artists;
   if (!currentTrack.value.artist) return [] as SongArtist[];
-  return currentTrack.value.artist
-    .split(/[,/，]/)
-    .map((name) => name.trim())
-    .filter((name) => name.length > 0)
-    // 补齐 SongArtist 形状（id 缺省），保证 artistList 恒为统一类型
-    .map((name) => ({ id: undefined, name }));
+  return (
+    currentTrack.value.artist
+      .split(/[,/，]/)
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0)
+      // 补齐 SongArtist 形状（id 缺省），保证 artistList 恒为统一类型
+      .map((name) => ({ id: undefined, name }))
+  );
 });
 
 const navigateToLyric = () => {

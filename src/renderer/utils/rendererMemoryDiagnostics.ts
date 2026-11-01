@@ -78,7 +78,7 @@ const getImageDiagnosticsSummary = () => {
     .filter((item) => item.src && item.naturalPixels > 0)
     .sort((a, b) => b.naturalPixels - a.naturalPixels)
     .slice(0, 8)
-    .map(({ naturalPixels: _naturalPixels, ...item }) => item);
+    .map(({ src, complete, natural, rendered }) => ({ src, complete, natural, rendered }));
 
   return {
     uniqueSources: sourceCounts.size,
@@ -114,7 +114,9 @@ const getCanvasDiagnosticsSummary = () => {
     count: canvases.length,
     totalBackingPixels,
     estimatedBackingMb: Math.round(((totalBackingPixels * 4) / 1024 / 1024) * 10) / 10,
-    largest: items.slice(0, 8).map(({ backingPixels: _backingPixels, ...item }) => item),
+    largest: items
+      .slice(0, 8)
+      .map(({ id, className, backing, rendered }) => ({ id, className, backing, rendered })),
   };
 };
 
