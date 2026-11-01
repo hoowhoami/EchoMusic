@@ -25,6 +25,7 @@ const emit = defineEmits<{
   (e: 'add'): void;
   (e: 'patch', source: PluginMarketplaceSource, patch: { name?: string; enabled?: boolean }): void;
   (e: 'remove', source: PluginMarketplaceSource): void;
+  (e: 'errorDetail', source: PluginMarketplaceSource): void;
 }>();
 
 const canAdd = computed(() => Boolean(props.sourceUrl.trim()) && !props.adding);
@@ -83,7 +84,15 @@ const canAdd = computed(() => Boolean(props.sourceUrl.trim()) && !props.adding);
               </template>
             </small>
             <div v-if="source.lastError" class="plugin-source-error">
-              {{ source.lastError }}
+              <span>{{ source.lastError }}</span>
+              <button
+                v-if="source.lastErrorDetail"
+                type="button"
+                class="plugin-source-detail-btn"
+                @click="emit('errorDetail', source)"
+              >
+                详情
+              </button>
             </div>
           </div>
 
