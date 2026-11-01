@@ -414,6 +414,9 @@ const handleVisibilityChange = () => {
 watch(
   () => playerStore.playbackClock,
   () => {
+    // 33ms rAF 循环运行期间本 watch（250ms 节流的 playbackClock）属重复劳动，
+    // 仅在循环停止（暂停/页面隐藏）时补一帧并决定是否恢复循环。
+    if (rafId !== null) return;
     refreshLyricIndexes();
     updateYrcDom();
     syncRaf();

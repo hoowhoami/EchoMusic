@@ -101,7 +101,8 @@ const artistList = computed(() => {
     .split(/[,/，]/)
     .map((name) => name.trim())
     .filter((name) => name.length > 0)
-    .map((name) => ({ name }));
+    // 补齐 SongArtist 形状（id 缺省），保证 artistList 恒为统一类型
+    .map((name) => ({ id: undefined, name }));
 });
 
 const navigateToLyric = () => {
@@ -586,7 +587,7 @@ onUnmounted(() => {
               </span>
               <span v-if="currentTrack" class="text-[14px] text-text-secondary mx-0.5">-</span>
               <div v-if="currentTrack" class="flex items-center">
-                <template v-for="(artist, index) in artistList" :key="index">
+                <template v-for="(artist, index) in artistList" :key="artist.id ?? artist.name">
                   <span
                     class="text-[13px] transition-colors"
                     :class="
