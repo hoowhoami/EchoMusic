@@ -1,4 +1,5 @@
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { app, BrowserWindow, ipcMain, nativeImage, nativeTheme } from 'electron';
 import { join } from 'path';
 import log from './logger';
@@ -32,21 +33,48 @@ const PERSONALIZE_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\The
 
 let taskbarLightTheme: boolean | null = null;
 
-const readTaskbarLightTheme = (): boolean => {
+const execFileAsync = promisify(execFile);
+
+const readTaskbarLightThemeAsync = async (): Promise<boolean> => {
   try {
-    const output = execSync(`reg query "${PERSONALIZE_KEY}" /v SystemUsesLightTheme`, {
-      encoding: 'utf8',
-      timeout: 2000,
-    });
-    return /SystemUsesLightTheme\s+REG_DWORD\s+0x1\b/.test(output);
+    // 异步读取注册表：execSync 同步 spawn reg.exe 会阻塞主进程（正常 30-80ms，超时上限 2s）
+    const { stdout } = await execFileAsync(
+      'reg',
+      ['query', PERSONALIZE_KEY, '/v', 'SystemUsesLightTheme'],
+      { timeout: 2000 },
+    );
+    return /SystemUsesLightTheme\s+REG_DWORD\s+0x1\b/.test(stdout);
   } catch {
     // 读取失败按深色任务栏处理（Windows 默认配色）
     return false;
   }
 };
 
+let refreshingTaskbarLightTheme = false;
+
+/** 异步刷新任务栏明暗缓存；读取结果变化时重建图标并重新应用任务栏按钮。 */
+const refreshTaskbarLightTheme = async (): Promise<void> => {
+  if (refreshingTaskbarLightTheme) return;
+  refreshingTaskbarLightTheme = true;
+  try {
+    const light = await readTaskbarLightThemeAsync();
+    if (light === taskbarLightTheme) return;
+    taskbarLightTheme = light;
+    iconCache.clear();
+    const win = targetWindow;
+    if (win && !win.isDestroyed()) applyThumbarButtons(win);
+  } finally {
+    refreshingTaskbarLightTheme = false;
+  }
+};
+
 const ensureTaskbarLightTheme = (): boolean => {
-  if (taskbarLightTheme === null) taskbarLightTheme = readTaskbarLightTheme();
+  if (taskbarLightTheme === null) {
+    // 首次先按 Windows 默认（深色）同步渲染，注册表读取完成后在
+    // refreshTaskbarLightTheme 里按真实值刷新，避免启动路径同步阻塞。
+    taskbarLightTheme = false;
+    void refreshTaskbarLightTheme();
+  }
   return taskbarLightTheme;
 };
 
@@ -147,12 +175,8 @@ export function setupThumbarButtons(win: BrowserWindow) {
     // nativeTheme updated 在系统主题设置变化（WM_SETTINGCHANGE）时触发；软件内
     // 主题切换同样会走到这里，但任务栏只认注册表里的系统模式，值不变就不刷新
     nativeTheme.on('updated', () => {
-      const light = readTaskbarLightTheme();
-      if (taskbarLightTheme !== null && light === taskbarLightTheme) return;
-      taskbarLightTheme = light;
-      iconCache.clear();
-      const win = targetWindow;
-      if (win && !win.isDestroyed()) applyThumbarButtons(win);
+      // 应用内主题切换同样会触发本事件，注册表读取改为异步，避免阻塞主进程
+      void refreshTaskbarLightTheme();
     });
 
     ipcMain.on('thumbar:update-play-state', (event, isPlaying: boolean) => {
