@@ -906,6 +906,11 @@ const parseLyricDetailPayload = (
 export const DEFAULT_LYRIC_FILTER_PATTERN =
   '^(作词|作曲|编曲|制作人|录音|混音|母带|出品|发行|企划|监制|和声|吉他|贝斯|鼓|键盘|弦乐|词|曲|编|唱片|OP|SP|原唱|翻唱|许可|音乐人|纯音乐|宣推|协作推广|策划|统筹|营销|推广|制作|配唱|和音|弦乐编写|人声录音|人声编辑)[：:]|^(Lyrics|Composed|Produced|Written|Arranged|Mixed|Mastered|Recorded|Performed) by[：:]|^[『「【].*[』」】]$|未经著作权人许可|不得翻唱|翻录或使用|听歌就在';
 
+// 已编译歌词过滤正则缓存：buildFilteredLyricEntries/resolveVisibleLyricIndex 会对每行调用本函数，
+// 同一 pattern 反复 new RegExp 是行切换热路径上的重复编译；编译失败的 pattern 也缓存，避免每行抛异常。
+const lyricFilterRegexCache = new Map<string, RegExp | null>();
+const LYRIC_FILTER_REGEX_CACHE_LIMIT = 16;
+
 /**
  * 测试歌词行是否应被过滤
  * @param text 歌词文本
@@ -915,11 +920,19 @@ export const DEFAULT_LYRIC_FILTER_PATTERN =
 export function testLyricFilter(text: string, enabled: boolean, pattern: string): boolean {
   if (!enabled || !text) return false;
   const effectivePattern = pattern.trim() || DEFAULT_LYRIC_FILTER_PATTERN;
-  try {
-    return new RegExp(effectivePattern).test(text);
-  } catch {
-    return false;
+  let regex = lyricFilterRegexCache.get(effectivePattern);
+  if (regex === undefined) {
+    try {
+      regex = new RegExp(effectivePattern);
+    } catch {
+      regex = null;
+    }
+    if (lyricFilterRegexCache.size >= LYRIC_FILTER_REGEX_CACHE_LIMIT) {
+      lyricFilterRegexCache.clear();
+    }
+    lyricFilterRegexCache.set(effectivePattern, regex);
   }
+  return regex ? regex.test(text) : false;
 }
 
 // 同一歌曲及匹配信息的在途请求去重：避免 playTrack 与歌词页 watch 各自触发，
