@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { RouterView, useRoute } from 'vue-router';
-import SettingsDialog from '@/components/app/SettingsDialog.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
 import RouteErrorBoundary from '@/components/app/RouteErrorBoundary.vue';
 import { useLyricPageTransition } from '@/composables/useLyricPageTransition';
@@ -15,6 +14,9 @@ const KugouVerificationFlow = defineAsyncComponent(
   () => import('@/components/app/KugouVerificationFlow.vue'),
 );
 const UpdateDialog = defineAsyncComponent(() => import('@/components/app/UpdateDialog.vue'));
+// Settings 主文件体量大（1474 行 + 全部 section 常量），与其余 Dialog 一致异步化，
+// 避免被同步打进首屏 entry chunk
+const SettingsDialog = defineAsyncComponent(() => import('@/components/app/SettingsDialog.vue'));
 const LyricView = defineAsyncComponent(loadLyricPage);
 const route = useRoute();
 const isMiniPlayerWindow = () => {
