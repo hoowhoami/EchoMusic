@@ -1,4 +1,5 @@
 import type { PiniaPluginContext, StateTree } from 'pinia';
+import { effectScope, watch } from 'vue';
 import { getStorePersistenceKey } from '../../shared/storePersistence';
 import logger from '@/utils/logger';
 
@@ -15,6 +16,12 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const hydrationPromises = new Set<Promise<void>>();
+
+// 持久化订阅的长期宿主:随应用整个生命周期存在,永不 stop。
+// 独立 scope 可避免 watch 绑定到「首次创建该 store 时所处的组件 scope」
+// ——若该 store 恰好首次在会卸载的组件(如插件迷你 app)内被访问,
+// 组件卸载时订阅会被一并摘除,导致此后静默不再存盘。
+const persistScope = effectScope(true);
 
 export const waitForSqlitePersistHydration = async () => {
   await Promise.all(Array.from(hydrationPromises));
@@ -137,30 +144,39 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
     await deletion;
   };
 
-  store.$subscribe(
-    (_mutation, state) => {
-      if (!hydrated || !window.electron?.storage) return;
-      if (pendingSave) return;
-      pendingSave = window.setTimeout(() => {
-        pendingSave = 0;
-        const payload = buildPersistedState(state, persist);
-        writes = writes
-          .then(async () => {
-            if (lastPersistedState && isSamePersistedValue(payload, lastPersistedState)) return;
-            await window.electron?.storage?.setKv(storageKey, payload);
-            lastPersistedState = payload;
-          })
-          .catch((error) => {
-            logger.warn('SqlitePersist', `Save store ${store.$id} failed`, error);
-          });
-      }, 120);
-    },
-    // 持久化的均为全局单例 store，其订阅应随应用整个生命周期存在；
-    // detached:false 会把订阅绑定到「首次创建该 store 时所处的组件 scope」，
-    // 若该 store 恰好首次在会卸载的组件（如插件迷你 app）内被访问，
-    // 组件卸载时订阅会被一并摘除，导致此后静默不再存盘。
-    { detached: true },
-  );
+  // 订阅范围限定为待持久化的顶层字段:Pinia 的 $subscribe 是对整个 $state 的
+  // deep watch,每次突变都会全量 traverse(歌词 store 的候选缓存曾因此把单次
+  // 行切换拖到 100ms 级阻塞);显式 watch 把 deep 遍历限制在持久化相关字段内。
+  const stateKeys = Object.keys(store.$state);
+  const watchedKeys =
+    persist === true
+      ? stateKeys
+      : persist.pick?.length
+        ? persist.pick.filter((key) => stateKeys.includes(key))
+        : stateKeys.filter((key) => !persist.omit?.includes(key));
+  persistScope.run(() => {
+    watch(
+      () => watchedKeys.map((key) => store.$state[key]),
+      () => {
+        if (!hydrated || !window.electron?.storage) return;
+        if (pendingSave) return;
+        pendingSave = window.setTimeout(() => {
+          pendingSave = 0;
+          const payload = buildPersistedState(store.$state, persist);
+          writes = writes
+            .then(async () => {
+              if (lastPersistedState && isSamePersistedValue(payload, lastPersistedState)) return;
+              await window.electron?.storage?.setKv(storageKey, payload);
+              lastPersistedState = payload;
+            })
+            .catch((error) => {
+              logger.warn('SqlitePersist', `Save store ${store.$id} failed`, error);
+            });
+        }, 120);
+      },
+      { deep: true },
+    );
+  });
 
   return {
     $clearPersistedState: clearPersistedState,

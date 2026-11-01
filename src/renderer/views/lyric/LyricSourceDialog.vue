@@ -123,10 +123,14 @@ const isScrollableCandidate = (candidate: SourceCandidate) =>
   candidate.embeddedContent !== undefined
     ? Boolean(embeddedPreview.value?.lines.length)
     : candidate.contenttype !== 2;
-const candidatePreview = (candidate: SourceCandidate): ParsedLyricPreview | null =>
-  candidate.embeddedContent !== undefined
+const candidatePreview = (candidate: SourceCandidate): ParsedLyricPreview | null => {
+  // 候选缓存已移出深度响应式(见 store 注释),读 revision 建立更新依赖,
+  // 预览异步写入后本列表的"翻译/音译"等标签才能刷新
+  void lyricStore.candidateCacheRevision;
+  return candidate.embeddedContent !== undefined
     ? embeddedPreview.value
-    : (lyricStore.candidatePreviewMap[candidateKey(candidate)] ?? null);
+    : lyricStore.getCandidatePreview(candidateKey(candidate));
+};
 
 const recommendationLevel = (candidate: SourceCandidate) => {
   // 星级由接口返回的 score（0-100）映射为 0-5 星，按 0.5 粒度（支持半星）

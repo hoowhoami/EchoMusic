@@ -945,6 +945,35 @@ const rememberLyricResult = (key: string, value: CachedLyricResult) => {
   }
 };
 
+// 候选歌词缓存:每条是完整解析结果(数十行歌词对象),规模可观。放在模块级
+// 而非 $state,避免被 Pinia $subscribe / deep watch 每次行切换都全量遍历
+// (行切换卡顿根因,见 docs/2026-11-01-folia-line-switch-jank-rca.md)。
+// UI 不直接绑定这两个缓存,均经 resolveCandidateDetail / previewCandidate 读取。
+const CANDIDATE_CACHE_LIMIT = 128;
+const candidateDetailStoreMap = new Map<string, LyricDetailResponse | null>();
+const candidatePreviewStoreMap = new Map<string, ParsedLyricPreview | null>();
+
+// 两个缓存按同 key 成对写入(见 resolveCandidateDetail),故成对淘汰最老条目。
+const rememberCandidateCache = (
+  key: string,
+  detail: LyricDetailResponse | null,
+  preview: ParsedLyricPreview | null,
+) => {
+  if (!key) return;
+  if (candidateDetailStoreMap.has(key)) {
+    candidateDetailStoreMap.delete(key);
+    candidatePreviewStoreMap.delete(key);
+  }
+  candidateDetailStoreMap.set(key, detail);
+  candidatePreviewStoreMap.set(key, preview);
+  while (candidateDetailStoreMap.size > CANDIDATE_CACHE_LIMIT) {
+    const oldestKey = candidateDetailStoreMap.keys().next().value;
+    if (!oldestKey) break;
+    candidateDetailStoreMap.delete(oldestKey);
+    candidatePreviewStoreMap.delete(oldestKey);
+  }
+};
+
 const shouldPreferPluginLyric = (track?: Song): boolean => {
   const source = String(track?.source ?? '')
     .trim()
@@ -983,8 +1012,8 @@ export const useLyricStore = defineStore('lyric', {
     candidateMatchKey: '',
     candidateRequestSerial: 0,
     candidates: [] as LyricSearchCandidate[],
-    candidatePreviewMap: {} as Record<string, ParsedLyricPreview | null>,
-    candidateDetailMap: {} as Record<string, LyricDetailResponse | null>,
+    // 候选缓存写入计数:缓存本体在模块级(非响应式),组件用本标量建立更新依赖
+    candidateCacheRevision: 0,
     autoCandidateKey: '',
     currentCandidateKey: '',
     manualLyricMap: {} as Record<string, ManualLyricSelection>,
@@ -1308,8 +1337,8 @@ export const useLyricStore = defineStore('lyric', {
       this.candidateHash = normalizedHash;
       this.candidateMatchKey = matchKey;
       this.candidates = orderedCandidates;
-      this.candidatePreviewMap = {};
-      this.candidateDetailMap = {};
+      candidateDetailStoreMap.clear();
+      candidatePreviewStoreMap.clear();
       this.autoCandidateKey = autoCandidate ? getLyricCandidateKey(autoCandidate) : '';
       if (options?.hydratePreviews) await this.hydrateCandidatePreviews(candidates);
       return orderedCandidates;
@@ -1319,9 +1348,9 @@ export const useLyricStore = defineStore('lyric', {
     ): Promise<CandidateLyricDetail | null> {
       if (!isUsableCandidate(candidate)) return null;
       const key = getLyricCandidateKey(candidate);
-      if (Object.prototype.hasOwnProperty.call(this.candidateDetailMap, key)) {
-        const detail = this.candidateDetailMap[key];
-        const parsed = this.candidatePreviewMap[key];
+      if (candidateDetailStoreMap.has(key)) {
+        const detail = candidateDetailStoreMap.get(key);
+        const parsed = candidatePreviewStoreMap.get(key);
         return detail && parsed ? { detail, parsed } : null;
       }
 
@@ -1334,14 +1363,14 @@ export const useLyricStore = defineStore('lyric', {
             await getLyric(String(candidate.id), String(candidate.accesskey)),
           );
           if (!lyricData) {
-            this.candidateDetailMap[key] = null;
-            this.candidatePreviewMap[key] = null;
+            rememberCandidateCache(key, null, null);
+            this.candidateCacheRevision++;
             return null;
           }
 
           const parsed = parseLyricDetailPayload(lyricData);
-          this.candidateDetailMap[key] = lyricData;
-          this.candidatePreviewMap[key] = parsed;
+          rememberCandidateCache(key, lyricData, parsed);
+          this.candidateCacheRevision++;
           return { detail: lyricData, parsed };
         } finally {
           inflightCandidateDetailMap.delete(key);
@@ -1350,6 +1379,10 @@ export const useLyricStore = defineStore('lyric', {
 
       inflightCandidateDetailMap.set(key, request);
       return request;
+    },
+    // 读取候选预览缓存:缓存本体非响应式,依赖方需另行跟踪 candidateCacheRevision
+    getCandidatePreview(key: string): ParsedLyricPreview | null {
+      return candidatePreviewStoreMap.get(key) ?? null;
     },
     async hydrateCandidatePreviews(candidates: LyricSearchCandidate[]) {
       const usableCandidates = candidates.filter(isUsableCandidate);
@@ -1361,8 +1394,8 @@ export const useLyricStore = defineStore('lyric', {
             logger.warn('LyricStore', 'Resolve lyric candidate failed', error, {
               key: getLyricCandidateKey(candidate),
             });
-            this.candidateDetailMap[getLyricCandidateKey(candidate)] = null;
-            this.candidatePreviewMap[getLyricCandidateKey(candidate)] = null;
+            rememberCandidateCache(getLyricCandidateKey(candidate), null, null);
+            this.candidateCacheRevision++;
             return null;
           }),
         ),
