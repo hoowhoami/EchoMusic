@@ -103,7 +103,9 @@ const cancelDesktopLyricSessions = () => {
     resize: cancelled.kind === 'resize' ? cancelled.bounds : null,
   };
 };
-const DESKTOP_LYRIC_HOVER_POLL_INTERVAL_MS = 150;
+// 常驻轮询间隔：250ms 对 hover 与解锁按钮的响应性损失不可感知，
+// 却把系统调用频率从 6.7Hz 降到 4Hz；窗口不可见时轮询会自行停止（见 pollDesktopLyricHover）
+const DESKTOP_LYRIC_HOVER_POLL_INTERVAL_MS = 250;
 const desktopLyricPlaybackBridge = createPlaybackBridgeState();
 
 app.on('before-quit', () => {

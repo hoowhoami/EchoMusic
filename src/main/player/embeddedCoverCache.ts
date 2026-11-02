@@ -5,6 +5,9 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_CACHE_BYTES = 64 * 1024 * 1024;
 const MAX_CACHE_FILES = 128;
 const FILE_NAME = /^[a-f0-9]{64}\.(?:jpg|png|webp|gif)$/;
+// prune 触发节流：次数/时间双阈值（见 shouldPrune）
+const PRUNE_EVERY_ADOPTS = 16;
+const PRUNE_MIN_INTERVAL_MS = 60_000;
 export const EMBEDDED_COVER_SCHEME = 'echo-player-cover';
 
 const imageType = (data: Uint8Array): string | null => {
@@ -21,8 +24,27 @@ const imageType = (data: Uint8Array): string | null => {
 /** Content-addressed, bounded artwork storage. No source URL or credentials are stored. */
 export class EmbeddedCoverCache {
   private pending: Promise<unknown> = Promise.resolve();
+  private pruneAdoptCount = 0;
+  private lastPruneAt = 0;
 
   constructor(readonly directory: string) {}
+
+  // prune 需要全目录 readdir + 逐文件 stat（≤128 个文件），每次封面发布都执行会与
+  // 切歌瞬间的元数据解析、UI 首帧竞争 IO；改为按次数/时间双阈值节流，
+  // 缓存文件数短暂超出软上限（128）无碍，下次 prune 会一并裁剪
+  private shouldPrune(): boolean {
+    this.pruneAdoptCount += 1;
+    const now = Date.now();
+    if (
+      this.pruneAdoptCount < PRUNE_EVERY_ADOPTS &&
+      now - this.lastPruneAt < PRUNE_MIN_INTERVAL_MS
+    ) {
+      return false;
+    }
+    this.pruneAdoptCount = 0;
+    this.lastPruneAt = now;
+    return true;
+  }
 
   /** Native workers publish artwork files; only their small names cross N-API. */
   adopt(name: string): Promise<string | undefined> {
@@ -33,7 +55,7 @@ export class EmbeddedCoverCache {
       if (!image) return undefined;
       const now = new Date();
       await fs.utimes(image.filePath, now, now);
-      await this.prune(name);
+      if (this.shouldPrune()) await this.prune(name);
       // Recreated files need a fresh resource identity so an <img> that already
       // failed on an evicted URL retries. Touching an existing entry keeps it stable.
       return `${url}?v=${Math.round(image.createdAt * 1000)}`;
