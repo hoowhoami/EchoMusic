@@ -1,7 +1,5 @@
 use super::{EventCallback, SystemMediaControls};
-use crate::model::{
-    MediaControlEvent, MetadataPayload, PlayStatePayload, SkipIntervalPayload, TimelinePayload,
-};
+use crate::model::{MediaControlEvent, MetadataPayload, PlayStatePayload, TimelinePayload};
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use std::ptr::NonNull;
 use std::sync::{Arc, Mutex};
@@ -11,19 +9,14 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{AnyThread, Message};
 use objc2_app_kit::NSImage;
-use objc2_foundation::{NSArray, NSData, NSMutableDictionary, NSNumber, NSSize, NSString};
+use objc2_foundation::{NSData, NSMutableDictionary, NSNumber, NSSize, NSString};
 use objc2_media_player::{
     MPChangePlaybackPositionCommandEvent, MPMediaItemArtwork, MPMediaItemPropertyAlbumTitle,
     MPMediaItemPropertyArtist, MPMediaItemPropertyArtwork, MPMediaItemPropertyPlaybackDuration,
     MPMediaItemPropertyTitle, MPNowPlayingInfoCenter, MPNowPlayingInfoPropertyElapsedPlaybackTime,
     MPNowPlayingInfoPropertyPlaybackRate, MPNowPlayingPlaybackState, MPRemoteCommand,
     MPRemoteCommandCenter, MPRemoteCommandEvent, MPRemoteCommandHandlerStatus,
-    MPSkipIntervalCommand, MPSkipIntervalCommandEvent,
 };
-
-const DEFAULT_SKIP_INTERVAL_MS: f64 = 5_000.0;
-const MIN_SKIP_INTERVAL_MS: f64 = 1_000.0;
-const MAX_SKIP_INTERVAL_MS: f64 = 99_000.0;
 
 pub struct MacMediaControls {
     np_info_ctr: Retained<MPNowPlayingInfoCenter>,
@@ -139,59 +132,6 @@ impl MacMediaControls {
         }
     }
 
-    fn normalize_skip_interval_ms(value: f64) -> f64 {
-        if value.is_finite() && value > 0.0 {
-            value.clamp(MIN_SKIP_INTERVAL_MS, MAX_SKIP_INTERVAL_MS)
-        } else {
-            DEFAULT_SKIP_INTERVAL_MS
-        }
-    }
-
-    fn set_skip_preferred_interval(command: &MPSkipIntervalCommand, interval_ms: f64) {
-        let interval_s = NSNumber::new_f64(Self::normalize_skip_interval_ms(interval_ms) / 1000.0);
-        let intervals = NSArray::from_slice(&[&*interval_s]);
-        unsafe {
-            command.setPreferredIntervals(&intervals);
-        }
-    }
-
-    fn add_skip_handler(&self, command: &MPSkipIntervalCommand, forward: bool) {
-        let handler_arc = self.event_handler.clone();
-
-        let block = RcBlock::new(
-            move |event: NonNull<MPRemoteCommandEvent>| -> MPRemoteCommandHandlerStatus {
-                let skip_evt_opt = unsafe { Retained::retain(event.as_ptr()) }
-                    .and_then(|evt| evt.downcast::<MPSkipIntervalCommandEvent>().ok());
-                let offset_ms = skip_evt_opt
-                    .map(|skip_evt| unsafe { skip_evt.interval() } * 1000.0)
-                    .filter(|value| value.is_finite() && *value > 0.0);
-                let media_event = if forward {
-                    MediaControlEvent::seek_forward(offset_ms)
-                } else {
-                    MediaControlEvent::seek_backward(offset_ms)
-                };
-                if let Ok(guard) = handler_arc.lock() {
-                    if let Some(ref tsfn) = *guard {
-                        tsfn.call(Ok(media_event), ThreadsafeFunctionCallMode::NonBlocking);
-                    }
-                }
-                MPRemoteCommandHandlerStatus::Success
-            },
-        );
-        unsafe {
-            command.setEnabled(true);
-            let token = command.addTargetWithHandler(&block);
-            self.store_token(command, token);
-        }
-    }
-
-    fn update_skip_interval_commands(&self, forward_ms: f64, backward_ms: f64) {
-        unsafe {
-            Self::set_skip_preferred_interval(&self.cmd_ctr.skipForwardCommand(), forward_ms);
-            Self::set_skip_preferred_interval(&self.cmd_ctr.skipBackwardCommand(), backward_ms);
-        }
-    }
-
     fn normalize_playback_rate(rate: f64) -> f64 {
         if rate.is_finite() && rate > 0.0 {
             rate
@@ -227,12 +167,9 @@ impl MacMediaControls {
             );
             self.add_simple_handler(&self.cmd_ctr.nextTrackCommand(), MediaControlEvent::next());
             self.add_simple_handler(&self.cmd_ctr.stopCommand(), MediaControlEvent::stop());
-            let skip_forward = self.cmd_ctr.skipForwardCommand();
-            let skip_backward = self.cmd_ctr.skipBackwardCommand();
-            Self::set_skip_preferred_interval(&skip_forward, DEFAULT_SKIP_INTERVAL_MS);
-            Self::set_skip_preferred_interval(&skip_backward, DEFAULT_SKIP_INTERVAL_MS);
-            self.add_skip_handler(&skip_forward, true);
-            self.add_skip_handler(&skip_backward, false);
+            // 音乐卡片使用上下首；同时启用按秒跳转会使紧凑系统面板优先显示快进/快退。
+            self.cmd_ctr.skipForwardCommand().setEnabled(false);
+            self.cmd_ctr.skipBackwardCommand().setEnabled(false);
         }
         self.add_seek_handler();
     }
@@ -363,10 +300,6 @@ impl SystemMediaControls for MacMediaControls {
         }
     }
 
-    fn update_skip_intervals(&self, payload: &SkipIntervalPayload) {
-        self.update_skip_interval_commands(payload.forward_ms, payload.backward_ms);
-    }
-
     fn set_event_callback(&mut self, callback: EventCallback) {
         if let Ok(mut guard) = self.event_handler.lock() {
             *guard = Some(callback);
@@ -378,6 +311,49 @@ impl SystemMediaControls for MacMediaControls {
 #[cfg(test)]
 mod tests {
     use super::MacMediaControls;
+    use crate::model::SkipIntervalPayload;
+    use crate::sys_media::SystemMediaControls;
+
+    #[test]
+    fn system_commands_keep_track_navigation_after_skip_preference_updates() {
+        let mut controls = MacMediaControls::new();
+        unsafe {
+            controls.cmd_ctr.skipForwardCommand().setEnabled(true);
+            controls.cmd_ctr.skipBackwardCommand().setEnabled(true);
+        }
+        // 与回调注册共用实际命令注册入口，无需创建 Node 运行时。
+        controls.setup_event_listeners();
+        for interval_ms in [5_000.0, 30_000.0] {
+            controls.update_skip_intervals(&SkipIntervalPayload {
+                forward_ms: interval_ms,
+                backward_ms: interval_ms,
+            });
+            unsafe {
+                assert!(controls.cmd_ctr.previousTrackCommand().isEnabled());
+                assert!(controls.cmd_ctr.nextTrackCommand().isEnabled());
+                assert!(controls.cmd_ctr.playCommand().isEnabled());
+                assert!(controls.cmd_ctr.pauseCommand().isEnabled());
+                assert!(controls.cmd_ctr.changePlaybackPositionCommand().isEnabled());
+                assert!(!controls.cmd_ctr.skipForwardCommand().isEnabled());
+                assert!(!controls.cmd_ctr.skipBackwardCommand().isEnabled());
+            }
+        }
+        {
+            let tokens = controls.target_tokens.lock().unwrap();
+            unsafe {
+                for command in [
+                    controls.cmd_ctr.previousTrackCommand(),
+                    controls.cmd_ctr.nextTrackCommand(),
+                ] {
+                    assert!(tokens
+                        .iter()
+                        .any(|(registered, _)| std::ptr::eq(&**registered, &*command)));
+                }
+            }
+        }
+        controls.shutdown();
+        assert!(controls.target_tokens.lock().unwrap().is_empty());
+    }
 
     #[test]
     fn now_playing_rate_uses_actual_rate_only_while_playing() {

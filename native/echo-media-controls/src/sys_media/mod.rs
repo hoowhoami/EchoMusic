@@ -20,6 +20,7 @@ pub trait SystemMediaControls: Send + Sync {
     fn update_metadata(&self, payload: &MetadataPayload);
     fn update_play_state(&self, payload: &PlayStatePayload);
     fn update_timeline(&self, payload: &TimelinePayload);
+    /// 平台可选支持；macOS 保留音乐卡片上下首，不使用按秒跳转偏好。
     fn update_skip_intervals(&self, _payload: &SkipIntervalPayload) {}
     fn set_event_callback(&mut self, callback: EventCallback);
 }
