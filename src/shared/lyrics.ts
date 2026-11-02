@@ -114,3 +114,24 @@ export const hasWordByWordTiming = (
   // 清洗层在缺 characters 时会补一个 endTime 为 0 的占位字符，不能当作逐字数据。
   return (line.characters ?? []).some((char) => char.endTime > char.startTime);
 };
+
+/**
+ * 歌词行数组的稳定身份 ID，用于跨窗口快照的去重 key。
+ *
+ * 歌词行更新均为整体替换赋值（引用变化即内容变化），因此用数组引用身份替代
+ * 全量 JSON.stringify 比较：O(1) 且无字符串中间体。WeakMap 随旧数组 GC 自动释放。
+ * 注意：比较必须基于上游 displayLines 引用，而非 normalize 后每次新建的 payload 数组。
+ */
+let lyricLinesIdentitySeq = 0;
+const lyricLinesIdentityMap = new WeakMap<object, number>();
+
+export const getLyricLinesIdentity = (lines: unknown): number => {
+  if (!lines || typeof lines !== 'object') return -1;
+  let id = lyricLinesIdentityMap.get(lines);
+  if (id === undefined) {
+    lyricLinesIdentitySeq += 1;
+    id = lyricLinesIdentitySeq;
+    lyricLinesIdentityMap.set(lines, id);
+  }
+  return id;
+};
