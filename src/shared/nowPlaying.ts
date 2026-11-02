@@ -132,6 +132,20 @@ export type NowPlayingSnapshotPatch = Partial<
   lyric?: Partial<NowPlayingLyricPayload>;
 };
 
+/**
+ * 主进程 → 窗口广播消息：相对上次广播的增量。
+ * 首条消息与窗口 show 补发为完整快照；后续仅携带引用变化的部分。
+ * 约定：patch.lyric.lines === undefined 表示行数组引用未变，接收端沿用上次值，
+ * 避免播放期间每次进度同步都随 IPC 结构化克隆整份歌词行（可达数千个子对象）。
+ */
+export type NowPlayingBroadcastPatch = Partial<
+  Pick<NowPlayingSnapshot, 'playback' | 'appearance'>
+> & {
+  lyric?: Omit<NowPlayingLyricPayload, 'lines'> & {
+    lines?: NowPlayingLyricPayload['lines'];
+  };
+};
+
 export const DEFAULT_NOW_PLAYING_LYRIC: NowPlayingLyricPayload = {
   trackId: null,
   revision: 0,

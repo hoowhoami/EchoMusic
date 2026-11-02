@@ -26,6 +26,7 @@ import type {
 } from '../shared/desktopLyric';
 import { isWaylandWindowingBackend } from '../shared/windowing';
 import type {
+  NowPlayingBroadcastPatch,
   NowPlayingCommand,
   NowPlayingSnapshot,
   NowPlayingSnapshotPatch,
@@ -617,8 +618,33 @@ contextBridge.exposeInMainWorld('electron', {
     syncSnapshot: (payload: NowPlayingSnapshotPatch) =>
       sendWithPlainPayload('now-playing:sync-snapshot', payload),
     onSnapshot: (func: (snapshot: NowPlayingSnapshot) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, snapshotPayload: NowPlayingSnapshot) =>
-        func(snapshotPayload);
+      // 主进程广播的是增量 patch（未变化部分省略），此处合并为完整快照再回调，
+      // 上层（插件 API 等）保持接收全量快照的既有语义。
+      // 首条消息与窗口 show 补发为主进程保证的全量。
+      // 约定：patch.lyric.lines === undefined 表示行数组未变，沿用上次接收值。
+      let merged: NowPlayingSnapshot | null = null;
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        patch: NowPlayingBroadcastPatch,
+      ) => {
+        merged = merged
+          ? {
+              playback: patch.playback !== undefined ? patch.playback : merged.playback,
+              lyric:
+                patch.lyric !== undefined
+                  ? {
+                      ...merged.lyric,
+                      ...patch.lyric,
+                      ...(patch.lyric.lines === undefined ? { lines: merged.lyric.lines } : {}),
+                    }
+                  : merged.lyric,
+              appearance:
+                patch.appearance !== undefined ? patch.appearance : merged.appearance,
+              updatedAt: Date.now(),
+            }
+          : (patch as NowPlayingSnapshot);
+        func(merged);
+      };
       ipcRenderer.on('now-playing:snapshot', listener);
       return () => ipcRenderer.removeListener('now-playing:snapshot', listener);
     },
