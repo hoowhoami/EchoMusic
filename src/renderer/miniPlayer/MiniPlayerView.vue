@@ -126,6 +126,9 @@ const lyricArtist = computed(() => playback.value?.artist || 'EchoMusic');
 const lyricLines = computed(() => lyric.value?.lines ?? []);
 const liveLyricIndex = ref(-1);
 const liveLyricTimelineMs = ref(0);
+// 稳定引用对象传给 MiniLyricPanel：高频 timeline 写入只触发子组件 watch，
+// 不再成为本组件（大组件）的 render 依赖
+const liveLyricTimelineSource = { ref: liveLyricTimelineMs };
 const lyricTimeline = createLyricTimeline();
 const stableLyricIndex = createStableLyricIndex();
 
@@ -175,7 +178,8 @@ let lastTimelineRevision = -1;
 const refreshLiveLyricIndex = (options?: { forceSync?: boolean; resetStable?: boolean }) => {
   lyricTimeline.sync(getTimelinePlayback(), options?.forceSync);
   const timelineMs = getLyricTimelineMs();
-  liveLyricTimelineMs.value = timelineMs;
+  // 仅歌词面板可见时写 timeline：面板关闭时不产生 12.5Hz 的无谓响应式写入
+  if (isLyricOpen.value) liveLyricTimelineMs.value = timelineMs;
   const rawIndex = resolveLiveLyricIndex(timelineMs);
   const revision = lyricTimeline.revision;
   const nextIndex =
@@ -187,7 +191,10 @@ const refreshLiveLyricIndex = (options?: { forceSync?: boolean; resetStable?: bo
 };
 
 const syncLyricClockTimer = () => {
-  const shouldRun = Boolean(playback.value?.isPlaying && lyricLines.value.length > 0);
+  // 时钟只服务歌词面板：面板关闭时依靠 4Hz 兜底 watch 刷新行索引即可
+  const shouldRun = Boolean(
+    playback.value?.isPlaying && lyricLines.value.length > 0 && isLyricOpen.value,
+  );
   if (shouldRun && !lyricClockTimer) {
     lyricClockTimer = setInterval(refreshLiveLyricIndex, LYRIC_CLOCK_INTERVAL_MS);
     return;
@@ -773,6 +780,11 @@ const requestClose = () => {
 // 通知主渲染进程歌词面板可见状态，用于动态调整同步频率
 watch(isLyricOpen, (visible) => {
   window.electron?.miniPlayer?.notifyLyricVisibility?.(visible);
+  if (visible) {
+    // 面板打开瞬间立即对齐时间轴并重启时钟，避免首帧歌词位置滞后
+    refreshLiveLyricIndex({ resetStable: true });
+    syncLyricClockTimer();
+  }
 });
 
 watch(
@@ -1064,7 +1076,7 @@ onUnmounted(() => {
         :lyric-style="appearance?.lyricStyle"
         :visible="isLyricOpen"
         :expand-direction="expandDirection"
-        :timeline-ms="liveLyricTimelineMs"
+        :timeline-source="liveLyricTimelineSource"
         :seek-timestamp="playback?.seekTimestamp ?? 0"
         :aria-hidden="!isLyricOpen"
       />
