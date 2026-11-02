@@ -24,13 +24,16 @@ pub(crate) use cpal_shared::fill_output_reusing;
 
 pub(crate) type OutputStartSender = SyncSender<Result<(), String>>;
 
+/// 输出线程在启动中途被弃用（设备切换 / 启动看门狗超时）时回报给确认通道的消息。
+pub(crate) const OUTPUT_START_CANCELLED_MESSAGE: &str = "audio output startup was cancelled";
+
 #[derive(Clone, Debug)]
 pub(crate) struct OutputStopToken {
     stopped: Arc<AtomicBool>,
 }
 
 impl OutputStopToken {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             stopped: Arc::new(AtomicBool::new(false)),
         }
@@ -51,7 +54,7 @@ pub(crate) struct AudioOutputHandle {
 }
 
 impl AudioOutputHandle {
-    fn new(stop: OutputStopToken, thread: JoinHandle<()>) -> Self {
+    pub(crate) fn new(stop: OutputStopToken, thread: JoinHandle<()>) -> Self {
         Self {
             stop,
             thread: Some(thread),
@@ -417,10 +420,7 @@ pub(crate) fn output_start_was_cancelled(
     if !stop.should_stop(shared) {
         return false;
     }
-    report_output_start(
-        start_notify,
-        Err("audio output startup was cancelled".to_string()),
-    );
+    report_output_start(start_notify, Err(OUTPUT_START_CANCELLED_MESSAGE.to_string()));
     true
 }
 

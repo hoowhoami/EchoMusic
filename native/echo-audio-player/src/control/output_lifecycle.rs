@@ -2,6 +2,14 @@ use super::*;
 
 const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
 
+/// 输出启动看门狗：超过该时长未收到启动确认即判失败。
+const OUTPUT_START_WATCHDOG: Duration = Duration::from_secs(3);
+/// 看门狗超时后在同端点重试的总尝试次数。第一次失败常是引擎/驱动侧的
+/// 瞬时串行化（端点刚经历路由切换或被弃用线程占用），立即重试一次通常即可成功。
+const OUTPUT_START_ATTEMPTS: u32 = 2;
+/// 两次尝试之间的间隔：给被弃用的输出线程留出撞上停止令牌检查点退出的时间。
+const OUTPUT_START_RETRY_DELAY: Duration = Duration::from_millis(250);
+
 pub(crate) fn schedule_idle_output_release_for_runtime(runtime: &mut PlayerRuntime) {
     if !runtime.core_state.allows_idle_output_release() {
         return;
@@ -559,31 +567,74 @@ fn spawn_output_thread_confirmed(
     shared: Arc<SharedAudio>,
     config: &PlayerConfig,
 ) -> Result<crate::output::AudioOutputHandle, String> {
+    confirm_output_start_with_retries(
+        || confirm_output_start_once(&shared, config),
+        OUTPUT_START_ATTEMPTS,
+        OUTPUT_START_RETRY_DELAY,
+    )
+}
+
+/// 带重试的启动确认：`confirm` 返回 Err 后延迟 `retry_delay` 再试，直到用完
+/// `attempts` 次数并返回最后一次错误。独立成闭包形式便于单测重试语义。
+fn confirm_output_start_with_retries<F>(
+    mut confirm: F,
+    attempts: u32,
+    retry_delay: Duration,
+) -> Result<crate::output::AudioOutputHandle, String>
+where
+    F: FnMut() -> Result<crate::output::AudioOutputHandle, String>,
+{
+    let mut last_error = String::new();
+    for attempt in 0..attempts {
+        if attempt > 0 {
+            // 上一线程可能仍卡在某个启动调用里；等它撞上停止令牌检查点退出，
+            // 再在同端点重试，避免两次 open 在驱动里互相串行化拖满看门狗。
+            thread::sleep(retry_delay);
+        }
+        match confirm() {
+            Ok(output) => return Ok(output),
+            Err(err) => last_error = err,
+        }
+    }
+    Err(last_error)
+}
+
+fn confirm_output_start_once(
+    shared: &Arc<SharedAudio>,
+    config: &PlayerConfig,
+) -> Result<crate::output::AudioOutputHandle, String> {
     let (start_tx, start_rx) = sync_channel(1);
     let output_thread = crate::output::spawn_output_backend(
         config.audio_device.clone(),
         config.exclusive_output,
-        shared,
+        shared.clone(),
         emit_event,
         Some(start_tx),
     );
 
-    match start_rx.recv_timeout(Duration::from_secs(3)) {
-        Ok(Ok(())) => {}
+    match start_rx.recv_timeout(OUTPUT_START_WATCHDOG) {
+        Ok(Ok(())) => Ok(output_thread),
         Ok(Err(err)) => {
             output_thread.shutdown();
-            return Err(err);
+            Err(err)
         }
         Err(RecvTimeoutError::Timeout) => {
             output_thread.shutdown_in_background("startup-timeout");
-            return Err("audio output did not start within 3 seconds".to_string());
+            // 超时不是系统返回的错误，线程卡在哪个启动调用里必须跟着报出来，
+            // 否则共享模式这类"无 HRESULT 的 3 秒静默超时"完全无法定位。
+            Err(format!(
+                "audio output did not start within {} ms: device='{}', exclusive={}, startup {}",
+                OUTPUT_START_WATCHDOG.as_millis(),
+                config.audio_device,
+                config.exclusive_output,
+                shared.output_startup_probe.describe(),
+            ))
         }
         Err(RecvTimeoutError::Disconnected) => {
             output_thread.shutdown();
-            return Err("audio output exited before startup completed".to_string());
+            Err("audio output exited before startup completed".to_string())
         }
     }
-    Ok(output_thread)
 }
 
 #[cfg(test)]
@@ -706,5 +757,77 @@ mod tests {
 
         assert_eq!(playing.core_state, PlaybackCoreState::Playing);
         assert_eq!(paused.core_state, PlaybackCoreState::Paused);
+    }
+
+    #[test]
+    fn output_start_retry_exhausts_attempts_and_returns_last_error() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let counter = attempts.clone();
+        let result = confirm_output_start_with_retries(
+            move || {
+                let attempt = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                Err(format!("attempt-{attempt}"))
+            },
+            OUTPUT_START_ATTEMPTS,
+            Duration::from_millis(1),
+        );
+        assert_eq!(attempts.load(Ordering::SeqCst), OUTPUT_START_ATTEMPTS as usize);
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("all attempts failed, must return the last error"),
+        };
+        assert_eq!(error, format!("attempt-{}", OUTPUT_START_ATTEMPTS));
+    }
+
+    #[test]
+    fn output_start_retry_short_circuits_on_first_success() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex};
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let counter = attempts.clone();
+        let handle = crate::output::AudioOutputHandle::new(
+            crate::output::OutputStopToken::new(),
+            thread::spawn(|| {}),
+        );
+        let slot = Mutex::new(Some(handle));
+        let result = confirm_output_start_with_retries(
+            move || {
+                let attempt = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                if attempt < OUTPUT_START_ATTEMPTS as usize {
+                    Err(format!("attempt-{attempt}"))
+                } else {
+                    slot.lock()
+                        .unwrap()
+                        .take()
+                        .ok_or_else(|| "handle already taken".to_string())
+                }
+            },
+            OUTPUT_START_ATTEMPTS,
+            Duration::from_millis(1),
+        );
+        assert!(result.is_ok());
+        assert_eq!(attempts.load(Ordering::SeqCst), OUTPUT_START_ATTEMPTS as usize);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn output_start_confirmed_reports_backend_failure_for_bogus_device() {
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &DspSettings::default(),
+        ));
+        let mut config = PlayerConfig::default();
+        config.set_audio_device("echo-music-nonexistent-output-endpoint");
+        let error = match spawn_output_thread_confirmed(shared, &config) {
+            Ok(_) => panic!("bogus device must fail to start"),
+            Err(error) => error,
+        };
+        assert!(error.contains("not found"), "{error}");
     }
 }

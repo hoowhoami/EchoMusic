@@ -1278,6 +1278,8 @@ mod tests {
         assert_eq!(shared.output_underrun_count(), 1);
     }
 
+    // 以下测试依赖 cpal 类型与非 Windows 平台的实现，与实现侧的 cfg 门控保持一致。
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn requested_cpal_buffer_frames_follow_audio_buffer_secs() {
         let config = StreamConfig {
@@ -1290,6 +1292,7 @@ mod tests {
         assert_eq!(requested_cpal_buffer_frames(0.0, &config), None);
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn cpal_fixed_buffer_supported_checks_range_and_unknown() {
         let config = StreamConfig {
@@ -1345,6 +1348,7 @@ mod tests {
         ));
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn cpal_stream_config_with_requested_buffer_keeps_default_when_fixed_unsupported() {
         let config = StreamConfig {
@@ -1360,6 +1364,7 @@ mod tests {
         assert_eq!(fixed_config.buffer_size, BufferSize::Fixed(9_600));
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn cpal_output_error_classification_keeps_xrun_nonfatal() {
         assert_eq!(
@@ -1579,6 +1584,7 @@ mod tests {
         assert_eq!(output, [0.125, -0.125]);
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn cpal_output_error_classification_marks_route_errors_recoverable() {
         assert_eq!(
@@ -1624,6 +1630,7 @@ mod tests {
         ));
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn cpal_default_buffer_range_uses_min_as_conservative_estimate() {
         let estimate = cpal_host_controlled_buffer_estimate_from_values(
@@ -1638,6 +1645,7 @@ mod tests {
         assert_eq!(estimate.mode, "host_controlled");
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn cpal_runtime_buffer_size_overrides_default_range_estimate() {
         let estimate = cpal_host_controlled_buffer_estimate_from_values(
