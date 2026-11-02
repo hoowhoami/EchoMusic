@@ -63,6 +63,12 @@ export default defineConfig({
             outDir: 'dist-electron/main',
             emptyOutDir: true,
             rollupOptions: {
+              output: {
+                // Rolldown 代码分割会把 CJS 互操作 helper 提升到入口 chunk，
+                // 导致子 chunk 反向引用未导出的 helper（如 __toESM）而启动崩溃。
+                // 主进程体积不大，直接禁用分包规避该问题。
+                codeSplitting: false,
+              },
               external: [
                 'electron',
                 'font-list',
