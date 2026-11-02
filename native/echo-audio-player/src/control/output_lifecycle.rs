@@ -1,4 +1,5 @@
 use super::*;
+use crate::shared::startup_probe::OutputStartupProbe;
 
 const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
 
@@ -599,6 +600,23 @@ where
     Err(last_error)
 }
 
+/// 看门狗超时的错误消息。只承载受控字段（exclusive 标志 + 启动探针快照），
+/// 不内嵌端点名：该消息会原样透传给前端，被 `resolveAudioFailureReason` /
+/// `isOutputDeviceError` 按关键词归类，设备名里出现 network、decode、
+/// "output device" 等字样会把超时误分类成网络/解码/输出设备错误。
+fn output_start_timeout_message(
+    watchdog: Duration,
+    exclusive: bool,
+    probe: &OutputStartupProbe,
+) -> String {
+    format!(
+        "audio output did not start within {} ms (exclusive={}, startup {})",
+        watchdog.as_millis(),
+        exclusive,
+        probe.describe(),
+    )
+}
+
 fn confirm_output_start_once(
     shared: &Arc<SharedAudio>,
     config: &PlayerConfig,
@@ -622,12 +640,25 @@ fn confirm_output_start_once(
             output_thread.shutdown_in_background("startup-timeout");
             // 超时不是系统返回的错误，线程卡在哪个启动调用里必须跟着报出来，
             // 否则共享模式这类"无 HRESULT 的 3 秒静默超时"完全无法定位。
-            Err(format!(
-                "audio output did not start within {} ms: device='{}', exclusive={}, startup {}",
-                OUTPUT_START_WATCHDOG.as_millis(),
-                config.audio_device,
+            // 端点名走诊断日志而非错误消息：错误字符串会原样透传给前端并被
+            // 关键词分类器扫描，设备名属于不受控文本（可能含 network、
+            // "output device" 等字样），会污染前端对超时错误的归类。
+            emit_shared_event(
+                shared,
+                PlayerEvent::log(
+                    "warn",
+                    format!(
+                        "audio output startup timeout diagnostics: device='{}', exclusive={}, startup {}",
+                        config.audio_device,
+                        config.exclusive_output,
+                        shared.output_startup_probe.describe(),
+                    ),
+                ),
+            );
+            Err(output_start_timeout_message(
+                OUTPUT_START_WATCHDOG,
                 config.exclusive_output,
-                shared.output_startup_probe.describe(),
+                &shared.output_startup_probe,
             ))
         }
         Err(RecvTimeoutError::Disconnected) => {
@@ -811,6 +842,16 @@ mod tests {
         );
         assert!(result.is_ok());
         assert_eq!(attempts.load(Ordering::SeqCst), OUTPUT_START_ATTEMPTS as usize);
+    }
+
+    #[test]
+    fn output_start_timeout_message_keeps_uncontrolled_device_name_out() {
+        let probe = OutputStartupProbe::default();
+        let message = output_start_timeout_message(OUTPUT_START_WATCHDOG, false, &probe);
+        // 设备名属于不受控文本，绝不能进入会按关键词归类的错误消息。
+        assert!(!message.contains("device='"), "{message}");
+        assert!(message.contains("exclusive=false"), "{message}");
+        assert!(message.contains("startup stage=not-reported"), "{message}");
     }
 
     #[cfg(target_os = "windows")]
