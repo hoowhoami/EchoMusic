@@ -582,12 +582,15 @@ export const favoritesActions = {
       existingSongs = dedupeSongs([...loadedSongs, ...this.getKnownPlaylistSongs(targetId)]);
     }
     // 键集与 isSameSong 语义一致，避免对大歌单逐条 some 扫描。
+    // 收藏回填键集取本次待加入的 songs：只有「已在歌单中且本次也在加入列表里」
+    // 的条目才需要同步收藏状态；existingKeys 供下方新增去重使用。
+    const incomingKeys = buildSongMatchKeySet(songs, false);
     const existingKeys = buildSongMatchKeySet(existingSongs, false);
     syncPlaylistFavorites(
       this,
       targetId,
       'add',
-      existingSongs.filter((item) => songMatchesKeySet(item, existingKeys)),
+      existingSongs.filter((item) => songMatchesKeySet(item, incomingKeys)),
     );
     const dedupedSongs: Song[] = [];
     const seenIncoming = new Set<string>();

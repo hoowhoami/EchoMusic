@@ -139,6 +139,9 @@ const seekTick = (timestamp: number) => {
   updateYrcDomManual(timelineMs);
   updateScrollManual(timelineMs);
   notifyLyricEffectHost();
+  // 续帧：自管循环必须自己排下一帧，否则只会被 snapshot 消息里的 resumeSeek
+  // 偶然拉起（约 80ms 一次，实际帧率远低于 30fps 目标）。
+  seekRafId = requestAnimationFrame(seekTick);
 };
 const pauseSeek = () => {
   if (seekRafId) {

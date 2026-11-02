@@ -14,6 +14,7 @@ import {
   hydrateEffectPlazaCache,
   markMarketSynced,
   mergeMarketEffects,
+  runPlazaCacheBatch,
   setEffectDuration,
 } from '@/stores/audioEffectPlazaCache';
 import logger from '@/utils/logger';
@@ -145,7 +146,11 @@ const syncDurations = async (task: PluginTaskHandle, signal: AbortSignal) => {
       if (done % DURATION_PROGRESS_STEP === 0 || done === total) updateProgress();
     }
   };
-  await Promise.all(Array.from({ length: DURATION_CONCURRENCY }, () => worker()));
+  // 时长回填逐条写入缓存：包进批量作用域后失效只记脏，整个阶段（含中止）结束后
+  // 统一 bump 一次 revision，避免市场列表每回填一首就重跑一次全量 filter+sort。
+  await runPlazaCacheBatch(() =>
+    Promise.all(Array.from({ length: DURATION_CONCURRENCY }, () => worker())),
+  );
   abortGuard();
 };
 
