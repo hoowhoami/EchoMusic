@@ -448,25 +448,50 @@ useResizeObserver(
   updateActionCapacity,
 );
 
+// 上次写入的抽屉 CSS 变量组合，未变化时跳过写入（避免拖拽窗口时逐帧全文档 style recalc）
+let lastDrawerVars: string | null = null;
+
 const updateDrawerWidth = () => {
   const content = document.querySelector('.main-content') as HTMLElement | null;
-  const target = content;
-  if (target) {
-    const rect = target.getBoundingClientRect();
-    const width = Math.floor(target.clientWidth);
-    const left = Math.floor(rect.left);
-    const top = Math.floor(rect.top);
-    const height = Math.floor(target.clientHeight);
+  let contentVars: string | null = null;
+  if (content) {
+    const rect = content.getBoundingClientRect();
+    contentVars = [
+      Math.floor(content.clientWidth),
+      Math.floor(rect.left),
+      Math.floor(rect.top),
+      Math.floor(content.clientHeight),
+    ].join('|');
+  }
+  const playerBar = document.querySelector('.player-bar-container') as HTMLElement | null;
+  const drawerOffset = playerBar ? Math.floor(playerBar.offsetHeight + 8) : null;
+  const nextVars =
+    contentVars && drawerOffset !== null ? `${contentVars}|${drawerOffset}` : null;
+  if (!nextVars || nextVars === lastDrawerVars) return;
+  lastDrawerVars = nextVars;
+  if (contentVars) {
+    const [width, left, top, height] = contentVars.split('|').map(Number);
     document.documentElement.style.setProperty('--drawer-content-width', `${width}px`);
     document.documentElement.style.setProperty('--drawer-content-left', `${left}px`);
     document.documentElement.style.setProperty('--drawer-content-top', `${top}px`);
     document.documentElement.style.setProperty('--drawer-content-height', `${height}px`);
   }
-  const playerBar = document.querySelector('.player-bar-container') as HTMLElement | null;
-  if (playerBar) {
-    const offset = Math.floor(playerBar.offsetHeight + 8);
-    document.documentElement.style.setProperty('--drawer-bottom-offset', `${offset}px`);
+  if (drawerOffset !== null) {
+    document.documentElement.style.setProperty('--drawer-bottom-offset', `${drawerOffset}px`);
   }
+};
+
+// window resize 的统一入口：rAF 合并同帧多次触发，
+// 原先三个独立 handler（跑马灯/抽屉宽度/操作容量）每帧至多各执行一次
+let resizeFrame: number | null = null;
+const handleWindowResize = () => {
+  if (resizeFrame !== null) return;
+  resizeFrame = window.requestAnimationFrame(() => {
+    resizeFrame = null;
+    checkMarquee();
+    updateDrawerWidth();
+    updateActionCapacity();
+  });
 };
 
 // Marquee logic
@@ -526,9 +551,7 @@ watch(
 );
 
 onMounted(() => {
-  window.addEventListener('resize', checkMarquee);
-  window.addEventListener('resize', updateDrawerWidth);
-  window.addEventListener('resize', updateActionCapacity);
+  window.addEventListener('resize', handleWindowResize);
   checkMarquee();
   updateDrawerWidth();
   updateActionCapacity();
@@ -536,9 +559,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  window.removeEventListener('resize', checkMarquee);
-  window.removeEventListener('resize', updateDrawerWidth);
-  window.removeEventListener('resize', updateActionCapacity);
+  window.removeEventListener('resize', handleWindowResize);
+  if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
   stopMarquee();
 });
 </script>
