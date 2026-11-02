@@ -206,13 +206,20 @@ const rootKey = (comment: Comment) =>
     comment.code ?? '',
     comment.mixSongId ?? '',
   ]);
-const isRootAvailable = (comment: Comment) =>
-  props.comments.some((item) => rootKey(contextRoot(item)) === rootKey(comment));
-const isVisibleComment = (comment: Comment) =>
-  props.comments.some((item) => rootKey(item) === rootKey(comment)) ||
-  Array.from(floorStates.values()).some((state) =>
-    state.replies.some((item) => rootKey(item) === rootKey(comment)),
+// 根评论 key 索引：watch(comments) 时一次性构建，isRootAvailable/isVisibleComment 改查表，
+// 消除模板渲染路径（如每条评论的删除按钮判定）对 props.comments 的 O(n²) 序列化扫描
+let commentRootKeysById = new Map<string, Set<string>>();
+const isRootAvailable = (comment: Comment) => {
+  const root = contextRoot(comment);
+  return commentRootKeysById.get(String(root.id))?.has(rootKey(comment)) ?? false;
+};
+const isVisibleComment = (comment: Comment) => {
+  const key = rootKey(comment);
+  if (commentRootKeysById.get(String(contextRoot(comment).id))?.has(key)) return true;
+  return Array.from(floorStates.values()).some((state) =>
+    state.replies.some((item) => rootKey(item) === key),
   );
+};
 let generation = 0;
 let disposed = false;
 const refreshTimers = new Set<number>();
@@ -252,6 +259,8 @@ watch(
       keys.add(rootKey(root));
       roots.set(String(root.id), keys);
     }
+    // 同步刷新根 key 索引，供 isRootAvailable/isVisibleComment 查表
+    commentRootKeysById = roots;
     for (const [id, state] of floorStates) {
       if (!roots.has(String(id)) || (state.rootKey && !roots.get(String(id))?.has(state.rootKey))) {
         floorStates.delete(id);
