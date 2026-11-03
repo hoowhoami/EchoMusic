@@ -807,7 +807,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
 
   const isDev = !app.isPackaged;
 
-  // CHANGELOG 内容运行期不变，读取一次后缓存，避免每次更新事件/IPC 都同步读整个文件
+  // CHANGELOG 内容运行期不变，读取成功一次后缓存；失败不缓存，后续事件可重试。
   let changelogCache: string | null = null;
   const readChangelogContent = (): string => {
     if (changelogCache !== null) return changelogCache;
@@ -815,11 +815,12 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       ? join(process.cwd(), 'CHANGELOG.md')
       : join(process.resourcesPath, 'CHANGELOG.md');
     try {
-      changelogCache = fs.readFileSync(changelogPath, 'utf-8');
+      const content = fs.readFileSync(changelogPath, 'utf-8');
+      changelogCache = content;
+      return content;
     } catch {
-      changelogCache = '';
+      return '';
     }
-    return changelogCache;
   };
 
   // 更新状态的单一可信来源（供渲染层在重新打开弹窗时恢复进度）

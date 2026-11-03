@@ -22,6 +22,7 @@ import {
   spatialAudioEffectOptions,
 } from '../../shared/audioEffectSupport';
 import { dspProviderRestorePatch } from '../../shared/dspProviderSettings';
+import { PLAYER_SESSION_KEYS } from '../../shared/playerSession';
 
 import { createPlayerState } from './player/state';
 import { capturePlayerSession, restorePlayerSession } from './player/session';
@@ -1191,27 +1192,8 @@ export const usePlayerStore = defineStore(
         () => {
           const queue = playlistStore.getQueueById(state.currentSourceQueueId);
           return [
-            state.currentTrackId,
-            state.currentSourceQueueId,
-            state.currentTrackSnapshot,
-            state.currentPlaylist,
-            state.nativeTrackSeq,
-            state.currentAudioUrl,
-            state.currentPlaybackSource,
-            state.currentAudioCandidateUrls,
-            state.currentAudioCandidateSources,
-            state.currentAudioCandidateIndex,
-            state.currentResolvedAudioQuality,
-            state.currentResolvedAudioEffect,
-            state.currentResolvedAudioLoudness,
-            state.currentResolvedSourceKind,
-            state.currentAudioQualityOverride,
-            state.currentCatalogSourceOverrideTrackId,
-            state.currentCloudSourceOverrideTrackId,
-            state.historyUploadCommitted,
-            state.historyUploadTrackId,
-            state.historyLocalRecorded,
-            state.climaxMarks,
+            // 直接派生自共享键表，避免手写副本随 PLAYER_SESSION_KEYS 演进而漂移。
+            ...PLAYER_SESSION_KEYS.map((key) => state[key]),
             queue,
             queue?.playbackRevision,
             queue?.currentTrackId,

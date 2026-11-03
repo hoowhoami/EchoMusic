@@ -68,11 +68,10 @@ const refreshTaskbarLightTheme = async (): Promise<void> => {
   }
 };
 
-const ensureTaskbarLightTheme = (): boolean => {
+const ensureTaskbarLightTheme = (): boolean | null => {
   if (taskbarLightTheme === null) {
-    // 首次先按 Windows 默认（深色）同步渲染，注册表读取完成后在
-    // refreshTaskbarLightTheme 里按真实值刷新，避免启动路径同步阻塞。
-    taskbarLightTheme = false;
+    // 首帧先不设置任务栏按钮：注册表读取是异步的，先按默认深色渲染会在浅色
+    // 任务栏上闪一帧错误图标。读取完成后 refreshTaskbarLightTheme 会重新应用。
     void refreshTaskbarLightTheme();
   }
   return taskbarLightTheme;
@@ -96,8 +95,9 @@ const loadIcons = (light: boolean): ThumbarIcons => {
   };
 };
 
-function getIcons(): ThumbarIcons {
+function getIcons(): ThumbarIcons | null {
   const light = ensureTaskbarLightTheme();
+  if (light === null) return null;
   let icons = iconCache.get(light);
   if (!icons) {
     icons = loadIcons(light);
@@ -107,8 +107,9 @@ function getIcons(): ThumbarIcons {
   return icons;
 }
 
-function buildThumbarButtons(win: BrowserWindow): Electron.ThumbarButton[] {
+function buildThumbarButtons(win: BrowserWindow): Electron.ThumbarButton[] | null {
   const icons = getIcons();
+  if (!icons) return null;
   return [
     {
       tooltip: '上一曲',
@@ -154,7 +155,9 @@ function buildThumbarButtons(win: BrowserWindow): Electron.ThumbarButton[] {
 
 function applyThumbarButtons(win: BrowserWindow) {
   if (win.isDestroyed()) return false;
-  const result = win.setThumbarButtons(buildThumbarButtons(win));
+  const buttons = buildThumbarButtons(win);
+  if (!buttons) return false; // 主题尚未读出，等异步刷新完成后重新应用
+  const result = win.setThumbarButtons(buttons);
   log.info('[Thumbar] setThumbarButtons result:', result);
   return result;
 }

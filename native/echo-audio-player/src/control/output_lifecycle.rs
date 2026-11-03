@@ -10,6 +10,8 @@ const OUTPUT_START_WATCHDOG: Duration = Duration::from_secs(3);
 const OUTPUT_START_ATTEMPTS: u32 = 2;
 /// 两次尝试之间的间隔：给被弃用的输出线程留出撞上停止令牌检查点退出的时间。
 const OUTPUT_START_RETRY_DELAY: Duration = Duration::from_millis(250);
+/// 看门狗超时消息前缀；重试判定与消息构造共用，避免文案漂移。
+const OUTPUT_START_TIMEOUT_MESSAGE_PREFIX: &str = "audio output did not start within";
 
 pub(crate) fn schedule_idle_output_release_for_runtime(runtime: &mut PlayerRuntime) {
     if !runtime.core_state.allows_idle_output_release() {
@@ -572,15 +574,18 @@ fn spawn_output_thread_confirmed(
         || confirm_output_start_once(&shared, config),
         OUTPUT_START_ATTEMPTS,
         OUTPUT_START_RETRY_DELAY,
+        is_retryable_output_start_error,
     )
 }
 
-/// 带重试的启动确认：`confirm` 返回 Err 后延迟 `retry_delay` 再试，直到用完
-/// `attempts` 次数并返回最后一次错误。独立成闭包形式便于单测重试语义。
+/// 带重试的启动确认：`confirm` 返回可重试错误后延迟 `retry_delay` 再试，直到用完
+/// `attempts` 次数；永久错误立即返回，避免白等并拖住后续核心命令。
+/// 独立成闭包形式便于单测重试语义。
 fn confirm_output_start_with_retries<F>(
     mut confirm: F,
     attempts: u32,
     retry_delay: Duration,
+    should_retry: impl Fn(&str) -> bool,
 ) -> Result<crate::output::AudioOutputHandle, String>
 where
     F: FnMut() -> Result<crate::output::AudioOutputHandle, String>,
@@ -594,10 +599,25 @@ where
         }
         match confirm() {
             Ok(output) => return Ok(output),
-            Err(err) => last_error = err,
+            Err(err) => {
+                let retryable = should_retry(&err);
+                last_error = err;
+                if !retryable {
+                    break;
+                }
+            }
         }
     }
     Err(last_error)
+}
+
+/// 启动错误是否值得在同端点立即重试。
+/// 只重试看门狗超时（端点可能被弃用的旧线程占着）与端点占用这类瞬时错误；
+/// 取消、设备不存在、格式不支持等永久错误立即返回。
+fn is_retryable_output_start_error(message: &str) -> bool {
+    message.starts_with(OUTPUT_START_TIMEOUT_MESSAGE_PREFIX)
+        || message.contains("0x88890010")
+        || message.contains("device is already in use")
 }
 
 /// 看门狗超时的错误消息。只承载受控字段（exclusive 标志 + 启动探针快照），
@@ -610,7 +630,8 @@ fn output_start_timeout_message(
     probe: &OutputStartupProbe,
 ) -> String {
     format!(
-        "audio output did not start within {} ms (exclusive={}, startup {})",
+        "{} {} ms (exclusive={}, startup {})",
+        OUTPUT_START_TIMEOUT_MESSAGE_PREFIX,
         watchdog.as_millis(),
         exclusive,
         probe.describe(),
@@ -800,17 +821,54 @@ mod tests {
         let result = confirm_output_start_with_retries(
             move || {
                 let attempt = counter.fetch_add(1, Ordering::SeqCst) + 1;
-                Err(format!("attempt-{attempt}"))
+                Err(format!(
+                    "{OUTPUT_START_TIMEOUT_MESSAGE_PREFIX} 3 ms (attempt-{attempt})"
+                ))
             },
             OUTPUT_START_ATTEMPTS,
             Duration::from_millis(1),
+            is_retryable_output_start_error,
         );
-        assert_eq!(attempts.load(Ordering::SeqCst), OUTPUT_START_ATTEMPTS as usize);
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            OUTPUT_START_ATTEMPTS as usize
+        );
         let error = match result {
             Err(error) => error,
             Ok(_) => panic!("all attempts failed, must return the last error"),
         };
-        assert_eq!(error, format!("attempt-{}", OUTPUT_START_ATTEMPTS));
+        assert_eq!(
+            error,
+            format!(
+                "{OUTPUT_START_TIMEOUT_MESSAGE_PREFIX} 3 ms (attempt-{})",
+                OUTPUT_START_ATTEMPTS
+            )
+        );
+    }
+
+    #[test]
+    fn output_start_retry_stops_on_permanent_error() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        for message in [
+            "failed to resolve WASAPI output device: not found",
+            crate::output::OUTPUT_START_CANCELLED_MESSAGE,
+        ] {
+            let attempts = Arc::new(AtomicUsize::new(0));
+            let counter = attempts.clone();
+            let result = confirm_output_start_with_retries(
+                move || {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    Err(message.to_string())
+                },
+                OUTPUT_START_ATTEMPTS,
+                Duration::from_millis(1),
+                is_retryable_output_start_error,
+            );
+            assert_eq!(attempts.load(Ordering::SeqCst), 1, "message={message}");
+            assert_eq!(result.err().as_deref(), Some(message));
+        }
     }
 
     #[test]
@@ -829,7 +887,9 @@ mod tests {
             move || {
                 let attempt = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 if attempt < OUTPUT_START_ATTEMPTS as usize {
-                    Err(format!("attempt-{attempt}"))
+                    Err(format!(
+                        "{OUTPUT_START_TIMEOUT_MESSAGE_PREFIX} 3 ms (attempt-{attempt})"
+                    ))
                 } else {
                     slot.lock()
                         .unwrap()
@@ -839,9 +899,32 @@ mod tests {
             },
             OUTPUT_START_ATTEMPTS,
             Duration::from_millis(1),
+            is_retryable_output_start_error,
         );
         assert!(result.is_ok());
-        assert_eq!(attempts.load(Ordering::SeqCst), OUTPUT_START_ATTEMPTS as usize);
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            OUTPUT_START_ATTEMPTS as usize
+        );
+    }
+
+    #[test]
+    fn output_start_retry_classifies_transient_and_permanent_errors() {
+        assert!(is_retryable_output_start_error(
+            "audio output did not start within 3000 ms (exclusive=false, startup stage=initialize)"
+        ));
+        assert!(is_retryable_output_start_error(
+            "failed to open WASAPI shared output: device is already in use by another exclusive stream or driver session (0x88890010)"
+        ));
+        assert!(!is_retryable_output_start_error(
+            "failed to open WASAPI exclusive output: device rejected the exclusive PCM format (0x88890008)"
+        ));
+        assert!(!is_retryable_output_start_error(
+            "failed to resolve WASAPI output device: not found"
+        ));
+        assert!(!is_retryable_output_start_error(
+            crate::output::OUTPUT_START_CANCELLED_MESSAGE
+        ));
     }
 
     #[test]

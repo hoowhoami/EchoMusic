@@ -470,11 +470,11 @@ export class PlayerController extends EventEmitter {
     audioTrackId: 0,
   };
 
-  private resolvedAddonPath: string | null | undefined;
+  private resolvedAddonPath: string | null = null;
 
   get available(): boolean {
-    // addon 路径运行期不变，首次解析后缓存，避免热路径反复 existsSync
-    if (this.resolvedAddonPath === undefined) {
+    // 只缓存解析成功的结果；失败不缓存，运行期安装/解压出 addon 后仍能重新探测。
+    if (this.resolvedAddonPath === null) {
       this.resolvedAddonPath = this.resolveAddonPath();
     }
     return this.resolvedAddonPath !== null;

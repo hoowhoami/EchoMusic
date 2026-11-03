@@ -58,6 +58,14 @@ export const runPlazaCacheBatch = async <T>(fn: () => Promise<T> | T): Promise<T
   }
 };
 
+// 在长批次内部主动刷新：时长解析这类耗时阶段按条数/时间间隔调用，
+// 让市场列表先看到已回填的部分数据，而不是整段结束后才刷新一次。
+export const flushPlazaCacheRevision = () => {
+  if (revisionBatchDepth === 0 || !revisionBatchDirty) return;
+  revisionBatchDirty = false;
+  plazaCacheRevision.value += 1;
+};
+
 let hydration: Promise<void> | undefined;
 let writes = Promise.resolve();
 let persistTimer: ReturnType<typeof setTimeout> | undefined;

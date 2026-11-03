@@ -368,12 +368,13 @@ export const queueActions = {
         !isTransientPlaybackQueue(previousActiveQueueId) ||
         isTransientPlaybackQueue(targetQueue.id));
     if (targetQueue.songs.length === 0 && (targetQueue.songCount ?? 0) > 0) {
-      // incoming 自身去重：与 isSameSong 语义一致的键集，避免 O(m²) 的 findIndex 双重扫描。
+      // incoming 自身去重：与下方入队分支一致，采用 isSameSong + id 兜底的键集语义，
+      // 避免 O(m²) 的 findIndex 双重扫描。
       const incoming: Song[] = [];
-      const seenKeys = buildSongMatchKeySet([], false);
+      const seenKeys = buildSongMatchKeySet([], true);
       for (const song of songs) {
         if (songMatchesKeySet(song, seenKeys)) continue;
-        addSongToMatchKeySet(song, seenKeys, false);
+        addSongToMatchKeySet(song, seenKeys, true);
         incoming.push(song);
       }
       if (incoming.length === 0) return 0;

@@ -229,6 +229,10 @@ pub fn spawn_output_thread(
     emit: fn(PlayerEvent),
     start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
+    // 在创建线程前就开启新一次尝试：即使旧线程仍卡在 COM 初始化/MMCSS 注册，
+    // 或者晚于新线程进入 run_wasapi_output，也只能携带旧代号，无法污染新探针。
+    let attempt_start = Instant::now();
+    let probe_attempt = shared.output_startup_probe.begin_attempt();
     thread::Builder::new()
         .name("player-wasapi-output".to_string())
         .spawn(move || {
@@ -240,6 +244,8 @@ pub fn spawn_output_thread(
                 shared.clone(),
                 stop.clone(),
                 emit,
+                probe_attempt,
+                attempt_start,
                 &mut start_notify,
             ) {
                 Ok(()) => {}
@@ -266,10 +272,15 @@ fn advance_startup_stage(
     shared: &SharedAudio,
     share_mode: WasapiShareMode,
     emit: fn(PlayerEvent),
+    probe_attempt: u64,
     stage: u8,
     attempt_start: Instant,
 ) {
-    if let Some(entered_ms) = shared.output_startup_probe.advance(stage, attempt_start) {
+    if let Some(entered_ms) =
+        shared
+            .output_startup_probe
+            .advance(probe_attempt, stage, attempt_start)
+    {
         emit(PlayerEvent::log(
             "info",
             format!(
@@ -287,6 +298,8 @@ fn run_wasapi_output(
     shared: Arc<SharedAudio>,
     stop: OutputStopToken,
     emit: fn(PlayerEvent),
+    probe_attempt: u64,
+    attempt_start: Instant,
     start_notify: &mut Option<OutputStartSender>,
 ) -> Result<(), WasapiOutputFailure> {
     let _com = ComApartment::init().map_err(WasapiOutputFailure::backend)?;
@@ -307,8 +320,6 @@ fn run_wasapi_output(
         }
     };
 
-    let attempt_start = Instant::now();
-    shared.output_startup_probe.begin_attempt();
     // 每个启动阶段之间检查停止令牌：被弃用的输出线程（设备切换、启动超时）最坏
     // 只多跑一个 COM 调用就退出，不再与下一个输出线程在同一端点上互相卡死。
     if output_start_was_cancelled(&stop, &shared, start_notify) {
@@ -318,6 +329,7 @@ fn run_wasapi_output(
         &shared,
         share_mode,
         emit,
+        probe_attempt,
         output_startup_stage::RESOLVING_DEVICE,
         attempt_start,
     );
@@ -326,6 +338,7 @@ fn run_wasapi_output(
         &shared,
         share_mode,
         emit,
+        probe_attempt,
         output_startup_stage::PROBE_ACTIVATE,
         attempt_start,
     );
@@ -336,6 +349,7 @@ fn run_wasapi_output(
         &shared,
         share_mode,
         emit,
+        probe_attempt,
         output_startup_stage::CHOOSE_FORMAT,
         attempt_start,
     );
@@ -357,6 +371,7 @@ fn run_wasapi_output(
         &shared,
         share_mode,
         emit,
+        probe_attempt,
         output_startup_stage::CREATE_EVENT,
         attempt_start,
     );
@@ -372,6 +387,7 @@ fn run_wasapi_output(
     let open_context = WasapiOpenContext {
         stop: &stop,
         shared: &shared,
+        probe_attempt,
         attempt_start,
     };
     let output = match open_wasapi_output(
@@ -441,6 +457,7 @@ fn run_wasapi_output(
             &shared,
             share_mode,
             emit,
+            probe_attempt,
             output_startup_stage::WRITE_AND_START,
             attempt_start,
         );
@@ -453,17 +470,26 @@ fn run_wasapi_output(
             &mut graph_scratch,
             &mut resampler,
         )?;
+        // 初始缓冲写完可能已耗时较久；被看门狗放弃的旧线程绝不能在 Start 上
+        // 与新线程争用端点，因此 Start 前再检查一次停止令牌。
+        if output_start_was_cancelled(&stop, &shared, start_notify) {
+            return Ok(());
+        }
         output.audio_client.Start().map_err(|err| {
-            shared.output_startup_probe.record_hresult(err.code().0);
+            shared
+                .output_startup_probe
+                .record_hresult(probe_attempt, err.code().0);
             WasapiOutputFailure::from_client_error(
                 &format!("failed to start WASAPI {} output", share_mode.label()),
                 &err,
             )
         })?;
         shared.mark_output_started();
-        shared
-            .output_startup_probe
-            .advance(output_startup_stage::STARTED, attempt_start);
+        shared.output_startup_probe.advance(
+            probe_attempt,
+            output_startup_stage::STARTED,
+            attempt_start,
+        );
         report_output_start(start_notify, Ok(()));
         emit(PlayerEvent::log(
             "info",
@@ -537,6 +563,7 @@ fn run_wasapi_output(
 struct WasapiOpenContext<'a> {
     stop: &'a OutputStopToken,
     shared: &'a SharedAudio,
+    probe_attempt: u64,
     attempt_start: Instant,
 }
 
@@ -553,6 +580,7 @@ fn open_wasapi_output(
     let WasapiOpenContext {
         stop,
         shared,
+        probe_attempt,
         attempt_start,
     } = context;
     let output_format = resolved_format.output;
@@ -570,6 +598,7 @@ fn open_wasapi_output(
             shared,
             share_mode,
             emit,
+            *probe_attempt,
             output_startup_stage::OPEN_ACTIVATE,
             *attempt_start,
         );
@@ -590,6 +619,7 @@ fn open_wasapi_output(
             shared,
             share_mode,
             emit,
+            *probe_attempt,
             output_startup_stage::INITIALIZE,
             *attempt_start,
         );
@@ -610,11 +640,12 @@ fn open_wasapi_output(
                     shared,
                     share_mode,
                     emit,
+                    *probe_attempt,
                     output_startup_stage::GET_SERVICE,
                     *attempt_start,
                 );
                 audio_client.SetEventHandle(event).map_err(|err| {
-                    startup_probe.record_hresult(err.code().0);
+                    startup_probe.record_hresult(*probe_attempt, err.code().0);
                     WasapiOutputFailure::from_client_error(
                         "failed to bind WASAPI output event",
                         &err,
@@ -623,7 +654,7 @@ fn open_wasapi_output(
                 let render_client = audio_client
                     .GetService::<Audio::IAudioRenderClient>()
                     .map_err(|err| {
-                        startup_probe.record_hresult(err.code().0);
+                        startup_probe.record_hresult(*probe_attempt, err.code().0);
                         WasapiOutputFailure::from_client_error(
                             "failed to create WASAPI render client",
                             &err,
@@ -633,11 +664,12 @@ fn open_wasapi_output(
                     shared,
                     share_mode,
                     emit,
+                    *probe_attempt,
                     output_startup_stage::BUFFER_QUERY,
                     *attempt_start,
                 );
                 let buffer_frames = audio_client.GetBufferSize().map_err(|err| {
-                    startup_probe.record_hresult(err.code().0);
+                    startup_probe.record_hresult(*probe_attempt, err.code().0);
                     WasapiOutputFailure::from_client_error(
                         "failed to query WASAPI buffer size",
                         &err,
@@ -657,7 +689,7 @@ fn open_wasapi_output(
                     && is_wasapi_buffer_size_not_aligned(&err)
                     && aligned_buffer_frames.is_none() =>
             {
-                startup_probe.record_hresult(err.code().0);
+                startup_probe.record_hresult(*probe_attempt, err.code().0);
                 let frames = unsafe { audio_client.GetBufferSize() }.map_err(|err| {
                     WasapiOutputFailure::from_client_error(
                         "failed to read WASAPI aligned buffer size",
@@ -670,8 +702,8 @@ fn open_wasapi_output(
                 if is_wasapi_device_in_use(&err)
                     && wait_started_at.elapsed() < WASAPI_DEVICE_RELEASE_TIMEOUT =>
             {
-                startup_probe.record_hresult(err.code().0);
-                startup_probe.record_device_in_use_retry();
+                startup_probe.record_hresult(*probe_attempt, err.code().0);
+                startup_probe.record_device_in_use_retry(*probe_attempt);
                 if !logged_device_wait {
                     emit(PlayerEvent::log(
                         "info",
@@ -685,7 +717,7 @@ fn open_wasapi_output(
                 thread::sleep(WASAPI_DEVICE_RELEASE_RETRY);
             }
             Err(err) => {
-                startup_probe.record_hresult(err.code().0);
+                startup_probe.record_hresult(*probe_attempt, err.code().0);
                 return Err(WasapiOutputFailure::from_client_error(
                     &format!("failed to open WASAPI {} output", share_mode.label()),
                     &err,

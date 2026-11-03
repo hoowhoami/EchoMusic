@@ -589,7 +589,10 @@ onUnmounted(() => {
               </span>
               <span v-if="currentTrack" class="text-[14px] text-text-secondary mx-0.5">-</span>
               <div v-if="currentTrack" class="flex items-center">
-                <template v-for="(artist, index) in artistList" :key="artist.id ?? artist.name">
+                <template
+                  v-for="(artist, index) in artistList"
+                  :key="`${artist.id ?? artist.name}:${index}`"
+                >
                   <span
                     class="text-[13px] transition-colors"
                     :class="
