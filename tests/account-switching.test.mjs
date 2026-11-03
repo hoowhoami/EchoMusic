@@ -213,6 +213,72 @@ test('inactive account removal preserves login; current removal is blocked and e
   assert.deepEqual(user.savedAccounts, []);
 });
 
+test('explicit logout can keep the current account for direct restoration', async () => {
+  const { user } = fixture();
+  user.login(account(1));
+  await flush();
+  user.login(account(2));
+  await flush();
+  user.updateSavedAccountListeningSeconds(2, 120);
+  const keptBefore = user.savedAccounts.find((entry) => entry.userid === 2);
+  const lastUsedAt = keptBefore.lastUsedAt;
+  const revision = user.accountRevision;
+  user.logout({ keepAccount: true });
+  assert.equal(user.isLoggedIn, false);
+  assert.equal(user.info, null);
+  assert.ok(user.accountRevision > revision);
+  assert.deepEqual(user.savedAccounts.map((entry) => entry.userid).sort(), [1, 2]);
+  const kept = user.savedAccounts.find((entry) => entry.userid === 2);
+  assert.equal(kept.token, 'token-2');
+  assert.equal(kept.lastUsedAt, lastUsedAt);
+  assert.equal(kept.listeningSeconds, 120);
+  user.switchAccount(2);
+  assert.equal(user.isLoggedIn, true);
+  assert.equal(user.info.userid, 2);
+  assert.equal(user.info.token, 'token-2');
+  await flush();
+});
+
+test('keep-account logout saves a current session that was never in the account list', () => {
+  const { user } = fixture();
+  user.setUserInfo(account(3));
+  assert.deepEqual(user.savedAccounts, []);
+  user.logout({ keepAccount: true });
+  assert.equal(user.isLoggedIn, false);
+  assert.deepEqual(
+    user.savedAccounts.map((entry) => entry.userid),
+    [3],
+  );
+  assert.equal(user.savedAccounts[0].token, 'token-3');
+});
+
+test('logout dialog emits whether to keep the current account and resets on reopen', async (t) => {
+  const open = vue.ref(true);
+  const emitted = [];
+  const { default: dialog } = compile(
+    '../src/renderer/components/profile/LogoutConfirmDialog.vue',
+    { vue: { ...vue, useModel: () => open } },
+    {},
+    true,
+  );
+  const scope = vue.effectScope();
+  t.after(() => scope.stop());
+  const view = scope.run(() =>
+    dialog.setup({}, { expose() {}, emit: (...args) => emitted.push(args) }),
+  );
+  assert.equal(view.keepAccount.value, false);
+  view.confirm();
+  assert.deepEqual(emitted.at(-1), ['confirm', false]);
+  view.keepAccount.value = true;
+  view.confirm();
+  assert.deepEqual(emitted.at(-1), ['confirm', true]);
+  open.value = false;
+  await vue.nextTick();
+  open.value = true;
+  await vue.nextTick();
+  assert.equal(view.keepAccount.value, false);
+});
+
 test('selecting the current account does not reload or invalidate the current session', async () => {
   const { user, reads } = fixture();
   user.login(account(1));
@@ -241,6 +307,7 @@ test('normal SQLite persistence restores the current account and saved credentia
     {
       '../../shared/storePersistence': compile('../src/shared/storePersistence.ts'),
       '@/utils/logger': logger,
+      vue,
     },
     window,
   );

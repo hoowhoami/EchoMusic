@@ -18,13 +18,17 @@ const code = transformSync(compileScript(descriptor, { id: 'account-popover' }).
 }).code;
 function fixture(t, detail = {}, vip = {}) {
   const calls = [];
+  const logoutArgs = [];
   const user = vue.reactive({
     isLoggedIn: true,
     accountRevision: 1,
     info: { userid: 1, extendsInfo: { detail, vip } },
     fetchUserInfoOnce: () => calls.push('info'),
     fetchGradeInfo: () => calls.push('grade'),
-    logout: () => calls.push('logout'),
+    logout: (options) => {
+      logoutArgs.push(options);
+      calls.push('logout');
+    },
   });
   const route = vue.reactive({ fullPath: '/main/home' });
   const deps = {
@@ -47,7 +51,7 @@ function fixture(t, detail = {}, vip = {}) {
   const scope = vue.effectScope();
   t.after(() => scope.stop());
   const api = scope.run(() => mod.exports.default.setup({}, { expose() {} }));
-  return { api, user, route, calls };
+  return { api, user, route, calls, logoutArgs };
 }
 
 test('account summary preserves zero counts, hides missing values and uses existing grade semantics', (t) => {
@@ -161,16 +165,19 @@ test('account or route changes close account surfaces; logged out opens do not f
 });
 
 test('logout waits for confirmation and profile navigation closes the popover', (t) => {
-  const { api, calls } = fixture(t);
+  const { api, calls, logoutArgs } = fixture(t);
   api.requestLogout();
   assert.deepEqual(calls, []);
-  api.logout();
+  api.logout(false);
   assert.deepEqual(calls, ['reset-devices', 'logout', '/main']);
+  assert.deepEqual(logoutArgs, [{ keepAccount: false }]);
   calls.length = 0;
   api.open.value = true;
   api.navigate('/main/profile');
   assert.equal(api.open.value, false);
   assert.deepEqual(calls, ['/main/profile']);
+  api.logout(true);
+  assert.deepEqual(logoutArgs.at(-1), { keepAccount: true });
 });
 
 test('popover identity follows the current account, student info and logout', (t) => {

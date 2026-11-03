@@ -437,11 +437,17 @@ export const useUserStore = defineStore('user', {
       }
     },
 
-    logout() {
-      // 主动退出不能留下可直接恢复的当前账号凭证，其他账号继续保留。
-      this.savedAccounts = this.savedAccounts.filter(
-        (account) => account.userid !== this.info?.userid,
-      );
+    /** 主动退出；keepAccount 为 true 时保留当前账号凭证，便于之后直接切换恢复。 */
+    logout(options: { keepAccount?: boolean } = {}) {
+      const current = this.info;
+      if (options.keepAccount && current) {
+        // 仅保留 rememberAccount 白名单内的凭证字段；默认退出仍不留可直接恢复的凭证。
+        this.rememberAccount(current);
+      } else {
+        this.savedAccounts = this.savedAccounts.filter(
+          (account) => account.userid !== current?.userid,
+        );
+      }
       this.accountRevision += 1;
       this.info = null;
       this.isLoggedIn = false;

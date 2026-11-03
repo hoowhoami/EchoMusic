@@ -102,10 +102,10 @@ const requestAccountSwitch = () => {
   open.value = false;
   accountSwitcherOpen.value = true;
 };
-const logout = () => {
+const logout = (keepAccount: boolean) => {
   confirmLogout.value = false;
   devices.reset();
-  user.logout();
+  user.logout({ keepAccount });
   void router.push('/main');
 };
 </script>

@@ -1393,10 +1393,10 @@ const handleLogout = () => {
   showLogoutConfirm.value = true;
 };
 
-const confirmLogout = () => {
+const confirmLogout = (keepAccount: boolean) => {
   showLogoutConfirm.value = false;
   loginDeviceStore.reset();
-  userStore.logout();
+  userStore.logout({ keepAccount });
   router.push('/main');
 };
 
