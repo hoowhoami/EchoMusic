@@ -373,7 +373,8 @@ export const createPluginContext = (
             () => getPlayerStore().currentTrackSnapshot,
             (track) =>
               runPluginCallback(descriptor.id, '播放曲目变化事件', () => handler(track), undefined),
-            { deep: true },
+            // currentTrackSnapshot 均为整体替换更新（见 stores/player/playback.ts），
+            // 无需 deep 遍历整首歌曲对象；deep 还会让嵌套元数据回写误触发切歌事件
           ),
         ),
       onPlaybackChange: (handler) =>

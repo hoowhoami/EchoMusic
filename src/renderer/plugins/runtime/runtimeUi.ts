@@ -263,11 +263,22 @@ export const createScrollApi = (
       queryContainers(options).forEach(visit);
     };
 
-    const observer = new MutationObserver(scan);
+    // body 级观察回调 rAF 合并：任何 DOM 变更批次合并为每帧至多一次全量容器扫描
+    let scanFrame: number | null = null;
+    const scheduleScan = () => {
+      if (scanFrame !== null) return;
+      scanFrame = window.requestAnimationFrame(() => {
+        scanFrame = null;
+        scan();
+      });
+    };
+
+    const observer = new MutationObserver(scheduleScan);
     const stop = () => {
       if (stopped) return;
       stopped = true;
       observer.disconnect();
+      if (scanFrame !== null) window.cancelAnimationFrame(scanFrame);
       disposers
         .splice(0)
         .reverse()
@@ -351,7 +362,19 @@ export const createDomApi = (
       Array.from(scope.querySelectorAll(selector)).forEach(visit);
     };
 
-    const observer = new MutationObserver(scan);
+    // MutationObserver 回调做 rAF 合并：body+subtree 级观察下，应用内任何 DOM 变更批次
+    // （虚拟列表滚动、歌词行更新等）都会触发全量 querySelectorAll 扫描，
+    // 连续变更合并为每帧至多一次扫描。初始 scan() 保持同步以尽快命中已有元素。
+    let scanFrame: number | null = null;
+    const scheduleScan = () => {
+      if (scanFrame !== null) return;
+      scanFrame = window.requestAnimationFrame(() => {
+        scanFrame = null;
+        scan();
+      });
+    };
+
+    const observer = new MutationObserver(scheduleScan);
     const rootConnection = customElementRoot
       ? createObservedRootConnectionMonitor(
           isCustomRootConnected,
@@ -372,6 +395,7 @@ export const createDomApi = (
       stopped = true;
       observer.disconnect();
       stopRootLifecycleObserver?.();
+      if (scanFrame !== null) window.cancelAnimationFrame(scanFrame);
       activeElements.clear();
     };
 

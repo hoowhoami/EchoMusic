@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import type { Ref } from 'vue';
 import { useResizeObserver } from '@vueuse/core';
 import { hasWordByWordTiming } from '../../shared/lyrics';
 import {
@@ -20,7 +21,9 @@ const props = defineProps<{
   lyricStyle?: Partial<MiniPlayerLyricStyle>;
   visible: boolean;
   expandDirection?: MiniPlayerExpandDirection;
-  timelineMs?: number;
+  // 稳定引用对象：内层 ref 由父组件高频写入，子组件 watch 直接读值，
+  // 避免把高频数值提升为父组件 render 依赖导致整棵树重渲染
+  timelineSource?: { ref: Ref<number> } | null;
   seekTimestamp?: number;
 }>();
 
@@ -105,7 +108,7 @@ const applyActiveLineKaraoke = () => {
   // 否则同一行会出现「主文本无高亮、音译却在扫」的不一致。
   if (!hasWordByWordTiming(line)) return;
 
-  const seekMs = props.timelineMs || 0;
+  const seekMs = props.timelineSource?.ref.value || 0;
   const words = Array.from(root.querySelectorAll<HTMLElement>('.mini-karaoke-word'));
   const rubies = Array.from(root.querySelectorAll<HTMLElement>('.mini-karaoke-ruby'));
   const characters = line.characters ?? [];
@@ -159,7 +162,7 @@ const applyActiveLineKaraoke = () => {
 watch(
   [
     () => activeLyricIndex.value,
-    () => props.timelineMs,
+    () => props.timelineSource?.ref.value ?? 0,
     () => props.lyric?.trackId,
     () => props.visible,
     () => props.lyric?.currentIndex,

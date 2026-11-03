@@ -1,6 +1,8 @@
 import { ipcRegistry } from './ipc/registry';
 import { BrowserWindow } from 'electron';
 import type {
+  NowPlayingAppearancePayload,
+  NowPlayingBroadcastPatch,
   NowPlayingLyricPayload,
   NowPlayingPlaybackPayload,
   NowPlayingSnapshot,
@@ -228,13 +230,49 @@ const sanitizeLyric = (
   };
 };
 
+// 每个 WebContents 上次已发送的快照部分（引用比较），用于增量广播：
+// 播放期间渲染端以 120ms 频率同步进度，若每次都广播含完整歌词行的全量快照，
+// 数千个子对象会随每次 IPC 做结构化克隆；增量仅携带引用变化的部分。
+type SentSnapshotParts = {
+  playback: NowPlayingPlaybackPayload | null;
+  lyric: NowPlayingLyricPayload;
+  lyricLinesRef: unknown;
+  appearance: NowPlayingAppearancePayload;
+};
+const sentPartsByWebContents = new WeakMap<Electron.WebContents, SentSnapshotParts>();
+
 const sendSnapshot = () => {
   for (const win of BrowserWindow.getAllWindows()) {
     try {
       if (visibleOnlyWindows.get(win)?.() === false) continue;
       if (win.isDestroyed() || win.webContents.isDestroyed()) continue;
       if (visibleOnlyWindows.has(win) && !win.isVisible()) continue;
-      win.webContents.send('now-playing:snapshot', snapshot);
+      const webContents = win.webContents;
+      const prev = sentPartsByWebContents.get(webContents);
+      const patch: NowPlayingBroadcastPatch = {};
+      if (!prev || prev.playback !== snapshot.playback) patch.playback = snapshot.playback;
+      if (!prev || prev.appearance !== snapshot.appearance) patch.appearance = snapshot.appearance;
+      if (!prev || prev.lyric !== snapshot.lyric) {
+        // lines 引用未变时不随 patch 重发大数组，preload 合并时沿用上次接收值
+        patch.lyric =
+          !prev || prev.lyricLinesRef !== snapshot.lyric.lines
+            ? snapshot.lyric
+            : { ...snapshot.lyric, lines: undefined };
+      }
+      if (
+        patch.playback === undefined &&
+        patch.lyric === undefined &&
+        patch.appearance === undefined
+      ) {
+        continue;
+      }
+      sentPartsByWebContents.set(webContents, {
+        playback: snapshot.playback,
+        lyric: snapshot.lyric,
+        lyricLinesRef: snapshot.lyric.lines,
+        appearance: snapshot.appearance,
+      });
+      webContents.send('now-playing:snapshot', patch);
     } catch {
       // ignore windows that are closing while broadcasting
     }

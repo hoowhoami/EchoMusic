@@ -86,31 +86,32 @@ const updatePosition = () => {
   const anchor = resolveAnchor();
   observeAnchor(anchor);
 
+  // 值不变时跳过 ref 写入：MutationObserver 高频调度下避免无谓的组件重渲染
   if (!anchor) {
-    viewportLeft.value = window.innerWidth / 2;
-    viewportBottom.value = DEFAULT_BOTTOM;
-    viewportWidth.value = Math.min(MAX_VIEWPORT_WIDTH, window.innerWidth - VIEWPORT_EDGE_GAP * 2);
+    const fallbackWidth = Math.min(MAX_VIEWPORT_WIDTH, window.innerWidth - VIEWPORT_EDGE_GAP * 2);
+    if (viewportLeft.value !== window.innerWidth / 2) viewportLeft.value = window.innerWidth / 2;
+    if (viewportBottom.value !== DEFAULT_BOTTOM) viewportBottom.value = DEFAULT_BOTTOM;
+    if (viewportWidth.value !== fallbackWidth) viewportWidth.value = fallbackWidth;
     return;
   }
 
   const rect = anchor.getBoundingClientRect();
-  viewportLeft.value = rect.left + rect.width / 2;
-  viewportBottom.value = Math.max(DEFAULT_BOTTOM, window.innerHeight - rect.top + ANCHOR_GAP);
-  viewportWidth.value = Math.min(
+  const nextLeft = rect.left + rect.width / 2;
+  const nextBottom = Math.max(DEFAULT_BOTTOM, window.innerHeight - rect.top + ANCHOR_GAP);
+  const nextWidth = Math.min(
     MAX_VIEWPORT_WIDTH,
     rect.width - VIEWPORT_EDGE_GAP * 2,
     window.innerWidth - VIEWPORT_EDGE_GAP * 2,
   );
+  if (viewportLeft.value !== nextLeft) viewportLeft.value = nextLeft;
+  if (viewportBottom.value !== nextBottom) viewportBottom.value = nextBottom;
+  if (viewportWidth.value !== nextWidth) viewportWidth.value = nextWidth;
 };
 
 function schedulePositionUpdate() {
   if (updateFrame !== null) window.cancelAnimationFrame(updateFrame);
   updateFrame = window.requestAnimationFrame(updatePosition);
 }
-
-const containsToastAnchor = (node: Node) =>
-  node instanceof Element &&
-  (node.matches('[data-toast-anchor]') || Boolean(node.querySelector('[data-toast-anchor]')));
 
 const runToastAction = (id: number) => {
   const item = toastStore.items.find((toast) => toast.id === id);
@@ -159,13 +160,11 @@ watch(
 onMounted(() => {
   window.addEventListener('resize', schedulePositionUpdate);
   window.addEventListener('blur', resumeVisibleToast);
-  anchorMutationObserver = new MutationObserver((records) => {
-    const anchorChanged = records.some(
-      (record) =>
-        Array.from(record.addedNodes).some(containsToastAnchor) ||
-        Array.from(record.removedNodes).some(containsToastAnchor),
-    );
-    if (anchorChanged) schedulePositionUpdate();
+  anchorMutationObserver = new MutationObserver(() => {
+    // 任何 DOM 变更都可能意味着 anchor 插入/移除（路由切换、布局重建）。
+    // 不再逐新增节点做子树 querySelector 扫描（虚拟列表滚动时每帧 N 次全子树查找），
+    // 改为直接调度 rAF 合并测量，配合 updatePosition 的值差分，稳定开销为每帧一次
+    schedulePositionUpdate();
   });
   anchorMutationObserver.observe(document.body, { childList: true, subtree: true });
   schedulePositionUpdate();

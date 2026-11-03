@@ -142,7 +142,8 @@ const finishRoll = () => {
   rolling = false;
   void reportWidth();
 };
-watch([expanded, maxWidth, primaryWidth, secondaryWidth, settings], reportWidth, { deep: true });
+// settings 由 normalizeTaskbarLyricSettings 整体替换，其余源为标量 ref，无需 deep 遍历
+watch([expanded, maxWidth, primaryWidth, secondaryWidth, settings], reportWidth);
 watch(secondary, (value) => {
   if (!value) secondaryWidth.value = 0;
 });
