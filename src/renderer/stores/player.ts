@@ -22,6 +22,7 @@ import {
   spatialAudioEffectOptions,
 } from '../../shared/audioEffectSupport';
 import { dspProviderRestorePatch } from '../../shared/dspProviderSettings';
+import { PLAYER_SESSION_KEYS } from '../../shared/playerSession';
 
 import { createPlayerState } from './player/state';
 import { capturePlayerSession, restorePlayerSession } from './player/session';
@@ -890,77 +891,102 @@ export const usePlayerStore = defineStore(
         { flush: 'post' },
       );
       // 保存取消函数，以便在需要时清理订阅
-      const unsubscribeSettings = settingStore.$subscribe(() => {
-        const compatibilityChanged = settingStore.compatibilityMode !== snapshot.compatibilityMode;
-        const viperQualityChanged =
-          settingStore.viperQualityEnabled !== snapshot.viperQualityEnabled;
-        const qualityPolicyChanged = compatibilityChanged || viperQualityChanged;
-        const shouldRefresh =
-          (state.currentAudioQualityOverride === null &&
-            settingStore.defaultAudioQuality !== snapshot.defaultAudioQuality) ||
-          qualityPolicyChanged;
-        const shouldUpdateFade =
-          settingStore.volumeFade !== snapshot.volumeFade ||
-          settingStore.volumeFadeTime !== snapshot.volumeFadeTime;
-        const shouldUpdateGapless =
-          settingStore.effectiveTrackTransitionMode !== snapshot.trackTransitionMode ||
-          settingStore.fadeCrossSecs !== snapshot.fadeCrossSecs ||
-          settingStore.automixMatchTempo !== snapshot.automixMatchTempo;
-        const shouldUpdateOutputDevice =
-          settingStore.outputDevice !== snapshot.outputDevice ||
-          settingStore.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
-        const shouldUpdateStallTimeout =
-          settingStore.playbackStallTimeout !== snapshot.playbackStallTimeout;
-        const shouldUpdateVolumeNormalization =
-          settingStore.volumeNormalization !== snapshot.volumeNormalization;
-        const shouldUpdateReferenceLufs =
-          settingStore.volumeNormalizationLufs !== snapshot.volumeNormalizationLufs;
-        snapshot = {
-          defaultAudioQuality: settingStore.defaultAudioQuality,
-          compatibilityMode: settingStore.compatibilityMode,
-          viperQualityEnabled: settingStore.viperQualityEnabled,
-          volumeFade: settingStore.volumeFade,
-          volumeFadeTime: settingStore.volumeFadeTime,
-          trackTransitionMode: settingStore.effectiveTrackTransitionMode,
-          fadeCrossSecs: settingStore.fadeCrossSecs,
-          automixMatchTempo: settingStore.automixMatchTempo,
-          outputDevice: settingStore.outputDevice,
-          exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
-          playbackStallTimeout: settingStore.playbackStallTimeout,
-          pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
-          volumeNormalization: settingStore.volumeNormalization,
-          volumeNormalizationLufs: settingStore.volumeNormalizationLufs,
-        };
-        if (shouldRefresh) {
-          const refreshing =
-            state.audioSourceRefreshRequestSeq != null &&
-            state.audioSourceRefreshRequestSeq === state.playbackRequestSeq;
-          const requestedQuality =
-            state.currentAudioQualityOverride ?? settingStore.defaultAudioQuality;
-          const alreadyRequested =
-            refreshing &&
-            state.audioSourceRefreshQuality === requestedQuality &&
-            !qualityPolicyChanged;
-          if (!alreadyRequested) {
-            if (refreshing || getPlaybackIsLoading(state) || state.pendingSettingRefresh)
-              state.pendingSettingRefresh = true;
-            else void refreshCurrentTrack({ seamless: true });
+      // 显式 watch 播放相关的 14 个设置字段，替代对整个 settings 树的 $subscribe 深遍历
+      // （settings 是最大的持久化 store，任一字段突变都不应触发全树 traverse）
+      const unsubscribeSettings = watch(
+        () =>
+          [
+            settingStore.defaultAudioQuality,
+            settingStore.compatibilityMode,
+            settingStore.viperQualityEnabled,
+            settingStore.volumeFade,
+            settingStore.volumeFadeTime,
+            settingStore.effectiveTrackTransitionMode,
+            settingStore.fadeCrossSecs,
+            settingStore.automixMatchTempo,
+            settingStore.outputDevice,
+            settingStore.exclusiveAudioDevice,
+            settingStore.playbackStallTimeout,
+            settingStore.pauseOnOutputDeviceDisconnect,
+            settingStore.volumeNormalization,
+            settingStore.volumeNormalizationLufs,
+          ] as const,
+        () => {
+          const compatibilityChanged =
+            settingStore.compatibilityMode !== snapshot.compatibilityMode;
+          const viperQualityChanged =
+            settingStore.viperQualityEnabled !== snapshot.viperQualityEnabled;
+          const qualityPolicyChanged = compatibilityChanged || viperQualityChanged;
+          const shouldRefresh =
+            (state.currentAudioQualityOverride === null &&
+              settingStore.defaultAudioQuality !== snapshot.defaultAudioQuality) ||
+            qualityPolicyChanged;
+          const shouldUpdateFade =
+            settingStore.volumeFade !== snapshot.volumeFade ||
+            settingStore.volumeFadeTime !== snapshot.volumeFadeTime;
+          const shouldUpdateGapless =
+            settingStore.effectiveTrackTransitionMode !== snapshot.trackTransitionMode ||
+            settingStore.fadeCrossSecs !== snapshot.fadeCrossSecs ||
+            settingStore.automixMatchTempo !== snapshot.automixMatchTempo;
+          const shouldUpdateOutputDevice =
+            settingStore.outputDevice !== snapshot.outputDevice ||
+            settingStore.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
+          const shouldUpdateStallTimeout =
+            settingStore.playbackStallTimeout !== snapshot.playbackStallTimeout;
+          const shouldUpdateVolumeNormalization =
+            settingStore.volumeNormalization !== snapshot.volumeNormalization;
+          const shouldUpdateReferenceLufs =
+            settingStore.volumeNormalizationLufs !== snapshot.volumeNormalizationLufs;
+          snapshot = {
+            defaultAudioQuality: settingStore.defaultAudioQuality,
+            compatibilityMode: settingStore.compatibilityMode,
+            viperQualityEnabled: settingStore.viperQualityEnabled,
+            volumeFade: settingStore.volumeFade,
+            volumeFadeTime: settingStore.volumeFadeTime,
+            trackTransitionMode: settingStore.effectiveTrackTransitionMode,
+            fadeCrossSecs: settingStore.fadeCrossSecs,
+            automixMatchTempo: settingStore.automixMatchTempo,
+            outputDevice: settingStore.outputDevice,
+            exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
+            playbackStallTimeout: settingStore.playbackStallTimeout,
+            pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
+            volumeNormalization: settingStore.volumeNormalization,
+            volumeNormalizationLufs: settingStore.volumeNormalizationLufs,
+          };
+          if (shouldRefresh) {
+            const refreshing =
+              state.audioSourceRefreshRequestSeq != null &&
+              state.audioSourceRefreshRequestSeq === state.playbackRequestSeq;
+            const requestedQuality =
+              state.currentAudioQualityOverride ?? settingStore.defaultAudioQuality;
+            const alreadyRequested =
+              refreshing &&
+              state.audioSourceRefreshQuality === requestedQuality &&
+              !qualityPolicyChanged;
+            if (!alreadyRequested) {
+              if (refreshing || getPlaybackIsLoading(state) || state.pendingSettingRefresh)
+                state.pendingSettingRefresh = true;
+              else void refreshCurrentTrack({ seamless: true });
+            }
           }
-        }
-        if (shouldUpdateFade && getPlaybackIsPlaying(state)) {
-          void audioManager.fadeVolume(state.volume, { durationMs: 120, respectUserVolume: false });
-        }
-        // Reprepare pending plans, but let a transition already rendering finish normally.
-        if (shouldUpdateGapless) playbackManager.invalidateGaplessForSettings();
-        if (shouldUpdateOutputDevice)
-          void deviceManager.applyOutputDevice(settingStore.outputDevice);
-        if (shouldUpdateStallTimeout)
-          engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
-        if (shouldUpdateVolumeNormalization)
-          audioManager.setVolumeNormalization(settingStore.volumeNormalization);
-        if (shouldUpdateReferenceLufs)
-          audioManager.setReferenceLufs(settingStore.volumeNormalizationLufs);
-      });
+          if (shouldUpdateFade && getPlaybackIsPlaying(state)) {
+            void audioManager.fadeVolume(state.volume, {
+              durationMs: 120,
+              respectUserVolume: false,
+            });
+          }
+          // Reprepare pending plans, but let a transition already rendering finish normally.
+          if (shouldUpdateGapless) playbackManager.invalidateGaplessForSettings();
+          if (shouldUpdateOutputDevice)
+            void deviceManager.applyOutputDevice(settingStore.outputDevice);
+          if (shouldUpdateStallTimeout)
+            engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
+          if (shouldUpdateVolumeNormalization)
+            audioManager.setVolumeNormalization(settingStore.volumeNormalization);
+          if (shouldUpdateReferenceLufs)
+            audioManager.setReferenceLufs(settingStore.volumeNormalizationLufs);
+        },
+      );
       // 返回清理函数
       return () => {
         unsubscribePauseOnDeviceDisconnect();
@@ -1183,27 +1209,47 @@ export const usePlayerStore = defineStore(
         }
       }
       disposeRuntimeSessionSync?.();
+      // 会话同步标量化：全部 SESSION 字段（playerSession.ts 的 PLAYER_SESSION_KEYS）
+      // 与队列状态均为整体替换更新，引用/标量浅比较即可覆盖原 deep traverse 的触发面，
+      // 避免对含整个队列数组的 session 做深度遍历，以及队列引用变化时
+      // 每次都全队列 JSON 序列化 + IPC。
       disposeRuntimeSessionSync = watch(
-        () => ({
-          session: capturePlayerSession(
-            state,
-            playlistStore.getQueueById(state.currentSourceQueueId),
-          ),
-          ready: state.playbackIntent.phase === 'ready' && !state.awaitingTrackLoad,
-        }),
-        ({ session, ready }) => {
+        () => {
+          const queue = playlistStore.getQueueById(state.currentSourceQueueId);
+          return [
+            // 直接派生自共享键表，避免手写副本随 PLAYER_SESSION_KEYS 演进而漂移。
+            ...PLAYER_SESSION_KEYS.map((key) => state[key]),
+            queue,
+            queue?.playbackRevision,
+            queue?.currentTrackId,
+            queue?.updatedAt,
+            state.playbackIntent.phase,
+            state.awaitingTrackLoad,
+          ];
+        },
+        () => {
           const bridge = window.electron?.player;
+          const ready = state.playbackIntent.phase === 'ready' && !state.awaitingTrackLoad;
           let request: Promise<void> | undefined;
           if (!state.currentTrackId) {
             request = bridge?.syncRuntimeSession?.(null);
           } else if (ready && state.nativeTrackSeq && state.currentAudioUrl) {
-            request = bridge?.syncRuntimeSession?.(JSON.parse(JSON.stringify(session)));
+            request = bridge?.syncRuntimeSession?.(
+              JSON.parse(
+                JSON.stringify(
+                  capturePlayerSession(
+                    state,
+                    playlistStore.getQueueById(state.currentSourceQueueId),
+                  ),
+                ),
+              ),
+            );
           }
           void request?.catch((error) =>
             logger.warn('Player', 'Failed to sync live playback session', error),
           );
         },
-        { deep: true, immediate: true },
+        { immediate: true },
       );
       audioManager.setVolume(state.volume);
       engine.setPlaybackRate(state.playbackRate);

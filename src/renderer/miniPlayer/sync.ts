@@ -17,7 +17,10 @@ import type {
   MiniPlayerPlaybackPayload,
   MiniPlayerQueuePayload,
 } from '../../shared/miniPlayer';
-import { normalizeLyricLinePayload as normalizeSharedLyricLinePayload } from '../../shared/lyrics';
+import {
+  getLyricLinesIdentity,
+  normalizeLyricLinePayload as normalizeSharedLyricLinePayload,
+} from '../../shared/lyrics';
 import { resolveCoverLyricColor } from '../../shared/lyricColor';
 import { normalizeMiniLyricStyle } from '../../shared/miniPlayer';
 
@@ -215,19 +218,28 @@ const queuePayloadKey = (payload: MiniPlayerQueuePayload | null | undefined): st
   ].join('|');
 };
 
-const lyricLinesPayloadKey = (payload: MiniPlayerLyricPayload): string =>
-  JSON.stringify({
-    trackId: payload.trackId,
-    lines: payload.lines,
-    wantTranslation: payload.wantTranslation,
-    wantRomanization: payload.wantRomanization,
-    showRomanizationAsRuby: payload.showRomanizationAsRuby,
-    textConversionMode: payload.textConversionMode,
-    hasTranslation: payload.hasTranslation,
-    hasRomanization: payload.hasRomanization,
-    isLoading: payload.isLoading,
-    tips: payload.tips,
-  });
+// 轻量签名替代全量 JSON.stringify：行数组以引用身份去重（O(1)），
+// 避免每次同步对全部歌词行做全量序列化。lines 本身是 normalize 后的新数组
+// 无稳定引用，因此需基于上游 displayLines 构造
+const lyricLinesPayloadKey = (
+  payload: MiniPlayerLyricPayload,
+  sourceLines: readonly unknown[],
+  displayRevision: number,
+): string =>
+  [
+    payload.trackId ?? '',
+    getLyricLinesIdentity(sourceLines),
+    sourceLines.length,
+    displayRevision,
+    payload.wantTranslation,
+    payload.wantRomanization,
+    payload.showRomanizationAsRuby,
+    payload.textConversionMode,
+    payload.hasTranslation,
+    payload.hasRomanization,
+    payload.isLoading,
+    payload.tips,
+  ].join('\u001f');
 
 const executeMiniPlayerCommand = (command: MiniPlayerCommand) => {
   if (typeof command === 'string') {
@@ -393,7 +405,7 @@ export const initMiniPlayerSync = async () => {
 
   const syncLyricLinesSnapshot = () => {
     const lyric = buildLyricPayload();
-    const nextLinesKey = lyricLinesPayloadKey(lyric);
+    const nextLinesKey = lyricLinesPayloadKey(lyric, displayLines.value, displayRevision.value);
     const nextStateKey = JSON.stringify({
       currentIndex: lyric.currentIndex,
       timeOffset: lyric.timeOffset,

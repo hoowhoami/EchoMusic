@@ -32,7 +32,7 @@ export function useAppAppearance(
     () => {
       if (!isMiniPlayerRoute.value) themeStore.applyCurrent();
     },
-    { deep: true },
+    // 各源均为整体替换或 getter 新对象（引用比较即感知变化），无需 deep 遍历 100+ token
   );
   watch(
     () => settings.floatingSurfaceFrosted,

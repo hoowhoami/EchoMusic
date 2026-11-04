@@ -115,6 +115,14 @@ test('source fetch failure preserves previous plugins and successful timestamp',
     fetchMarketplaceIndex: async () => {
       throw new Error('offline');
     },
+    classifyNetworkError: () => ({
+      category: 'offline',
+      categoryLabel: '网络未连接',
+      title: 'offline',
+      hint: '',
+      rawMessage: 'offline',
+      failedAt: now,
+    }),
   });
   const previous = [
     { id: 'old', sourceId: 'official' },

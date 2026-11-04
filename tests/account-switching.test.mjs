@@ -35,6 +35,9 @@ const mapperShared = compile('../src/renderer/utils/mappers/shared.ts', {
   '../../../shared/object': object,
 });
 const mapper = compile('../src/renderer/utils/mappers/user.ts', { './shared': mapperShared });
+const accountImport = compile('../src/renderer/utils/accountImport.ts', {
+  '@/utils/mappers': mapper,
+});
 const profileStats = compile('../src/shared/profileStats.ts');
 const logger = { info() {}, warn() {}, error() {} };
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -213,6 +216,228 @@ test('inactive account removal preserves login; current removal is blocked and e
   assert.deepEqual(user.savedAccounts, []);
 });
 
+test('explicit logout can keep the current account for direct restoration', async () => {
+  const { user } = fixture();
+  user.login(account(1));
+  await flush();
+  user.login(account(2));
+  await flush();
+  user.updateSavedAccountListeningSeconds(2, 120);
+  const keptBefore = user.savedAccounts.find((entry) => entry.userid === 2);
+  const lastUsedAt = keptBefore.lastUsedAt;
+  const revision = user.accountRevision;
+  user.logout({ keepAccount: true });
+  assert.equal(user.isLoggedIn, false);
+  assert.equal(user.info, null);
+  assert.ok(user.accountRevision > revision);
+  assert.deepEqual(user.savedAccounts.map((entry) => entry.userid).sort(), [1, 2]);
+  const kept = user.savedAccounts.find((entry) => entry.userid === 2);
+  assert.equal(kept.token, 'token-2');
+  assert.equal(kept.lastUsedAt, lastUsedAt);
+  assert.equal(kept.listeningSeconds, 120);
+  user.switchAccount(2);
+  assert.equal(user.isLoggedIn, true);
+  assert.equal(user.info.userid, 2);
+  assert.equal(user.info.token, 'token-2');
+  await flush();
+});
+
+test('keep-account logout saves a current session that was never in the account list', () => {
+  const { user } = fixture();
+  user.setUserInfo(account(3));
+  assert.deepEqual(user.savedAccounts, []);
+  user.logout({ keepAccount: true });
+  assert.equal(user.isLoggedIn, false);
+  assert.deepEqual(
+    user.savedAccounts.map((entry) => entry.userid),
+    [3],
+  );
+  assert.equal(user.savedAccounts[0].token, 'token-3');
+});
+
+test('logout dialog emits whether to keep the current account and resets on reopen', async (t) => {
+  const open = vue.ref(true);
+  const emitted = [];
+  const { default: dialog } = compile(
+    '../src/renderer/components/profile/LogoutConfirmDialog.vue',
+    { vue: { ...vue, useModel: () => open } },
+    {},
+    true,
+  );
+  const scope = vue.effectScope();
+  t.after(() => scope.stop());
+  const view = scope.run(() =>
+    dialog.setup({}, { expose() {}, emit: (...args) => emitted.push(args) }),
+  );
+  assert.equal(view.keepAccount.value, false);
+  view.confirm();
+  assert.deepEqual(emitted.at(-1), ['confirm', false]);
+  view.keepAccount.value = true;
+  view.confirm();
+  assert.deepEqual(emitted.at(-1), ['confirm', true]);
+  open.value = false;
+  await vue.nextTick();
+  open.value = true;
+  await vue.nextTick();
+  assert.equal(view.keepAccount.value, false);
+});
+
+test('account import parser accepts auth headers and JSON and rejects incomplete credentials', () => {
+  const header = accountImport.parseAccountImport(
+    'Cookie: token=token-9; userid=9; t1=t1-9; dfid=device-9; KUGOU_API_MID=mid-9',
+  );
+  assert.equal(header.userid, 9);
+  assert.equal(header.token, 'token-9');
+  assert.equal(header.t1, 't1-9');
+  assert.equal(header.nickname, undefined);
+
+  const fromJson = accountImport.parseAccountImport(
+    JSON.stringify({ ...account(4), lastUsedAt: 1, vip: { membership: 'x' } }),
+  );
+  assert.equal(fromJson.userid, 4);
+  assert.equal(fromJson.token, 'token-4');
+  assert.equal(fromJson.nickname, '用户 4');
+  assert.equal(fromJson.pic, 'avatar-4');
+
+  const multiline = accountImport.parseAccountImport('userid=7\ntoken=token-7');
+  assert.equal(multiline.userid, 7);
+  assert.equal(multiline.token, 'token-7');
+
+  const bomHeader = accountImport.parseAccountImport('\uFEFFuserid=8; token=token-8');
+  assert.equal(bomHeader.userid, 8);
+  assert.equal(bomHeader.token, 'token-8');
+
+  for (const text of [
+    '',
+    'userid=1',
+    'token=only-token',
+    'userid=0; token=x',
+    '{"userid":1}',
+    '[]',
+    '{bad json}',
+  ]) {
+    assert.throws(() => accountImport.parseAccountImport(text), /导入|JSON|粘贴/);
+  }
+});
+
+test('importing while logged in adds the account without switching the active session', async () => {
+  const { user } = fixture();
+  user.login(account(1));
+  await flush();
+  const revision = user.accountRevision;
+  assert.deepEqual(user.importAccount({ ...account(2), nickname: '导入账号' }), {
+    existed: false,
+    applied: true,
+  });
+  assert.equal(user.info.userid, 1);
+  assert.equal(user.info.token, 'token-1');
+  assert.equal(user.accountRevision, revision);
+  assert.deepEqual(user.savedAccounts.map((entry) => entry.userid).sort(), [1, 2]);
+  const imported = user.savedAccounts.find((entry) => entry.userid === 2);
+  assert.equal(imported.token, 'token-2');
+  assert.equal(imported.nickname, '导入账号');
+  await flush();
+});
+
+test('importing an existing account requires confirmation and preserves listening metadata on overwrite', async () => {
+  const { user } = fixture();
+  user.login(account(1));
+  await flush();
+  user.login(account(2));
+  await flush();
+  user.updateSavedAccountListeningSeconds(2, 300);
+  const before = user.savedAccounts.find((entry) => entry.userid === 2);
+  assert.deepEqual(user.importAccount({ userid: 2, token: 'token-2-new' }), {
+    existed: true,
+    applied: false,
+  });
+  assert.equal(user.savedAccounts.find((entry) => entry.userid === 2).token, 'token-2');
+  assert.deepEqual(
+    user.importAccount(
+      { userid: 2, token: 'token-2-new', nickname: '覆盖昵称', t1: 't1-new' },
+      { overwrite: true },
+    ),
+    { existed: true, applied: true },
+  );
+  const after = user.savedAccounts.find((entry) => entry.userid === 2);
+  assert.equal(after.token, 'token-2-new');
+  assert.equal(after.nickname, '覆盖昵称');
+  assert.equal(after.t1, 't1-new');
+  assert.equal(after.lastUsedAt, before.lastUsedAt);
+  assert.equal(after.listeningSeconds, 300);
+  assert.equal(user.info.token, 'token-2-new');
+  assert.equal(user.info.nickname, '覆盖昵称');
+  await flush();
+});
+
+test('importing while logged out restores the imported session directly', async () => {
+  const { user } = fixture();
+  assert.deepEqual(user.importAccount(account(5)), { existed: false, applied: true });
+  assert.equal(user.isLoggedIn, true);
+  assert.equal(user.info.userid, 5);
+  assert.equal(user.info.token, 'token-5');
+  assert.deepEqual(
+    user.savedAccounts.map((entry) => entry.userid),
+    [5],
+  );
+  await flush();
+});
+
+test('invalid imports leave the current session and account list untouched', async () => {
+  const { user } = fixture();
+  user.login(account(1));
+  await flush();
+  const before = JSON.stringify(user.$state);
+  assert.throws(() => user.importAccount({ userid: 1 }), /导入信息不完整/);
+  assert.equal(JSON.stringify(user.$state), before);
+});
+
+test('settings import dialog asks before overwriting an existing account and applies after confirmation', async (t) => {
+  const { user } = fixture();
+  user.login(account(1));
+  await flush();
+  const toasts = [];
+  const { default: section } = compile(
+    '../src/renderer/views/settings/components/ExperimentalSettingsSection.vue',
+    {
+      vue,
+      '@vueuse/core': { useClipboard: () => ({ copy: async () => {} }) },
+      '@/stores/setting': { useSettingStore: () => ({ appIsPackaged: false }) },
+      '@/stores/user': { useUserStore: () => user },
+      '@/stores/device': { useDeviceStore: () => ({}) },
+      '@/stores/toast': {
+        useToastStore: () => ({
+          success: (message) => toasts.push(message),
+          warning: (message) => toasts.push(message),
+          info: (message) => toasts.push(message),
+          actionFailed: (message) => toasts.push(message),
+        }),
+      },
+      '@/utils/request': { buildAuthHeader: () => 'token=token-1; userid=1' },
+      '@/utils/accountImport': accountImport,
+      '@/utils/rendererMemoryDiagnostics': { suspendRendererMemoryDiagnosticsForRelaunch() {} },
+      '@iconify/vue': { Icon: {} },
+      '../constants': { sectionTitles: { experimental: { label: '实验性', icon: '' } } },
+    },
+    { electron: { platform: 'win32' } },
+    true,
+  );
+  const scope = vue.effectScope();
+  t.after(() => scope.stop());
+  const view = scope.run(() => section.setup({}, { expose() {}, emit() {} }));
+  view.openImportUserInfo();
+  view.importUserInfoText.value = 'userid=1; token=token-1-new';
+  view.submitImportUserInfo();
+  assert.equal(view.showOverwriteConfirm.value, true);
+  assert.equal(view.showImportUserInfo.value, true);
+  assert.equal(user.savedAccounts.find((entry) => entry.userid === 1).token, 'token-1');
+  view.applyImportedAccount(true);
+  assert.equal(view.showOverwriteConfirm.value, false);
+  assert.equal(view.showImportUserInfo.value, false);
+  assert.equal(user.info.token, 'token-1-new');
+  assert.deepEqual(toasts, ['账号信息已覆盖']);
+});
+
 test('selecting the current account does not reload or invalidate the current session', async () => {
   const { user, reads } = fixture();
   user.login(account(1));
@@ -241,6 +466,7 @@ test('normal SQLite persistence restores the current account and saved credentia
     {
       '../../shared/storePersistence': compile('../src/shared/storePersistence.ts'),
       '@/utils/logger': logger,
+      vue,
     },
     window,
   );

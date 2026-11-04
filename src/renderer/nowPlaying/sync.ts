@@ -16,7 +16,7 @@ import type {
   NowPlayingSnapshotPatch,
 } from '../../shared/nowPlaying';
 import { isNowPlayingCommand } from '../../shared/nowPlaying';
-import { normalizeLyricLinePayload } from '../../shared/lyrics';
+import { getLyricLinesIdentity, normalizeLyricLinePayload } from '../../shared/lyrics';
 import type { ShortcutCommand } from '../../shared/shortcuts';
 
 const NOW_PLAYING_PROGRESS_SYNC_INTERVAL_MS = 120;
@@ -227,12 +227,30 @@ export const initNowPlayingSync = async () => {
 
   const syncLyricSnapshot = () => {
     const nextLyricBody = buildLyricPayload(true);
-    const nextKey = JSON.stringify(nextLyricBody);
+    // 轻量签名替代全量 JSON.stringify：行数组以引用身份去重（O(1)），
+    // 避免每次同步对几十至几百 KB 的行数组做两次全量序列化
+    const nextKey = [
+      nextLyricBody.trackId ?? '',
+      getLyricLinesIdentity(displayLines.value),
+      displayLines.value.length,
+      displayRevision.value,
+      loadedHash.value,
+      nextLyricBody.wantTranslation,
+      nextLyricBody.wantRomanization,
+      nextLyricBody.textConversionMode,
+      nextLyricBody.hasTranslation,
+      nextLyricBody.hasRomanization,
+      nextLyricBody.timeOffset,
+      nextLyricBody.mode,
+      nextLyricBody.isLoading,
+      nextLyricBody.tips,
+      nextLyricBody.syncWarning,
+    ].join('\u001f');
     if (nextKey === lastSyncedLyricKey) return;
     lyricRevision += 1;
     const lyric = { ...nextLyricBody, revision: lyricRevision };
     sendPatch({ playback: buildPlaybackPayload(), lyric });
-    lastSyncedLyricKey = JSON.stringify(lyric);
+    lastSyncedLyricKey = nextKey;
     lastSyncedPlaybackKey = '';
   };
 
@@ -330,7 +348,8 @@ export const initNowPlayingSync = async () => {
         () => resolveCurrentPlaybackQueue()?.songs?.length ?? 0,
       ],
       scheduleProgressSync,
-      { deep: true },
+      // favorites/currentTrackSnapshot 均为整体替换更新（无字段级原地修改），无需 deep traverse
+      {},
     ),
     watch(
       [

@@ -502,6 +502,18 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
   }
 };
 
+// 本地快捷键 keydown 热路径缓存：每次按键解析 ~15 个 accelerator 开销虽小但完全可避免。
+// 以 bindings+defaults 序列化为签名，设置变化时自然失效重解析。
+let localShortcutMatchCache: {
+  signature: string;
+  combos: Array<[ShortcutCommand, string[]]>;
+} | null = null;
+
+const buildLocalShortcutCombos = (): Array<[ShortcutCommand, string[]]> =>
+  (Object.entries(resolveShortcutMap('local')) as Array<[ShortcutCommand, string]>).map(
+    ([command, accelerator]) => [command, accelerator ? acceleratorToKeys(accelerator) : []],
+  );
+
 export const registerLocalShortcuts = () => {
   const settingStore = useSettingStore();
 
@@ -510,11 +522,14 @@ export const registerLocalShortcuts = () => {
     if (event.repeat) return;
     const hasModifier = event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
     if (!hasModifier && isInEditableContext(event.target)) return;
-    const shortcutMap = resolveShortcutMap('local');
+    const bindings = settingStore.shortcutBindings ?? {};
+    const defaults = settingStore.defaultShortcutLabels ?? {};
+    const signature = JSON.stringify([bindings, defaults]);
+    if (!localShortcutMatchCache || localShortcutMatchCache.signature !== signature) {
+      localShortcutMatchCache = { signature, combos: buildLocalShortcutCombos() };
+    }
     const pressed = buildShortcut(event);
-    const matched = (Object.entries(shortcutMap) as Array<[ShortcutCommand, string]>).find(
-      ([, accelerator]) => accelerator && acceleratorToKeys(accelerator).includes(pressed),
-    );
+    const matched = localShortcutMatchCache.combos.find(([, combos]) => combos.includes(pressed));
     if (!matched) return;
     event.preventDefault();
     executeShortcutCommand(matched[0]);

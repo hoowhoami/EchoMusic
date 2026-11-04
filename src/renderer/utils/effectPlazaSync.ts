@@ -11,9 +11,11 @@ import type { PluginTaskHandle } from '../../shared/tasks';
 import {
   effectPlazaCacheFresh,
   effectPlazaCacheState,
+  flushPlazaCacheRevision,
   hydrateEffectPlazaCache,
   markMarketSynced,
   mergeMarketEffects,
+  runPlazaCacheBatch,
   setEffectDuration,
 } from '@/stores/audioEffectPlazaCache';
 import logger from '@/utils/logger';
@@ -29,6 +31,9 @@ const SYNC_PAGE_SIZE = 50;
 const DURATION_CONCURRENCY = 3;
 // 时长阶段按固定间隔刷新任务进度，避免上千条逐条触发面板重渲染。
 const DURATION_PROGRESS_STEP = 20;
+// 时长回填的 revision 主动刷新间隔：候选多、网络慢时避免市场列表长时间显示空时长。
+const DURATION_REVISION_FLUSH_STEP = 10;
+const DURATION_REVISION_FLUSH_MS = 250;
 
 const taskOwner = createTaskOwner(BUILTIN_PLUGIN_ID);
 
@@ -124,6 +129,7 @@ const syncDurations = async (task: PluginTaskHandle, signal: AbortSignal) => {
   updateProgress();
 
   const queue = [...candidates];
+  let lastRevisionFlushAt = Date.now();
   const worker = async () => {
     for (;;) {
       abortGuard();
@@ -143,9 +149,24 @@ const syncDurations = async (task: PluginTaskHandle, signal: AbortSignal) => {
       plazaSyncState.total = total;
       plazaSyncState.label = `解析音效时长 ${done}/${total}`;
       if (done % DURATION_PROGRESS_STEP === 0 || done === total) updateProgress();
+      const now = Date.now();
+      if (
+        done % DURATION_REVISION_FLUSH_STEP === 0 ||
+        done === total ||
+        now - lastRevisionFlushAt >= DURATION_REVISION_FLUSH_MS
+      ) {
+        flushPlazaCacheRevision();
+        lastRevisionFlushAt = now;
+      }
     }
   };
-  await Promise.all(Array.from({ length: DURATION_CONCURRENCY }, () => worker()));
+  // 时长回填逐条写入缓存：包进批量作用域后失效只记脏，期间按条数/时间主动刷新，
+  // 阶段结束（含中止）时再兜底 bump 一次，避免市场列表每回填一首就重跑全量 filter+sort。
+  // Promise.all 为 fail-fast：中止时其他在途 worker 可能在批次结束后继续写入，
+  // 其失效会各自立即 bump（量很小），不影响列表正确性。
+  await runPlazaCacheBatch(() =>
+    Promise.all(Array.from({ length: DURATION_CONCURRENCY }, () => worker())),
+  );
   abortGuard();
 };
 

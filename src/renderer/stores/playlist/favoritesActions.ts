@@ -13,11 +13,13 @@ import { FAVORITES_PAGE_SIZE } from './constants';
 import { captureCollectionScope } from './accountScope';
 import {
   buildPlaylistTrackPayload,
+  buildSongMatchKeySet,
   dedupeSongs,
   includesPlaylistIdentity,
   removeSongsFromKnownList,
   resolveFavoriteSongKeys,
   resolveSongQueueKey,
+  songMatchesKeySet,
 } from './helpers';
 
 let favoritesLoader: PagedSongLoader<Song> | null = null;
@@ -142,9 +144,9 @@ const applyFavoriteChange = (songs: Song[], change: FavoriteChange): Song[] => {
   if (change.action === 'remove') {
     return removeSongsFromKnownList(songs, Array.from(change.songs));
   }
-  const added = change.songs.filter(
-    (song) => !songs.some((item) => isSameSong(item, song) || String(item.id) === String(song.id)),
-  );
+  // 键集与 isSameSong + id 兜底语义一致，避免对大收藏列表逐条 some 扫描。
+  const addedKeys = buildSongMatchKeySet(songs, true);
+  const added = change.songs.filter((song) => !songMatchesKeySet(song, addedKeys));
   return dedupeSongs([...added, ...songs]);
 };
 
@@ -579,11 +581,16 @@ export const favoritesActions = {
       }
       existingSongs = dedupeSongs([...loadedSongs, ...this.getKnownPlaylistSongs(targetId)]);
     }
+    // 键集与 isSameSong 语义一致，避免对大歌单逐条 some 扫描。
+    // 收藏回填键集取本次待加入的 songs：只有「已在歌单中且本次也在加入列表里」
+    // 的条目才需要同步收藏状态；existingKeys 供下方新增去重使用。
+    const incomingKeys = buildSongMatchKeySet(songs, false);
+    const existingKeys = buildSongMatchKeySet(existingSongs, false);
     syncPlaylistFavorites(
       this,
       targetId,
       'add',
-      existingSongs.filter((item) => songs.some((song) => isSameSong(item, song))),
+      existingSongs.filter((item) => songMatchesKeySet(item, incomingKeys)),
     );
     const dedupedSongs: Song[] = [];
     const seenIncoming = new Set<string>();
@@ -591,7 +598,7 @@ export const favoritesActions = {
       const key = resolveSongQueueKey(song);
       if (seenIncoming.has(key)) return;
       seenIncoming.add(key);
-      if (existingSongs.some((item) => isSameSong(item, song))) return;
+      if (songMatchesKeySet(song, existingKeys)) return;
       dedupedSongs.push(song);
     });
 

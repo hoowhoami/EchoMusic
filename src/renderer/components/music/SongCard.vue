@@ -613,9 +613,10 @@ const handleFavorite = () => {
   /* 按钮位于行网格 1fr 标题列之后，x 坐标非整数。hover 缩放会为按钮新建
      合成层，层原点吸附到整数像素，与按小数位置绘制的内容相差约 1px，
      表现为 hover 进入/退出时按钮「跳一下」。will-change 常驻预建层，
-     让缩放在既有层内完成，不再建层/销层。手法与 SongList 的
-     .song-context-menu（translateZ(0)）相同。 */
-  will-change: transform;
+     让缩放在既有层内完成，不再建层/销层。缩放实际走独立 scale 属性
+     （见下方 :hover 规则），故声明 will-change: scale 精确匹配，
+     避免大列表每行常驻无用的 transform 合成层。 */
+  will-change: scale;
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
     color var(--motion-duration-fast) var(--motion-ease-standard),

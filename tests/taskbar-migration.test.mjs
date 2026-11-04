@@ -27,10 +27,27 @@ const load = (file, mocks, extras = {}) => {
 const logger = { default: { info() {}, debug() {}, warn() {} }, __esModule: true };
 function thumbar() {
   const ipcMain = new EventEmitter();
-  const api = load('../src/main/thumbar.ts', {
-    electron: { ipcMain, nativeImage: { createFromBuffer: (buffer) => buffer } },
-    './logger': logger,
-  });
+  const nativeTheme = new EventEmitter();
+  // thumbar 首帧异步读取注册表；测试注入同步回调，随后用 settle() 等待应用按钮。
+  const execFile = (_file, _args, _options, callback) =>
+    callback(null, { stdout: 'SystemUsesLightTheme REG_DWORD 0x0' }, '');
+  const api = load(
+    '../src/main/thumbar.ts',
+    {
+      electron: {
+        app: { isPackaged: false },
+        ipcMain,
+        nativeTheme,
+        nativeImage: {
+          createFromBuffer: (buffer) => buffer,
+          createFromPath: (file) => file,
+        },
+      },
+      child_process: { execFile },
+      './logger': logger,
+    },
+    { __dirname: process.cwd() },
+  );
   const window = (id) => {
     const win = new EventEmitter();
     win.dead = false;
@@ -55,11 +72,13 @@ const playback = {
   currentTime: 50,
   duration: 100,
 };
+const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-test('retains three transport buttons and adds exactly one disabled favorite when empty', () => {
+test('retains three transport buttons and adds exactly one disabled favorite when empty', async () => {
   const { api, window } = thumbar();
   const win = window(1);
   api.setupThumbarButtons(win);
+  await settle();
   const buttons = win.applied.at(-1);
   assert.deepEqual(
     Array.from(buttons, (b) => b.tooltip),
@@ -70,10 +89,11 @@ test('retains three transport buttons and adds exactly one disabled favorite whe
   assert.equal(win.sent.length, 0);
 });
 
-test('snapshot drives play and favorite; commands reuse existing channels, not new playback logic', () => {
+test('snapshot drives play and favorite; commands reuse existing channels, not new playback logic', async () => {
   const { api, window } = thumbar();
   const win = window(1);
   api.setupThumbarButtons(win);
+  await settle();
   api.updateThumbarPlayback(playback);
   let buttons = win.applied.at(-1);
   assert.equal(buttons[1].tooltip, '暂停');
@@ -101,21 +121,23 @@ test('snapshot drives play and favorite; commands reuse existing channels, not n
   assert.equal(win.applied.at(-1)[3].tooltip, '收藏');
 });
 
-test('progress-only snapshots do not rebuild native buttons', () => {
+test('progress-only snapshots do not rebuild native buttons', async () => {
   const { api, window } = thumbar();
   const win = window(1);
   api.setupThumbarButtons(win);
+  await settle();
   api.updateThumbarPlayback(playback);
   const count = win.applied.length;
   api.updateThumbarPlayback({ ...playback, currentTime: 60 });
   assert.equal(win.applied.length, count);
 });
 
-test('recreating main window rebinds show events and rejects stale renderer messages', () => {
+test('recreating main window rebinds show events and rejects stale renderer messages', async () => {
   const { api, ipcMain, window } = thumbar();
   const old = window(1),
     next = window(2);
   api.setupThumbarButtons(old);
+  await settle();
   api.updateThumbarPlayback(playback);
   old.dead = true;
   old.emit('closed');
@@ -162,7 +184,10 @@ test('taskbar window receives the estimated-timings flag through the lyric snaps
   const messages = [];
   bar.isDestroyed = () => false;
   bar.isVisible = () => true;
-  bar.webContents = { isDestroyed: () => false, send: (...args) => messages.push(args) };
+  bar.webContents = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    send: (...args) => messages.push(args),
+  });
   const api = load('../src/main/nowPlaying.ts', {
     electron: { BrowserWindow: { getAllWindows: () => [bar] } },
     './ipc/registry': {},
@@ -210,7 +235,10 @@ test('hidden taskbar window receives no playback pushes and resumes with the lat
   let visible = false;
   bar.isDestroyed = () => false;
   bar.isVisible = () => visible;
-  bar.webContents = { isDestroyed: () => false, send: (...args) => messages.push(args) };
+  bar.webContents = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    send: (...args) => messages.push(args),
+  });
   const api = load('../src/main/nowPlaying.ts', {
     electron: { BrowserWindow: { getAllWindows: () => [bar] } },
     './ipc/registry': {},
@@ -235,6 +263,125 @@ test('hidden taskbar window receives no playback pushes and resumes with the lat
   api.syncNowPlayingSnapshot({ appearance: { isDark: true } });
   assert.equal(messages.length, 2);
 });
+test('show full snapshot updates the incremental baseline and reload forces a full snapshot', () => {
+  const bar = new EventEmitter();
+  const messages = [];
+  let visible = true;
+  bar.isDestroyed = () => false;
+  bar.isVisible = () => visible;
+  const webContents = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    send: (...args) => messages.push(args),
+  });
+  bar.webContents = webContents;
+  const api = load('../src/main/nowPlaying.ts', {
+    electron: { BrowserWindow: { getAllWindows: () => [bar] } },
+    './ipc/registry': {},
+    './window': { getMainWindow: () => null },
+    './storage/settings': {},
+    '../shared/nowPlaying': load('../src/shared/nowPlaying.ts', {}),
+    '../shared/playback': load('../src/shared/playback.ts', {}),
+    '../shared/opencc': load('../src/shared/opencc.ts', {}),
+    './taskbarThumbnail': { isCoverPreviewEnabled: () => true },
+    './taskbarProgress': {},
+    './thumbar': { updateThumbarPlayback() {} },
+  });
+  api.bindVisibleNowPlayingWindow(bar);
+
+  api.syncNowPlayingSnapshot({ playback, appearance: { isDark: false } });
+  assert.equal(messages.length, 1);
+
+  visible = false;
+  api.syncNowPlayingSnapshot({ playback: { ...playback, trackId: 'hidden' } });
+  visible = true;
+  bar.emit('show');
+  assert.equal(messages.length, 2);
+  assert.equal(messages.at(-1)[1].playback.trackId, 'hidden');
+
+  // show 补发的全量必须同步基线：仅外观变化时不应重发 playback。
+  api.syncNowPlayingSnapshot({ appearance: { isDark: true } });
+  assert.equal(messages.length, 3);
+  assert.ok(!('playback' in messages.at(-1)[1]));
+  assert.equal(typeof messages.at(-1)[1].updatedAt, 'number');
+
+  // reload 后 preload 的 merged 归零，下一条广播必须是完整快照。
+  webContents.emit('did-start-navigation');
+  api.syncNowPlayingSnapshot({ playback: { ...playback, trackId: 'after-reload' } });
+  assert.equal(messages.length, 4);
+  const reloaded = messages.at(-1)[1];
+  assert.equal(reloaded.playback.trackId, 'after-reload');
+  assert.ok('lyric' in reloaded && 'appearance' in reloaded);
+});
+
+test('failed now-playing send does not advance the incremental baseline', () => {
+  const bar = new EventEmitter();
+  const messages = [];
+  let fail = true;
+  bar.isDestroyed = () => false;
+  bar.isVisible = () => true;
+  bar.webContents = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    send: (...args) => {
+      if (fail) throw new Error('renderer unavailable');
+      messages.push(args);
+    },
+  });
+  const api = load('../src/main/nowPlaying.ts', {
+    electron: { BrowserWindow: { getAllWindows: () => [bar] } },
+    './ipc/registry': {},
+    './window': { getMainWindow: () => null },
+    './storage/settings': {},
+    '../shared/nowPlaying': load('../src/shared/nowPlaying.ts', {}),
+    '../shared/playback': load('../src/shared/playback.ts', {}),
+    '../shared/opencc': load('../src/shared/opencc.ts', {}),
+    './taskbarThumbnail': { isCoverPreviewEnabled: () => true },
+    './taskbarProgress': {},
+    './thumbar': { updateThumbarPlayback() {} },
+  });
+  api.bindVisibleNowPlayingWindow(bar);
+
+  api.syncNowPlayingSnapshot({ playback });
+  assert.equal(messages.length, 0);
+  fail = false;
+  api.syncNowPlayingSnapshot({ playback: { ...playback, currentTime: 51 } });
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0][1].playback.currentTime, 51);
+  assert.ok('lyric' in messages[0][1] && 'appearance' in messages[0][1]);
+});
+
+test('main window reload resets the now-playing baseline without visibility binding', () => {
+  const main = new EventEmitter();
+  const messages = [];
+  main.isDestroyed = () => false;
+  const webContents = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    send: (...args) => messages.push(args),
+  });
+  main.webContents = webContents;
+  const api = load('../src/main/nowPlaying.ts', {
+    electron: { BrowserWindow: { getAllWindows: () => [main] } },
+    './ipc/registry': {},
+    './window': { getMainWindow: () => main },
+    './storage/settings': {},
+    '../shared/nowPlaying': load('../src/shared/nowPlaying.ts', {}),
+    '../shared/playback': load('../src/shared/playback.ts', {}),
+    '../shared/opencc': load('../src/shared/opencc.ts', {}),
+    './taskbarThumbnail': { isCoverPreviewEnabled: () => true },
+    './taskbarProgress': {},
+    './thumbar': { updateThumbarPlayback() {} },
+  });
+  api.syncNowPlayingSnapshot({ playback, appearance: { isDark: false } });
+  assert.equal(messages.length, 1);
+
+  // 主窗口没有 bindVisibleNowPlayingWindow，首次广播后也必须装上导航监听。
+  webContents.emit('did-start-navigation');
+  api.syncNowPlayingSnapshot({ playback: { ...playback, currentTime: 51 } });
+  assert.equal(messages.length, 2);
+  const reloaded = messages.at(-1)[1];
+  assert.equal(reloaded.playback.currentTime, 51);
+  assert.ok('lyric' in reloaded && 'appearance' in reloaded);
+});
+
 test('invalidated native window receives no playback pushes or visibility calls before closed', () => {
   let alive = true;
   const messages = [];
@@ -244,7 +391,10 @@ test('invalidated native window receives no playback pushes or visibility calls 
       assert.equal(alive, true);
       return true;
     },
-    webContents: { isDestroyed: () => false, send: (...args) => messages.push(args) },
+    webContents: Object.assign(new EventEmitter(), {
+      isDestroyed: () => false,
+      send: (...args) => messages.push(args),
+    }),
   });
   const api = load('../src/main/nowPlaying.ts', {
     electron: { BrowserWindow: { getAllWindows: () => [bar] } },

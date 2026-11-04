@@ -193,6 +193,18 @@ const compactCandidate = (candidate: LyricSearchCandidate): ManualLyricSelection
   adjust: candidate.adjust,
 });
 
+/** 按歌曲 hash 记录的持久化 map 容量上限：这些 map 随使用只增不减，超出即淘汰最早写入的条目。 */
+const PERSISTED_LYRIC_MAP_LIMIT = 512;
+
+const setPersistedLyricMapEntry = <T>(map: Record<string, T>, key: string, value: T): void => {
+  map[key] = value;
+  const keys = Object.keys(map);
+  const overflow = keys.length - PERSISTED_LYRIC_MAP_LIMIT;
+  if (overflow <= 0) return;
+  // Record 的字符串键按插入序排列（重复写入不改变位置），移除最早的 overflow 条即可
+  for (let i = 0; i < overflow; i += 1) delete map[keys[i]];
+};
+
 // 保持接口返回的原始顺序
 const sortCandidates = (candidates: LyricSearchCandidate[]): LyricSearchCandidate[] => candidates;
 
@@ -894,6 +906,11 @@ const parseLyricDetailPayload = (
 export const DEFAULT_LYRIC_FILTER_PATTERN =
   '^(作词|作曲|编曲|制作人|录音|混音|母带|出品|发行|企划|监制|和声|吉他|贝斯|鼓|键盘|弦乐|词|曲|编|唱片|OP|SP|原唱|翻唱|许可|音乐人|纯音乐|宣推|协作推广|策划|统筹|营销|推广|制作|配唱|和音|弦乐编写|人声录音|人声编辑)[：:]|^(Lyrics|Composed|Produced|Written|Arranged|Mixed|Mastered|Recorded|Performed) by[：:]|^[『「【].*[』」】]$|未经著作权人许可|不得翻唱|翻录或使用|听歌就在';
 
+// 已编译歌词过滤正则缓存：buildFilteredLyricEntries/resolveVisibleLyricIndex 会对每行调用本函数，
+// 同一 pattern 反复 new RegExp 是行切换热路径上的重复编译；编译失败的 pattern 也缓存，避免每行抛异常。
+const lyricFilterRegexCache = new Map<string, RegExp | null>();
+const LYRIC_FILTER_REGEX_CACHE_LIMIT = 16;
+
 /**
  * 测试歌词行是否应被过滤
  * @param text 歌词文本
@@ -903,11 +920,19 @@ export const DEFAULT_LYRIC_FILTER_PATTERN =
 export function testLyricFilter(text: string, enabled: boolean, pattern: string): boolean {
   if (!enabled || !text) return false;
   const effectivePattern = pattern.trim() || DEFAULT_LYRIC_FILTER_PATTERN;
-  try {
-    return new RegExp(effectivePattern).test(text);
-  } catch {
-    return false;
+  let regex = lyricFilterRegexCache.get(effectivePattern);
+  if (regex === undefined) {
+    try {
+      regex = new RegExp(effectivePattern);
+    } catch {
+      regex = null;
+    }
+    if (lyricFilterRegexCache.size >= LYRIC_FILTER_REGEX_CACHE_LIMIT) {
+      lyricFilterRegexCache.clear();
+    }
+    lyricFilterRegexCache.set(effectivePattern, regex);
   }
+  return regex ? regex.test(text) : false;
 }
 
 // 同一歌曲及匹配信息的在途请求去重：避免 playTrack 与歌词页 watch 各自触发，
@@ -1168,7 +1193,7 @@ export const useLyricStore = defineStore('lyric', {
       const current = this.currentTrackTimeOffset;
       if (!Number.isFinite(deltaMs)) return current;
       const next = normalizeLyricOffsetMs(current + deltaMs);
-      this.timeOffsetMap[this.loadedHash] = next;
+      setPersistedLyricMapEntry(this.timeOffsetMap, this.loadedHash, next);
       return next;
     },
     // 重置当前歌曲的歌词时间偏移
@@ -1229,7 +1254,7 @@ export const useLyricStore = defineStore('lyric', {
       const normalizedHash = hash.trim();
       if (!normalizedHash || !this.useEmbeddedLyric(normalizedHash, content)) return false;
       delete this.manualLyricMap[normalizedHash];
-      this.embeddedLyricSelectionMap[normalizedHash] = true;
+      setPersistedLyricMapEntry(this.embeddedLyricSelectionMap, normalizedHash, true);
       return true;
     },
     parseLyricContent(
@@ -1428,7 +1453,11 @@ export const useLyricStore = defineStore('lyric', {
         });
         delete this.embeddedLyricSelectionMap[normalizedHash];
         if (options?.remember) {
-          this.manualLyricMap[normalizedHash] = compactCandidate(candidate);
+          setPersistedLyricMapEntry(
+            this.manualLyricMap,
+            normalizedHash,
+            compactCandidate(candidate),
+          );
         }
         return true;
       } finally {

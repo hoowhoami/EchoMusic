@@ -6,8 +6,10 @@ import { useUserStore } from '@/stores/user';
 import { useDeviceStore } from '@/stores/device';
 import { useToastStore } from '@/stores/toast';
 import { buildAuthHeader } from '@/utils/request';
+import { parseAccountImport } from '@/utils/accountImport';
 import { suspendRendererMemoryDiagnosticsForRelaunch } from '@/utils/rendererMemoryDiagnostics';
 import type { AppLogLevel } from '../../../../shared/logging';
+import type { UserPatch } from '@/models/user';
 import Switch from '@/components/ui/Switch.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
 import Slider from '@/components/ui/Slider.vue';
@@ -15,6 +17,7 @@ import FontIcon from '@/components/ui/FontIcon.vue';
 import Select from '@/components/ui/Select.vue';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import Textarea from '@/components/ui/Textarea.vue';
 import { Icon } from '@iconify/vue';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { sectionTitles } from '../constants';
@@ -65,6 +68,12 @@ const supportsHighDpiOverride = computed(() => platform === 'win32' || platform 
 const dpiScaleLabel = computed(() => Number(settingStore.dpiScale || 1).toFixed(1));
 
 const showUserInfo = ref(false);
+const showImportUserInfo = ref(false);
+const importUserInfoText = ref('');
+const pendingImport = ref<UserPatch | null>(null);
+const showOverwriteConfirm = ref(false);
+const importPlaceholder =
+  'token=...; userid=...; t1=...\n或 {"userid": 123, "token": "...", "nickname": "..."}';
 const showResetDeviceIdentityConfirm = ref(false);
 const deviceIdentity = ref<{ guid: string; mac: string; serverDev: string; mid: string } | null>(
   null,
@@ -114,6 +123,87 @@ const copyAuthHeader = async () => {
   } catch {
     toastStore.actionFailed('复制');
   }
+};
+
+const copyUserInfo = async () => {
+  const info = userStore.info;
+  if (!info) {
+    toastStore.warning('当前没有可用的用户信息，请先登录');
+    return;
+  }
+  const payload = {
+    userid: info.userid,
+    token: info.token,
+    t1: info.t1,
+    nickname: info.nickname ?? info.username,
+    pic: info.pic ?? info.userPic,
+    expires: info.expires,
+  };
+  try {
+    await copy(JSON.stringify(payload, null, 2));
+    toastStore.success('用户信息已复制');
+  } catch {
+    toastStore.actionFailed('复制');
+  }
+};
+
+const overwriteAccountLabel = computed(() => {
+  const account = pendingImport.value;
+  if (!account?.userid) return '';
+  const nickname = account.nickname ?? account.username;
+  return nickname ? `账号 ${account.userid}（${nickname}）` : `账号 ${account.userid}`;
+});
+
+const openImportUserInfo = () => {
+  importUserInfoText.value = '';
+  pendingImport.value = null;
+  showOverwriteConfirm.value = false;
+  showImportUserInfo.value = true;
+};
+
+const applyImportedAccount = (overwrite: boolean) => {
+  const parsed = pendingImport.value;
+  if (!parsed) return;
+  const wasLoggedIn = userStore.isLoggedIn;
+  try {
+    const result = userStore.importAccount(parsed, { overwrite });
+    if (!result.applied) {
+      // 提交后账号列表发生变化：继续走覆盖确认，不修改已有账号。
+      showOverwriteConfirm.value = true;
+      return;
+    }
+    showOverwriteConfirm.value = false;
+    showImportUserInfo.value = false;
+    pendingImport.value = null;
+    importUserInfoText.value = '';
+    if (!wasLoggedIn) {
+      toastStore.success('已恢复登录');
+    } else if (result.existed) {
+      toastStore.success('账号信息已覆盖');
+    } else {
+      toastStore.success('账号已添加到账号列表');
+    }
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '导入失败，请检查内容');
+  }
+};
+
+const submitImportUserInfo = () => {
+  try {
+    const parsed = parseAccountImport(importUserInfoText.value);
+    pendingImport.value = parsed;
+    if (userStore.savedAccounts.some((account) => account.userid === parsed.userid)) {
+      showOverwriteConfirm.value = true;
+      return;
+    }
+    applyImportedAccount(false);
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '导入失败，请检查内容');
+  }
+};
+
+const cancelOverwriteConfirm = () => {
+  showOverwriteConfirm.value = false;
 };
 
 const setHighDpiEnabled = (enabled: boolean) => {
@@ -331,6 +421,16 @@ const confirmResetDeviceIdentity = async () => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">导入用户信息</h3>
+        <p class="text-sm text-text-secondary">粘贴鉴权头或账号 JSON，可直接复用登录状态</p>
+      </div>
+      <Button variant="unstyled" size="default" class="settings-action" @click="openImportUserInfo"
+        >导入</Button
+      >
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">重置设备身份</h3>
         <p class="text-sm text-text-secondary">
           清除本机 guid、mid、dfid，并在重启后重新生成设备身份
@@ -355,7 +455,41 @@ const confirmResetDeviceIdentity = async () => {
         <p v-if="userInfoEntries.length === 0" class="user-info-empty">暂无用户信息，请先登录</p>
       </div>
       <template #footer>
+        <Button variant="outline" size="default" @click="copyUserInfo">复制用户信息</Button>
         <Button variant="primary" size="default" @click="copyAuthHeader">复制鉴权头</Button>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:open="showImportUserInfo"
+      title="导入用户信息"
+      description="支持粘贴「复制鉴权头」的内容或包含 userid/token 的 JSON。已登录时只会添加到账号列表，不会切换当前账号。"
+    >
+      <div class="import-user-info">
+        <Textarea
+          v-model="importUserInfoText"
+          :rows="6"
+          spellcheck="false"
+          :placeholder="importPlaceholder"
+        />
+        <p class="import-user-info-hint">
+          未登录时导入会直接恢复登录；账号已存在时会先询问是否覆盖。
+        </p>
+      </div>
+      <template #footer>
+        <Button variant="outline" size="default" @click="showImportUserInfo = false">取消</Button>
+        <Button variant="primary" size="default" @click="submitImportUserInfo">导入</Button>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:open="showOverwriteConfirm"
+      title="账号已存在"
+      :description="`${overwriteAccountLabel} 已在账号列表中，是否使用导入的信息覆盖？`"
+    >
+      <template #footer>
+        <Button variant="outline" size="default" @click="cancelOverwriteConfirm">取消</Button>
+        <Button variant="danger" size="default" @click="applyImportedAccount(true)">覆盖</Button>
       </template>
     </Dialog>
 
@@ -413,6 +547,18 @@ const confirmResetDeviceIdentity = async () => {
   padding: 20px 0;
   text-align: center;
   font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.import-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.import-user-info-hint {
+  font-size: 12px;
+  line-height: 1.6;
   color: var(--color-text-secondary);
 }
 </style>

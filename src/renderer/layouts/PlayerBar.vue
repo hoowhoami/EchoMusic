@@ -6,8 +6,6 @@ import { markRaw, computed, ref, onMounted, onUnmounted, watch, nextTick } from 
 import { useResizeObserver } from '@vueuse/core';
 import type { SongArtist } from '@/models/song';
 import type { IconifyIcon } from '@iconify/types';
-import { SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
-import SliderRoot from '@/components/ui/SliderRoot.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import PlayModePopover from '@/components/player/PlayModePopover.vue';
 import SleepTimerPopover from '@/components/player/SleepTimerPopover.vue';
@@ -15,15 +13,13 @@ import QualityPopover from '@/components/player/QualityPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
 import CastPopover from '@/components/player/CastPopover.vue';
+import PlayerProgress from '@/components/player/PlayerProgress.vue';
 import PlayerBarMoreMenu from './PlayerBarMoreMenu.vue';
-import ProgressBusyOverlay from '@/components/player/ProgressBusyOverlay.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Badge from '@/components/ui/Badge.vue';
 import { getPlayerBarBadgeTone } from './playerBarActions';
 import Button from '@/components/ui/Button.vue';
-import { useDeferredSeek } from '@/composables/useDeferredSeek';
 import { useLyricPagePreload } from '@/composables/useLyricPagePreload';
-import { usePlaybackProgressStatus } from '@/composables/usePlaybackProgressStatus';
 import PlayerBarActionIcon from './PlayerBarActionIcon.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import VolumeIcon from '@/components/player/VolumeIcon.vue';
@@ -95,28 +91,21 @@ const {
 } = usePlayerControls();
 
 const isPlaybackLoading = computed(() => player.playbackIsLoading);
-const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } = usePlaybackProgressStatus(
-  () => player.playbackProgressBusyReason,
-);
 
 const artistList = computed(() => {
   if (!currentTrack.value) return [];
   if (currentTrack.value.artists && currentTrack.value.artists.length > 0)
     return currentTrack.value.artists;
   if (!currentTrack.value.artist) return [] as SongArtist[];
-  return currentTrack.value.artist
-    .split(/[,/，]/)
-    .map((name) => name.trim())
-    .filter((name) => name.length > 0)
-    .map((name) => ({ name }));
+  return (
+    currentTrack.value.artist
+      .split(/[,/，]/)
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0)
+      // 补齐 SongArtist 形状（id 缺省），保证 artistList 恒为统一类型
+      .map((name) => ({ id: undefined, name }))
+  );
 });
-
-const formatTime = (seconds: number) => {
-  if (!seconds || isNaN(seconds)) return '00:00';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-};
 
 const navigateToLyric = () => {
   player.toggleLyricView(true);
@@ -162,20 +151,6 @@ const actionCapacity = ref<PlayerBarPlacementCapacity>({
   left: 3,
   center: 7,
   right: 3,
-});
-
-const {
-  pendingSeekTime,
-  isDragging: isDraggingSeek,
-  progressValue,
-  handleStart: handleSeekStart,
-  handleValueUpdate: handleSeek,
-  handleCommit: handleSeekCommit,
-  handleEnd: handleSeekEnd,
-  handleCancel: handleSeekCancel,
-} = useDeferredSeek({
-  getCurrentTime: () => player.currentTime,
-  seek: (time) => player.seek(time),
 });
 
 const queueBadge = computed(() => {
@@ -473,25 +448,49 @@ useResizeObserver(
   updateActionCapacity,
 );
 
+// 上次写入的抽屉 CSS 变量组合，未变化时跳过写入（避免拖拽窗口时逐帧全文档 style recalc）
+let lastDrawerVars: string | null = null;
+
 const updateDrawerWidth = () => {
   const content = document.querySelector('.main-content') as HTMLElement | null;
-  const target = content;
-  if (target) {
-    const rect = target.getBoundingClientRect();
-    const width = Math.floor(target.clientWidth);
-    const left = Math.floor(rect.left);
-    const top = Math.floor(rect.top);
-    const height = Math.floor(target.clientHeight);
+  let contentVars: string | null = null;
+  if (content) {
+    const rect = content.getBoundingClientRect();
+    contentVars = [
+      Math.floor(content.clientWidth),
+      Math.floor(rect.left),
+      Math.floor(rect.top),
+      Math.floor(content.clientHeight),
+    ].join('|');
+  }
+  const playerBar = document.querySelector('.player-bar-container') as HTMLElement | null;
+  const drawerOffset = playerBar ? Math.floor(playerBar.offsetHeight + 8) : null;
+  const nextVars = contentVars && drawerOffset !== null ? `${contentVars}|${drawerOffset}` : null;
+  if (!nextVars || nextVars === lastDrawerVars) return;
+  lastDrawerVars = nextVars;
+  if (contentVars) {
+    const [width, left, top, height] = contentVars.split('|').map(Number);
     document.documentElement.style.setProperty('--drawer-content-width', `${width}px`);
     document.documentElement.style.setProperty('--drawer-content-left', `${left}px`);
     document.documentElement.style.setProperty('--drawer-content-top', `${top}px`);
     document.documentElement.style.setProperty('--drawer-content-height', `${height}px`);
   }
-  const playerBar = document.querySelector('.player-bar-container') as HTMLElement | null;
-  if (playerBar) {
-    const offset = Math.floor(playerBar.offsetHeight + 8);
-    document.documentElement.style.setProperty('--drawer-bottom-offset', `${offset}px`);
+  if (drawerOffset !== null) {
+    document.documentElement.style.setProperty('--drawer-bottom-offset', `${drawerOffset}px`);
   }
+};
+
+// window resize 的统一入口：rAF 合并同帧多次触发，
+// 原先三个独立 handler（跑马灯/抽屉宽度/操作容量）每帧至多各执行一次
+let resizeFrame: number | null = null;
+const handleWindowResize = () => {
+  if (resizeFrame !== null) return;
+  resizeFrame = window.requestAnimationFrame(() => {
+    resizeFrame = null;
+    checkMarquee();
+    updateDrawerWidth();
+    updateActionCapacity();
+  });
 };
 
 // Marquee logic
@@ -551,9 +550,7 @@ watch(
 );
 
 onMounted(() => {
-  window.addEventListener('resize', checkMarquee);
-  window.addEventListener('resize', updateDrawerWidth);
-  window.addEventListener('resize', updateActionCapacity);
+  window.addEventListener('resize', handleWindowResize);
   checkMarquee();
   updateDrawerWidth();
   updateActionCapacity();
@@ -561,9 +558,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  window.removeEventListener('resize', checkMarquee);
-  window.removeEventListener('resize', updateDrawerWidth);
-  window.removeEventListener('resize', updateActionCapacity);
+  window.removeEventListener('resize', handleWindowResize);
+  if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
   stopMarquee();
 });
 </script>
@@ -614,7 +610,10 @@ onUnmounted(() => {
               </span>
               <span v-if="currentTrack" class="text-[14px] text-text-secondary mx-0.5">-</span>
               <div v-if="currentTrack" class="flex items-center">
-                <template v-for="(artist, index) in artistList" :key="index">
+                <template
+                  v-for="(artist, index) in artistList"
+                  :key="`${artist.id ?? artist.name}:${index}`"
+                >
                   <span
                     class="text-[13px] transition-colors"
                     :class="
@@ -749,68 +748,8 @@ onUnmounted(() => {
             </div>
           </template>
         </div>
-        <!-- 进度条系统 - 动态伸缩至最大值 -->
-        <div class="w-full max-w-120 flex items-center gap-3 px-1 h-3.5 min-w-0">
-          <span
-            class="text-[10px] font-medium text-text-secondary w-9 shrink-0 text-right tabular-nums"
-            >{{
-              formatTime(
-                isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : player.currentTime,
-              )
-            }}</span
-          >
-          <SliderRoot
-            :model-value="progressValue"
-            :max="player.duration || 100"
-            :step="0.1"
-            :aria-busy="isProgressBusy"
-            :aria-label="progressAriaLabel"
-            class="echo-slider echo-slider-progress relative flex items-center flex-1 min-w-0 h-4 group/progress"
-            :data-dragging="isDraggingSeek"
-            @update:model-value="handleSeek"
-            @pointerdown.capture="handleSeekStart"
-            @value-commit="handleSeekCommit"
-            @pointerup="handleSeekEnd"
-            @pointercancel="handleSeekCancel"
-          >
-            <SliderTrack class="echo-slider-track">
-              <div class="climax-mark-layer">
-                <template
-                  v-for="(mark, index) in player.climaxMarks"
-                  :key="`${mark.start}-${index}`"
-                >
-                  <span
-                    class="climax-tick"
-                    :style="{ left: `calc(${(mark.start * 100).toFixed(3)}% - 1px)` }"
-                  >
-                  </span>
-                  <span
-                    v-if="mark.end > mark.start"
-                    class="climax-tick"
-                    :style="{ left: `calc(${(mark.end * 100).toFixed(3)}% - 1px)` }"
-                  >
-                  </span>
-                </template>
-              </div>
-              <SliderRange class="echo-slider-range">
-                <ProgressBusyOverlay v-if="isProgressBusy" />
-              </SliderRange>
-            </SliderTrack>
-            <SliderThumb
-              class="echo-slider-thumb"
-              :aria-label="progressAriaLabel"
-              :aria-valuetext="
-                formatTime(
-                  isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : player.currentTime,
-                )
-              "
-            />
-          </SliderRoot>
-          <span
-            class="text-[10px] font-medium text-text-secondary w-9 shrink-0 text-left tabular-nums"
-            >{{ formatTime(player.duration) }}</span
-          >
-        </div>
+        <!-- 进度条系统：独立子组件，currentTime 高频更新不触发 PlayerBar 整体重渲染 -->
+        <PlayerProgress />
       </div>
       <!-- 3. 右侧：功能选项 - 弹性增长 -->
       <div
@@ -919,25 +858,6 @@ onUnmounted(() => {
   transition:
     background-color 0.3s ease,
     border-color 0.3s ease;
-}
-
-.climax-mark-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.climax-tick {
-  position: absolute;
-  top: calc(50% - 3px);
-  width: 2px;
-  height: 6px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--color-primary) 80%, transparent);
-}
-
-:global(.dark) .climax-tick {
-  background: color-mix(in srgb, var(--color-primary) 65%, transparent);
 }
 
 .player-actions {

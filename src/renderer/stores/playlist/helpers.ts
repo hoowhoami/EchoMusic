@@ -2,7 +2,6 @@ import { markRaw, toRaw } from 'vue';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { withoutEmbeddedMetadata } from '../../../shared/embeddedMetadata';
-import { isSameSong } from '@/utils/song';
 import { DEFAULT_PLAYBACK_QUEUE_ID, PERSONAL_FM_MODE } from './constants';
 import type {
   PersonalFmMode,
@@ -180,11 +179,44 @@ export const resolveFavoriteSongKeys = (song: Song | null | undefined): string[]
 export const buildPlaylistTrackPayload = (song: Song): string =>
   `${song.name}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
 
+/**
+ * 生成与 isSameSong（含可选 id 兜底）匹配语义完全一致的身份键集。
+ * isSameSong 匹配 = 双方 mixSongId 均非 '0' 且相等，或双方 hash 均非空且相等；
+ * 键集交集判断与之等价，用于把批量场景的 O(n×m) 双重扫描降为 O(n+m)。
+ */
+export const addSongToMatchKeySet = (song: Song, keys: Set<string>, includeId: boolean): void => {
+  const mixSongId = String(song.mixSongId ?? '0');
+  if (mixSongId !== '0') keys.add(`mx:${mixSongId}`);
+  const hash = String(song.hash ?? '')
+    .trim()
+    .toLowerCase();
+  if (hash) keys.add(`hash:${hash}`);
+  if (includeId) keys.add(`id:${String(song.id)}`);
+};
+
+export const buildSongMatchKeySet = (songs: Song[], includeId = false): Set<string> => {
+  const keys = new Set<string>();
+  for (const song of songs) addSongToMatchKeySet(song, keys, includeId);
+  return keys;
+};
+
+/** 判断单曲是否命中键集（与 isSameSong 同样的身份规范化）。 */
+export const songMatchesKeySet = (song: Song, keys: Set<string>): boolean => {
+  const mixSongId = String(song.mixSongId ?? '0');
+  if (mixSongId !== '0' && keys.has(`mx:${mixSongId}`)) return true;
+  const hash = String(song.hash ?? '')
+    .trim()
+    .toLowerCase();
+  if (hash && keys.has(`hash:${hash}`)) return true;
+  const id = String(song.id);
+  if (keys.has(`id:${id}`)) return true;
+  return false;
+};
+
 export const removeSongsFromKnownList = (existing: Song[], songs: Song[]): Song[] => {
   if (existing.length === 0 || songs.length === 0) return existing.slice();
-  return existing.filter(
-    (item) => !songs.some((song) => isSameSong(item, song) || String(item.id) === String(song.id)),
-  );
+  const removedKeys = buildSongMatchKeySet(songs, true);
+  return existing.filter((item) => !songMatchesKeySet(item, removedKeys));
 };
 
 export const mergeQueueSongs = (existing: Song[], incoming: Song[]): Song[] => {
@@ -204,6 +236,15 @@ export const appendQueueSong = (queue: PlaybackQueueState, song: Song): boolean 
   const key = resolveSongQueueKey(song);
   const exists = queue.songs.some((item) => resolveSongQueueKey(item) === key);
   if (exists) return false;
-  queue.songs = toRawSongList([...queue.songs, song]);
+  const rawSong = toRawSong(withoutEmbeddedMetadata(toRaw(song)));
+  const existing = queue.songs as Song[] & { __v_skip?: boolean };
+  // 旧队列数组已 markRaw 且歌曲不含 embeddedMetadata 时走增量 concat，
+  // 避免触发 toRawSongList 对整条队列逐首重建对象（FM 逐首追加时的 O(n) 分配）；
+  // 否则退回全量规整路径保持行为一致。
+  if (existing.__v_skip === true && !existing.some((item) => item.embeddedMetadata !== undefined)) {
+    queue.songs = markRaw(existing.concat(rawSong));
+  } else {
+    queue.songs = toRawSongList([...queue.songs, rawSong]);
+  }
   return true;
 };

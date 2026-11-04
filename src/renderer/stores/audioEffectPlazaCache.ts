@@ -1,4 +1,4 @@
-import { reactive } from 'vue';
+import { reactive, shallowRef } from 'vue';
 import { toRecord } from '../../shared/object';
 import logger from '@/utils/logger';
 import type { CommunityAudioEffect, CommunityAudioEffectSort } from '@/api/audioEffect';
@@ -25,6 +25,46 @@ const state = reactive({
   syncedAt: 0,
   hydrated: false,
 });
+
+// 缓存内容变更的标量版本号：市场列表 computed 改为依赖本标量（配合 toRaw 快照），
+// 时长逐条回填等高频写入不再逐条击穿全量 filter+sort，批量变更后统一失效一次。
+export const plazaCacheRevision = shallowRef(0);
+
+// 批量写入作用域：作用域内的失效只记脏，最外层退出时统一 bump 一次。
+// 时长回填逐条 await 后调用 setEffectDuration，若逐条 bump，
+// 市场列表每回填一首都会重跑一次全量 filter+sort。
+let revisionBatchDepth = 0;
+let revisionBatchDirty = false;
+
+const bumpPlazaCacheRevision = () => {
+  if (revisionBatchDepth > 0) {
+    revisionBatchDirty = true;
+    return;
+  }
+  plazaCacheRevision.value += 1;
+};
+
+// 支持 async：以 await 的方式等待 fn 完成，finally 在全部写入落地后才失效。
+export const runPlazaCacheBatch = async <T>(fn: () => Promise<T> | T): Promise<T> => {
+  revisionBatchDepth += 1;
+  try {
+    return await fn();
+  } finally {
+    revisionBatchDepth -= 1;
+    if (revisionBatchDepth === 0 && revisionBatchDirty) {
+      revisionBatchDirty = false;
+      plazaCacheRevision.value += 1;
+    }
+  }
+};
+
+// 在长批次内部主动刷新：时长解析这类耗时阶段按条数/时间间隔调用，
+// 让市场列表先看到已回填的部分数据，而不是整段结束后才刷新一次。
+export const flushPlazaCacheRevision = () => {
+  if (revisionBatchDepth === 0 || !revisionBatchDirty) return;
+  revisionBatchDirty = false;
+  plazaCacheRevision.value += 1;
+};
 
 let hydration: Promise<void> | undefined;
 let writes = Promise.resolve();
@@ -60,6 +100,7 @@ export const hydrateEffectPlazaCache = (): Promise<void> =>
       state.effects = { ...effects, ...state.effects };
       state.syncedAt = typeof saved.syncedAt === 'number' ? saved.syncedAt : 0;
       state.hydrated = true;
+      bumpPlazaCacheRevision();
     } catch (error) {
       logger.warn('EffectPlazaCache', 'Read plaza cache failed', error);
       state.hydrated = true;
@@ -106,6 +147,7 @@ export const mergeMarketEffects = (
         { ...existing, ...item, ranks }
       : { ...item, ranks };
   });
+  bumpPlazaCacheRevision();
   schedulePersist();
 };
 
@@ -113,6 +155,7 @@ export const setEffectDuration = (id: number, seconds: number) => {
   const entry = state.effects[String(id)];
   if (!entry || !Number.isFinite(seconds) || seconds <= 0) return;
   entry.duration = seconds;
+  bumpPlazaCacheRevision();
   schedulePersist();
 };
 

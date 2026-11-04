@@ -281,6 +281,8 @@ test('cover cache adopts native files, bounds storage and rejects unsafe/invalid
       await cache.adopt(next);
     }
     assert.equal((await readdir(root)).length, 128);
+    // prune 必须保留最新文件：最早采用的封面应先被淘汰。
+    assert.equal(await cache.resolve(first), null, 'oldest cover should be evicted first');
     // The byte budget also applies before reaching the file-count limit.
     for (let i = 200; i < 210; i++) {
       const next = i.toString(16).padStart(64, '0') + '.png';
@@ -399,7 +401,11 @@ test('normalizing an already-raw list also removes reader snapshots', () => {
 });
 
 test('replay requests embedded artwork again while ordinary online covers stay untouched', async () => {
-  for (const coverUrl of ['', 'echo-player-cover://artwork/' + 'a'.repeat(64) + '.png', 'https://cover.test/online.jpg']) {
+  for (const coverUrl of [
+    '',
+    'echo-player-cover://artwork/' + 'a'.repeat(64) + '.png',
+    'https://cover.test/online.jpg',
+  ]) {
     const f = fixture({ song: emptySong({ artist: 'Singer', album: 'Album', coverUrl }) });
     f.lyricStore.detailResolved = true;
     f.lyricStore.rawLyric = 'Online lyrics';
@@ -412,57 +418,82 @@ test('replay requests embedded artwork again while ordinary online covers stay u
     f.state.song = embeddedTags.withoutEmbeddedMetadata(f.state.song);
     await f.complete();
     assert.equal(f.calls.reads[1][1], !coverUrl || coverUrl.startsWith('echo-player-cover:'));
-    assert.equal(f.calls.searches.length, 0, 'artwork renewal must not repeat successful lyric queries');
+    assert.equal(
+      f.calls.searches.length,
+      0,
+      'artwork renewal must not repeat successful lyric queries',
+    );
   }
 });
 
-
-test('Release native replay restores artwork after actual cache eviction', {
-  skip: !existsSync(new URL('../native/echo-audio-player/echo-audio-player.node', import.meta.url)),
-}, async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'echo-cover-replay-'));
-  const cache = new EmbeddedCoverCache(root);
-  const addon = require('../native/echo-audio-player/echo-audio-player.node');
-  const source = fileURLToPath(new URL('../native/echo-audio-player/tests/fixtures/embedded-metadata.flac', import.meta.url));
-  addon.initialize({ demuxerReadaheadSecs: 0.2 });
-  addon.setVolume(0);
-  const f = fixture({ read: async (seq, includeCover) => {
-    const tags = await addon.getEmbeddedMetadata(seq, includeCover ? cache.directory : undefined);
-    return tags ? { ...tags, coverUrl: tags.coverFile ? await cache.adopt(tags.coverFile) : undefined } : null;
-  } });
-  f.lyricStore.rawLyric = 'Online lyrics';
-  f.lyricStore.detailResolved = true;
-  try {
-    await addon.loadFile(source, f.state.seq);
-    await f.complete();
-    const originalUrl = f.state.song.coverUrl;
-    const retainedSong = embeddedTags.withoutEmbeddedMetadata(f.state.song);
-    const image = await cache.resolve(originalUrl);
-    const originalBytes = await readFile(image.filePath);
-    for (let i = 0; i < 128; i++) {
-      const data = Buffer.concat([pixel, Buffer.from(String(i))]);
-      const name = createHash('sha256').update(data).digest('hex') + '.png';
-      await writeFile(path.join(root, name), data);
-      await cache.adopt(name);
+test(
+  'Release native replay restores artwork after actual cache eviction',
+  {
+    skip: !existsSync(
+      new URL('../native/echo-audio-player/echo-audio-player.node', import.meta.url),
+    ),
+  },
+  async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'echo-cover-replay-'));
+    const cache = new EmbeddedCoverCache(root);
+    const addon = require('../native/echo-audio-player/echo-audio-player.node');
+    const source = fileURLToPath(
+      new URL('../native/echo-audio-player/tests/fixtures/embedded-metadata.flac', import.meta.url),
+    );
+    addon.initialize({ demuxerReadaheadSecs: 0.2 });
+    addon.setVolume(0);
+    const f = fixture({
+      read: async (seq, includeCover) => {
+        const tags = await addon.getEmbeddedMetadata(
+          seq,
+          includeCover ? cache.directory : undefined,
+        );
+        return tags
+          ? { ...tags, coverUrl: tags.coverFile ? await cache.adopt(tags.coverFile) : undefined }
+          : null;
+      },
+    });
+    f.lyricStore.rawLyric = 'Online lyrics';
+    f.lyricStore.detailResolved = true;
+    try {
+      await addon.loadFile(source, f.state.seq);
+      await f.complete();
+      const originalUrl = f.state.song.coverUrl;
+      const retainedSong = embeddedTags.withoutEmbeddedMetadata(f.state.song);
+      const image = await cache.resolve(originalUrl);
+      const originalBytes = await readFile(image.filePath);
+      for (let i = 0; i < 128; i++) {
+        const data = Buffer.concat([pixel, Buffer.from(String(i))]);
+        const name = createHash('sha256').update(data).digest('hex') + '.png';
+        await writeFile(path.join(root, name), data);
+        await cache.adopt(name);
+      }
+      assert.equal((await readdir(root)).length, 128);
+      assert.equal(await cache.resolve(originalUrl), null, 'the cover must actually be evicted');
+      f.state.seq++;
+      f.state.requestSeq++;
+      f.state.song = retainedSong;
+      await addon.loadFile(source, f.state.seq);
+      await f.complete();
+      await f.complete();
+      assert.deepEqual(f.calls.reads, [
+        [10, true],
+        [11, true],
+      ]);
+      assert.notEqual(
+        f.state.song.coverUrl,
+        originalUrl,
+        'recreated artwork must retry an already failed image URL',
+      );
+      assert.equal(new URL(f.state.song.coverUrl).pathname, new URL(originalUrl).pathname);
+      const restored = await cache.resolve(f.state.song.coverUrl);
+      assert(restored, 'replay must republish the evicted native cover');
+      assert.deepEqual(await readFile(restored.filePath), originalBytes);
+      assert.equal((await readdir(root)).length, 128);
+      assert.equal(f.calls.searches.length, 0);
+    } finally {
+      addon.destroy();
+      await rm(root, { recursive: true, force: true });
     }
-    assert.equal((await readdir(root)).length, 128);
-    assert.equal(await cache.resolve(originalUrl), null, 'the cover must actually be evicted');
-    f.state.seq++;
-    f.state.requestSeq++;
-    f.state.song = retainedSong;
-    await addon.loadFile(source, f.state.seq);
-    await f.complete();
-    await f.complete();
-    assert.deepEqual(f.calls.reads, [[10, true], [11, true]]);
-    assert.notEqual(f.state.song.coverUrl, originalUrl, 'recreated artwork must retry an already failed image URL');
-    assert.equal(new URL(f.state.song.coverUrl).pathname, new URL(originalUrl).pathname);
-    const restored = await cache.resolve(f.state.song.coverUrl);
-    assert(restored, 'replay must republish the evicted native cover');
-    assert.deepEqual(await readFile(restored.filePath), originalBytes);
-    assert.equal((await readdir(root)).length, 128);
-    assert.equal(f.calls.searches.length, 0);
-  } finally {
-    addon.destroy();
-    await rm(root, {recursive: true, force: true});
-  }
-});
+  },
+);

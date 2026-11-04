@@ -186,6 +186,40 @@ export const useUserStore = defineStore('user', {
       if (!account) throw new Error('账号已移除，请重新登录');
       this.login({ ...account });
     },
+    /**
+     * 导入账号凭证：已登录时只追加/覆盖账号列表，未登录时直接恢复登录。
+     * existed 用于 UI 在覆盖前询问；未传 overwrite 时不会修改任何状态。
+     */
+    importAccount(
+      payload: Record<string, unknown>,
+      options: { overwrite?: boolean } = {},
+    ): { existed: boolean; applied: boolean } {
+      const mapped = mapUser(payload);
+      if (
+        !mapped.userid ||
+        !Number.isSafeInteger(mapped.userid) ||
+        mapped.userid <= 0 ||
+        !mapped.token
+      ) {
+        throw new Error('导入信息不完整，需包含有效的 userid 与 token');
+      }
+      const existed = this.savedAccounts.some((account) => account.userid === mapped.userid);
+      if (existed && !options.overwrite) return { existed, applied: false };
+
+      if (!this.isLoggedIn) {
+        this.login({ ...mapped });
+        return { existed, applied: true };
+      }
+
+      const imported = buildPatchedUserInfo(null, mapped);
+      this.rememberAccount(imported);
+      if (this.info?.userid === mapped.userid) {
+        // 覆盖当前账号时同步活动会话凭证，随后刷新一次资料。
+        this.setUserInfo(buildPatchedUserInfo(this.info, mapped));
+        void this.fetchUserInfoOnce();
+      }
+      return { existed, applied: true };
+    },
     forgetAccount(userid: number) {
       if (this.isLoggedIn && this.info?.userid === userid) {
         throw new Error('当前登录账号不能移除，请先切换账号');
@@ -437,11 +471,17 @@ export const useUserStore = defineStore('user', {
       }
     },
 
-    logout() {
-      // 主动退出不能留下可直接恢复的当前账号凭证，其他账号继续保留。
-      this.savedAccounts = this.savedAccounts.filter(
-        (account) => account.userid !== this.info?.userid,
-      );
+    /** 主动退出；keepAccount 为 true 时保留当前账号凭证，便于之后直接切换恢复。 */
+    logout(options: { keepAccount?: boolean } = {}) {
+      const current = this.info;
+      if (options.keepAccount && current) {
+        // 仅保留 rememberAccount 白名单内的凭证字段；默认退出仍不留可直接恢复的凭证。
+        this.rememberAccount(current);
+      } else {
+        this.savedAccounts = this.savedAccounts.filter(
+          (account) => account.userid !== current?.userid,
+        );
+      }
       this.accountRevision += 1;
       this.info = null;
       this.isLoggedIn = false;

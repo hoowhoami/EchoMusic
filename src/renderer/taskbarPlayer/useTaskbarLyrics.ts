@@ -20,17 +20,33 @@ export function useTaskbarLyrics() {
   let alive = true;
   let received = false;
   let dispose: (() => void) | undefined;
+  // 逐字样式经 ref→props→computed→:style 全响应式链路更新，高刷屏（120/144Hz）会放大开销，
+  // 与 AmllMode 一致把采样节流到 ~30fps，按累计截止时间调度并保留时间余量。
+  const SAMPLE_INTERVAL_MS = 1000 / 30;
+  let nextSampleTime: number | null = null;
   const sample = () => {
     timeMs.value = timeline.getTimelineMs(playback.value, lyric.value?.timeOffset ?? 0);
   };
-  const tick = () => {
+  const tick = (timestamp: number) => {
     frame = 0;
+    if (nextSampleTime !== null && timestamp + 0.001 < nextSampleTime) {
+      frame = requestAnimationFrame(tick);
+      return;
+    }
+    // 长帧只推进截止时间，不突发补算多帧
+    const deadline = nextSampleTime ?? timestamp;
+    const intervals = Math.max(
+      1,
+      Math.floor((timestamp - deadline + 0.001) / SAMPLE_INTERVAL_MS) + 1,
+    );
+    nextSampleTime = deadline + intervals * SAMPLE_INTERVAL_MS;
     sample();
     if (playback.value?.isPlaying && !document.hidden) frame = requestAnimationFrame(tick);
   };
   const schedule = () => {
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
+    nextSampleTime = null;
     sample();
     if (playback.value?.isPlaying && !document.hidden) frame = requestAnimationFrame(tick);
   };

@@ -290,14 +290,14 @@ const ipcRequest = async (
   }
 
   const statusTag = response.status >= 400 ? '✗' : '✓';
-  const headerEntries = Object.entries(headers).filter(([k]) => k !== 'Authorization');
-  const bodySummary = summarizeApiBody(response.body);
-  const baseLine = `${statusTag} [${method}] ${fullUrl} status=${response.status} time=${elapsed}ms summary=${stringifyForLog(
-    bodySummary,
-    600,
-  )}`;
 
   if (response.status >= 400) {
+    // 400+ 为低频路径：完整摘要 + 响应体都值得计算
+    const bodySummary = summarizeApiBody(response.body);
+    const baseLine = `${statusTag} [${method}] ${fullUrl} status=${response.status} time=${elapsed}ms summary=${stringifyForLog(
+      bodySummary,
+      600,
+    )}`;
     const requestBodyLine =
       config?.data !== undefined ? `\n  ├─ Body: ${stringifyForLog(config.data, 800)}` : '';
     logger.warn(
@@ -305,9 +305,19 @@ const ipcRequest = async (
       `${baseLine}${requestBodyLine}\n  └─ Response: ${stringifyForLog(response.body, 800)}`,
     );
   } else {
-    logger.debug('API', baseLine);
+    // 摘要含全量 JSON.stringify 体积测量，仅在 debug 级别真正会输出时才计算，
+    // 避免每次 API 响应在默认日志级别下白付 0.5–5MB 序列化的开销
+    if (logger.isEnabled('debug')) {
+      const bodySummary = summarizeApiBody(response.body);
+      const baseLine = `${statusTag} [${method}] ${fullUrl} status=${response.status} time=${elapsed}ms summary=${stringifyForLog(
+        bodySummary,
+        600,
+      )}`;
+      logger.debug('API', baseLine);
+    }
     const shouldLogBody = logger.settings().apiResponseBody || logger.isEnabled('verbose');
     if (shouldLogBody) {
+      const headerEntries = Object.entries(headers).filter(([k]) => k !== 'Authorization');
       const lines = [
         `${statusTag} [${method}] ${fullUrl}`,
         `  ├─ Auth: ${auth ? 'yes' : 'none'}`,

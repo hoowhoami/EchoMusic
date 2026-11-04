@@ -26,10 +26,12 @@ import type {
 } from '../shared/desktopLyric';
 import { isWaylandWindowingBackend } from '../shared/windowing';
 import type {
+  NowPlayingBroadcastPatch,
   NowPlayingCommand,
   NowPlayingSnapshot,
   NowPlayingSnapshotPatch,
 } from '../shared/nowPlaying';
+import { DEFAULT_NOW_PLAYING_APPEARANCE, DEFAULT_NOW_PLAYING_LYRIC } from '../shared/nowPlaying';
 import type {
   MiniPlayerCommand,
   MiniPlayerSnapshot,
@@ -617,10 +619,92 @@ contextBridge.exposeInMainWorld('electron', {
     syncSnapshot: (payload: NowPlayingSnapshotPatch) =>
       sendWithPlainPayload('now-playing:sync-snapshot', payload),
     onSnapshot: (func: (snapshot: NowPlayingSnapshot) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, snapshotPayload: NowPlayingSnapshot) =>
-        func(snapshotPayload);
+      // 主进程广播的是增量 patch（未变化部分省略），此处合并为完整快照再回调，
+      // 上层（插件 API 等）保持接收全量快照的既有语义。
+      // 约定：patch.lyric.lines === undefined 表示行数组未变，沿用上次接收值。
+      let merged: NowPlayingSnapshot | null = null;
+      let active = true;
+      const pendingPatches: NowPlayingBroadcastPatch[] = [];
+      let loadingFull = false;
+      const mergePatch = (
+        base: NowPlayingSnapshot,
+        patch: NowPlayingBroadcastPatch,
+      ): NowPlayingSnapshot => ({
+        playback: patch.playback !== undefined ? patch.playback : base.playback,
+        lyric:
+          patch.lyric !== undefined
+            ? {
+                ...base.lyric,
+                ...patch.lyric,
+                ...(patch.lyric.lines === undefined ? { lines: base.lyric.lines } : {}),
+              }
+            : base.lyric,
+        appearance: patch.appearance !== undefined ? patch.appearance : base.appearance,
+        updatedAt: Date.now(),
+      });
+      const flushPending = () => {
+        if (!active || !merged) return;
+        while (pendingPatches.length > 0) merged = mergePatch(merged, pendingPatches.shift()!);
+        func(merged);
+      };
+      // 订阅晚于播放开始时，首条可能只是增量 patch；先取一次全量做基线，
+      // 期间到达的 patch 排队后按顺序合并，避免 patch 被当成完整快照。
+      const loadFullSnapshot = () => {
+        if (loadingFull || merged) return;
+        loadingFull = true;
+        void ipcRenderer
+          .invoke('now-playing:get-snapshot')
+          .then((snapshot: NowPlayingSnapshot) => {
+            loadingFull = false;
+            if (!active || merged) return;
+            // 全量基线可能已经包含排队 patch 的状态；丢弃更旧的 patch，
+            // 避免先回放旧值再被后续 patch 纠正造成短暂回退。
+            for (let index = pendingPatches.length - 1; index >= 0; index -= 1) {
+              if ((pendingPatches[index].updatedAt ?? 0) < snapshot.updatedAt) {
+                pendingPatches.splice(index, 1);
+              }
+            }
+            merged = snapshot;
+            flushPending();
+          })
+          .catch(() => {
+            loadingFull = false;
+            if (!active || merged) return;
+            merged = {
+              playback: null,
+              lyric: { ...DEFAULT_NOW_PLAYING_LYRIC },
+              appearance: { ...DEFAULT_NOW_PLAYING_APPEARANCE },
+              updatedAt: Date.now(),
+            };
+            flushPending();
+          });
+      };
+      const listener = (_event: Electron.IpcRendererEvent, patch: NowPlayingBroadcastPatch) => {
+        if (!active) return;
+        if (merged) {
+          merged = mergePatch(merged, patch);
+          func(merged);
+          return;
+        }
+        const isFullSnapshot =
+          typeof (patch as Partial<NowPlayingSnapshot>).updatedAt === 'number' &&
+          patch.appearance !== undefined &&
+          patch.lyric?.lines !== undefined &&
+          Object.prototype.hasOwnProperty.call(patch, 'playback');
+        if (isFullSnapshot) {
+          merged = patch as NowPlayingSnapshot;
+          pendingPatches.length = 0;
+          func(merged);
+          return;
+        }
+        pendingPatches.push(patch);
+        loadFullSnapshot();
+      };
       ipcRenderer.on('now-playing:snapshot', listener);
-      return () => ipcRenderer.removeListener('now-playing:snapshot', listener);
+      return () => {
+        active = false;
+        ipcRenderer.removeListener('now-playing:snapshot', listener);
+      };
     },
     command: (command: NowPlayingCommand) => ipcRenderer.send('now-playing:command', command),
     invokeCommand: (command: NowPlayingCommand) =>
@@ -814,15 +898,13 @@ contextBridge.exposeInMainWorld('electron', {
     onTimeUpdate: (
       func: (
         payload:
-          | number
-          | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
+          number | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
       ) => void,
     ) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
         payload:
-          | number
-          | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
+          number | { time?: number; trackSeq?: number; generation?: number; sampledAt?: number },
       ) => func(payload);
       ipcRenderer.on('player:time-update', listener);
       return () => ipcRenderer.removeListener('player:time-update', listener);
@@ -1838,6 +1920,16 @@ ipcRenderer.on('window-background:changed', () => {
   syncWindowZoomGeometry();
   window.requestAnimationFrame(syncWindowZoomGeometry);
 });
-controlsOverlay?.addEventListener('geometrychange', syncWindowZoomGeometry);
-window.addEventListener('resize', syncWindowZoomGeometry);
+let syncGeometryFrame = 0;
+// 拖拽缩放期间 resize/geometrychange 每帧触发，rAF 合帧避免每帧重复
+// 读取 WCO 矩形并写 CSS 变量（读写交错会造成布局抖动）
+const scheduleWindowZoomGeometrySync = () => {
+  if (syncGeometryFrame) return;
+  syncGeometryFrame = requestAnimationFrame(() => {
+    syncGeometryFrame = 0;
+    syncWindowZoomGeometry();
+  });
+};
+controlsOverlay?.addEventListener('geometrychange', scheduleWindowZoomGeometrySync);
+window.addEventListener('resize', scheduleWindowZoomGeometrySync);
 window.addEventListener('DOMContentLoaded', syncWindowZoomGeometry, { once: true });

@@ -413,6 +413,7 @@ test('Mini appearance sends color changes without settings writes or lyric progr
     '@/stores/theme': { useThemeStore: () => theme },
     '@/stores/setting': { useSettingStore: () => setting },
     '@/desktopLyric/store': { useDesktopLyricStore: () => desktop },
+    '../../shared/lyrics': lyrics,
     '../../shared/lyricColor': { resolveCoverLyricColor },
     '../../shared/miniPlayer': { normalizeMiniLyricStyle },
   });

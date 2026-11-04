@@ -10,12 +10,14 @@ mod normalization;
 mod realtime_ring;
 mod session;
 mod stats;
+pub(crate) mod startup_probe;
 mod types;
 
 use ao_state::{AoBufferState, AoBufferingMetrics, AoBufferingState};
 use decoded_queue::{DecodedAudioQueue, DecodedQueueItem};
 use gapless::{GaplessBoundary, GaplessPrepareState};
 use realtime_ring::RealtimeAudioRing;
+use startup_probe::OutputStartupProbe;
 pub use session::PlaybackSession;
 pub use types::{
     AudioOutputStats, AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat,
@@ -117,6 +119,8 @@ pub struct SharedAudio {
     filter_latency_us: AtomicU64,
     output_recovering: AtomicBool,
     pause_on_device_disconnect: AtomicBool,
+    /// 输出线程启动阶段探针（诊断专用，见 shared/startup_probe.rs）。
+    pub(crate) output_startup_probe: OutputStartupProbe,
     speed_bits: AtomicU32,
     source_sample_format: AtomicU32,
     preferred_output_sample_format: AtomicU32,
@@ -225,6 +229,7 @@ impl SharedAudio {
             filter_latency_us: AtomicU64::new(0),
             output_recovering: AtomicBool::new(false),
             pause_on_device_disconnect: AtomicBool::new(false),
+            output_startup_probe: OutputStartupProbe::default(),
             speed_bits: AtomicU32::new(dsp_settings.speed.to_bits()),
             source_sample_format: AtomicU32::new(AudioSampleFormat::Unknown as u32),
             preferred_output_sample_format: AtomicU32::new(AudioSampleFormat::Unknown as u32),

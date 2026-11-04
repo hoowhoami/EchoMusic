@@ -28,7 +28,19 @@ import { queueActions } from './queueActions';
 import { userActions } from './userActions';
 import type { PersonalFmMode, PersonalFmSongPoolId, PlaybackQueueState } from './types';
 
-const toPlain = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+// IPC 持久化前的纯化拷贝：structuredClone 比 JSON 往返快数倍且无字符串中间体，
+// 含 reactive proxy 的少数场景（如嵌入了其他 store 的对象）回退 JSON 往返，
+// 与 sqlitePersist 的 clone 兜底模式一致
+const toPlain = <T>(value: T): T => {
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(value) as T;
+    } catch {
+      // reactive proxy 与平台对象无法结构化克隆，回退 JSON
+    }
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+};
 const PERSONAL_FM_PREFERENCES_STORAGE_KEY = 'personal-fm:preferences';
 
 const toStorageQueue = (queue: PlaybackQueueState) => {

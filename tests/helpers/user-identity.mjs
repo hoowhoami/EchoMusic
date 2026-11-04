@@ -1,8 +1,11 @@
 import { buildSync } from 'esbuild';
+import { fileURLToPath } from 'node:url';
 
 const module = { exports: {} };
 const source = buildSync({
-  entryPoints: [new URL('../../src/renderer/utils/userIdentity.ts', import.meta.url).pathname],
+  entryPoints: [
+    fileURLToPath(new URL('../../src/renderer/utils/userIdentity.ts', import.meta.url)),
+  ],
   bundle: true,
   format: 'cjs',
   platform: 'node',

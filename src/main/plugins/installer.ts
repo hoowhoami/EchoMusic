@@ -5,7 +5,6 @@ import { pipeline } from 'node:stream/promises';
 import fs from 'fs/promises';
 import { tmpdir } from 'os';
 import { extname, join, resolve } from 'path';
-import StreamZip from 'node-stream-zip';
 import type {
   EchoPluginDescriptor,
   PluginLocalInstallItemResult,
@@ -71,6 +70,8 @@ const pathExists = async (filePath: string) => {
 };
 
 const extractZipWithStreamZip = async (zipPath: string, extractDirectory: string) => {
+  // node-stream-zip 仅在安装/更新插件解压时需要，惰性加载避免启动路径同步 require
+  const { default: StreamZip } = await import('node-stream-zip');
   const zip = new StreamZip.async({ file: zipPath });
   try {
     const entries = await zip.entries();

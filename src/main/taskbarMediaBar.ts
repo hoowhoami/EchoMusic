@@ -344,6 +344,10 @@ function ensureHeartbeat(): void {
   lastMountedTaskbar = getNativeTaskbarLyric()?.taskbarLyricMountedTaskbar?.() ?? 0;
   heartbeatTimer = setInterval(() => {
     if (!enabled || quitting || !usable(win)) return;
+    // 歌词窗口被隐藏（主窗口全屏等场景）时 native 拿不到布局，session.update 纯属浪费；
+    // 恢复可见后由下一次心跳继续。窗口隐藏期间跳过会话存活检测，
+    // 恢复显示后按 miss 计数自然补判。
+    if (!win.isVisible()) return;
     session?.update(nativeWidth());
     if (Date.now() - lastLayoutAt < HEARTBEAT_INTERVAL_MS * HEARTBEAT_MISS_LIMIT) return;
     const mounted = getNativeTaskbarLyric()?.taskbarLyricMountedTaskbar?.() ?? 0;
