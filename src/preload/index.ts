@@ -623,6 +623,7 @@ contextBridge.exposeInMainWorld('electron', {
       // 上层（插件 API 等）保持接收全量快照的既有语义。
       // 约定：patch.lyric.lines === undefined 表示行数组未变，沿用上次接收值。
       let merged: NowPlayingSnapshot | null = null;
+      let active = true;
       const pendingPatches: NowPlayingBroadcastPatch[] = [];
       let loadingFull = false;
       const mergePatch = (
@@ -642,7 +643,7 @@ contextBridge.exposeInMainWorld('electron', {
         updatedAt: Date.now(),
       });
       const flushPending = () => {
-        if (!merged) return;
+        if (!active || !merged) return;
         while (pendingPatches.length > 0) merged = mergePatch(merged, pendingPatches.shift()!);
         func(merged);
       };
@@ -655,13 +656,20 @@ contextBridge.exposeInMainWorld('electron', {
           .invoke('now-playing:get-snapshot')
           .then((snapshot: NowPlayingSnapshot) => {
             loadingFull = false;
-            if (merged) return;
+            if (!active || merged) return;
+            // 全量基线可能已经包含排队 patch 的状态；丢弃更旧的 patch，
+            // 避免先回放旧值再被后续 patch 纠正造成短暂回退。
+            for (let index = pendingPatches.length - 1; index >= 0; index -= 1) {
+              if ((pendingPatches[index].updatedAt ?? 0) < snapshot.updatedAt) {
+                pendingPatches.splice(index, 1);
+              }
+            }
             merged = snapshot;
             flushPending();
           })
           .catch(() => {
             loadingFull = false;
-            if (merged) return;
+            if (!active || merged) return;
             merged = {
               playback: null,
               lyric: { ...DEFAULT_NOW_PLAYING_LYRIC },
@@ -672,6 +680,7 @@ contextBridge.exposeInMainWorld('electron', {
           });
       };
       const listener = (_event: Electron.IpcRendererEvent, patch: NowPlayingBroadcastPatch) => {
+        if (!active) return;
         if (merged) {
           merged = mergePatch(merged, patch);
           func(merged);
@@ -692,7 +701,10 @@ contextBridge.exposeInMainWorld('electron', {
         loadFullSnapshot();
       };
       ipcRenderer.on('now-playing:snapshot', listener);
-      return () => ipcRenderer.removeListener('now-playing:snapshot', listener);
+      return () => {
+        active = false;
+        ipcRenderer.removeListener('now-playing:snapshot', listener);
+      };
     },
     command: (command: NowPlayingCommand) => ipcRenderer.send('now-playing:command', command),
     invokeCommand: (command: NowPlayingCommand) =>

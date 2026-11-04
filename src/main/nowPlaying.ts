@@ -298,6 +298,8 @@ const sendSnapshot = () => {
       ) {
         continue;
       }
+      // 携带快照时间戳，供首包等待全量基线的订阅端丢弃已包含在基线里的旧 patch。
+      patch.updatedAt = snapshot.updatedAt;
       webContents.send('now-playing:snapshot', patch);
       // 发送成功后才推进基线；send 抛错时保留旧基线，下次会重发这部分。
       sentPartsByWebContents.set(webContents, currentSnapshotParts());

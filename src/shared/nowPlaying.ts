@@ -144,6 +144,8 @@ export type NowPlayingBroadcastPatch = Partial<
   lyric?: Omit<NowPlayingLyricPayload, 'lines'> & {
     lines?: NowPlayingLyricPayload['lines'];
   };
+  /** 该 patch 对应的主进程快照时间戳；首包等待全量基线时可据此丢弃过期 patch。 */
+  updatedAt?: number;
 };
 
 export const DEFAULT_NOW_PLAYING_LYRIC: NowPlayingLyricPayload = {

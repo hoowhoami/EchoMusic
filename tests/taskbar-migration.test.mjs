@@ -302,6 +302,7 @@ test('show full snapshot updates the incremental baseline and reload forces a fu
   api.syncNowPlayingSnapshot({ appearance: { isDark: true } });
   assert.equal(messages.length, 3);
   assert.ok(!('playback' in messages.at(-1)[1]));
+  assert.equal(typeof messages.at(-1)[1].updatedAt, 'number');
 
   // reload 后 preload 的 merged 归零，下一条广播必须是完整快照。
   webContents.emit('did-start-navigation');
