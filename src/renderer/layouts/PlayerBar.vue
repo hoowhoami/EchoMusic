@@ -465,8 +465,7 @@ const updateDrawerWidth = () => {
   }
   const playerBar = document.querySelector('.player-bar-container') as HTMLElement | null;
   const drawerOffset = playerBar ? Math.floor(playerBar.offsetHeight + 8) : null;
-  const nextVars =
-    contentVars && drawerOffset !== null ? `${contentVars}|${drawerOffset}` : null;
+  const nextVars = contentVars && drawerOffset !== null ? `${contentVars}|${drawerOffset}` : null;
   if (!nextVars || nextVars === lastDrawerVars) return;
   lastDrawerVars = nextVars;
   if (contentVars) {

@@ -37,10 +37,13 @@ export function bindVisibleNowPlayingWindow(
   isAvailable: () => boolean = () => !win.isDestroyed(),
 ): void {
   visibleOnlyWindows.set(win, isAvailable);
+  const resetBaseline = () => sentPartsByWebContents.delete(win.webContents);
+  // 渲染端 reload/导航后 preload 的 merged 归零，必须让下一条广播重新走全量，
+  // 否则增量 patch 会被直接当成完整快照，丢掉 lyric/appearance 等未携带字段。
+  win.webContents.on('did-start-navigation', resetBaseline);
+  win.webContents.on('did-finish-load', resetBaseline);
   win.on('show', () => {
-    if (isAvailable() && !win.webContents.isDestroyed()) {
-      win.webContents.send('now-playing:snapshot', snapshot);
-    }
+    if (isAvailable() && !win.webContents.isDestroyed()) sendFullSnapshot(win.webContents);
   });
 }
 
@@ -241,6 +244,24 @@ type SentSnapshotParts = {
 };
 const sentPartsByWebContents = new WeakMap<Electron.WebContents, SentSnapshotParts>();
 
+const currentSnapshotParts = (): SentSnapshotParts => ({
+  playback: snapshot.playback,
+  lyric: snapshot.lyric,
+  lyricLinesRef: snapshot.lyric.lines,
+  appearance: snapshot.appearance,
+});
+
+/** 全量补发（首次显示/show/reload 后）同样要推进基线，避免之后按旧基线漏发 patch。 */
+const sendFullSnapshot = (webContents: Electron.WebContents): void => {
+  try {
+    if (webContents.isDestroyed()) return;
+    webContents.send('now-playing:snapshot', snapshot);
+    sentPartsByWebContents.set(webContents, currentSnapshotParts());
+  } catch {
+    // ignore windows that are closing while broadcasting
+  }
+};
+
 const sendSnapshot = () => {
   for (const win of BrowserWindow.getAllWindows()) {
     try {
@@ -266,13 +287,9 @@ const sendSnapshot = () => {
       ) {
         continue;
       }
-      sentPartsByWebContents.set(webContents, {
-        playback: snapshot.playback,
-        lyric: snapshot.lyric,
-        lyricLinesRef: snapshot.lyric.lines,
-        appearance: snapshot.appearance,
-      });
       webContents.send('now-playing:snapshot', patch);
+      // 发送成功后才推进基线；send 抛错时保留旧基线，下次会重发这部分。
+      sentPartsByWebContents.set(webContents, currentSnapshotParts());
     } catch {
       // ignore windows that are closing while broadcasting
     }
