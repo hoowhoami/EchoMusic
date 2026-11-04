@@ -348,6 +348,39 @@ test('failed now-playing send does not advance the incremental baseline', () => 
   assert.ok('lyric' in messages[0][1] && 'appearance' in messages[0][1]);
 });
 
+test('main window reload resets the now-playing baseline without visibility binding', () => {
+  const main = new EventEmitter();
+  const messages = [];
+  main.isDestroyed = () => false;
+  const webContents = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    send: (...args) => messages.push(args),
+  });
+  main.webContents = webContents;
+  const api = load('../src/main/nowPlaying.ts', {
+    electron: { BrowserWindow: { getAllWindows: () => [main] } },
+    './ipc/registry': {},
+    './window': { getMainWindow: () => main },
+    './storage/settings': {},
+    '../shared/nowPlaying': load('../src/shared/nowPlaying.ts', {}),
+    '../shared/playback': load('../src/shared/playback.ts', {}),
+    '../shared/opencc': load('../src/shared/opencc.ts', {}),
+    './taskbarThumbnail': { isCoverPreviewEnabled: () => true },
+    './taskbarProgress': {},
+    './thumbar': { updateThumbarPlayback() {} },
+  });
+  api.syncNowPlayingSnapshot({ playback, appearance: { isDark: false } });
+  assert.equal(messages.length, 1);
+
+  // 主窗口没有 bindVisibleNowPlayingWindow，首次广播后也必须装上导航监听。
+  webContents.emit('did-start-navigation');
+  api.syncNowPlayingSnapshot({ playback: { ...playback, currentTime: 51 } });
+  assert.equal(messages.length, 2);
+  const reloaded = messages.at(-1)[1];
+  assert.equal(reloaded.playback.currentTime, 51);
+  assert.ok('lyric' in reloaded && 'appearance' in reloaded);
+});
+
 test('invalidated native window receives no playback pushes or visibility calls before closed', () => {
   let alive = true;
   const messages = [];

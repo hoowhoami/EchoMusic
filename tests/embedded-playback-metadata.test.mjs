@@ -281,6 +281,8 @@ test('cover cache adopts native files, bounds storage and rejects unsafe/invalid
       await cache.adopt(next);
     }
     assert.equal((await readdir(root)).length, 128);
+    // prune 必须保留最新文件：最早采用的封面应先被淘汰。
+    assert.equal(await cache.resolve(first), null, 'oldest cover should be evicted first');
     // The byte budget also applies before reaching the file-count limit.
     for (let i = 200; i < 210; i++) {
       const next = i.toString(16).padStart(64, '0') + '.png';

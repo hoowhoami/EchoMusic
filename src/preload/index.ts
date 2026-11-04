@@ -31,6 +31,7 @@ import type {
   NowPlayingSnapshot,
   NowPlayingSnapshotPatch,
 } from '../shared/nowPlaying';
+import { DEFAULT_NOW_PLAYING_APPEARANCE, DEFAULT_NOW_PLAYING_LYRIC } from '../shared/nowPlaying';
 import type {
   MiniPlayerCommand,
   MiniPlayerSnapshot,
@@ -620,30 +621,75 @@ contextBridge.exposeInMainWorld('electron', {
     onSnapshot: (func: (snapshot: NowPlayingSnapshot) => void) => {
       // 主进程广播的是增量 patch（未变化部分省略），此处合并为完整快照再回调，
       // 上层（插件 API 等）保持接收全量快照的既有语义。
-      // 首条消息与窗口 show 补发为主进程保证的全量。
       // 约定：patch.lyric.lines === undefined 表示行数组未变，沿用上次接收值。
       let merged: NowPlayingSnapshot | null = null;
-      const listener = (
-        _event: Electron.IpcRendererEvent,
+      const pendingPatches: NowPlayingBroadcastPatch[] = [];
+      let loadingFull = false;
+      const mergePatch = (
+        base: NowPlayingSnapshot,
         patch: NowPlayingBroadcastPatch,
-      ) => {
-        merged = merged
-          ? {
-              playback: patch.playback !== undefined ? patch.playback : merged.playback,
-              lyric:
-                patch.lyric !== undefined
-                  ? {
-                      ...merged.lyric,
-                      ...patch.lyric,
-                      ...(patch.lyric.lines === undefined ? { lines: merged.lyric.lines } : {}),
-                    }
-                  : merged.lyric,
-              appearance:
-                patch.appearance !== undefined ? patch.appearance : merged.appearance,
-              updatedAt: Date.now(),
-            }
-          : (patch as NowPlayingSnapshot);
+      ): NowPlayingSnapshot => ({
+        playback: patch.playback !== undefined ? patch.playback : base.playback,
+        lyric:
+          patch.lyric !== undefined
+            ? {
+                ...base.lyric,
+                ...patch.lyric,
+                ...(patch.lyric.lines === undefined ? { lines: base.lyric.lines } : {}),
+              }
+            : base.lyric,
+        appearance: patch.appearance !== undefined ? patch.appearance : base.appearance,
+        updatedAt: Date.now(),
+      });
+      const flushPending = () => {
+        if (!merged) return;
+        while (pendingPatches.length > 0) merged = mergePatch(merged, pendingPatches.shift()!);
         func(merged);
+      };
+      // 订阅晚于播放开始时，首条可能只是增量 patch；先取一次全量做基线，
+      // 期间到达的 patch 排队后按顺序合并，避免 patch 被当成完整快照。
+      const loadFullSnapshot = () => {
+        if (loadingFull || merged) return;
+        loadingFull = true;
+        void ipcRenderer
+          .invoke('now-playing:get-snapshot')
+          .then((snapshot: NowPlayingSnapshot) => {
+            loadingFull = false;
+            if (merged) return;
+            merged = snapshot;
+            flushPending();
+          })
+          .catch(() => {
+            loadingFull = false;
+            if (merged) return;
+            merged = {
+              playback: null,
+              lyric: { ...DEFAULT_NOW_PLAYING_LYRIC },
+              appearance: { ...DEFAULT_NOW_PLAYING_APPEARANCE },
+              updatedAt: Date.now(),
+            };
+            flushPending();
+          });
+      };
+      const listener = (_event: Electron.IpcRendererEvent, patch: NowPlayingBroadcastPatch) => {
+        if (merged) {
+          merged = mergePatch(merged, patch);
+          func(merged);
+          return;
+        }
+        const isFullSnapshot =
+          typeof (patch as Partial<NowPlayingSnapshot>).updatedAt === 'number' &&
+          patch.appearance !== undefined &&
+          patch.lyric?.lines !== undefined &&
+          Object.prototype.hasOwnProperty.call(patch, 'playback');
+        if (isFullSnapshot) {
+          merged = patch as NowPlayingSnapshot;
+          pendingPatches.length = 0;
+          func(merged);
+          return;
+        }
+        pendingPatches.push(patch);
+        loadFullSnapshot();
       };
       ipcRenderer.on('now-playing:snapshot', listener);
       return () => ipcRenderer.removeListener('now-playing:snapshot', listener);

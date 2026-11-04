@@ -37,11 +37,9 @@ export function bindVisibleNowPlayingWindow(
   isAvailable: () => boolean = () => !win.isDestroyed(),
 ): void {
   visibleOnlyWindows.set(win, isAvailable);
-  const resetBaseline = () => sentPartsByWebContents.delete(win.webContents);
   // 渲染端 reload/导航后 preload 的 merged 归零，必须让下一条广播重新走全量，
   // 否则增量 patch 会被直接当成完整快照，丢掉 lyric/appearance 等未携带字段。
-  win.webContents.on('did-start-navigation', resetBaseline);
-  win.webContents.on('did-finish-load', resetBaseline);
+  watchNowPlayingBaseline(win.webContents);
   win.on('show', () => {
     if (isAvailable() && !win.webContents.isDestroyed()) sendFullSnapshot(win.webContents);
   });
@@ -244,6 +242,17 @@ type SentSnapshotParts = {
 };
 const sentPartsByWebContents = new WeakMap<Electron.WebContents, SentSnapshotParts>();
 
+// 所有窗口（主窗口、任务栏窗口、后续独立窗口）只要收到过 now-playing 广播，
+// 就监听导航/reload 并清除其增量基线，避免 reload 后首条仍是 patch。
+const baselineWatchedWebContents = new WeakSet<Electron.WebContents>();
+const watchNowPlayingBaseline = (webContents: Electron.WebContents): void => {
+  if (baselineWatchedWebContents.has(webContents)) return;
+  baselineWatchedWebContents.add(webContents);
+  const resetBaseline = () => sentPartsByWebContents.delete(webContents);
+  webContents.on('did-start-navigation', resetBaseline);
+  webContents.on('did-finish-load', resetBaseline);
+};
+
 const currentSnapshotParts = (): SentSnapshotParts => ({
   playback: snapshot.playback,
   lyric: snapshot.lyric,
@@ -255,6 +264,7 @@ const currentSnapshotParts = (): SentSnapshotParts => ({
 const sendFullSnapshot = (webContents: Electron.WebContents): void => {
   try {
     if (webContents.isDestroyed()) return;
+    watchNowPlayingBaseline(webContents);
     webContents.send('now-playing:snapshot', snapshot);
     sentPartsByWebContents.set(webContents, currentSnapshotParts());
   } catch {
@@ -269,6 +279,7 @@ const sendSnapshot = () => {
       if (win.isDestroyed() || win.webContents.isDestroyed()) continue;
       if (visibleOnlyWindows.has(win) && !win.isVisible()) continue;
       const webContents = win.webContents;
+      watchNowPlayingBaseline(webContents);
       const prev = sentPartsByWebContents.get(webContents);
       const patch: NowPlayingBroadcastPatch = {};
       if (!prev || prev.playback !== snapshot.playback) patch.playback = snapshot.playback;
