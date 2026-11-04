@@ -5,7 +5,7 @@
 //! 调用里"，错误不再被折叠成一句 GenericFailure。探针只承载诊断信息，
 //! 不参与任何控制流判定。
 
-use std::sync::atomic::{AtomicI32, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use std::sync::{Mutex, MutexGuard};
 use std::time::Instant;
 
 /// 单个启动阶段超过该耗时即视为"慢启动"，输出线程会打一条 info 日志。
@@ -42,80 +42,97 @@ pub(crate) mod output_startup_stage {
     }
 }
 
+/// 一次启动尝试的完整诊断状态。整体包在互斥锁里，保证「校验代号 + 写入字段」
+/// 处在同一个临界区：旧线程不可能在通过代号校验后、新尝试清空探针之后
+/// 再把自己的阶段/HRESULT 写进新尝试。
 #[derive(Default)]
-pub(crate) struct OutputStartupProbe {
+struct ProbeState {
     /// 当前启动尝试的代号；每次创建输出线程时递增。
     /// 旧线程（例如看门狗超时后被弃用、仍卡在某个 COM 调用里的线程）只持有旧代号，
     /// 其后续写入会被忽略，无法覆盖新尝试的阶段与 HRESULT。
-    generation: AtomicU64,
-    stage: AtomicU8,
+    generation: u64,
+    stage: u8,
     /// 进入当前阶段时距本次尝试开始的毫秒数。
-    stage_entered_ms: AtomicU64,
+    stage_entered_ms: u64,
     /// 最近一次记录的 COM HRESULT；0 表示尚未记录。
-    last_hresult: AtomicI32,
+    last_hresult: i32,
     /// 端点释放等待（AUDCLNT_E_DEVICE_IN_USE）的重试次数。
-    device_in_use_retries: AtomicU32,
+    device_in_use_retries: u32,
     /// 本次尝试中已上报过慢启动日志的阶段位图（bit = stage）。
-    slow_stages_reported: AtomicU32,
+    slow_stages_reported: u32,
+}
+
+#[derive(Default)]
+pub(crate) struct OutputStartupProbe {
+    state: Mutex<ProbeState>,
 }
 
 impl OutputStartupProbe {
+    fn lock_state(&self) -> MutexGuard<'_, ProbeState> {
+        // 探针只承载诊断信息，锁中毒（上一次持锁线程 panic）不应连带让
+        // 输出线程失败，直接取回内部状态继续使用。
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// 开始一次新的启动尝试并返回其代号；清空上一次尝试的痕迹。
     /// 必须在输出线程创建前调用：即使旧线程随后才进入启动流程，也只会带着旧代号，
     /// 无法重置或覆盖新尝试的探针。
     pub(crate) fn begin_attempt(&self) -> u64 {
-        let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
-        self.stage
-            .store(output_startup_stage::NOT_REPORTED, Ordering::Release);
-        self.stage_entered_ms.store(0, Ordering::Release);
-        self.last_hresult.store(0, Ordering::Release);
-        self.device_in_use_retries.store(0, Ordering::Release);
-        self.slow_stages_reported.store(0, Ordering::Release);
-        generation
-    }
-
-    fn is_current(&self, attempt: u64) -> bool {
-        self.generation.load(Ordering::Acquire) == attempt
+        let mut state = self.lock_state();
+        state.generation = state.generation.wrapping_add(1);
+        state.stage = output_startup_stage::NOT_REPORTED;
+        state.stage_entered_ms = 0;
+        state.last_hresult = 0;
+        state.device_in_use_retries = 0;
+        state.slow_stages_reported = 0;
+        state.generation
     }
 
     /// 推进到 `stage`；`attempt_start` 为本次尝试的起点。
     /// 返回 `Some(entered_ms)` 表示该阶段来得偏慢（≥ OUTPUT_START_SLOW_STAGE_MS），
     /// 且本次尝试尚未上报过该阶段的慢启动日志。
     pub(crate) fn advance(&self, attempt: u64, stage: u8, attempt_start: Instant) -> Option<u64> {
-        if !self.is_current(attempt) {
+        let mut state = self.lock_state();
+        if state.generation != attempt {
             return None;
         }
         let entered_ms = attempt_start.elapsed().as_millis() as u64;
-        self.stage_entered_ms.store(entered_ms, Ordering::Release);
-        self.stage.store(stage, Ordering::Release);
+        state.stage_entered_ms = entered_ms;
+        state.stage = stage;
         if entered_ms < OUTPUT_START_SLOW_STAGE_MS || stage >= 32 {
             return None;
         }
         let bit = 1u32 << stage;
-        let previous = self.slow_stages_reported.fetch_or(bit, Ordering::AcqRel);
+        let previous = state.slow_stages_reported;
+        state.slow_stages_reported |= bit;
         (previous & bit == 0).then_some(entered_ms)
     }
 
     pub(crate) fn record_hresult(&self, attempt: u64, code: i32) {
-        if self.is_current(attempt) {
-            self.last_hresult.store(code, Ordering::Release);
+        let mut state = self.lock_state();
+        if state.generation == attempt {
+            state.last_hresult = code;
         }
     }
 
     pub(crate) fn record_device_in_use_retry(&self, attempt: u64) {
-        if self.is_current(attempt) {
-            self.device_in_use_retries.fetch_add(1, Ordering::AcqRel);
+        let mut state = self.lock_state();
+        if state.generation == attempt {
+            state.device_in_use_retries = state.device_in_use_retries.wrapping_add(1);
         }
     }
 
     /// 看门狗超时侧读取的快照：(阶段, 进入毫秒, 最后 HRESULT, 端点释放重试次数)。
-    /// 快照非原子整体，仅作诊断展示。
+    /// 四元组在同一临界区内读取，不会再拼出跨尝试的混合状态。
     pub(crate) fn snapshot(&self) -> (u8, u64, i32, u32) {
+        let state = self.lock_state();
         (
-            self.stage.load(Ordering::Acquire),
-            self.stage_entered_ms.load(Ordering::Acquire),
-            self.last_hresult.load(Ordering::Acquire),
-            self.device_in_use_retries.load(Ordering::Acquire),
+            state.stage,
+            state.stage_entered_ms,
+            state.last_hresult,
+            state.device_in_use_retries,
         )
     }
 

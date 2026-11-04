@@ -315,6 +315,7 @@ test('real player-store init restores the transient queue before publishing meta
       createPlaybackClock: () => () => ({ positionMs: 0 }),
       matchesPendingSeekTarget: () => true,
     },
+    '../../shared/playerSession': contract,
     '../../shared/latestRequestQueue': { createLatestRequestQueue: () => ({ enqueue: noop }) },
     '../../shared/playbackQueueDecision': {},
     '../../shared/audioEffectSupport': { spatialAudioEffectOptions: () => null },
