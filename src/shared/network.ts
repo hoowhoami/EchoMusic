@@ -10,6 +10,8 @@ export interface NetworkSettings {
   userAgent: string;
   /** 酷狗 API 专用 User-Agent，仅覆盖酷狗接口请求；留空保持上游默认行为 */
   kugouUserAgent: string;
+  /** 原生播放器拉取音频流的 User-Agent；留空保持内置默认行为 */
+  playerUserAgent: string;
   kugouApiTimeoutSecs: number;
   playerNetworkTimeoutSecs: number;
 }
@@ -38,6 +40,7 @@ export const DEFAULT_NETWORK_SETTINGS: NetworkSettings = {
   proxyBypassRules: '<local>',
   userAgent: '',
   kugouUserAgent: '',
+  playerUserAgent: '',
   kugouApiTimeoutSecs: 0,
   playerNetworkTimeoutSecs: 60,
 };
@@ -167,6 +170,7 @@ export const normalizeNetworkSettings = (
     proxyBypassRules: normalizeProxyBypassRules(Reflect.get(source, 'proxyBypassRules')),
     userAgent: normalizeUserAgent(Reflect.get(source, 'userAgent')),
     kugouUserAgent: normalizeUserAgent(Reflect.get(source, 'kugouUserAgent')),
+    playerUserAgent: normalizeUserAgent(Reflect.get(source, 'playerUserAgent')),
     kugouApiTimeoutSecs: clampNumber(
       Reflect.get(source, 'kugouApiTimeoutSecs'),
       DEFAULT_NETWORK_SETTINGS.kugouApiTimeoutSecs,

@@ -33,6 +33,7 @@ const proxyPasswordDraft = ref('');
 const proxyBypassRulesDraft = ref(settingStore.proxyBypassRules);
 const userAgentDraft = ref(settingStore.userAgent);
 const kugouUserAgentDraft = ref(settingStore.kugouUserAgent);
+const playerUserAgentDraft = ref(settingStore.playerUserAgent);
 const kugouApiTimeoutDraft = ref(settingStore.kugouApiTimeoutSecs);
 const playerNetworkTimeoutDraft = ref(settingStore.playerNetworkTimeoutSecs);
 const hasSavedProxyPassword = ref(false);
@@ -68,6 +69,7 @@ const applyProxySettings = async () => {
   const proxyRules = normalizeProxyRules(proxyRulesDraft.value);
   const userAgent = normalizeUserAgent(userAgentDraft.value);
   const kugouUserAgent = normalizeUserAgent(kugouUserAgentDraft.value);
+  const playerUserAgent = normalizeUserAgent(playerUserAgentDraft.value);
   if (proxyModeDraft.value === 'pac_script' && !proxyPacScript) {
     toastStore.warning('请输入有效的 HTTP、HTTPS 或本地文件 PAC 地址');
     return;
@@ -84,6 +86,10 @@ const applyProxySettings = async () => {
     toastStore.warning('酷狗 API User-Agent 只能包含 ASCII 可见字符，且不超过 1024 个字符');
     return;
   }
+  if (playerUserAgentDraft.value.trim() && !playerUserAgent) {
+    toastStore.warning('播放器 User-Agent 只能包含 ASCII 可见字符，且不超过 1024 个字符');
+    return;
+  }
 
   applyingProxy.value = true;
   try {
@@ -98,6 +104,7 @@ const applyProxySettings = async () => {
         proxyBypassRules: proxyBypassRulesDraft.value,
         userAgent,
         kugouUserAgent,
+        playerUserAgent,
         kugouApiTimeoutSecs: kugouApiTimeoutDraft.value,
         playerNetworkTimeoutSecs: playerNetworkTimeoutDraft.value,
       },
@@ -112,6 +119,7 @@ const applyProxySettings = async () => {
     proxyBypassRulesDraft.value = result.settings.proxyBypassRules;
     userAgentDraft.value = result.settings.userAgent;
     kugouUserAgentDraft.value = result.settings.kugouUserAgent;
+    playerUserAgentDraft.value = result.settings.playerUserAgent;
     kugouApiTimeoutDraft.value = result.settings.kugouApiTimeoutSecs;
     playerNetworkTimeoutDraft.value = result.settings.playerNetworkTimeoutSecs;
     proxyPasswordDraft.value = '';
@@ -147,6 +155,7 @@ onMounted(async () => {
     proxyBypassRulesDraft.value = result.settings.proxyBypassRules;
     userAgentDraft.value = result.settings.userAgent;
     kugouUserAgentDraft.value = result.settings.kugouUserAgent;
+    playerUserAgentDraft.value = result.settings.playerUserAgent;
     kugouApiTimeoutDraft.value = result.settings.kugouApiTimeoutSecs;
     playerNetworkTimeoutDraft.value = result.settings.playerNetworkTimeoutSecs;
     hasSavedProxyPassword.value = result.hasProxyPassword;
@@ -325,6 +334,23 @@ onMounted(async () => {
         class="w-60! rounded-lg"
         @update:model-value="kugouUserAgentDraft = String($event ?? '')"
         @clear="kugouUserAgentDraft = ''"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">播放器 User-Agent</h3>
+        <p class="text-sm text-text-secondary">
+          留空使用内置默认 UA；仅作用于原生播放器拉取音频流的网络请求
+        </p>
+      </div>
+      <Input
+        :model-value="playerUserAgentDraft"
+        placeholder="留空使用内置默认 UA"
+        maxlength="1024"
+        class="w-60! rounded-lg"
+        @update:model-value="playerUserAgentDraft = String($event ?? '')"
+        @clear="playerUserAgentDraft = ''"
       />
     </div>
     <div class="settings-divider"></div>

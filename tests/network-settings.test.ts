@@ -57,12 +57,15 @@ test('unknown modes fall back to direct without inferring a configuration', () =
 test('normalizes custom user agent and rejects values unsafe for request headers', () => {
   assert.equal(DEFAULT_NETWORK_SETTINGS.userAgent, '');
   assert.equal(DEFAULT_NETWORK_SETTINGS.kugouUserAgent, '');
+  assert.equal(DEFAULT_NETWORK_SETTINGS.playerUserAgent, '');
   const normalized = normalizeNetworkSettings({
     userAgent: '  GlobalUA/1.0  ',
     kugouUserAgent: ' KugouUA/2.0 ',
+    playerUserAgent: ' PlayerUA/3.0 ',
   });
   assert.equal(normalized.userAgent, 'GlobalUA/1.0');
   assert.equal(normalized.kugouUserAgent, 'KugouUA/2.0');
+  assert.equal(normalized.playerUserAgent, 'PlayerUA/3.0');
   assert.equal(
     normalizeNetworkSettings({ userAgent: '  EchoTest/1.0 (Windows NT 10.0)  ' }).userAgent,
     'EchoTest/1.0 (Windows NT 10.0)',

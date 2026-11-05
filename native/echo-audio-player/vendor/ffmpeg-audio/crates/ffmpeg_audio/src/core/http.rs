@@ -70,6 +70,8 @@ pub struct HttpAudioSourceOptions {
     pub connect_timeout: Duration,
     pub recv_timeout: Duration,
     pub proxy_url: Option<String>,
+    /// EchoMusic: 可配置的 User-Agent；`None` 回退到上游默认的 `USER_AGENT`。
+    pub user_agent: Option<String>,
 }
 
 impl Default for HttpAudioSourceOptions {
@@ -78,6 +80,7 @@ impl Default for HttpAudioSourceOptions {
             connect_timeout: CONNECT_TIMEOUT,
             recv_timeout: RECV_TIMEOUT,
             proxy_url: None,
+            user_agent: None,
         }
     }
 }
@@ -281,6 +284,15 @@ impl HttpAudioSource {
             .map_err(|e| HttpError::Transport(e.to_string()))?;
 
         let mut client_builder = Client::builder().connect_timeout(options.connect_timeout);
+        // EchoMusic: Client 级默认 User-Agent 覆盖全部请求（探测 / 读取 / seek / 重连），
+        // 未配置时保持上游默认值不变。
+        client_builder = client_builder.user_agent(
+            options
+                .user_agent
+                .as_deref()
+                .filter(|ua| !ua.trim().is_empty())
+                .unwrap_or(USER_AGENT),
+        );
         if let Some(proxy_url) = options.proxy_url.as_deref() {
             let proxy = Proxy::all(proxy_url)
                 .map_err(|err| HttpError::Transport(format!("invalid proxy url: {err}")))?;
@@ -385,11 +397,7 @@ impl HttpAudioSource {
     ) -> Result<(Option<u64>, bool, Option<u64>, AsyncReader)> {
         let response = tokio::time::timeout(
             recv_timeout,
-            client
-                .get(url)
-                .header(header::USER_AGENT, USER_AGENT)
-                .header(header::RANGE, "bytes=0-")
-                .send(),
+            client.get(url).header(header::RANGE, "bytes=0-").send(),
         )
         .await
         .map_err(|_| HttpError::Timeout)?
@@ -492,7 +500,6 @@ impl HttpAudioSource {
             self.recv_timeout,
             self.client
                 .get(&self.url)
-                .header(header::USER_AGENT, USER_AGENT)
                 .header(header::RANGE, range_header)
                 .send(),
         )
@@ -572,10 +579,7 @@ impl HttpAudioSource {
         &self,
         target_pos: u64,
     ) -> Result<(AsyncReader, Option<u64>)> {
-        let mut request = self
-            .client
-            .get(&self.url)
-            .header(header::USER_AGENT, USER_AGENT);
+        let mut request = self.client.get(&self.url);
         if self.range_supported {
             request = request.header(header::RANGE, format!("bytes={target_pos}-"));
         }

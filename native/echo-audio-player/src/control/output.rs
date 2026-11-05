@@ -141,3 +141,13 @@ pub fn set_http_proxies(proxies: Vec<String>) -> napi::Result<()> {
         Ok(())
     })
 }
+
+#[napi]
+pub fn set_user_agent(user_agent: String) -> napi::Result<()> {
+    // 空值表示未配置，HTTP 层回退上游默认 User-Agent
+    let user_agent = (!user_agent.trim().is_empty()).then(|| user_agent.trim().to_string());
+    call_core_command("set-user-agent", move |runtime| {
+        runtime.config.user_agent = user_agent;
+        Ok(())
+    })
+}

@@ -339,6 +339,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '浏览器标识',
       '全局 UA',
       '酷狗 UA',
+      '播放器 UA',
       'GitHub 加速站',
       'GitHub 加速地址',
       '在线插件源',
