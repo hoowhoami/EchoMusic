@@ -272,6 +272,8 @@ export const useSettingStore = defineStore('setting', {
     proxyRules: DEFAULT_NETWORK_SETTINGS.proxyRules,
     proxyUsername: DEFAULT_NETWORK_SETTINGS.proxyUsername,
     proxyBypassRules: DEFAULT_NETWORK_SETTINGS.proxyBypassRules,
+    userAgent: DEFAULT_NETWORK_SETTINGS.userAgent,
+    kugouUserAgent: DEFAULT_NETWORK_SETTINGS.kugouUserAgent,
     kugouApiTimeoutSecs: DEFAULT_NETWORK_SETTINGS.kugouApiTimeoutSecs,
     playerNetworkTimeoutSecs: DEFAULT_NETWORK_SETTINGS.playerNetworkTimeoutSecs,
     // 播放卡死检测：播放中进度超过该秒数无推进则判定卡死并自动恢复（0=禁用）
@@ -590,6 +592,8 @@ export const useSettingStore = defineStore('setting', {
         proxyRules: this.proxyRules,
         proxyUsername: this.proxyUsername,
         proxyBypassRules: this.proxyBypassRules,
+        userAgent: this.userAgent,
+        kugouUserAgent: this.kugouUserAgent,
         kugouApiTimeoutSecs: this.kugouApiTimeoutSecs,
         playerNetworkTimeoutSecs: this.playerNetworkTimeoutSecs,
       });
@@ -600,6 +604,8 @@ export const useSettingStore = defineStore('setting', {
       this.proxyRules = settings.proxyRules;
       this.proxyUsername = settings.proxyUsername;
       this.proxyBypassRules = settings.proxyBypassRules;
+      this.userAgent = settings.userAgent;
+      this.kugouUserAgent = settings.kugouUserAgent;
       this.kugouApiTimeoutSecs = settings.kugouApiTimeoutSecs;
       this.playerNetworkTimeoutSecs = settings.playerNetworkTimeoutSecs;
     },

@@ -7,7 +7,9 @@ import {
   normalizeNetworkSettings,
   normalizeProxyPacScript,
   normalizeProxyRules,
+  normalizeUserAgent,
   parseElectronResolvedProxy,
+  writeUserAgentHeader,
 } from '../src/shared/network.ts';
 
 test('defaults to direct connection and keeps timeouts independent', () => {
@@ -50,6 +52,48 @@ test('unknown modes fall back to direct without inferring a configuration', () =
   const settings = normalizeNetworkSettings({ proxyMode: 'unsupported', arbitrary: 'proxy:80' });
   assert.equal(settings.proxyMode, 'direct');
   assert.equal(settings.proxyRules, '');
+});
+
+test('normalizes custom user agent and rejects values unsafe for request headers', () => {
+  assert.equal(DEFAULT_NETWORK_SETTINGS.userAgent, '');
+  assert.equal(DEFAULT_NETWORK_SETTINGS.kugouUserAgent, '');
+  const normalized = normalizeNetworkSettings({
+    userAgent: '  GlobalUA/1.0  ',
+    kugouUserAgent: ' KugouUA/2.0 ',
+  });
+  assert.equal(normalized.userAgent, 'GlobalUA/1.0');
+  assert.equal(normalized.kugouUserAgent, 'KugouUA/2.0');
+  assert.equal(
+    normalizeNetworkSettings({ userAgent: '  EchoTest/1.0 (Windows NT 10.0)  ' }).userAgent,
+    'EchoTest/1.0 (Windows NT 10.0)',
+  );
+  assert.equal(normalizeUserAgent(''), '');
+  assert.equal(normalizeUserAgent('bad\nagent'), '');
+  assert.equal(normalizeUserAgent('中文 UA'), '');
+  assert.equal(normalizeUserAgent('a'.repeat(1025)), '');
+  assert.equal(normalizeUserAgent('a'.repeat(1024)), 'a'.repeat(1024));
+  assert.equal(getNetworkSettingsValidationError(DEFAULT_NETWORK_SETTINGS), null);
+});
+
+test('writes custom user agent into plain and axios-style header objects', () => {
+  const plain: Record<string, string> = {};
+  writeUserAgentHeader(plain, 'EchoTest/1.0');
+  assert.equal(plain['User-Agent'], 'EchoTest/1.0');
+
+  const axiosLike = {
+    'User-Agent': 'Android15-default',
+    set(key: string, value: string) {
+      this[key] = value;
+    },
+  };
+  writeUserAgentHeader(axiosLike, 'EchoTest/2.0');
+  assert.equal(axiosLike['User-Agent'], 'EchoTest/2.0');
+
+  // 空 UA 不得写入，保持上游默认行为
+  const untouched: Record<string, string> = { 'User-Agent': 'Android15-default' };
+  writeUserAgentHeader(untouched, '');
+  assert.equal(untouched['User-Agent'], 'Android15-default');
+  writeUserAgentHeader(undefined, 'EchoTest/3.0');
 });
 
 test('requires the mode-specific PAC URL or manual rules', () => {

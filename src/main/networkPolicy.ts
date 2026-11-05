@@ -1,4 +1,4 @@
-import { app, session, type ClientRequest, type Session } from 'electron';
+import { app, session, webContents, type ClientRequest, type Session } from 'electron';
 import log from './logger';
 import {
   addProxyCredentialsToUrl,
@@ -24,6 +24,10 @@ let credentialRevision = 0;
 let lifecycleInstalled = false;
 let applyQueue: Promise<void> = Promise.resolve();
 let wakeRecovery: Promise<void> | null = null;
+// 覆盖前捕获 Electron 默认 UA，用户清空自定义值后用于恢复
+let defaultUserAgent = '';
+// 酷狗 API 分区使用独立的 kugouUserAgent，与全局 userAgent 完全分离
+let kugouApiSession: Session | undefined;
 const registeredSessions = new Set<Session>();
 const appliedKeys = new WeakMap<Session, string>();
 
@@ -48,14 +52,34 @@ const getProxyKey = (settings: NetworkSettings) =>
     settings.proxyRules,
     settings.proxyUsername,
     settings.proxyBypassRules,
+    settings.userAgent,
+    settings.kugouUserAgent,
     credentialRevision,
   ].join('\0');
+
+// 按分区区分 UA 来源：酷狗 API 分区只认酷狗专用 UA，其余会话用全局 UA
+const getSessionUserAgent = (networkSession: Session): string => {
+  if (kugouApiSession && networkSession === kugouApiSession) {
+    return currentSettings.kugouUserAgent || defaultUserAgent;
+  }
+  return currentSettings.userAgent || defaultUserAgent;
+};
 
 const applyToSession = async (networkSession: Session, closeExistingConnections: boolean) => {
   const desiredKey = getProxyKey(currentSettings);
   const previousKey = appliedKeys.get(networkSession);
   if (previousKey === desiredKey) return;
 
+  // 自定义 UA 对同一个 session 全局生效（窗口、插件 fetch、未显式设置 UA 的 net 请求）
+  const userAgent = getSessionUserAgent(networkSession);
+  if (userAgent) {
+    networkSession.setUserAgent(userAgent);
+    // session.setUserAgent 不影响已存在的 WebContents，需要逐个同步
+    for (const contents of webContents.getAllWebContents()) {
+      if (contents.isDestroyed() || contents.session !== networkSession) continue;
+      contents.setUserAgent(userAgent);
+    }
+  }
   await networkSession.setProxy(getProxyConfig(currentSettings));
   appliedKeys.set(networkSession, desiredKey);
   if (closeExistingConnections && previousKey !== undefined) {
@@ -89,6 +113,10 @@ export const getManagedNetworkSession = async (partition = APP_NETWORK_SESSION_P
 export const initializeNetworkPolicy = async (settings: NetworkSettings, proxyPassword = '') => {
   currentSettings = settings;
   currentProxyPassword = proxyPassword;
+  // 必须在任何 setUserAgent 之前捕获默认值，否则“恢复默认”会拿到自定义 UA
+  if (!defaultUserAgent) defaultUserAgent = session.defaultSession.getUserAgent();
+  // Electron 按 partition 缓存 session 实例，引用比较稳定可靠
+  kugouApiSession = session.fromPartition(KUGOU_API_SESSION_PARTITION);
 
   const initialSessions = [
     session.defaultSession,

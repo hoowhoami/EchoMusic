@@ -8,6 +8,7 @@ import {
   DEFAULT_NETWORK_SETTINGS,
   getNetworkSettingsValidationError,
   normalizeNetworkSettings,
+  writeUserAgentHeader,
   type NetworkSettings,
   type NetworkSettingsState,
   type NetworkSettingsUpdateRequest,
@@ -31,6 +32,9 @@ let settingsUpdateQueue: Promise<NetworkSettingsState> = Promise.resolve({
   hasProxyPassword: false,
 });
 const PROXY_PASSWORD_STORAGE_KEY = 'network:proxy-password';
+// 酷狗 API 拦截器读取的当前自定义 UA；空值表示不注入，保持上游默认行为
+let kugouUserAgent = '';
+let kugouUserAgentInterceptorInstalled = false;
 
 const decryptPersistedProxyPassword = (): string => {
   const encrypted = getKvStorage().get<string>(PROXY_PASSWORD_STORAGE_KEY);
@@ -160,9 +164,20 @@ export const applyKugouApiNetworkSettings = (
     const axios = require(path.join(targetServerPath, 'node_modules', 'axios'));
     axios.defaults.timeout = Math.max(0, Math.round(settings.kugouApiTimeoutSecs * 1000));
     axios.defaults.adapter = createElectronAxiosAdapter(axios, KUGOU_API_SESSION_PARTITION);
+    kugouUserAgent = settings.kugouUserAgent;
+    // server 侧所有酷狗请求共用这一个 axios 默认实例。request 拦截器在合并默认头之后
+    // 运行，可覆盖 request.js 的 Android 默认 UA 与各模块显式协议 UA；空值直接放行。
+    if (!kugouUserAgentInterceptorInstalled) {
+      axios.interceptors.request.use((config: { headers?: unknown }) => {
+        writeUserAgentHeader(config?.headers, kugouUserAgent);
+        return config;
+      });
+      kugouUserAgentInterceptorInstalled = true;
+    }
     log.info('[Network] Applied Kugou API network settings', {
       proxyMode: settings.proxyMode,
       timeoutSecs: settings.kugouApiTimeoutSecs,
+      kugouUserAgent: settings.kugouUserAgent || '(default)',
       transport: 'chromium',
     });
   } catch (error) {
