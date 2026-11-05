@@ -15,6 +15,7 @@ import { join } from 'path';
 import { normalizeClosePreferences, type ThemeMode } from '../../shared/app';
 import {
   getMainAppSettings,
+  normalizeDevToolsDebugPort,
   setMainAppSetting,
   setMainClosePreferences,
 } from '../storage/settings';
@@ -421,6 +422,11 @@ export const registerMainWindowPreferenceHandlers = () => {
   ipcRegistry.registerListener('update-devtools-enabled', (_event, enabled: boolean) => {
     devToolsEnabled = enabled;
     setMainAppSetting('devToolsEnabled', enabled);
+  });
+
+  ipcRegistry.registerListener('update-devtools-debug-port', (_event, port: number) => {
+    // 合法性归一化在 getter 侧兜底，这里直接持久化 UI 已 clamp 的值
+    setMainAppSetting('devToolsDebugPort', normalizeDevToolsDebugPort(port));
   });
 };
 

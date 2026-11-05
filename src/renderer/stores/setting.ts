@@ -285,6 +285,8 @@ export const useSettingStore = defineStore('setting', {
     lyricOffsetStep: 0.1,
     // DevTools 开关
     devToolsEnabled: false,
+    // 开发者模式 CDP 调试端口，重启后生效
+    devToolsDebugPort: 9223,
   }),
   getters: {
     floatingSurfaceFrosted: () => useThemeStore().floatingSurfaceFrosted,
@@ -538,6 +540,11 @@ export const useSettingStore = defineStore('setting', {
     syncDevToolsEnabled() {
       if (window.electron?.ipcRenderer) {
         window.electron.ipcRenderer.send('update-devtools-enabled', this.devToolsEnabled);
+      }
+    },
+    syncDevToolsDebugPort() {
+      if (window.electron?.ipcRenderer) {
+        window.electron.ipcRenderer.send('update-devtools-debug-port', this.devToolsDebugPort);
       }
     },
     getLogSettings(): LogSettings {

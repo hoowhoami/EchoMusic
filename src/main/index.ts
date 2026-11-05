@@ -15,7 +15,12 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
-import { getDisableGpuAccelerationSetting, getHighDpiSettings } from './storage/settings';
+import {
+  getDevToolsDebugPortSetting,
+  getDevToolsEnabledSetting,
+  getDisableGpuAccelerationSetting,
+  getHighDpiSettings,
+} from './storage/settings';
 
 // Windows 音频/媒体会话初始化前先固定应用身份，避免系统把后续会话识别成临时客户端。
 if (process.platform === 'win32') {
@@ -39,6 +44,13 @@ const highDpiSettings = getHighDpiSettings();
 if (highDpiSettings.enabled) {
   app.commandLine.appendSwitch('high-dpi-support', '1');
   app.commandLine.appendSwitch('force-device-scale-factor', String(highDpiSettings.dpiScale));
+}
+
+// 开发者模式开启时在本机开放 CDP 调试端口。remote-debugging-port 必须在
+// app.ready 前写入命令行，因此这里读持久化设置，变更后重启应用生效；
+// UI 侧开启前有风险确认弹窗（见 ExperimentalSettingsSection）。
+if (getDevToolsEnabledSetting()) {
+  app.commandLine.appendSwitch('remote-debugging-port', String(getDevToolsDebugPortSetting()));
 }
 
 void import('./app');
