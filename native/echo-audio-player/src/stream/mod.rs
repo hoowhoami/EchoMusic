@@ -15,6 +15,7 @@ impl<T> ReadSeek for T where T: Read + Seek + Send {}
 pub struct StreamOptions {
     pub network_timeout: Duration,
     pub http_proxies: Vec<Option<String>>,
+    pub user_agent: Option<String>,
 }
 
 impl Default for StreamOptions {
@@ -22,6 +23,7 @@ impl Default for StreamOptions {
         Self {
             network_timeout: Duration::from_secs(60),
             http_proxies: vec![None],
+            user_agent: None,
         }
     }
 }

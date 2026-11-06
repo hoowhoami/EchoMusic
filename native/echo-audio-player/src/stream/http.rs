@@ -26,6 +26,7 @@ pub fn open(
                 connect_timeout: connect_timeout(options.network_timeout),
                 recv_timeout: options.network_timeout,
                 proxy_url,
+                user_agent: options.user_agent.clone(),
             },
             interrupt.clone(),
         ) {

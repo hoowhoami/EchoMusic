@@ -32,7 +32,8 @@ pub use graph::{
 };
 pub use output::{
     get_audio_devices, set_audio_output, set_http_proxies, set_http_proxy, set_network_timeout,
-    set_pause_on_device_disconnect, set_stall_timeout, GetAudioDevicesTask, SetAudioOutputTask,
+    set_pause_on_device_disconnect, set_stall_timeout, set_user_agent, GetAudioDevicesTask,
+    SetAudioOutputTask,
 };
 pub(crate) use output_lifecycle::{
     handle_output_device_list_change, handle_playback_output_device_event, request_output_recovery,
