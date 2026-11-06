@@ -7,6 +7,7 @@ import { getPersistedRendererSettings } from './storage/persistedStores';
 import {
   DEFAULT_NETWORK_SETTINGS,
   getNetworkSettingsValidationError,
+  isKugouRequestUrl,
   normalizeNetworkSettings,
   writeUserAgentHeader,
   type NetworkSettings,
@@ -167,11 +168,16 @@ export const applyKugouApiNetworkSettings = (
     kugouUserAgent = settings.kugouUserAgent;
     // server 侧所有酷狗请求共用这一个 axios 默认实例。request 拦截器在合并默认头之后
     // 运行，可覆盖 request.js 的 Android 默认 UA 与各模块显式协议 UA；空值直接放行。
+    // 该实例同时服务微信/QQ 登录等第三方 OAuth 请求，因此只对酷狗域名注入。
     if (!kugouUserAgentInterceptorInstalled) {
-      axios.interceptors.request.use((config: { headers?: unknown }) => {
-        writeUserAgentHeader(config?.headers, kugouUserAgent);
-        return config;
-      });
+      axios.interceptors.request.use(
+        (config: { url?: unknown; baseURL?: unknown; headers?: unknown }) => {
+          if (isKugouRequestUrl(config?.url, config?.baseURL)) {
+            writeUserAgentHeader(config?.headers, kugouUserAgent);
+          }
+          return config;
+        },
+      );
       kugouUserAgentInterceptorInstalled = true;
     }
     log.info('[Network] Applied Kugou API network settings', {

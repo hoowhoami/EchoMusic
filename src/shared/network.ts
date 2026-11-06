@@ -152,9 +152,29 @@ export const normalizeUserAgent = (value: unknown): string => {
 /** 将自定义 UA 写入请求头对象，兼容 AxiosHeaders.set 与普通对象 */
 export const writeUserAgentHeader = (headers: unknown, userAgent: string): void => {
   if (!userAgent || !headers || typeof headers !== 'object') return;
-  const target = headers as { set?: (key: string, value: string) => unknown };
+  const target = headers as { set?: (key: string, value: string) => void };
   if (typeof target.set === 'function') target.set('User-Agent', userAgent);
   else (headers as Record<string, unknown>)['User-Agent'] = userAgent;
+};
+
+// 酷狗自有域名后缀。酷狗 UA 只注入这些 host，避免污染同实例上的微信/QQ 登录等第三方请求。
+const KUGOU_HOST_SUFFIXES = ['kugou.com', 'kgimg.com'] as const;
+
+export const isKugouHost = (hostname: string): boolean => {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, '');
+  return KUGOU_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+};
+
+/** 判断 axios 请求是否指向酷狗域名；相对 URL 用 baseURL 解析，无法解析时按非酷狗处理 */
+export const isKugouRequestUrl = (url: unknown, baseURL?: unknown): boolean => {
+  try {
+    const rawUrl = String(url ?? '');
+    const rawBase = baseURL === undefined || baseURL === null ? '' : String(baseURL);
+    const resolved = rawBase ? new URL(rawUrl, rawBase) : new URL(rawUrl);
+    return isKugouHost(resolved.hostname);
+  } catch {
+    return false;
+  }
 };
 
 export const normalizeNetworkSettings = (

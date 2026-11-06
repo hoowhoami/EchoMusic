@@ -38,6 +38,14 @@ const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(120);
 const MAX_RECONNECT_TOTAL_DELAY: Duration = Duration::from_secs(256);
 
 const USER_AGENT: &str = "Lavf/62.12.101";
+
+/// EchoMusic: 未配置或配置为空白时回退上游默认 UA。
+fn resolve_user_agent(user_agent: Option<&str>) -> &str {
+    user_agent
+        .filter(|ua| !ua.trim().is_empty())
+        .unwrap_or(USER_AGENT)
+}
+
 const CANCEL_BRIDGE_POLL: Duration = Duration::from_millis(25);
 const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(200);
 
@@ -286,13 +294,8 @@ impl HttpAudioSource {
         let mut client_builder = Client::builder().connect_timeout(options.connect_timeout);
         // EchoMusic: Client 级默认 User-Agent 覆盖全部请求（探测 / 读取 / seek / 重连），
         // 未配置时保持上游默认值不变。
-        client_builder = client_builder.user_agent(
-            options
-                .user_agent
-                .as_deref()
-                .filter(|ua| !ua.trim().is_empty())
-                .unwrap_or(USER_AGENT),
-        );
+        client_builder =
+            client_builder.user_agent(resolve_user_agent(options.user_agent.as_deref()));
         if let Some(proxy_url) = options.proxy_url.as_deref() {
             let proxy = Proxy::all(proxy_url)
                 .map_err(|err| HttpError::Transport(format!("invalid proxy url: {err}")))?;
@@ -1053,7 +1056,16 @@ mod tests {
             connect_timeout: Duration::from_secs(1),
             recv_timeout,
             proxy_url: None,
+            user_agent: None,
         }
+    }
+
+    #[test]
+    fn user_agent_falls_back_to_lavf_when_unset_or_blank() {
+        assert_eq!(resolve_user_agent(None), USER_AGENT);
+        assert_eq!(resolve_user_agent(Some("")), USER_AGENT);
+        assert_eq!(resolve_user_agent(Some("   ")), USER_AGENT);
+        assert_eq!(resolve_user_agent(Some("EchoTest/1.0")), "EchoTest/1.0");
     }
 
     fn test_source(

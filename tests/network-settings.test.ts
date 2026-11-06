@@ -4,6 +4,8 @@ import {
   addProxyCredentialsToUrl,
   DEFAULT_NETWORK_SETTINGS,
   getNetworkSettingsValidationError,
+  isKugouHost,
+  isKugouRequestUrl,
   normalizeNetworkSettings,
   normalizeProxyPacScript,
   normalizeProxyRules,
@@ -160,4 +162,26 @@ test('adds safely encoded credentials to native proxy schemes that support authe
     addProxyCredentialsToUrl('socks4://proxy.example:1080', credentials),
     'socks4://proxy.example:1080',
   );
+});
+
+test('limits kugou user agent injection to kugou-owned hosts', () => {
+  assert.equal(isKugouHost('gateway.kugou.com'), true);
+  assert.equal(isKugouHost('kugou.com'), true);
+  assert.equal(isKugouHost('C1.KGIMG.COM'), true);
+  assert.equal(isKugouHost('kugou.com.'), true);
+
+  // 同实例上的第三方 OAuth 请求不得被酷狗 UA 覆盖
+  assert.equal(isKugouRequestUrl('https://api.weixin.qq.com/cgi-bin/token'), false);
+  assert.equal(isKugouRequestUrl('https://xui.ptlogin2.qq.com/ssl/ptqrlogin'), false);
+  assert.equal(isKugouRequestUrl('https://openmobile.qq.com/oauth2.0/authorize'), false);
+  // 相似域名不能被后缀匹配误判
+  assert.equal(isKugouRequestUrl('https://notkugou.com/song'), false);
+  assert.equal(isKugouRequestUrl('https://kugou.com.evil.test/song'), false);
+
+  // 相对 URL 用 baseURL 解析
+  assert.equal(isKugouRequestUrl('/song/url', 'https://gateway.kugou.com'), true);
+  assert.equal(isKugouRequestUrl('/song/url', 'https://api.weixin.qq.com'), false);
+  // 无法解析的地址按非酷狗处理，避免误注入
+  assert.equal(isKugouRequestUrl(undefined, undefined), false);
+  assert.equal(isKugouRequestUrl('/relative-only'), false);
 });

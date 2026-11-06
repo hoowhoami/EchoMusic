@@ -324,7 +324,8 @@ onMounted(async () => {
       <div class="space-y-1">
         <h3 class="font-semibold">酷狗 API User-Agent</h3>
         <p class="text-sm text-text-secondary">
-          留空使用上游默认 UA；仅覆盖酷狗接口各模块请求（含协议 UA），与全局 UA 互不影响
+          留空使用上游默认 UA；仅对酷狗域名（kugou.com / kgimg.com）的接口请求生效，含协议
+          UA，不影响微信/QQ 登录等第三方请求，与全局 UA 互不影响
         </p>
       </div>
       <Input

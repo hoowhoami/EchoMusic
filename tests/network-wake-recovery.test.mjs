@@ -28,8 +28,10 @@ function load(path, mocks) {
 async function fixture() {
   const sessions = new Map();
   const logs = [];
+  const webContentsList = [];
   const createSession = (partition) => ({
     calls: [],
+    userAgent: undefined,
     async setProxy(config) {
       this.calls.push(['setProxy', config]);
     },
@@ -46,6 +48,13 @@ async function fixture() {
       this.calls.push(['fetch', input]);
       return { ok: true };
     },
+    setUserAgent(userAgent) {
+      this.userAgent = userAgent;
+      this.calls.push(['setUserAgent', userAgent]);
+    },
+    getUserAgent() {
+      return this.userAgent ?? 'EchoMusic-Default-UA';
+    },
     partition,
   });
   const fromPartition = (partition) => {
@@ -55,7 +64,11 @@ async function fixture() {
   const shared = load('src/shared/network.ts', {});
   const app = new EventEmitter();
   const policy = load('src/main/networkPolicy.ts', {
-    electron: { app, session: { defaultSession: fromPartition('default'), fromPartition } },
+    electron: {
+      app,
+      session: { defaultSession: fromPartition('default'), fromPartition },
+      webContents: { getAllWebContents: () => webContentsList },
+    },
     '../shared/network': shared,
     './logger': {
       info: (...args) => logs.push(['info', ...args]),
@@ -64,7 +77,31 @@ async function fixture() {
   });
   await policy.initializeNetworkPolicy(shared.DEFAULT_NETWORK_SETTINGS);
   sessions.forEach((s) => (s.calls.length = 0));
-  return { policy, sessions, fromPartition, logs, settings: shared.DEFAULT_NETWORK_SETTINGS, app };
+  return {
+    policy,
+    sessions,
+    fromPartition,
+    logs,
+    settings: shared.DEFAULT_NETWORK_SETTINGS,
+    app,
+    webContentsList,
+  };
+}
+
+function addWebContents(webContentsList, session) {
+  const contents = {
+    session,
+    userAgents: [],
+    destroyed: false,
+    isDestroyed() {
+      return this.destroyed;
+    },
+    setUserAgent(userAgent) {
+      this.userAgents.push(userAgent);
+    },
+  };
+  webContentsList.push(contents);
+  return contents;
 }
 
 test('wake resets all registered sessions despite unchanged proxy settings and keeps stored state', async () => {
@@ -147,4 +184,92 @@ test('proxy changes during recovery run afterward and retain credentials', async
       proxyBypassRules: '<local>',
     },
   ]);
+});
+
+test('custom user agent applies to every session and existing web contents without closing connections', async () => {
+  const s = await fixture();
+  const mainContents = addWebContents(s.webContentsList, s.sessions.get('default'));
+  const kugouContents = addWebContents(s.webContentsList, s.sessions.get('echo-kugou-api'));
+
+  await s.policy.updateNetworkPolicy({ ...s.settings, userAgent: 'EchoTest/1.0' });
+
+  for (const [partition, session] of s.sessions) {
+    if (partition === 'echo-kugou-api') {
+      // 酷狗 API 分区隔离全局 UA，避免误伤同分区的第三方 OAuth 请求
+      assert.equal(session.userAgent, undefined);
+    } else {
+      assert.equal(session.userAgent, 'EchoTest/1.0');
+    }
+    assert.ok(!session.calls.some(([name]) => name === 'close'), '改 UA 不应断连');
+  }
+  assert.deepEqual(mainContents.userAgents, ['EchoTest/1.0']);
+  assert.deepEqual(kugouContents.userAgents, []);
+});
+
+test('clearing custom user agent restores the captured default and keeps connections open', async () => {
+  const s = await fixture();
+  await s.policy.updateNetworkPolicy({ ...s.settings, userAgent: 'EchoTest/1.0' });
+  s.sessions.forEach((session) => (session.calls.length = 0));
+
+  await s.policy.updateNetworkPolicy({ ...s.settings, userAgent: '' });
+
+  for (const [partition, session] of s.sessions) {
+    if (partition === 'echo-kugou-api') {
+      assert.equal(session.userAgent, undefined);
+    } else {
+      assert.equal(session.userAgent, 'EchoMusic-Default-UA');
+    }
+    assert.ok(!session.calls.some(([name]) => name === 'close'), '清空 UA 不应断连');
+  }
+});
+
+test('kugou user agent stays out of session scope and only targets kugou hosts', async () => {
+  const s = await fixture();
+  const before = [...s.sessions.values()].map((session) => session.userAgent);
+
+  await s.policy.updateNetworkPolicy({ ...s.settings, kugouUserAgent: 'KugouUA/2.0' });
+
+  assert.deepEqual(
+    [...s.sessions.values()].map((session) => session.userAgent),
+    before,
+    '酷狗 UA 不应写入任何 session',
+  );
+});
+
+test('proxy changes still close existing connections while keeping the same user agent', async () => {
+  const s = await fixture();
+  await s.policy.updateNetworkPolicy({ ...s.settings, userAgent: 'EchoTest/1.0' });
+  s.sessions.forEach((session) => (session.calls.length = 0));
+
+  await s.policy.updateNetworkPolicy({
+    ...s.settings,
+    userAgent: 'EchoTest/1.0',
+    proxyMode: 'fixed_servers',
+    proxyRules: 'http://127.0.0.1:7890',
+  });
+
+  for (const session of s.sessions.values()) {
+    assert.ok(
+      session.calls.some(([name]) => name === 'close'),
+      '代理变化应断连',
+    );
+    assert.ok(!session.calls.some(([name]) => name === 'setUserAgent'), 'UA 未变化不应重复设置');
+  }
+});
+
+test('failed proxy apply leaves the previous user agent untouched for rollback', async () => {
+  const s = await fixture();
+  const target = s.sessions.get('echo-app-network');
+  const previousUserAgent = target.userAgent;
+  target.setProxy = async () => {
+    target.calls.push(['setProxy-failed']);
+    throw new Error('proxy apply failed');
+  };
+
+  await assert.rejects(
+    s.policy.updateNetworkPolicy({ ...s.settings, userAgent: 'FailUA/1.0' }),
+    /proxy apply failed/,
+  );
+  assert.equal(target.userAgent, previousUserAgent);
+  assert.ok(!target.calls.some(([name]) => name === 'setUserAgent'));
 });

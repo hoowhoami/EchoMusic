@@ -880,6 +880,57 @@ mod tests {
 
         assert_eq!(disabled.gapless_audio, GaplessAudioPolicy::No);
     }
+
+    #[test]
+    fn player_config_normalizes_custom_user_agent() {
+        assert_eq!(PlayerConfig::default().user_agent, None);
+
+        let trimmed = PlayerConfig::from_options(Some(PlayerConfigOptions {
+            audio_buffer_secs: None,
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
+            demuxer_readahead_secs: None,
+            cache: None,
+            cache_secs: None,
+            cache_pause: None,
+            cache_pause_wait_secs: None,
+            demuxer_max_bytes: None,
+            demuxer_max_back_bytes: None,
+            network_timeout_secs: None,
+            playback_stall_timeout_secs: None,
+            http_proxy: None,
+            user_agent: Some("  CustomUA/1.0  ".to_string()),
+        }));
+        assert_eq!(trimmed.user_agent.as_deref(), Some("CustomUA/1.0"));
+        assert_eq!(
+            trimmed.stream_options().user_agent.as_deref(),
+            Some("CustomUA/1.0")
+        );
+
+        // 空白值归一为 None，HTTP 层据此回退内置 Lavf UA
+        let blank = PlayerConfig::from_options(Some(PlayerConfigOptions {
+            audio_buffer_secs: None,
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
+            demuxer_readahead_secs: None,
+            cache: None,
+            cache_secs: None,
+            cache_pause: None,
+            cache_pause_wait_secs: None,
+            demuxer_max_bytes: None,
+            demuxer_max_back_bytes: None,
+            network_timeout_secs: None,
+            playback_stall_timeout_secs: None,
+            http_proxy: None,
+            user_agent: Some("   ".to_string()),
+        }));
+        assert_eq!(blank.user_agent, None);
+        assert_eq!(blank.stream_options().user_agent, None);
+    }
 }
 
 #[derive(Clone, Debug)]

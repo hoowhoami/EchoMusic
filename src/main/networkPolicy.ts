@@ -26,10 +26,14 @@ let applyQueue: Promise<void> = Promise.resolve();
 let wakeRecovery: Promise<void> | null = null;
 // 覆盖前捕获 Electron 默认 UA，用户清空自定义值后用于恢复
 let defaultUserAgent = '';
-// 酷狗 API 分区使用独立的 kugouUserAgent，与全局 userAgent 完全分离
+// 酷狗 API 分区：全局 UA 不写入该分区；酷狗 UA 仅由 server axios 拦截器按域名注入，
+// 避免同一分区内的微信/QQ OAuth 请求被误加酷狗 UA。
 let kugouApiSession: Session | undefined;
 const registeredSessions = new Set<Session>();
+// 已应用的完整策略 key（代理 + UA）与仅代理 key，分开记录以便判断是否需要断连
 const appliedKeys = new WeakMap<Session, string>();
+const appliedProxyKeys = new WeakMap<Session, string>();
+const appliedUserAgents = new WeakMap<Session, string>();
 
 const getProxyConfig = (settings: NetworkSettings): Electron.ProxyConfig => {
   if (settings.proxyMode === 'pac_script') {
@@ -45,6 +49,7 @@ const getProxyConfig = (settings: NetworkSettings): Electron.ProxyConfig => {
   return { mode: settings.proxyMode };
 };
 
+// 仅代理与凭证变化才需要断开连接；UA 变化不影响连接归属
 const getProxyKey = (settings: NetworkSettings) =>
   [
     settings.proxyMode,
@@ -52,37 +57,48 @@ const getProxyKey = (settings: NetworkSettings) =>
     settings.proxyRules,
     settings.proxyUsername,
     settings.proxyBypassRules,
-    settings.userAgent,
-    settings.kugouUserAgent,
     credentialRevision,
   ].join('\0');
 
-// 按分区区分 UA 来源：酷狗 API 分区只认酷狗专用 UA，其余会话用全局 UA
-const getSessionUserAgent = (networkSession: Session): string => {
-  if (kugouApiSession && networkSession === kugouApiSession) {
-    return currentSettings.kugouUserAgent || defaultUserAgent;
-  }
-  return currentSettings.userAgent || defaultUserAgent;
+// 该 session 需要设置的 UA；`undefined` 表示不写 session 级 UA
+const getSessionUserAgent = (networkSession: Session): string | undefined => {
+  if (kugouApiSession && networkSession === kugouApiSession) return undefined;
+  return currentSettings.userAgent || defaultUserAgent || undefined;
 };
 
-const applyToSession = async (networkSession: Session, closeExistingConnections: boolean) => {
-  const desiredKey = getProxyKey(currentSettings);
-  const previousKey = appliedKeys.get(networkSession);
-  if (previousKey === desiredKey) return;
+const getPolicyKey = (proxyKey: string, userAgent: string | undefined) =>
+  `${proxyKey}\0${userAgent ?? ''}`;
 
-  // 自定义 UA 对同一个 session 全局生效（窗口、插件 fetch、未显式设置 UA 的 net 请求）
-  const userAgent = getSessionUserAgent(networkSession);
-  if (userAgent) {
-    networkSession.setUserAgent(userAgent);
+const applyToSession = async (networkSession: Session, closeExistingConnections: boolean) => {
+  const desiredProxyKey = getProxyKey(currentSettings);
+  const desiredUserAgent = getSessionUserAgent(networkSession);
+  const desiredKey = getPolicyKey(desiredProxyKey, desiredUserAgent);
+  const previousKey = appliedKeys.get(networkSession);
+  const previousProxyKey = appliedProxyKeys.get(networkSession);
+  if (previousKey === desiredKey && previousProxyKey === desiredProxyKey) return;
+
+  // 先应用代理：setProxy 失败时 UA 尚未改动，调用方的回滚可完整恢复旧值
+  await networkSession.setProxy(getProxyConfig(currentSettings));
+  appliedProxyKeys.set(networkSession, desiredProxyKey);
+
+  // 自定义 UA 对 session 全局生效（窗口、插件 fetch、未显式设置 UA 的 net 请求）
+  if (desiredUserAgent && appliedUserAgents.get(networkSession) !== desiredUserAgent) {
+    networkSession.setUserAgent(desiredUserAgent);
     // session.setUserAgent 不影响已存在的 WebContents，需要逐个同步
     for (const contents of webContents.getAllWebContents()) {
       if (contents.isDestroyed() || contents.session !== networkSession) continue;
-      contents.setUserAgent(userAgent);
+      contents.setUserAgent(desiredUserAgent);
     }
+    appliedUserAgents.set(networkSession, desiredUserAgent);
   }
-  await networkSession.setProxy(getProxyConfig(currentSettings));
+
   appliedKeys.set(networkSession, desiredKey);
-  if (closeExistingConnections && previousKey !== undefined) {
+  // 仅代理或凭证变化时断连，单纯改 UA 不应中断在途下载/请求
+  if (
+    closeExistingConnections &&
+    previousProxyKey !== undefined &&
+    previousProxyKey !== desiredProxyKey
+  ) {
     await networkSession.closeAllConnections();
   }
 };
