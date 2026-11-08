@@ -41,6 +41,7 @@ pub struct PlayerConfigOptions {
     pub network_timeout_secs: Option<f64>,
     pub playback_stall_timeout_secs: Option<f64>,
     pub http_proxy: Option<String>,
+    pub user_agent: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -209,6 +210,7 @@ pub struct PlayerConfig {
     pub network_timeout_secs: f64,
     pub playback_stall_timeout_secs: f64,
     pub http_proxies: Vec<Option<String>>,
+    pub user_agent: Option<String>,
     pub audio_device: String,
     pub exclusive_output: bool,
 }
@@ -231,6 +233,7 @@ impl Default for PlayerConfig {
             network_timeout_secs: DEFAULT_NETWORK_TIMEOUT_SECS,
             playback_stall_timeout_secs: DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS,
             http_proxies: vec![None],
+            user_agent: None,
             audio_device: "auto".to_string(),
             exclusive_output: false,
         }
@@ -287,6 +290,10 @@ impl PlayerConfig {
                 if !trimmed.is_empty() {
                     config.http_proxies = vec![Some(trimmed.to_string())];
                 }
+            }
+            if let Some(value) = options.user_agent {
+                let trimmed = value.trim();
+                config.user_agent = (!trimmed.is_empty()).then(|| trimmed.to_string());
             }
         }
         config
@@ -393,6 +400,7 @@ impl PlayerConfig {
                 DEFAULT_NETWORK_TIMEOUT_SECS,
             )),
             http_proxies: self.http_proxies.clone(),
+            user_agent: self.user_agent.clone(),
         }
     }
 }
@@ -461,6 +469,7 @@ mod tests {
             network_timeout_secs: Some(f64::NAN),
             playback_stall_timeout_secs: Some(f64::INFINITY),
             http_proxy: None,
+            user_agent: None,
         }));
 
         assert_eq!(config.audio_buffer_secs, DEFAULT_BUFFER_SECS);
@@ -572,6 +581,7 @@ mod tests {
             network_timeout_secs: None,
             playback_stall_timeout_secs: None,
             http_proxy: None,
+            user_agent: None,
         }));
 
         assert_eq!(
@@ -612,6 +622,7 @@ mod tests {
             network_timeout_secs: None,
             playback_stall_timeout_secs: None,
             http_proxy: None,
+            user_agent: None,
         }));
 
         assert_eq!(
@@ -657,6 +668,7 @@ mod tests {
             network_timeout_secs: None,
             playback_stall_timeout_secs: None,
             http_proxy: None,
+            user_agent: None,
         }));
 
         assert_eq!(config.audio_buffer_secs, 0.01);
@@ -693,6 +705,7 @@ mod tests {
             network_timeout_secs: None,
             playback_stall_timeout_secs: None,
             http_proxy: None,
+            user_agent: None,
         }));
 
         assert_eq!(config.audio_buffer_secs, 0.0);
@@ -723,6 +736,7 @@ mod tests {
             network_timeout_secs: None,
             playback_stall_timeout_secs: None,
             http_proxy: None,
+            user_agent: None,
         }));
 
         assert_eq!(config.audio_buffer_secs, 3.0);
@@ -743,6 +757,7 @@ mod tests {
             network_timeout_secs: None,
             playback_stall_timeout_secs: None,
             http_proxy: None,
+            user_agent: None,
         }));
 
         assert_eq!(clamped.audio_buffer_secs, MAX_BUFFER_SECS);
@@ -782,6 +797,7 @@ mod tests {
             network_timeout_secs: None,
             playback_stall_timeout_secs: None,
             http_proxy: None,
+            user_agent: None,
         }));
 
         assert_eq!(
@@ -828,6 +844,7 @@ mod tests {
             network_timeout_secs: None,
             playback_stall_timeout_secs: None,
             http_proxy: None,
+            user_agent: None,
         }));
         assert_eq!(
             fixed.resolve_output_sample_format(AudioSampleFormat::S16),
@@ -858,9 +875,61 @@ mod tests {
             network_timeout_secs: None,
             playback_stall_timeout_secs: None,
             http_proxy: None,
+            user_agent: None,
         }));
 
         assert_eq!(disabled.gapless_audio, GaplessAudioPolicy::No);
+    }
+
+    #[test]
+    fn player_config_normalizes_custom_user_agent() {
+        assert_eq!(PlayerConfig::default().user_agent, None);
+
+        let trimmed = PlayerConfig::from_options(Some(PlayerConfigOptions {
+            audio_buffer_secs: None,
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
+            demuxer_readahead_secs: None,
+            cache: None,
+            cache_secs: None,
+            cache_pause: None,
+            cache_pause_wait_secs: None,
+            demuxer_max_bytes: None,
+            demuxer_max_back_bytes: None,
+            network_timeout_secs: None,
+            playback_stall_timeout_secs: None,
+            http_proxy: None,
+            user_agent: Some("  CustomUA/1.0  ".to_string()),
+        }));
+        assert_eq!(trimmed.user_agent.as_deref(), Some("CustomUA/1.0"));
+        assert_eq!(
+            trimmed.stream_options().user_agent.as_deref(),
+            Some("CustomUA/1.0")
+        );
+
+        // 空白值归一为 None，HTTP 层据此回退内置 Lavf UA
+        let blank = PlayerConfig::from_options(Some(PlayerConfigOptions {
+            audio_buffer_secs: None,
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
+            demuxer_readahead_secs: None,
+            cache: None,
+            cache_secs: None,
+            cache_pause: None,
+            cache_pause_wait_secs: None,
+            demuxer_max_bytes: None,
+            demuxer_max_back_bytes: None,
+            network_timeout_secs: None,
+            playback_stall_timeout_secs: None,
+            http_proxy: None,
+            user_agent: Some("   ".to_string()),
+        }));
+        assert_eq!(blank.user_agent, None);
+        assert_eq!(blank.stream_options().user_agent, None);
     }
 }
 

@@ -6,6 +6,12 @@ export interface NetworkSettings {
   proxyRules: string;
   proxyUsername: string;
   proxyBypassRules: string;
+  /** 全局自定义 User-Agent，作用于窗口/插件等全局网络栈；留空使用 Electron 默认值 */
+  userAgent: string;
+  /** 酷狗 API 专用 User-Agent，仅覆盖酷狗接口请求；留空保持上游默认行为 */
+  kugouUserAgent: string;
+  /** 原生播放器拉取音频流的 User-Agent；留空保持内置默认行为 */
+  playerUserAgent: string;
   kugouApiTimeoutSecs: number;
   playerNetworkTimeoutSecs: number;
 }
@@ -32,6 +38,9 @@ export const DEFAULT_NETWORK_SETTINGS: NetworkSettings = {
   proxyRules: '',
   proxyUsername: '',
   proxyBypassRules: '<local>',
+  userAgent: '',
+  kugouUserAgent: '',
+  playerUserAgent: '',
   kugouApiTimeoutSecs: 0,
   playerNetworkTimeoutSecs: 60,
 };
@@ -133,6 +142,41 @@ const normalizeProxyBypassRules = (value: unknown): string => {
   return rules.join(',') || DEFAULT_NETWORK_SETTINGS.proxyBypassRules;
 };
 
+export const normalizeUserAgent = (value: unknown): string => {
+  const raw = String(value ?? '').trim();
+  // UA 会直接写入请求头，只接受可见 ASCII，避免 Chromium 拒绝非法请求头
+  if (!raw || raw.length > 1024 || /[^\x20-\x7e]/.test(raw)) return '';
+  return raw;
+};
+
+/** 将自定义 UA 写入请求头对象，兼容 AxiosHeaders.set 与普通对象 */
+export const writeUserAgentHeader = (headers: unknown, userAgent: string): void => {
+  if (!userAgent || !headers || typeof headers !== 'object') return;
+  const target = headers as { set?: (key: string, value: string) => void };
+  if (typeof target.set === 'function') target.set('User-Agent', userAgent);
+  else (headers as Record<string, unknown>)['User-Agent'] = userAgent;
+};
+
+// 酷狗自有域名后缀。酷狗 UA 只注入这些 host，避免污染同实例上的微信/QQ 登录等第三方请求。
+const KUGOU_HOST_SUFFIXES = ['kugou.com', 'kgimg.com'] as const;
+
+export const isKugouHost = (hostname: string): boolean => {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, '');
+  return KUGOU_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+};
+
+/** 判断 axios 请求是否指向酷狗域名；相对 URL 用 baseURL 解析，无法解析时按非酷狗处理 */
+export const isKugouRequestUrl = (url: unknown, baseURL?: unknown): boolean => {
+  try {
+    const rawUrl = String(url ?? '');
+    const rawBase = baseURL === undefined || baseURL === null ? '' : String(baseURL);
+    const resolved = rawBase ? new URL(rawUrl, rawBase) : new URL(rawUrl);
+    return isKugouHost(resolved.hostname);
+  } catch {
+    return false;
+  }
+};
+
 export const normalizeNetworkSettings = (
   value: Partial<NetworkSettings> | Record<string, unknown> | null | undefined,
 ): NetworkSettings => {
@@ -144,6 +188,9 @@ export const normalizeNetworkSettings = (
     proxyRules: normalizeProxyRules(Reflect.get(source, 'proxyRules')),
     proxyUsername: String(Reflect.get(source, 'proxyUsername') ?? '').trim(),
     proxyBypassRules: normalizeProxyBypassRules(Reflect.get(source, 'proxyBypassRules')),
+    userAgent: normalizeUserAgent(Reflect.get(source, 'userAgent')),
+    kugouUserAgent: normalizeUserAgent(Reflect.get(source, 'kugouUserAgent')),
+    playerUserAgent: normalizeUserAgent(Reflect.get(source, 'playerUserAgent')),
     kugouApiTimeoutSecs: clampNumber(
       Reflect.get(source, 'kugouApiTimeoutSecs'),
       DEFAULT_NETWORK_SETTINGS.kugouApiTimeoutSecs,
