@@ -422,7 +422,7 @@ const confirmResetDeviceIdentity = async () => {
       <div class="space-y-1">
         <h3 class="font-semibold">开发者模式</h3>
         <p class="text-sm text-text-secondary">
-          允许打开开发者工具，并在本机开放 CDP 调试端口供外部连接，重启后生效
+          允许打开浏览器控制台，并开启CDP调试端口，重启后生效
         </p>
       </div>
       <div class="flex w-45 flex-col gap-2">
@@ -545,7 +545,7 @@ const confirmResetDeviceIdentity = async () => {
     <Dialog
       v-model:open="showDevToolsRiskConfirm"
       title="开启开发者模式"
-      :description="`开启后应用将在本机开放 CDP 调试端口（127.0.0.1:${devToolsPortLabel}）。`"
+      description="开启后将在本机开放 CDP 调试端口。"
     >
       <div class="devtools-risk-hint">
         <p>
