@@ -37,9 +37,9 @@ pub use control::{
     set_audio_effect, set_audio_graph_parameter, set_audio_graph_plan, set_audio_output,
     set_equalizer, set_http_proxies, set_http_proxy, set_network_timeout, set_normalization_gain,
     set_pause_on_device_disconnect, set_speed, set_stall_timeout, set_transition_settings,
-    GetAudioDevicesTask, GetSpectrumSnapshotTask, SetAudioEffectTask, SetAudioGraphParameterTask,
-    SetAudioGraphPlanTask, SetAudioOutputTask, SetEqualizerTask, SetNormalizationGainTask,
-    SetSpeedTask, TransitionSettingsOptions, TransitionSettingsSnapshot,
+    set_user_agent, GetAudioDevicesTask, GetSpectrumSnapshotTask, SetAudioEffectTask,
+    SetAudioGraphParameterTask, SetAudioGraphPlanTask, SetAudioOutputTask, SetEqualizerTask,
+    SetNormalizationGainTask, SetSpeedTask, TransitionSettingsOptions, TransitionSettingsSnapshot,
 };
 pub use control::{seek, SeekTask};
 

@@ -310,6 +310,7 @@ interface PlayerAddon {
     networkTimeoutSecs?: number;
     playbackStallTimeoutSecs?: number;
     httpProxy?: string;
+    userAgent?: string;
   }): void;
   destroy(): void;
   registerLogHandler?: (
@@ -382,6 +383,8 @@ interface PlayerAddon {
   setNetworkTimeout(seconds: number): void;
   setHttpProxy(proxy: string): void;
   setHttpProxies(proxies: string[]): void;
+  /** 旧 .node 产物无此方法，可选调用 */
+  setUserAgent?(userAgent: string): void;
   configureSpectrum(options?: unknown): { available: boolean; running: boolean; reason?: string };
   getSpectrumStatus(): { available: boolean; running: boolean; reason?: string };
   getSpectrumSnapshot(): Promise<unknown>;
@@ -558,6 +561,7 @@ export class PlayerController extends EventEmitter {
       // Applied per URL before the native source is opened so system/PAC bypass
       // rules are resolved consistently with Chromium.
       httpProxy: '',
+      userAgent: networkSettings.playerUserAgent,
     });
     log.info('[PlayerController]', 'native audio cache configured', {
       ...audioConfig,
@@ -891,6 +895,7 @@ export class PlayerController extends EventEmitter {
       : 'https://gateway.kugou.com/';
     addon.setHttpProxies(await resolveNativeProxyUrls(targetUrl));
     addon.setNetworkTimeout(settings.playerNetworkTimeoutSecs);
+    addon.setUserAgent?.(settings.playerUserAgent);
   }
 
   private async applyProxyForUrl(url: string): Promise<void> {
