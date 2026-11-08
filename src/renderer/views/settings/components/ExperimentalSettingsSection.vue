@@ -425,23 +425,25 @@ const confirmResetDeviceIdentity = async () => {
           允许打开浏览器控制台，并开启CDP调试端口，重启后生效
         </p>
       </div>
-      <div class="flex w-45 flex-col gap-2">
-        <Switch
-          :model-value="settingStore.devToolsEnabled"
-          @update:model-value="(v: boolean) => (v ? requestEnableDevTools() : disableDevTools())"
-        />
-        <InputNumber
-          class="w-45"
-          :model-value="devToolsPortLabel"
-          :min="1024"
-          :max="65535"
-          :step="1"
-          placeholder="9223"
-          suffix="端口"
-          aria-label="开发者模式调试端口"
-          @update:model-value="updateDevToolsDebugPort"
-        />
-      </div>
+      <Switch
+        :model-value="settingStore.devToolsEnabled"
+        @update:model-value="(v: boolean) => (v ? requestEnableDevTools() : disableDevTools())"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <h3 class="font-semibold">调试端口</h3>
+      <InputNumber
+        class="w-45"
+        :model-value="devToolsPortLabel"
+        :min="1024"
+        :max="65535"
+        :step="1"
+        placeholder="9223"
+        suffix="端口"
+        aria-label="开发者模式调试端口"
+        @update:model-value="updateDevToolsDebugPort"
+      />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
