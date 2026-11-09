@@ -9,6 +9,13 @@ import { buildAuthHeader } from '@/utils/request';
 import { parseAccountImport } from '@/utils/accountImport';
 import { suspendRendererMemoryDiagnosticsForRelaunch } from '@/utils/rendererMemoryDiagnostics';
 import type { AppLogLevel } from '../../../../shared/logging';
+import {
+  DEFAULT_DEVTOOLS_DEBUG_PORT,
+  MAX_DEVTOOLS_DEBUG_PORT,
+  MIN_DEVTOOLS_DEBUG_PORT,
+  normalizeDevToolsDebugPort,
+  parseDevToolsDebugPort,
+} from '../../../../shared/devTools';
 import type { UserPatch } from '@/models/user';
 import Switch from '@/components/ui/Switch.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
@@ -66,6 +73,32 @@ const restartWithDiagnostics = async () => {
 const platform = window.electron?.platform;
 const supportsHighDpiOverride = computed(() => platform === 'win32' || platform === 'linux');
 const dpiScaleLabel = computed(() => Number(settingStore.dpiScale || 1).toFixed(1));
+
+// 开发者模式开启前先弹窗告知 CDP 端口风险，确认后才写入设置
+const showDevToolsRiskConfirm = ref(false);
+const devToolsPortLabel = computed(() =>
+  String(normalizeDevToolsDebugPort(settingStore.devToolsDebugPort)),
+);
+const updateDevToolsDebugPort = (value: string | number) => {
+  const port = parseDevToolsDebugPort(value);
+  if (port === null || port === settingStore.devToolsDebugPort) return;
+  settingStore.devToolsDebugPort = port;
+  settingStore.syncDevToolsDebugPort();
+};
+const requestEnableDevTools = () => {
+  showDevToolsRiskConfirm.value = true;
+};
+const confirmEnableDevTools = () => {
+  showDevToolsRiskConfirm.value = false;
+  if (settingStore.devToolsEnabled) return;
+  settingStore.devToolsEnabled = true;
+  settingStore.syncDevToolsEnabled();
+};
+const disableDevTools = () => {
+  if (!settingStore.devToolsEnabled) return;
+  settingStore.devToolsEnabled = false;
+  settingStore.syncDevToolsEnabled();
+};
 
 const showUserInfo = ref(false);
 const showImportUserInfo = ref(false);
@@ -395,19 +428,39 @@ const confirmResetDeviceIdentity = async () => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">开发者工具</h3>
-        <p class="text-sm text-text-secondary">允许打开开发者工具，重启后生效</p>
+        <h3 class="font-semibold">开发者模式</h3>
+        <p class="text-sm text-text-secondary">
+          允许打开浏览器控制台，并开启CDP调试端口，重启后生效
+        </p>
       </div>
       <Switch
         :model-value="settingStore.devToolsEnabled"
-        @update:model-value="
-          (v: boolean) => {
-            settingStore.devToolsEnabled = v;
-            settingStore.syncDevToolsEnabled();
-          }
-        "
+        @update:model-value="(v: boolean) => (v ? requestEnableDevTools() : disableDevTools())"
       />
     </div>
+    <template v-if="settingStore.devToolsEnabled">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">调试端口</h3>
+          <p class="text-sm text-text-secondary">
+            CDP 调试端口，范围 {{ MIN_DEVTOOLS_DEBUG_PORT }} 至
+            {{ MAX_DEVTOOLS_DEBUG_PORT }}，重启后生效
+          </p>
+        </div>
+        <InputNumber
+          class="w-45"
+          :model-value="devToolsPortLabel"
+          :min="MIN_DEVTOOLS_DEBUG_PORT"
+          :max="MAX_DEVTOOLS_DEBUG_PORT"
+          :step="1"
+          :placeholder="String(DEFAULT_DEVTOOLS_DEBUG_PORT)"
+          suffix="端口"
+          aria-label="开发者模式调试端口"
+          @update:model-value="updateDevToolsDebugPort"
+        />
+      </div>
+    </template>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
@@ -507,12 +560,41 @@ const confirmResetDeviceIdentity = async () => {
         </Button>
       </template>
     </Dialog>
+    <Dialog
+      v-model:open="showDevToolsRiskConfirm"
+      title="开启开发者模式"
+      description="开启后将在本机开放 CDP 调试端口。"
+    >
+      <div class="devtools-risk-hint">
+        <p>
+          本机任意程序都可通过该调试端口完全控制应用：读取账号凭证与本地数据、执行任意代码、操控界面与文件。
+        </p>
+        <p>
+          仅在需要调试时开启，用完请及时关闭；端口被其他程序占用时调试端口将不可用。变更将在重启应用后生效。
+        </p>
+      </div>
+      <template #footer>
+        <Button variant="outline" size="default" @click="showDevToolsRiskConfirm = false">
+          取消
+        </Button>
+        <Button variant="danger" size="default" @click="confirmEnableDevTools">仍要开启</Button>
+      </template>
+    </Dialog>
   </SettingsSectionShell>
 </template>
 
 <style scoped src="../settingsSection.css"></style>
 
 <style scoped>
+.devtools-risk-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
 .user-info-list {
   display: flex;
   flex-direction: column;

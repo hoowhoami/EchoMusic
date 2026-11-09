@@ -13,6 +13,7 @@ import {
 import { BrowserWindow, shell, app, nativeTheme, powerSaveBlocker, screen } from 'electron';
 import { join } from 'path';
 import { normalizeClosePreferences, type ThemeMode } from '../../shared/app';
+import { normalizeDevToolsDebugPort } from '../../shared/devTools';
 import {
   getMainAppSettings,
   setMainAppSetting,
@@ -421,6 +422,11 @@ export const registerMainWindowPreferenceHandlers = () => {
   ipcRegistry.registerListener('update-devtools-enabled', (_event, enabled: boolean) => {
     devToolsEnabled = enabled;
     setMainAppSetting('devToolsEnabled', enabled);
+  });
+
+  ipcRegistry.registerListener('update-devtools-debug-port', (_event, port: number) => {
+    // 渲染进程传入的值不可信，持久化前统一归一化
+    setMainAppSetting('devToolsDebugPort', normalizeDevToolsDebugPort(port));
   });
 };
 

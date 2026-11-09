@@ -1,5 +1,6 @@
 import { MAIN_WINDOW_DEFAULT_SIZE } from '../windowSizing';
 import { DEFAULT_WINDOW_BACKGROUND, type WindowBackground } from '../../shared/windowBackground';
+import { DEFAULT_DEVTOOLS_DEBUG_PORT, normalizeDevToolsDebugPort } from '../../shared/devTools';
 import { normalizeClosePreferences, type ClosePreferences, type ThemeMode } from '../../shared/app';
 import type { DesktopLyricSettings } from '../../shared/desktopLyric';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../shared/desktopLyric';
@@ -40,6 +41,7 @@ export type MainAppSettings = ClosePreferences & {
   highDpiEnabled: boolean;
   dpiScale: number;
   devToolsEnabled: boolean;
+  devToolsDebugPort: number;
   taskbarCoverPreview: boolean;
   taskbarProgress: boolean;
   taskbarPlayerEnabled: boolean;
@@ -74,6 +76,7 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   highDpiEnabled: false,
   dpiScale: 1,
   devToolsEnabled: false,
+  devToolsDebugPort: DEFAULT_DEVTOOLS_DEBUG_PORT,
   taskbarCoverPreview: false,
   taskbarProgress: true,
   taskbarPlayerEnabled: false,
@@ -159,6 +162,9 @@ export const getHighDpiSettings = () => {
 };
 
 export const getDevToolsEnabledSetting = () => Boolean(getMainAppSettings().devToolsEnabled);
+
+export const getDevToolsDebugPortSetting = () =>
+  normalizeDevToolsDebugPort(getMainAppSettings().devToolsDebugPort);
 
 export const getPersistedLogSettings = (): LogSettings =>
   getKvStorage().get<LogSettings>(LOG_SETTINGS_KEY) ?? DEFAULT_LOG_SETTINGS;
