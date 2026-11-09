@@ -180,6 +180,9 @@ export const NON_PORTABLE_APP_SETTING_KEYS = new Set([
   'searchHistory',
   'userAgreementAccepted',
   'logDiagnosticUntil',
+  // 开发者模式会开放本机 CDP 调试端口，必须在每台设备上经风险确认后单独开启
+  'devToolsEnabled',
+  'devToolsDebugPort',
 ]);
 
 const cloneJsonObject = (value: unknown): Record<string, unknown> => {

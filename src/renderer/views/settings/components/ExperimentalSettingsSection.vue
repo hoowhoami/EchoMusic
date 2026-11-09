@@ -9,6 +9,13 @@ import { buildAuthHeader } from '@/utils/request';
 import { parseAccountImport } from '@/utils/accountImport';
 import { suspendRendererMemoryDiagnosticsForRelaunch } from '@/utils/rendererMemoryDiagnostics';
 import type { AppLogLevel } from '../../../../shared/logging';
+import {
+  DEFAULT_DEVTOOLS_DEBUG_PORT,
+  MAX_DEVTOOLS_DEBUG_PORT,
+  MIN_DEVTOOLS_DEBUG_PORT,
+  normalizeDevToolsDebugPort,
+  parseDevToolsDebugPort,
+} from '../../../../shared/devTools';
 import type { UserPatch } from '@/models/user';
 import Switch from '@/components/ui/Switch.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
@@ -69,11 +76,12 @@ const dpiScaleLabel = computed(() => Number(settingStore.dpiScale || 1).toFixed(
 
 // 开发者模式开启前先弹窗告知 CDP 端口风险，确认后才写入设置
 const showDevToolsRiskConfirm = ref(false);
-const devToolsPortLabel = computed(() => String(settingStore.devToolsDebugPort || 9223));
+const devToolsPortLabel = computed(() =>
+  String(normalizeDevToolsDebugPort(settingStore.devToolsDebugPort)),
+);
 const updateDevToolsDebugPort = (value: string | number) => {
-  const port = Math.round(Number(value));
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) return;
-  if (port === settingStore.devToolsDebugPort) return;
+  const port = parseDevToolsDebugPort(value);
+  if (port === null || port === settingStore.devToolsDebugPort) return;
   settingStore.devToolsDebugPort = port;
   settingStore.syncDevToolsDebugPort();
 };
@@ -430,21 +438,29 @@ const confirmResetDeviceIdentity = async () => {
         @update:model-value="(v: boolean) => (v ? requestEnableDevTools() : disableDevTools())"
       />
     </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <h3 class="font-semibold">调试端口</h3>
-      <InputNumber
-        class="w-45"
-        :model-value="devToolsPortLabel"
-        :min="1024"
-        :max="65535"
-        :step="1"
-        placeholder="9223"
-        suffix="端口"
-        aria-label="开发者模式调试端口"
-        @update:model-value="updateDevToolsDebugPort"
-      />
-    </div>
+    <template v-if="settingStore.devToolsEnabled">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">调试端口</h3>
+          <p class="text-sm text-text-secondary">
+            CDP 调试端口，范围 {{ MIN_DEVTOOLS_DEBUG_PORT }} 至
+            {{ MAX_DEVTOOLS_DEBUG_PORT }}，重启后生效
+          </p>
+        </div>
+        <InputNumber
+          class="w-45"
+          :model-value="devToolsPortLabel"
+          :min="MIN_DEVTOOLS_DEBUG_PORT"
+          :max="MAX_DEVTOOLS_DEBUG_PORT"
+          :step="1"
+          :placeholder="String(DEFAULT_DEVTOOLS_DEBUG_PORT)"
+          suffix="端口"
+          aria-label="开发者模式调试端口"
+          @update:model-value="updateDevToolsDebugPort"
+        />
+      </div>
+    </template>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

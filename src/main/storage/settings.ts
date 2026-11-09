@@ -1,9 +1,6 @@
 import { MAIN_WINDOW_DEFAULT_SIZE } from '../windowSizing';
 import { DEFAULT_WINDOW_BACKGROUND, type WindowBackground } from '../../shared/windowBackground';
-
-/** 开发者模式 CDP 调试端口默认值 */
-export const DEFAULT_DEVTOOLS_DEBUG_PORT = 9223;
-
+import { DEFAULT_DEVTOOLS_DEBUG_PORT, normalizeDevToolsDebugPort } from '../../shared/devTools';
 import { normalizeClosePreferences, type ClosePreferences, type ThemeMode } from '../../shared/app';
 import type { DesktopLyricSettings } from '../../shared/desktopLyric';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../shared/desktopLyric';
@@ -165,13 +162,6 @@ export const getHighDpiSettings = () => {
 };
 
 export const getDevToolsEnabledSetting = () => Boolean(getMainAppSettings().devToolsEnabled);
-
-export const normalizeDevToolsDebugPort = (value: unknown): number => {
-  const port = Math.round(Number(value));
-  return Number.isInteger(port) && port >= 1024 && port <= 65535
-    ? port
-    : DEFAULT_DEVTOOLS_DEBUG_PORT;
-};
 
 export const getDevToolsDebugPortSetting = () =>
   normalizeDevToolsDebugPort(getMainAppSettings().devToolsDebugPort);

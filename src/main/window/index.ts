@@ -13,9 +13,9 @@ import {
 import { BrowserWindow, shell, app, nativeTheme, powerSaveBlocker, screen } from 'electron';
 import { join } from 'path';
 import { normalizeClosePreferences, type ThemeMode } from '../../shared/app';
+import { normalizeDevToolsDebugPort } from '../../shared/devTools';
 import {
   getMainAppSettings,
-  normalizeDevToolsDebugPort,
   setMainAppSetting,
   setMainClosePreferences,
 } from '../storage/settings';
@@ -425,7 +425,7 @@ export const registerMainWindowPreferenceHandlers = () => {
   });
 
   ipcRegistry.registerListener('update-devtools-debug-port', (_event, port: number) => {
-    // 合法性归一化在 getter 侧兜底，这里直接持久化 UI 已 clamp 的值
+    // 渲染进程传入的值不可信，持久化前统一归一化
     setMainAppSetting('devToolsDebugPort', normalizeDevToolsDebugPort(port));
   });
 };

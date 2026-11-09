@@ -795,7 +795,6 @@ const importSettingsBackupForOwner = async (
         'autoLaunch',
         'startMinimized',
         'highDpiEnabled',
-        'devToolsEnabled',
         'taskbarCoverPreview',
         'taskbarProgress',
       ];

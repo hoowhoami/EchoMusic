@@ -11,6 +11,7 @@ import {
 import { applyWindowBackground } from '@/utils/windowBackground';
 import { defineStore } from 'pinia';
 import { normalizeClosePreferences, type CloseBehavior, type ThemeMode } from '../../shared/app';
+import { DEFAULT_DEVTOOLS_DEBUG_PORT } from '../../shared/devTools';
 import type { RecognizeAudioSource } from '../../shared/recognize';
 import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../shared/logging';
 import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
@@ -289,7 +290,7 @@ export const useSettingStore = defineStore('setting', {
     // DevTools 开关
     devToolsEnabled: false,
     // 开发者模式 CDP 调试端口，重启后生效
-    devToolsDebugPort: 9223,
+    devToolsDebugPort: DEFAULT_DEVTOOLS_DEBUG_PORT,
   }),
   getters: {
     floatingSurfaceFrosted: () => useThemeStore().floatingSurfaceFrosted,
