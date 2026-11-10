@@ -208,22 +208,16 @@ const currentPlaylistContentIds = computed(() =>
 
 const isFavoritePlaylist = computed(() => {
   if (!playlist.value) return false;
-  const currentIds = currentPlaylistIds.value;
-  if (currentIds.length === 0) return false;
   const currentUserId = userStore.info?.userid;
   return playlistStore.userPlaylists.some((entry) => {
     if (entry.source === 2) return false;
     if (currentUserId && entry.listCreateUserid === currentUserId) return false;
-    const entryIds = [
-      entry.id,
-      entry.listid,
-      entry.listCreateListid,
-      entry.globalCollectionId,
-      entry.listCreateGid,
-    ]
-      .filter((item): item is string | number => item !== undefined && item !== null && item !== '')
-      .map((item) => String(item));
-    return entryIds.some((id) => currentIds.includes(id));
+    // 仅用全局唯一的 gid 匹配：listid/listCreateListid 是按账号分配的小整数，
+    // 探索歌单与用户收藏歌单的这两个值极易撞号，会造成「任意歌单都显示已收藏」。
+    // 覆盖两种视图：用户库 gid（收藏后重写）与原创建者 gid（分享链接等入口）。
+    const currentGids = [playlist.value?.globalCollectionId, playlist.value?.listCreateGid];
+    const entryGids = [entry.globalCollectionId, entry.listCreateGid];
+    return entryGids.some((gid) => gid && currentGids.includes(gid));
   });
 });
 

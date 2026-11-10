@@ -273,21 +273,12 @@ export const userActions = {
       const target = this.userPlaylists.find((playlist) => {
         if (playlist.source === 2) return false;
         if (currentUserId && playlist.listCreateUserid === currentUserId) return false;
-        const localId = String(playlist.listid ?? playlist.id);
-        const originalId = String(playlist.listCreateGid ?? playlist.globalCollectionId ?? '');
-        const originalListId = String(playlist.listCreateListid ?? '');
-        const currentIds = [
-          String(meta.id),
-          String(meta.listid ?? ''),
-          String(meta.listCreateListid ?? ''),
-          String(meta.listCreateGid ?? ''),
-          String(meta.globalCollectionId ?? ''),
-        ];
-        return (
-          currentIds.includes(localId) ||
-          (originalId && currentIds.includes(originalId)) ||
-          (originalListId && currentIds.includes(originalListId))
-        );
+        // 与详情页 isFavoritePlaylist 保持一致，仅用全局唯一的 gid 匹配。
+        // listid/listCreateListid 是按账号分配的小整数，跨歌单比较极易撞号，
+        // 会导致取消收藏删到用户库里另一个真实收藏的歌单。
+        const currentGids = [meta.globalCollectionId, meta.listCreateGid];
+        const entryGids = [playlist.globalCollectionId, playlist.listCreateGid];
+        return entryGids.some((gid) => !!gid && currentGids.includes(gid));
       });
 
       const listId = target?.listid ?? target?.id;
