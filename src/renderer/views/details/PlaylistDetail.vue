@@ -42,6 +42,7 @@ import { parsePlaylistTracks } from '@/utils/mappers';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import { usePlaylistStore } from '@/stores/playlist';
+import { matchesFavoriteEntry } from '@/stores/playlist/helpers';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import {
@@ -207,19 +208,29 @@ const currentPlaylistContentIds = computed(() =>
 );
 
 const isFavoritePlaylist = computed(() => {
-  if (!playlist.value) return false;
+  const meta = playlist.value;
+  if (!meta) return false;
   const currentUserId = userStore.info?.userid;
   return playlistStore.userPlaylists.some((entry) => {
     if (entry.source === 2) return false;
     if (currentUserId && entry.listCreateUserid === currentUserId) return false;
-    // 仅用全局唯一的 gid 匹配：listid/listCreateListid 是按账号分配的小整数，
-    // 探索歌单与用户收藏歌单的这两个值极易撞号，会造成「任意歌单都显示已收藏」。
-    // 覆盖两种视图：用户库 gid（收藏后重写）与原创建者 gid（分享链接等入口）。
-    const currentGids = [playlist.value?.globalCollectionId, playlist.value?.listCreateGid];
-    const entryGids = [entry.globalCollectionId, entry.listCreateGid];
-    return entryGids.some((gid) => gid && currentGids.includes(gid));
+    // 仅比较全局唯一身份（gid，缺失时回退原创建者组合键，见 matchesFavoriteEntry），
+    // 不再用 listid/listCreateListid 这类按账号分配的小整数匹配——
+    // 跨歌单撞号会造成「任意歌单都显示已收藏」并误删其他收藏。
+    return matchesFavoriteEntry(entry, meta);
   });
 });
+
+// 收藏/取消收藏共用入口：失败时明确提示，避免「点了没反应」被误读为已生效。
+const togglePlaylistFavorite = async () => {
+  const meta = playlist.value;
+  if (!meta || !userStore.isLoggedIn) return;
+  const isFavorite = isFavoritePlaylist.value;
+  const succeeded = isFavorite
+    ? await playlistStore.unfavoritePlaylist(meta, userStore.info?.userid)
+    : await playlistStore.favoritePlaylist(meta, userStore.info?.userid);
+  if (!succeeded) toastStore.actionFailed(isFavorite ? '取消收藏' : '收藏歌单');
+};
 
 const songTotalCount = computed(() => {
   const metaCount = playlist.value?.count ?? 0;
@@ -626,11 +637,7 @@ const secondaryActions = computed(() => {
       onTap: async () => {
         if (!playlist.value) return;
         if (!userStore.isLoggedIn) return;
-        if (isFavoritePlaylist.value) {
-          await playlistStore.unfavoritePlaylist(playlist.value, userStore.info?.userid);
-        } else {
-          await playlistStore.favoritePlaylist(playlist.value, userStore.info?.userid);
-        }
+        await togglePlaylistFavorite();
       },
     });
   }
@@ -945,16 +952,7 @@ watch(
               v-if="!isOwnerPlaylist && userStore.isLoggedIn"
               variant="unstyled"
               size="icon"
-              @click="
-                () => {
-                  if (!playlist) return;
-                  if (isFavoritePlaylist) {
-                    playlistStore.unfavoritePlaylist(playlist, userStore.info?.userid);
-                  } else {
-                    playlistStore.favoritePlaylist(playlist, userStore.info?.userid);
-                  }
-                }
-              "
+              @click="togglePlaylistFavorite"
               class="action-icon rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
             >
               <Icon

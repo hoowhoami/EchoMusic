@@ -51,6 +51,37 @@ export const getPlaylistIdentityValues = (playlist: PlaylistMeta): string[] =>
     .filter((value) => value !== undefined && value !== null && String(value) !== '')
     .map((value) => String(value));
 
+// 原创建者的歌单身份键（gid 的构成成分，与 playlistCommentId 的 collection_3_ 约定一致）。
+// uid + 原创建列表号组合才是全局唯一的；任一成分缺失时返回空，不参与匹配。
+const originalCollectionKey = (playlist: PlaylistMeta): string => {
+  const { listCreateUserid, listCreateListid } = playlist;
+  if (!listCreateUserid || listCreateUserid <= 0) return '';
+  if (listCreateListid === undefined || listCreateListid === null || listCreateListid <= 0) {
+    return '';
+  }
+  return `collection_3_${listCreateUserid}_${listCreateListid}`;
+};
+
+/**
+ * 判定「用户库歌单条目」与「展示侧歌单」是否为同一个收藏。
+ * 仅比较全局唯一身份：gid（globalCollectionId / listCreateGid）优先；
+ * 双方均无 gid 时回退到原创建者 userid+列表号组合，覆盖只有数字身份的
+ * 历史 / 分享 / 本地入口数据。绝不比较 listid/listCreateListid 裸值——
+ * 它们按账号分配，跨歌单必撞号，曾导致探索页误报已收藏、取消收藏误删其他歌单。
+ */
+export const matchesFavoriteEntry = (entry: PlaylistMeta, meta: PlaylistMeta): boolean => {
+  const metaGids = [meta.globalCollectionId, meta.listCreateGid];
+  const entryGids = [entry.globalCollectionId, entry.listCreateGid];
+  if (entryGids.some((gid) => !!gid && metaGids.includes(gid))) {
+    return true;
+  }
+  // 任一侧带显式 gid 时不回退组合键：gid 是更精确的身份，不一致即视为不同歌单，
+  // 避免异常数据借组合键误判；只有双方都缺失 gid 才用组合键兜底。
+  if (entryGids.some(Boolean) || metaGids.some(Boolean)) return false;
+  const entryOrigin = originalCollectionKey(entry);
+  return entryOrigin !== '' && entryOrigin === originalCollectionKey(meta);
+};
+
 export const findLikedPlaylist = (playlists: PlaylistMeta[]): PlaylistMeta | undefined => {
   let index = playlists.findIndex(
     (playlist) => normalizePlaylistName(playlist.name) === '我喜欢的音乐',
