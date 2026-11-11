@@ -515,180 +515,43 @@ jobs:
 
   notify:
     name: Send Telegram Notification
-    if: startsWith(github.ref, 'refs/tags/') && success()
-    needs:
-      - build
-      - release
+    needs: release
+    if: needs.release.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Build changelog
-        shell: bash
-        run: |
-          set -e
-          VERSION="${GITHUB_REF_NAME#v}"
-          CHANGELOG_SUMMARY=$(awk -v ver="$VERSION" '
-            /^## \[/ {
-              if (found) exit
-              if (index($0, "[" ver "]")) found=1
-              next
-            }
-            found && /^### / { section=substr($0, 5); next }
-            found && /^- / {
-              counts[section]++
-              take = (section == "新增" && picked[section] < 2) ||
-                     (section == "优化" && picked[section] < 1) ||
-                     (section == "修复" && picked[section] < 2)
-              if (take) {
-                text=substr($0, 3)
-                highlights[++highlight_count]=text
-                picked[section]++
-              }
-            }
-            END {
-              if (!found) exit
-              printf "新增 %d · 优化 %d · 修复 %d", counts["新增"], counts["优化"], counts["修复"]
-              for (i=1; i<=highlight_count; i++) printf "\n• %s", highlights[i]
-            }
-          ' CHANGELOG.md \
-            | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
-
-          if [ -z "$CHANGELOG_SUMMARY" ]; then
-            CHANGELOG_SUMMARY="完整更新内容请查看 Release"
-          fi
-
-          {
-            echo "CHANGELOG_SUMMARY<<EOF"
-            echo "$CHANGELOG_SUMMARY"
-            echo "EOF"
-          } >> "$GITHUB_ENV"
-
-      - name: Send Telegram message
-        shell: bash
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Send release announcement
         env:
+          RELEASE_PRODUCT: EchoMusic
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
-        run: |
-          set -e
-          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "Telegram secrets are missing, skip notification."
-            exit 0
-          fi
-
-          VERSION="${GITHUB_REF_NAME}"
-          REPO="${GITHUB_REPOSITORY}"
-
-          RELEASE_URL="https://github.com/${REPO}/releases/tag/${VERSION}"
-          printf -v MESSAGE '%s\n\n%s\n%s\n\n%s' \
-            "🎉 <b>EchoMusic ${VERSION} 已发布</b>" \
-            "📋 <b>更新摘要</b>" \
-            "${CHANGELOG_SUMMARY}" \
-            "⬇️ <a href=\"${RELEASE_URL}\">下载与完整更新</a>"
-
-          PAYLOAD=$(jq -n \
-            --arg chat_id "$TELEGRAM_CHAT_ID" \
-            --arg text "$MESSAGE" \
-            --arg parse_mode "HTML" \
-            '{chat_id: $chat_id, text: $text, parse_mode: $parse_mode, disable_web_page_preview: true}')
-
-          if [ -n "$TELEGRAM_TOPIC_ID" ]; then
-            PAYLOAD=$(echo "$PAYLOAD" | jq --arg topic_id "$TELEGRAM_TOPIC_ID" '. + {message_thread_id: ($topic_id | tonumber)}')
-          fi
-
-          curl --fail-with-body -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD"
+        run: node scripts/release-notify.mjs telegram
 
   notify-qq:
-    name: Send QQ Group Notification
-    if: startsWith(github.ref, 'refs/tags/') && success()
-    needs:
-      - build
-      - release
+    name: Send QQ Official Bot Notification
+    needs: release
+    if: needs.release.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Build changelog
-        shell: bash
-        run: |
-          set -e
-          VERSION="${GITHUB_REF_NAME#v}"
-          CHANGELOG_SUMMARY=$(awk -v ver="$VERSION" '
-            /^## \[/ {
-              if (found) exit
-              if (index($0, "[" ver "]")) found=1
-              next
-            }
-            found && /^### / { section=substr($0, 5); next }
-            found && /^- / {
-              counts[section]++
-              take = (section == "新增" && picked[section] < 2) ||
-                     (section == "优化" && picked[section] < 1) ||
-                     (section == "修复" && picked[section] < 2)
-              if (take) {
-                text=substr($0, 3)
-                highlights[++highlight_count]=text
-                picked[section]++
-              }
-            }
-            END {
-              if (!found) exit
-              printf "新增 %d · 优化 %d · 修复 %d", counts["新增"], counts["优化"], counts["修复"]
-              for (i=1; i<=highlight_count; i++) printf "\n• %s", highlights[i]
-            }
-          ' CHANGELOG.md)
-
-          if [ -z "$CHANGELOG_SUMMARY" ]; then
-            CHANGELOG_SUMMARY="完整更新内容请查看 Release"
-          fi
-
-          {
-            echo "CHANGELOG_SUMMARY<<EOF"
-            echo "$CHANGELOG_SUMMARY"
-            echo "EOF"
-          } >> "$GITHUB_ENV"
-
-      - name: Send QQ group message via OneBot API
-        shell: bash
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Send release announcement
         env:
-          QQ_BOT_API: ${{ secrets.QQ_BOT_API }}
-          QQ_GROUP_ID: ${{ secrets.QQ_GROUP_ID }}
-          QQ_BOT_TOKEN: ${{ secrets.QQ_BOT_TOKEN }}
-        run: |
-          set -e
-          if [ -z "$QQ_BOT_API" ] || [ -z "$QQ_GROUP_ID" ]; then
-            echo "QQ Bot secrets are missing, skip QQ notification."
-            exit 0
-          fi
-
-          VERSION="${GITHUB_REF_NAME}"
-          REPO="${GITHUB_REPOSITORY}"
-
-          RELEASE_URL="https://github.com/${REPO}/releases/tag/${VERSION}"
-          MESSAGE=$(printf '🎉 EchoMusic %s 已发布\n\n📋 更新摘要\n%s\n\n⬇️ 下载与完整更新\n%s' \
-            "$VERSION" "$CHANGELOG_SUMMARY" "$RELEASE_URL")
-
-          HEADERS=(-H "Content-Type: application/json")
-          if [ -n "$QQ_BOT_TOKEN" ]; then
-            HEADERS+=(-H "Authorization: Bearer ${QQ_BOT_TOKEN}")
-          fi
-
-          PAYLOAD=$(jq -n \
-            --arg group_id "$QQ_GROUP_ID" \
-            --arg message "$MESSAGE" \
-            '{message_type: "group", group_id: $group_id, message: $message}')
-
-          curl --fail-with-body -sS -X POST "${QQ_BOT_API}/send_msg" \
-            "${HEADERS[@]}" \
-            -d "$PAYLOAD"
+          RELEASE_PRODUCT: EchoMusic
+          QQ_BOT_APP_ID: ${{ secrets.QQ_BOT_APP_ID }}
+          QQ_BOT_APP_SECRET: ${{ secrets.QQ_BOT_APP_SECRET }}
+          QQ_GROUP_OPENID: ${{ secrets.QQ_GROUP_OPENID }}
+          QQ_GROUP_OPENID_2: ${{ secrets.QQ_GROUP_OPENID_2 }}
+        run: node scripts/release-notify.mjs qq
