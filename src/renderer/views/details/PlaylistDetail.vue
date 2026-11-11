@@ -41,8 +41,7 @@ import { mapPlaylistMeta, resolvePlaylistTrackQueryId } from '@/utils/mappers';
 import { parsePlaylistTracks } from '@/utils/mappers';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
-import { usePlaylistStore } from '@/stores/playlist';
-import { matchesFavoriteEntry } from '@/stores/playlist/helpers';
+import { usePlaylistStore, matchesFavoriteEntry } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import {
@@ -222,14 +221,18 @@ const isFavoritePlaylist = computed(() => {
 });
 
 // 收藏/取消收藏共用入口：失败时明确提示，避免「点了没反应」被误读为已生效。
+// 账号切换会让进行中的操作返回失败，这不是操作本身失败，不弹提示。
 const togglePlaylistFavorite = async () => {
   const meta = playlist.value;
   if (!meta || !userStore.isLoggedIn) return;
   const isFavorite = isFavoritePlaylist.value;
+  const sessionUserId = userStore.info?.userid;
   const succeeded = isFavorite
-    ? await playlistStore.unfavoritePlaylist(meta, userStore.info?.userid)
-    : await playlistStore.favoritePlaylist(meta, userStore.info?.userid);
-  if (!succeeded) toastStore.actionFailed(isFavorite ? '取消收藏' : '收藏歌单');
+    ? await playlistStore.unfavoritePlaylist(meta, sessionUserId)
+    : await playlistStore.favoritePlaylist(meta, sessionUserId);
+  const sessionStillCurrent = userStore.isLoggedIn && userStore.info?.userid === sessionUserId;
+  if (!succeeded && sessionStillCurrent)
+    toastStore.actionFailed(isFavorite ? '取消收藏' : '收藏歌单');
 };
 
 const songTotalCount = computed(() => {
@@ -634,11 +637,7 @@ const secondaryActions = computed(() => {
       label: isFavoritePlaylist.value ? '已收藏' : '收藏',
       emphasized: isFavoritePlaylist.value,
       tone: 'favorite',
-      onTap: async () => {
-        if (!playlist.value) return;
-        if (!userStore.isLoggedIn) return;
-        await togglePlaylistFavorite();
-      },
+      onTap: togglePlaylistFavorite,
     });
   }
 

@@ -3,7 +3,7 @@ import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { transformSync } from 'esbuild';
+import { buildSync, transformSync } from 'esbuild';
 import * as vue from 'vue';
 
 const compile = (path, dependencies = {}) => {
@@ -32,6 +32,24 @@ const helpers = compile('../src/renderer/stores/playlist/helpers.ts', {
   './constants': constants,
 });
 const { matchesFavoriteEntry } = helpers;
+
+// 真实 mapper 参与匹配时必须实测：mapper 会用 specialid 合成数字 gid，
+// 与手写 fixture 的字段形态不同。
+const mapPlaylistMeta = (() => {
+  const source = buildSync({
+    entryPoints: ['src/renderer/utils/mappers/playlist.ts'],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    write: false,
+    alias: { '@': './src/renderer' },
+  }).outputFiles[0].text;
+  const module = { exports: {} };
+  new Function('module', 'exports', 'require', source)(module, module.exports, (name) => {
+    throw new Error(`Unexpected mapper dependency: ${name}`);
+  });
+  return module.exports.mapPlaylistMeta;
+})();
 
 const user = vue.reactive({
   isLoggedIn: true,
@@ -120,13 +138,28 @@ test('matchesFavoriteEntry: identical listids with different gids never match (�
   assert.equal(matchesFavoriteEntry(favored, explore), false);
 });
 
-test('matchesFavoriteEntry: falls back to creator userid+listid composite when both sides lack gids', () => {
+test('matchesFavoriteEntry: falls back to creator composite key when only synthesized numeric gids exist', () => {
   const entry = { listid: 40, listCreateListid: 153, listCreateUserid: 2187780004 };
   assert.equal(
     matchesFavoriteEntry(entry, { listCreateListid: 153, listCreateUserid: 2187780004 }),
     true,
   );
-  // 同组合键但 gid 不同：显式 gid 是更精确的身份，不一致时不放行
+  // mapper 会用 specialid 合成纯数字 gid（如 "40"），那不是全局身份：
+  // 不能因此阻断组合键兜底，也不能与真实 gid 混比。
+  assert.equal(
+    matchesFavoriteEntry(
+      {
+        listCreateListid: 153,
+        listCreateUserid: 2187780004,
+        globalCollectionId: '40',
+        listCreateGid: '',
+      },
+      { listCreateListid: 153, listCreateUserid: 2187780004 },
+    ),
+    true,
+  );
+  // 收藏者命名空间 gid 与原创建者 gid 天然不同（历史条目缺 listCreateGid）：
+  // 靠组合键确认同一歌单，不因两侧 global gid 不同而否决。
   assert.equal(
     matchesFavoriteEntry(
       {
@@ -140,7 +173,7 @@ test('matchesFavoriteEntry: falls back to creator userid+listid composite when b
         globalCollectionId: 'collection_3_2_2_0',
       },
     ),
-    false,
+    true,
   );
   // 组合键创建者不同：即使用了同一个 153 也不匹配
   assert.equal(
@@ -149,6 +182,80 @@ test('matchesFavoriteEntry: falls back to creator userid+listid composite when b
   );
   // 双方均无任何全局身份（只剩裸 id/listid）：不匹配
   assert.equal(matchesFavoriteEntry({ id: 13, listid: 13 }, { id: 13, listid: 13 }), false);
+});
+
+test('matchesFavoriteEntry: conflicting real creator gids veto the composite fallback', () => {
+  assert.equal(
+    matchesFavoriteEntry(
+      {
+        listCreateListid: 153,
+        listCreateUserid: 2187780004,
+        listCreateGid: 'collection_3_2187780004_153_0',
+      },
+      {
+        listCreateListid: 153,
+        listCreateUserid: 2187780004,
+        listCreateGid: 'collection_3_950020348_153_0',
+      },
+    ),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 真实 mapPlaylistMeta 下的匹配（复审要求的 mapper 层覆盖）
+// ---------------------------------------------------------------------------
+
+test('real mapper: historical entry with only collector gid still matches the creator-gid detail view', () => {
+  // 历史收藏条目：有收藏者命名空间 gid、缺 list_create_gid
+  const entry = mapPlaylistMeta({
+    list_create_userid: 2187780004,
+    list_create_listid: 153,
+    listid: 40,
+    specialid: 40,
+    name: '宿命感影视OST',
+    global_collection_id: 'collection_3_7_40_0',
+  });
+  // 详情侧只有原创建者 gid（探索页进入）
+  const meta = mapPlaylistMeta({
+    global_collection_id: 'collection_3_2187780004_153_0',
+    specialid: 8754998,
+    list_create_userid: 2187780004,
+    list_create_listid: 153,
+    name: '宿命感影视OST',
+  });
+  assert.equal(entry.listCreateGid, '');
+  assert.equal(meta.listCreateGid, '');
+  assert.equal(matchesFavoriteEntry(entry, meta), true);
+});
+
+test('real mapper: specialid-synthesized numeric gid neither collides nor blocks the composite fallback', () => {
+  // raw 缺 gid 时 mapper 会把 specialid 合成纯数字 gid
+  const bare = mapPlaylistMeta({
+    list_create_userid: 2187780004,
+    list_create_listid: 153,
+    specialid: 153,
+    name: '宿命感影视OST',
+  });
+  assert.equal(bare.globalCollectionId, '153');
+  // 不阻塞组合键：同创建者同列表号仍能识别为已收藏
+  const creatorView = mapPlaylistMeta({
+    global_collection_id: 'collection_3_2187780004_153_0',
+    specialid: 8754998,
+    list_create_userid: 2187780004,
+    list_create_listid: 153,
+    name: '宿命感影视OST',
+  });
+  assert.equal(matchesFavoriteEntry(bare, creatorView), true);
+  // 不撞号：探索歌单的原创建者列表号同为 153，但创建者不同，必须不匹配
+  const explore = mapPlaylistMeta({
+    global_collection_id: 'collection_3_950020348_153_0',
+    specialid: 9314360,
+    list_create_userid: 950020348,
+    list_create_listid: 153,
+    name: '200首经典老歌',
+  });
+  assert.equal(matchesFavoriteEntry(bare, explore), false);
 });
 
 // ---------------------------------------------------------------------------
@@ -220,6 +327,34 @@ test('unfavoritePlaylist: cancels via creator composite fallback when gids are a
       listCreateListid: 153,
       listCreateUserid: 2187780004,
     },
+    7,
+  );
+  assert.equal(ok, true);
+  assert.deepEqual(calls.deletePlaylist, [40]);
+});
+
+test('unfavoritePlaylist: real mapper historical entry cancels against the creator-gid detail view', async () => {
+  const { store, calls, userActions } = setup();
+  // 用户库条目只有收藏者命名空间 gid，详情页从探索入口带的是原创建者 gid
+  store.userPlaylists = [
+    mapPlaylistMeta({
+      list_create_userid: 2187780004,
+      list_create_listid: 153,
+      listid: 40,
+      specialid: 40,
+      name: '宿命感影视OST',
+      global_collection_id: 'collection_3_7_40_0',
+    }),
+  ];
+  const ok = await userActions.unfavoritePlaylist.call(
+    store,
+    mapPlaylistMeta({
+      global_collection_id: 'collection_3_2187780004_153_0',
+      specialid: 8754998,
+      list_create_userid: 2187780004,
+      list_create_listid: 153,
+      name: '宿命感影视OST',
+    }),
     7,
   );
   assert.equal(ok, true);
