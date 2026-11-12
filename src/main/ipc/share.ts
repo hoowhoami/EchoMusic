@@ -1,4 +1,4 @@
-import { clipboard } from 'electron';
+import { clipboard, screen, BrowserWindow } from 'electron';
 import type { ShareCaptureRect } from '../../shared/share';
 import { ipcRegistry } from './registry';
 
@@ -25,6 +25,8 @@ const normalizeCaptureRect = (rect: ShareCaptureRect | undefined) => {
   };
 };
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
 export const registerShareHandlers = () => {
   ipcRegistry.registerHandler('share:copy', (_event, text: string) => {
     clipboard.writeText(String(text ?? ''));
@@ -37,10 +39,23 @@ export const registerShareHandlers = () => {
       const captureRect = normalizeCaptureRect(rect);
       if (!captureRect || event.sender.isDestroyed()) return false;
 
-      const image = await event.sender.capturePage(captureRect);
+      // capturePage(rect) 的 rect 裁剪在混合 DPI / 窗口跨屏等环境下坐标语义不稳定
+      // （听歌统计分享曾因此错位截到页面其他区域）；这里改为整页截图后，
+      // 由自己按「CSS 坐标 × zoomFactor × 屏幕缩放」换算物理像素再裁剪。
+      const image = await event.sender.capturePage();
       if (image.isEmpty()) return false;
 
-      clipboard.writeImage(image);
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const scaleFactor = win ? screen.getDisplayMatching(win.getBounds()).scaleFactor : 1;
+      const scale = event.sender.getZoomFactor() * scaleFactor;
+      const size = image.getSize();
+      const x = clamp(Math.round(captureRect.x * scale), 0, size.width);
+      const y = clamp(Math.round(captureRect.y * scale), 0, size.height);
+      const width = clamp(Math.round(captureRect.width * scale), 0, size.width - x);
+      const height = clamp(Math.round(captureRect.height * scale), 0, size.height - y);
+      if (width <= 0 || height <= 0) return false;
+
+      clipboard.writeImage(image.crop({ x, y, width, height }));
       return true;
     },
   );
