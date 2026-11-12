@@ -50,8 +50,7 @@ export const registerShareHandlers = () => {
       // sender 恒为窗口 webContents，此分支实际不可达；宁可失败也不按 1 倍缩放静默产出错位截图
       if (!win) return false;
       const scale =
-        event.sender.getZoomFactor() *
-        screen.getDisplayMatching(win.getBounds()).scaleFactor;
+        event.sender.getZoomFactor() * screen.getDisplayMatching(win.getBounds()).scaleFactor;
       const size = image.getSize();
       const x = clamp(Math.round(captureRect.x * scale), 0, size.width);
       const y = clamp(Math.round(captureRect.y * scale), 0, size.height);
