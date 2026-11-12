@@ -41,7 +41,7 @@ import { mapPlaylistMeta, resolvePlaylistTrackQueryId } from '@/utils/mappers';
 import { parsePlaylistTracks } from '@/utils/mappers';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
-import { usePlaylistStore } from '@/stores/playlist';
+import { usePlaylistStore, matchesFavoriteEntry } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import {
@@ -207,25 +207,33 @@ const currentPlaylistContentIds = computed(() =>
 );
 
 const isFavoritePlaylist = computed(() => {
-  if (!playlist.value) return false;
-  const currentIds = currentPlaylistIds.value;
-  if (currentIds.length === 0) return false;
+  const meta = playlist.value;
+  if (!meta) return false;
   const currentUserId = userStore.info?.userid;
   return playlistStore.userPlaylists.some((entry) => {
     if (entry.source === 2) return false;
     if (currentUserId && entry.listCreateUserid === currentUserId) return false;
-    const entryIds = [
-      entry.id,
-      entry.listid,
-      entry.listCreateListid,
-      entry.globalCollectionId,
-      entry.listCreateGid,
-    ]
-      .filter((item): item is string | number => item !== undefined && item !== null && item !== '')
-      .map((item) => String(item));
-    return entryIds.some((id) => currentIds.includes(id));
+    // 仅比较全局唯一身份（gid，缺失时回退原创建者组合键，见 matchesFavoriteEntry），
+    // 不再用 listid/listCreateListid 这类按账号分配的小整数匹配——
+    // 跨歌单撞号会造成「任意歌单都显示已收藏」并误删其他收藏。
+    return matchesFavoriteEntry(entry, meta);
   });
 });
+
+// 收藏/取消收藏共用入口：失败时明确提示，避免「点了没反应」被误读为已生效。
+// 账号切换会让进行中的操作返回失败，这不是操作本身失败，不弹提示。
+const togglePlaylistFavorite = async () => {
+  const meta = playlist.value;
+  if (!meta || !userStore.isLoggedIn) return;
+  const isFavorite = isFavoritePlaylist.value;
+  const sessionUserId = userStore.info?.userid;
+  const succeeded = isFavorite
+    ? await playlistStore.unfavoritePlaylist(meta, sessionUserId)
+    : await playlistStore.favoritePlaylist(meta, sessionUserId);
+  const sessionStillCurrent = userStore.isLoggedIn && userStore.info?.userid === sessionUserId;
+  if (!succeeded && sessionStillCurrent)
+    toastStore.actionFailed(isFavorite ? '取消收藏' : '收藏歌单');
+};
 
 const songTotalCount = computed(() => {
   const metaCount = playlist.value?.count ?? 0;
@@ -629,15 +637,7 @@ const secondaryActions = computed(() => {
       label: isFavoritePlaylist.value ? '已收藏' : '收藏',
       emphasized: isFavoritePlaylist.value,
       tone: 'favorite',
-      onTap: async () => {
-        if (!playlist.value) return;
-        if (!userStore.isLoggedIn) return;
-        if (isFavoritePlaylist.value) {
-          await playlistStore.unfavoritePlaylist(playlist.value, userStore.info?.userid);
-        } else {
-          await playlistStore.favoritePlaylist(playlist.value, userStore.info?.userid);
-        }
-      },
+      onTap: togglePlaylistFavorite,
     });
   }
 
@@ -951,16 +951,7 @@ watch(
               v-if="!isOwnerPlaylist && userStore.isLoggedIn"
               variant="unstyled"
               size="icon"
-              @click="
-                () => {
-                  if (!playlist) return;
-                  if (isFavoritePlaylist) {
-                    playlistStore.unfavoritePlaylist(playlist, userStore.info?.userid);
-                  } else {
-                    playlistStore.favoritePlaylist(playlist, userStore.info?.userid);
-                  }
-                }
-              "
+              @click="togglePlaylistFavorite"
               class="action-icon rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
             >
               <Icon

@@ -44,7 +44,14 @@ const track = (id) => ({
 });
 const playlists = () => [
   { id: '12', listid: 12, name: '我喜欢的音乐', count: 0, listCreateUserid: 7 },
-  { id: '13', listid: 13, name: '普通歌单', count: 0, listCreateUserid: 8 },
+  {
+    id: '13',
+    listid: 13,
+    name: '普通歌单',
+    count: 0,
+    listCreateUserid: 8,
+    globalCollectionId: 'collection_3_8_13_0',
+  },
   { id: '14', listid: 14, name: '专辑', count: 0, source: 2 },
 ];
 const page = (songs) => ({ status: 1, data: { songs } });
@@ -477,7 +484,9 @@ const mutations = [
   ['favoritePlaylist', [{ id: 99, name: 'other', listCreateUserid: 99 }, 7], false],
   ['favoriteAlbum', [{ id: 99, name: 'album' }], false],
   ['unfavoriteAlbum', [14], false],
-  ['unfavoritePlaylist', [{ id: 13 }, 7], false],
+  // meta 需与 fixture 的 gid 一致：收藏匹配只认全局唯一身份，
+  // 这样用例才会真正走到 deletePlaylist 的迟到成功路径。
+  ['unfavoritePlaylist', [{ id: 13, globalCollectionId: 'collection_3_8_13_0' }, 7], false],
 ];
 for (const [method, args, result] of mutations) {
   test(`${method}: late success does not refresh or report success for a different session`, async () => {

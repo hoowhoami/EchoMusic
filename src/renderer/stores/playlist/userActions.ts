@@ -2,7 +2,11 @@ import { addPlaylist, deletePlaylist, getUserPlaylists } from '@/api/playlist';
 import type { PlaylistMeta } from '@/models/playlist';
 import logger from '@/utils/logger';
 import { mapPlaylistMeta } from '@/utils/mappers';
-import { getPlaylistIdentityValues, includesPlaylistIdentity } from './helpers';
+import {
+  getPlaylistIdentityValues,
+  includesPlaylistIdentity,
+  matchesFavoriteEntry,
+} from './helpers';
 import { captureCollectionScope } from './accountScope';
 
 const userPlaylistsRequests = new WeakMap<
@@ -273,21 +277,8 @@ export const userActions = {
       const target = this.userPlaylists.find((playlist) => {
         if (playlist.source === 2) return false;
         if (currentUserId && playlist.listCreateUserid === currentUserId) return false;
-        const localId = String(playlist.listid ?? playlist.id);
-        const originalId = String(playlist.listCreateGid ?? playlist.globalCollectionId ?? '');
-        const originalListId = String(playlist.listCreateListid ?? '');
-        const currentIds = [
-          String(meta.id),
-          String(meta.listid ?? ''),
-          String(meta.listCreateListid ?? ''),
-          String(meta.listCreateGid ?? ''),
-          String(meta.globalCollectionId ?? ''),
-        ];
-        return (
-          currentIds.includes(localId) ||
-          (originalId && currentIds.includes(originalId)) ||
-          (originalListId && currentIds.includes(originalListId))
-        );
+        // 与详情页 isFavoritePlaylist 共用同一匹配规则（见 matchesFavoriteEntry）。
+        return matchesFavoriteEntry(playlist, meta);
       });
 
       const listId = target?.listid ?? target?.id;

@@ -51,6 +51,48 @@ export const getPlaylistIdentityValues = (playlist: PlaylistMeta): string[] =>
     .filter((value) => value !== undefined && value !== null && String(value) !== '')
     .map((value) => String(value));
 
+// 真实全局身份 gid 形如 collection_3_{uid}_{listid}_0。
+// mapper 在原始数据缺 gid 时会用 specialid 合成纯数字串（如 "40"），
+// 那不是全局身份，不能参与 gid 匹配，否则又退回裸 ID 撞号的老问题。
+const REAL_GID_PATTERN = /^collection_/i;
+const isRealGid = (value: string | undefined): value is string =>
+  typeof value === 'string' && REAL_GID_PATTERN.test(value);
+
+const realGids = (playlist: PlaylistMeta): string[] =>
+  [playlist.globalCollectionId, playlist.listCreateGid].filter(isRealGid);
+
+// 原创建者身份键，即 collection_3_{uid}_{listid}_0 去掉固定前后缀后的核心成分；
+// uid + 原创建列表号组合才是全局唯一的，任一成分缺失时返回空、不参与匹配。
+const originalCollectionKey = (playlist: PlaylistMeta): string => {
+  const { listCreateUserid, listCreateListid } = playlist;
+  if (!listCreateUserid || listCreateUserid <= 0) return '';
+  if (listCreateListid === undefined || listCreateListid === null || listCreateListid <= 0) {
+    return '';
+  }
+  return `${listCreateUserid}_${listCreateListid}`;
+};
+
+/**
+ * 判定「用户库歌单条目」与「展示侧歌单」是否为同一个收藏。
+ * 1. 真实 gid（collection_ 前缀）有交集即命中，覆盖用户库 gid 与原创建者 gid 两种视图；
+ * 2. 两侧都带真实原创建者 gid 却无交集时判定为不同歌单，不进入兜底；
+ * 3. 否则用原创建者 userid+listid 组合键兜底：历史收藏条目可能只有收藏者命名空间
+ *    gid 而缺 listCreateGid，详情侧又只有原创建者 gid，两边 gid 天然对不上，
+ *    只有组合键能确认同一歌单。组合键并非裸 ID——它包含创建者账号，全局唯一。
+ * 绝不直接比较 listid/listCreateListid 单值：它们按账号分配，跨歌单必撞号，
+ * 曾导致探索页误报已收藏、取消收藏误删其他歌单。
+ */
+export const matchesFavoriteEntry = (entry: PlaylistMeta, meta: PlaylistMeta): boolean => {
+  const metaGids = realGids(meta);
+  if (realGids(entry).some((gid) => metaGids.includes(gid))) return true;
+  // 原创建者 gid 是可直接对照的身份：两侧都有且不一致，说明不是同一歌单。
+  const entryOriginGid = isRealGid(entry.listCreateGid) ? entry.listCreateGid : '';
+  const metaOriginGid = isRealGid(meta.listCreateGid) ? meta.listCreateGid : '';
+  if (entryOriginGid && metaOriginGid && entryOriginGid !== metaOriginGid) return false;
+  const entryOrigin = originalCollectionKey(entry);
+  return entryOrigin !== '' && entryOrigin === originalCollectionKey(meta);
+};
+
 export const findLikedPlaylist = (playlists: PlaylistMeta[]): PlaylistMeta | undefined => {
   let index = playlists.findIndex(
     (playlist) => normalizePlaylistName(playlist.name) === '我喜欢的音乐',

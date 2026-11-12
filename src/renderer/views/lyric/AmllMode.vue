@@ -18,6 +18,7 @@ import {
   resolveLyricSkinColor,
 } from './skins/config';
 import { buildAmllLyricLines } from './amll/convertLyrics';
+import { buildAmllHostStyle } from './amll/hostStyle';
 import { afterPaint } from '@/utils/afterPaint';
 import LyricScroller from './LyricScroller.vue';
 
@@ -319,9 +320,13 @@ watch(
 const resolvedTextColor = computed(() =>
   resolveLyricSkinColor(settings.value.textColor, AMLL_TEXT_COLOR_FALLBACK),
 );
-// 歌词颜色作用于 AMLL 内部 CSS 变量（--amll-lp-color），直接挂在宿主容器上继承
+// 歌词字体继承与颜色 CSS 变量的组装规则见 amll/hostStyle.ts。
 const playerAreaStyle = computed(() =>
-  settings.value.textColor ? { '--amll-lp-color': resolvedTextColor.value } : undefined,
+  buildAmllHostStyle(
+    settingStore.buildLyricFontFamily(),
+    settings.value.textColor,
+    resolvedTextColor.value,
+  ),
 );
 </script>
 

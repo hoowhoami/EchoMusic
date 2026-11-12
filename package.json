@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.3.3-beta.1",
+  "version": "2.3.3-beta.2",
   "description": "EchoMusic desktop client.",
   "license": "GPL-3.0-only",
   "author": {
@@ -297,7 +297,7 @@
         "at-spi2-core",
         "(libuuid or libuuid1)",
         "alsa-lib",
-        "libpulse",
+        "(pulseaudio-libs or libpulse0 or libpulse)",
         "pipewire-libs"
       ]
     },
