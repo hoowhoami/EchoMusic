@@ -40,14 +40,18 @@ export const registerShareHandlers = () => {
       if (!captureRect || event.sender.isDestroyed()) return false;
 
       // capturePage(rect) 的 rect 裁剪在混合 DPI / 窗口跨屏等环境下坐标语义不稳定
-      // （听歌统计分享曾因此错位截到页面其他区域）；这里改为整页截图后，
+      // （听歌统计分享曾因此错位截到页面其他区域）；这里改为视口快照后，
       // 由自己按「CSS 坐标 × zoomFactor × 屏幕缩放」换算物理像素再裁剪。
+      // 快照仅覆盖可视视口：调用方舞台需为 fixed 定位且矩形已钳制在视口内。
       const image = await event.sender.capturePage();
       if (image.isEmpty()) return false;
 
       const win = BrowserWindow.fromWebContents(event.sender);
-      const scaleFactor = win ? screen.getDisplayMatching(win.getBounds()).scaleFactor : 1;
-      const scale = event.sender.getZoomFactor() * scaleFactor;
+      // sender 恒为窗口 webContents，此分支实际不可达；宁可失败也不按 1 倍缩放静默产出错位截图
+      if (!win) return false;
+      const scale =
+        event.sender.getZoomFactor() *
+        screen.getDisplayMatching(win.getBounds()).scaleFactor;
       const size = image.getSize();
       const x = clamp(Math.round(captureRect.x * scale), 0, size.width);
       const y = clamp(Math.round(captureRect.y * scale), 0, size.height);
