@@ -1,0 +1,18 @@
+/**
+ * 听歌统计组件共享样式。
+ *
+ * 入场动画对应 EchoMusicNext 的 EchoEnter：opacity 淡入 180ms，
+ * 延迟由 order × 32ms 递增（封顶 96ms），在组件上以内联 animation-delay 控制。
+ * 导出（.is-share-capture）时由 History.vue 侧统一禁用。
+ */
+
+.stats-enter {
+  opacity: 0;
+  animation: statsEnterAnim 180ms cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+
+@keyframes statsEnterAnim {
+  to {
+    opacity: 1;
+  }
+}

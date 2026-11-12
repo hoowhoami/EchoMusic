@@ -18,7 +18,8 @@ export interface LocalHistoryEntry {
   historyKey: string;
 }
 
-const DEFAULT_MAX_ENTRIES = 500;
+// 与 EchoMusicNext 对齐：历史读取/保留上限 1000 条（原生存储层 clamp 上限 5000）
+const DEFAULT_MAX_ENTRIES = 1000;
 /** 退场动画时长（ms），需与 CSS animation-duration 一致 */
 const EXIT_ANIM_MS = 250;
 

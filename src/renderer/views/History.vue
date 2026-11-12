@@ -34,12 +34,9 @@ import {
   iconClock,
   iconCurrentLocation,
   iconList,
-  iconMusic,
   iconPlay,
-  iconPulse,
   iconSearch,
   iconShare,
-  iconStar,
   iconTrash,
 } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
@@ -54,6 +51,8 @@ import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import TabsContent from '@/components/ui/TabsContent.vue';
+import HistoryStatsContent from '@/components/history/stats/HistoryStatsContent.vue';
+import { buildHistoryStats } from '../../shared/historyStats';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 
 const playlistStore = usePlaylistStore();
@@ -131,7 +130,8 @@ const {
   state: { tab: activeTab },
   select: selectTabs,
 } = useRouteTabs({ tab: ['songs', 'stats'] });
-const historyStatsRef = ref<HTMLElement | null>(null);
+// 统计内容组件实例；分享导出时经 $el 取根 DOM 克隆
+const historyStatsRef = ref<{ $el: HTMLElement } | null>(null);
 const sharingStats = ref(false);
 
 const handleTabChange = (value: string | number) => {
@@ -151,43 +151,6 @@ const songs = computed(() => historyStore.entries.map(mapLocalEntryToSong));
 
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
-const TIME_BUCKETS = [
-  { label: '凌晨', hint: '00:00-05:59', start: 0, end: 5 },
-  { label: '上午', hint: '06:00-11:59', start: 6, end: 11 },
-  { label: '下午', hint: '12:00-17:59', start: 12, end: 17 },
-  { label: '夜晚', hint: '18:00-23:59', start: 18, end: 23 },
-] as const;
-
-const safePlayCount = (entry: LocalHistoryEntry) => Math.max(1, Number(entry.playCount) || 0);
-
-const normalizeDurationSeconds = (duration: number | undefined) => {
-  if (!duration || duration <= 0) return 0;
-  return duration > 24 * 60 * 60 ? Math.floor(duration / 1000) : duration;
-};
-
-const formatCompactNumber = (value: number) => new Intl.NumberFormat('zh-CN').format(value);
-
-const formatListenDuration = (seconds: number) => {
-  if (seconds <= 0) return '0 分钟';
-  const minutes = Math.max(1, Math.round(seconds / 60));
-  if (minutes < 60) return `${minutes} 分钟`;
-  const hours = seconds / 3600;
-  if (hours < 100) return `${hours >= 10 ? hours.toFixed(0) : hours.toFixed(1)} 小时`;
-  const days = hours / 24;
-  return `${days >= 10 ? days.toFixed(0) : days.toFixed(1)} 天`;
-};
-
-const formatHistoryDate = (timestamp: number | undefined) => {
-  if (!timestamp) return '未知';
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return '未知';
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(
-    date.getMinutes(),
-  ).padStart(2, '0')}`;
-};
-
 const formatShareTimestamp = (date = new Date()) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -197,165 +160,30 @@ const formatShareTimestamp = (date = new Date()) => {
   return `${year}-${month}-${day} ${hours}:${minutes}`;
 };
 
-const startOfDay = (timestamp: number) => {
-  const date = new Date(timestamp);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
+// 统计快照：逐行对齐 EchoMusicNext buildStats 的口径（见 src/shared/historyStats.ts）
+const historyStats = computed(() => buildHistoryStats(historyStore.entries));
+const statsLoading = computed(
+  () => !historyStore.hydrated && historyStore.entries.length === 0,
+);
+// 本地历史加载无失败态暴露，错误文案恒为空，保留结构以便与 Next 的错误空态对齐
+const statsErrorMessage = ref('');
+const retryStats = () => {
+  void historyStore.hydrate();
 };
 
-const getArtistNames = (song: Song) => {
-  const structured = [...(song.artists ?? []), ...(song.singers ?? [])]
-    .map((artist) => artist.name?.trim())
-    .filter(Boolean);
-  if (structured.length > 0) return Array.from(new Set(structured));
-  return (song.artist || '未知歌手')
-    .split(/\s*(?:,|，|、|\/|&| feat\.?| ft\.?)\s*/i)
-    .map((name) => name.trim())
-    .filter(Boolean);
+/** 播放统计区中的歌曲（hero「再听一次」与 Top 歌曲 tile 共用） */
+const resolveEntryId = (song: Song) => String(song.mixSongId || song.fileId || song.id || '0');
+const playStatSong = async (id: string) => {
+  const entry = historyStore.entries.find((item) => resolveEntryId(item.song) === id);
+  if (!entry) return;
+  await replaceQueueAndPlay(playlistStore, playerStore, [entry.song], 0, entry.song, {
+    queueId: 'queue:history',
+    title: '播放历史',
+    subtitle: '',
+    type: 'history',
+    dynamic: false,
+  });
 };
-
-const historyStats = computed(() => {
-  const entries = historyStore.entries;
-  const totalSongs = entries.length;
-  const totalPlays = entries.reduce((sum, entry) => sum + safePlayCount(entry), 0);
-  const totalSeconds = entries.reduce(
-    (sum, entry) => sum + normalizeDurationSeconds(entry.song.duration) * safePlayCount(entry),
-    0,
-  );
-  const replayedSongs = entries.filter((entry) => safePlayCount(entry) > 1).length;
-  const latestPlayedAt = entries.reduce((latest, entry) => Math.max(latest, entry.lastPlayedAt), 0);
-  const oldestPlayedAt = entries.reduce(
-    (oldest, entry) => (oldest === 0 ? entry.lastPlayedAt : Math.min(oldest, entry.lastPlayedAt)),
-    0,
-  );
-  const activeDayKeys = new Set(
-    entries
-      .map((entry) => startOfDay(entry.lastPlayedAt))
-      .filter((timestamp) => Number.isFinite(timestamp) && timestamp > 0),
-  );
-  const spanDays =
-    latestPlayedAt > 0 && oldestPlayedAt > 0
-      ? Math.max(
-          1,
-          Math.floor((startOfDay(latestPlayedAt) - startOfDay(oldestPlayedAt)) / DAY_MS) + 1,
-        )
-      : 0;
-
-  const todayStart = startOfDay(Date.now());
-  const recentDays = Array.from({ length: 7 }, (_, index) => {
-    const dayStart = todayStart - (6 - index) * DAY_MS;
-    const dayEnd = dayStart + DAY_MS;
-    const date = new Date(dayStart);
-    const value = entries.filter(
-      (entry) => entry.lastPlayedAt >= dayStart && entry.lastPlayedAt < dayEnd,
-    ).length;
-    return {
-      key: dayStart,
-      label: index === 6 ? '今天' : `周${WEEKDAY_LABELS[date.getDay()]}`,
-      dateLabel: `${date.getMonth() + 1}/${date.getDate()}`,
-      value,
-      ratio: 0,
-    };
-  });
-  const maxRecentDayValue = Math.max(1, ...recentDays.map((item) => item.value));
-  const normalizedRecentDays = recentDays.map((item) => ({
-    ...item,
-    ratio: item.value / maxRecentDayValue,
-  }));
-
-  const timeBuckets = TIME_BUCKETS.map((bucket) => ({ ...bucket, value: 0, ratio: 0 }));
-  entries.forEach((entry) => {
-    const date = new Date(entry.lastPlayedAt);
-    if (Number.isNaN(date.getTime())) return;
-    const hour = date.getHours();
-    const bucket = timeBuckets.find((item) => hour >= item.start && hour <= item.end);
-    if (bucket) bucket.value++;
-  });
-  const maxTimeBucketValue = Math.max(1, ...timeBuckets.map((item) => item.value));
-  const normalizedTimeBuckets = timeBuckets.map((item) => ({
-    ...item,
-    ratio: item.value / maxTimeBucketValue,
-  }));
-
-  const artistMap = new Map<string, { name: string; plays: number; songs: number }>();
-  const albumMap = new Map<string, { name: string; plays: number; songs: number }>();
-  entries.forEach((entry) => {
-    const playCount = safePlayCount(entry);
-    getArtistNames(entry.song).forEach((name) => {
-      const current = artistMap.get(name) ?? { name, plays: 0, songs: 0 };
-      current.plays += playCount;
-      current.songs += 1;
-      artistMap.set(name, current);
-    });
-
-    const albumName = (entry.song.albumName || entry.song.album || '未知专辑').trim();
-    const album = albumMap.get(albumName) ?? { name: albumName, plays: 0, songs: 0 };
-    album.plays += playCount;
-    album.songs += 1;
-    albumMap.set(albumName, album);
-  });
-
-  const topArtists = Array.from(artistMap.values())
-    .sort((a, b) => b.plays - a.plays || b.songs - a.songs || a.name.localeCompare(b.name))
-    .slice(0, 6);
-  const topAlbum = Array.from(albumMap.values()).sort(
-    (a, b) => b.plays - a.plays || b.songs - a.songs || a.name.localeCompare(b.name),
-  )[0];
-  const topSongs = [...entries]
-    .sort((a, b) => safePlayCount(b) - safePlayCount(a) || b.lastPlayedAt - a.lastPlayedAt)
-    .slice(0, 6)
-    .map((entry) => ({
-      key: entry.historyKey,
-      title: entry.song.name || '未知歌曲',
-      artist: entry.song.artist || '未知歌手',
-      coverUrl: entry.song.coverUrl || entry.song.cover || '',
-      plays: safePlayCount(entry),
-      lastPlayedLabel: formatHistoryDate(entry.lastPlayedAt),
-    }));
-
-  const statCards = [
-    {
-      label: '累计播放',
-      value: formatCompactNumber(totalPlays),
-      caption: `${formatCompactNumber(totalSongs)} 首本地历史`,
-      icon: iconPlay,
-      tone: 'primary',
-    },
-    {
-      label: '估算时长',
-      value: formatListenDuration(totalSeconds),
-      caption: '按歌曲时长与次数估算',
-      icon: iconClock,
-      tone: 'cyan',
-    },
-    {
-      label: '活跃天数',
-      value: `${activeDayKeys.size} 天`,
-      caption: spanDays > 0 ? `覆盖最近 ${spanDays} 天` : '暂无日期记录',
-      icon: iconPulse,
-      tone: 'emerald',
-    },
-    {
-      label: '复听占比',
-      value: totalSongs > 0 ? `${Math.round((replayedSongs / totalSongs) * 100)}%` : '0%',
-      caption: `${formatCompactNumber(replayedSongs)} 首听过多次`,
-      icon: iconStar,
-      tone: 'amber',
-    },
-  ];
-
-  return {
-    totalSongs,
-    totalPlays,
-    latestPlayedLabel: formatHistoryDate(latestPlayedAt),
-    statCards,
-    recentDays: normalizedRecentDays,
-    timeBuckets: normalizedTimeBuckets,
-    topArtists,
-    topAlbum,
-    topSongs,
-  };
-});
 
 const songCount = computed(() => songs.value.length);
 const displayedCountLabel = computed(() => `${songCount.value}`);
@@ -470,7 +298,8 @@ const buildHistoryStatsShareText = () => {
 };
 
 const createStatsCaptureStage = (shareText: ReturnType<typeof buildHistoryStatsShareText>) => {
-  if (!historyStatsRef.value) return null;
+  const statsRootEl = historyStatsRef.value?.$el as HTMLElement | undefined;
+  if (!statsRootEl) return null;
 
   const stage = document.createElement('div');
   stage.className = 'history-share-capture-stage';
@@ -523,7 +352,7 @@ const createStatsCaptureStage = (shareText: ReturnType<typeof buildHistoryStatsS
   header.append(title, updatedAt);
   stage.appendChild(header);
 
-  const clone = historyStatsRef.value.cloneNode(true) as HTMLElement;
+  const clone = statsRootEl.cloneNode(true) as HTMLElement;
   clone.classList.add('is-share-capture');
   stage.appendChild(clone);
   document.body.appendChild(stage);
@@ -840,166 +669,14 @@ onUnmounted(() => {
           </TabsContent>
 
           <TabsContent value="stats" class="px-6 pt-5">
-            <div ref="historyStatsRef" class="history-stats">
-              <div class="history-stat-grid">
-                <div
-                  v-for="card in historyStats.statCards"
-                  :key="card.label"
-                  class="history-stat-card"
-                >
-                  <div class="history-stat-card-icon" :data-tone="card.tone">
-                    <Icon :icon="card.icon" width="18" height="18" />
-                  </div>
-                  <div class="min-w-0">
-                    <div class="history-stat-label">{{ card.label }}</div>
-                    <div class="history-stat-value">{{ card.value }}</div>
-                    <div class="history-stat-caption">{{ card.caption }}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="history-stats-layout">
-                <section class="history-panel history-week-panel">
-                  <div class="history-panel-header">
-                    <div>
-                      <div class="history-panel-title">最近 7 天</div>
-                      <div class="history-panel-subtitle">按最后播放日期统计歌曲回访</div>
-                    </div>
-                  </div>
-                  <div class="history-week-chart">
-                    <div
-                      v-for="day in historyStats.recentDays"
-                      :key="day.key"
-                      class="history-week-item"
-                    >
-                      <div class="history-week-value">{{ day.value }}</div>
-                      <div class="history-week-track">
-                        <div
-                          class="history-week-bar"
-                          :style="{
-                            height: day.value > 0 ? `${Math.max(12, day.ratio * 100)}%` : '4px',
-                          }"
-                        ></div>
-                      </div>
-                      <div class="history-week-label">{{ day.label }}</div>
-                      <div class="history-week-date">{{ day.dateLabel }}</div>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="history-panel">
-                  <div class="history-panel-header">
-                    <div>
-                      <div class="history-panel-title">时段偏好</div>
-                      <div class="history-panel-subtitle">按最后播放时间归类</div>
-                    </div>
-                  </div>
-                  <div class="history-time-list">
-                    <div
-                      v-for="bucket in historyStats.timeBuckets"
-                      :key="bucket.label"
-                      class="history-time-row"
-                    >
-                      <div class="history-time-row-head">
-                        <span>{{ bucket.label }}</span>
-                        <span>{{ bucket.value }} 首</span>
-                      </div>
-                      <div class="history-time-track">
-                        <div
-                          class="history-time-bar"
-                          :style="{
-                            width: bucket.value > 0 ? `${Math.max(8, bucket.ratio * 100)}%` : '0%',
-                          }"
-                        ></div>
-                      </div>
-                      <div class="history-time-hint">{{ bucket.hint }}</div>
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              <div class="history-stats-layout is-rankings">
-                <section class="history-panel">
-                  <div class="history-panel-header">
-                    <div>
-                      <div class="history-panel-title">常听歌手</div>
-                      <div class="history-panel-subtitle">按本地累计播放次数排序</div>
-                    </div>
-                    <Icon class="text-primary-text" :icon="iconMusic" width="18" height="18" />
-                  </div>
-                  <div class="history-rank-list">
-                    <div
-                      v-for="(artist, index) in historyStats.topArtists"
-                      :key="artist.name"
-                      class="history-rank-row"
-                    >
-                      <div class="history-rank-index">{{ index + 1 }}</div>
-                      <div class="history-rank-main">
-                        <div class="history-rank-name">{{ artist.name }}</div>
-                        <div class="history-rank-meta">{{ artist.songs }} 首歌曲</div>
-                        <div class="history-rank-track">
-                          <div
-                            class="history-rank-bar"
-                            :style="{
-                              width: `${Math.max(
-                                10,
-                                (artist.plays /
-                                  Math.max(1, historyStats.topArtists[0]?.plays ?? 1)) *
-                                  100,
-                              )}%`,
-                            }"
-                          ></div>
-                        </div>
-                      </div>
-                      <div class="history-rank-count">{{ artist.plays }} 次</div>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="history-panel">
-                  <div class="history-panel-header">
-                    <div>
-                      <div class="history-panel-title">高频歌曲</div>
-                      <div class="history-panel-subtitle">越常复听越靠前</div>
-                    </div>
-                    <Icon class="text-amber-500/85" :icon="iconStar" width="18" height="18" />
-                  </div>
-                  <div class="history-song-rank-list">
-                    <div
-                      v-for="(song, index) in historyStats.topSongs"
-                      :key="song.key"
-                      class="history-song-rank-row"
-                    >
-                      <div class="history-song-rank-index">{{ index + 1 }}</div>
-                      <div class="history-song-cover">
-                        <img v-if="song.coverUrl" :src="song.coverUrl" alt="" />
-                        <Icon v-else :icon="iconMusic" width="18" height="18" />
-                      </div>
-                      <div class="history-song-rank-main">
-                        <div class="history-song-rank-title">{{ song.title }}</div>
-                        <div class="history-song-rank-meta">
-                          {{ song.artist }} · {{ song.lastPlayedLabel }}
-                        </div>
-                      </div>
-                      <div class="history-song-rank-count">{{ song.plays }} 次</div>
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              <section v-if="historyStats.topAlbum" class="history-album-highlight">
-                <div class="history-album-icon">
-                  <Icon :icon="iconMusic" width="18" height="18" />
-                </div>
-                <div class="min-w-0">
-                  <div class="history-album-label">最常回访专辑</div>
-                  <div class="history-album-title">{{ historyStats.topAlbum.name }}</div>
-                </div>
-                <div class="history-album-count">
-                  {{ historyStats.topAlbum.plays }} 次 · {{ historyStats.topAlbum.songs }} 首
-                </div>
-              </section>
-            </div>
+            <HistoryStatsContent
+              ref="historyStatsRef"
+              :stats="historyStats"
+              :loading="statsLoading"
+              :error-message="statsErrorMessage"
+              @play="playStatSong"
+              @retry="retryStats"
+            />
           </TabsContent>
         </div>
       </Tabs>
@@ -1038,381 +715,18 @@ onUnmounted(() => {
   animation: historyListScrollIn 280ms cubic-bezier(0.33, 0, 0.2, 1);
 }
 
-.history-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-  padding-bottom: 16px;
-}
-
-.history-stats.is-share-capture {
+/* ── 分享导出（对齐 Next HistoryStatsCapture：禁入场动画、隐藏播放按钮） ── */
+.stats-content.is-share-capture {
   padding-bottom: 0;
 }
 
-.history-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+.stats-content.is-share-capture :deep(.stats-enter) {
+  opacity: 1 !important;
+  animation: none !important;
 }
 
-.history-stat-card,
-.history-panel,
-.history-album-highlight {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-popover);
-  background: var(--control-muted-bg);
-}
-
-.history-stat-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  min-width: 0;
-  min-height: 112px;
-  padding: 16px;
-}
-
-.history-stat-card-icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--radius-card);
-}
-
-.history-stat-card-icon[data-tone='primary'] {
-  color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
-}
-
-.history-stat-card-icon[data-tone='cyan'] {
-  color: rgb(8 145 178);
-  background: rgb(8 145 178 / 12%);
-}
-
-.history-stat-card-icon[data-tone='emerald'] {
-  color: rgb(5 150 105);
-  background: rgb(5 150 105 / 12%);
-}
-
-.history-stat-card-icon[data-tone='amber'] {
-  color: rgb(217 119 6);
-  background: rgb(217 119 6 / 13%);
-}
-
-.history-stat-label,
-.history-panel-subtitle,
-.history-stat-caption,
-.history-week-date,
-.history-time-hint,
-.history-rank-meta,
-.history-song-rank-meta,
-.history-album-label {
-  color: var(--color-text-secondary);
-}
-
-.history-stat-label {
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.history-stat-value {
-  margin-top: 4px;
-  color: var(--color-text-main);
-  font-size: 24px;
-  font-weight: 800;
-  line-height: 1.15;
-  word-break: keep-all;
-}
-
-.history-stat-caption {
-  margin-top: 6px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.history-stats-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.9fr);
-  gap: 14px;
-}
-
-.history-stats-layout.is-rankings {
-  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
-}
-
-.history-panel {
-  min-width: 0;
-  padding: 16px;
-}
-
-.history-panel-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.history-panel-title {
-  color: var(--color-text-main);
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 1.2;
-}
-
-.history-panel-subtitle {
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.history-week-chart {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 10px;
-  align-items: end;
-  min-height: 196px;
-}
-
-.history-week-item {
-  display: grid;
-  grid-template-rows: 20px 128px 18px 16px;
-  gap: 6px;
-  min-width: 0;
-  text-align: center;
-}
-
-.history-week-value,
-.history-week-label,
-.history-time-row-head,
-.history-rank-count,
-.history-song-rank-count,
-.history-album-count {
-  color: var(--color-text-main);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.history-week-track {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  min-width: 0;
-  border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
-  overflow: hidden;
-}
-
-.history-week-bar {
-  width: 100%;
-  min-height: 4px;
-  border-radius: var(--radius-control) var(--radius-control) 0 0;
-  background: linear-gradient(180deg, var(--color-primary), rgb(8 145 178));
-}
-
-.history-week-label {
-  line-height: 18px;
-}
-
-.history-week-date {
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.history-time-list,
-.history-rank-list,
-.history-song-rank-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.history-time-row {
-  min-width: 0;
-}
-
-.history-time-row-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  line-height: 1.2;
-}
-
-.history-time-track,
-.history-rank-track {
-  height: 7px;
-  margin-top: 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-text-main) 7%, transparent);
-  overflow: hidden;
-}
-
-.history-time-bar,
-.history-rank-bar {
-  height: 100%;
-  border-radius: inherit;
-}
-
-.history-time-bar {
-  background: linear-gradient(90deg, rgb(5 150 105), var(--color-primary));
-}
-
-.history-time-hint {
-  margin-top: 5px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.history-rank-row,
-.history-song-rank-row {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 10px;
-}
-
-.history-rank-index,
-.history-song-rank-index {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-control);
-  color: var(--color-text-main);
-  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.history-rank-main,
-.history-song-rank-main {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.history-rank-name,
-.history-song-rank-title,
-.history-album-title {
-  overflow: hidden;
-  color: var(--color-text-main);
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-rank-name,
-.history-song-rank-title {
-  font-size: 13px;
-}
-
-.history-rank-meta,
-.history-song-rank-meta {
-  overflow: hidden;
-  margin-top: 3px;
-  font-size: 11px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-rank-track {
-  max-width: 210px;
-}
-
-.history-rank-bar {
-  background: linear-gradient(90deg, var(--color-primary), rgb(217 119 6));
-}
-
-.history-rank-count,
-.history-song-rank-count,
-.history-album-count {
-  flex: 0 0 auto;
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-}
-
-.history-song-cover {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-media);
-  color: var(--color-text-secondary);
-  background: color-mix(in srgb, var(--color-text-main) 7%, transparent);
-  overflow: hidden;
-}
-
-.history-song-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.history-album-highlight {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  padding: 14px 16px;
-}
-
-.history-album-icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-control);
-  color: rgb(8 145 178);
-  background: rgb(8 145 178 / 12%);
-}
-
-.history-album-label {
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.history-album-title {
-  margin-top: 2px;
-  font-size: 13px;
-}
-
-@media (max-width: 980px) {
-  .history-stat-grid,
-  .history-stats-layout,
-  .history-stats-layout.is-rankings {
-    grid-template-columns: 1fr;
-  }
-
-  .history-stat-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 640px) {
-  .history-stat-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .history-week-chart {
-    gap: 6px;
-  }
-
-  .history-song-rank-count,
-  .history-rank-count,
-  .history-album-count {
-    font-size: 11px;
-  }
+.stats-content.is-share-capture :deep(.hero-play) {
+  display: none;
 }
 
 @keyframes historyListScrollIn {
