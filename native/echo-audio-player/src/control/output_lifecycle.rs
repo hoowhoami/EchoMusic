@@ -1,4 +1,5 @@
 use super::*;
+use crate::output::OUTPUT_START_CANCELLED_MESSAGE;
 use crate::shared::startup_probe::OutputStartupProbe;
 
 /// 暂停后保留共享输出流的时长。3 s 会把每次「暂停 → 播放」都变成一次冷启动的
@@ -18,6 +19,9 @@ const OUTPUT_START_WATCHDOG: Duration = Duration::from_secs(3);
 const OUTPUT_START_ATTEMPTS: u32 = 2;
 /// 两次尝试之间的间隔：给被弃用的输出线程留出撞上停止令牌检查点退出的时间。
 const OUTPUT_START_RETRY_DELAY: Duration = Duration::from_millis(250);
+/// 启动确认的轮询步长。加载预热需要在等待期间响应新请求的取消令牌，
+/// 避免 stale load 排满端点闸门、拖慢最新一首的首帧。
+const OUTPUT_START_POLL_INTERVAL: Duration = Duration::from_millis(50);
 /// 看门狗超时消息前缀；重试判定与消息构造共用，避免文案漂移。
 const OUTPUT_START_TIMEOUT_MESSAGE_PREFIX: &str = "audio output did not start within";
 
@@ -437,7 +441,7 @@ pub(crate) fn restart_output_for_runtime(
     }
 
     shared.prepare_output_start();
-    match spawn_output_thread_confirmed(shared.clone(), &next_config) {
+    match spawn_output_thread_confirmed(shared.clone(), &next_config, None) {
         Ok(output) => {
             let Some(session) = runtime.session.as_mut() else {
                 output.shutdown();
@@ -488,7 +492,7 @@ fn restore_previous_output(
     playback: &OutputPlaybackSnapshot,
 ) -> napi::Result<()> {
     shared.prepare_output_start();
-    let output = match spawn_output_thread_confirmed(shared.clone(), &previous_config) {
+    let output = match spawn_output_thread_confirmed(shared.clone(), &previous_config, None) {
         Ok(output) => output,
         Err(err) => {
             shared.paused.store(true, Ordering::Release);
@@ -592,9 +596,10 @@ fn validate_output_restart_config(
 pub(crate) fn spawn_output_thread_confirmed(
     shared: Arc<SharedAudio>,
     config: &PlayerConfig,
+    cancel: Option<&AtomicBool>,
 ) -> Result<crate::output::AudioOutputHandle, String> {
     confirm_output_start_with_retries(
-        || confirm_output_start_once(&shared, config),
+        || confirm_output_start_once(&shared, config, cancel),
         OUTPUT_START_ATTEMPTS,
         OUTPUT_START_RETRY_DELAY,
         is_retryable_output_start_error,
@@ -664,7 +669,11 @@ fn output_start_timeout_message(
 fn confirm_output_start_once(
     shared: &Arc<SharedAudio>,
     config: &PlayerConfig,
+    cancel: Option<&AtomicBool>,
 ) -> Result<crate::output::AudioOutputHandle, String> {
+    if cancel.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+        return Err(OUTPUT_START_CANCELLED_MESSAGE.to_string());
+    }
     let (start_tx, start_rx) = sync_channel(1);
     let output_thread = crate::output::spawn_output_backend(
         config.audio_device.clone(),
@@ -674,13 +683,22 @@ fn confirm_output_start_once(
         Some(start_tx),
     );
 
-    match start_rx.recv_timeout(OUTPUT_START_WATCHDOG) {
-        Ok(Ok(())) => Ok(output_thread),
-        Ok(Err(err)) => {
-            output_thread.shutdown();
-            Err(err)
+    let deadline = Instant::now() + OUTPUT_START_WATCHDOG;
+    loop {
+        if cancel.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+            // 预热已被新 load 取代：后台回收线程（可能正卡在 Initialize），立刻返回。
+            output_thread.shutdown_in_background("cancelled-prewarm");
+            emit_shared_event(
+                shared,
+                PlayerEvent::log(
+                    "debug",
+                    "audio output startup cancelled by superseded load".to_string(),
+                ),
+            );
+            return Err(OUTPUT_START_CANCELLED_MESSAGE.to_string());
         }
-        Err(RecvTimeoutError::Timeout) => {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
             output_thread.shutdown_in_background("startup-timeout");
             // 超时不是系统返回的错误，线程卡在哪个启动调用里必须跟着报出来，
             // 否则共享模式这类"无 HRESULT 的 3 秒静默超时"完全无法定位。
@@ -700,15 +718,23 @@ fn confirm_output_start_once(
                     ),
                 ),
             );
-            Err(output_start_timeout_message(
+            return Err(output_start_timeout_message(
                 OUTPUT_START_WATCHDOG,
                 config.exclusive_output,
                 &shared.output_startup_probe,
-            ))
+            ));
         }
-        Err(RecvTimeoutError::Disconnected) => {
-            output_thread.shutdown();
-            Err("audio output exited before startup completed".to_string())
+        match start_rx.recv_timeout(remaining.min(OUTPUT_START_POLL_INTERVAL)) {
+            Ok(Ok(())) => return Ok(output_thread),
+            Ok(Err(err)) => {
+                output_thread.shutdown();
+                return Err(err);
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => {
+                output_thread.shutdown();
+                return Err("audio output exited before startup completed".to_string());
+            }
         }
     }
 }
@@ -1031,6 +1057,21 @@ mod tests {
         assert!(message.contains("startup stage=not-reported"), "{message}");
     }
 
+    #[test]
+    fn cancelled_prewarm_returns_before_spawning_an_output() {
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &DspSettings::default(),
+        ));
+        let cancel = AtomicBool::new(true);
+        let error = confirm_output_start_once(&shared, &PlayerConfig::default(), Some(&cancel))
+            .err()
+            .expect("cancelled prewarm must not spawn an output thread");
+        assert_eq!(error, crate::output::OUTPUT_START_CANCELLED_MESSAGE);
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn output_start_confirmed_reports_backend_failure_for_bogus_device() {
@@ -1042,7 +1083,7 @@ mod tests {
         ));
         let mut config = PlayerConfig::default();
         config.set_audio_device("echo-music-nonexistent-output-endpoint");
-        let error = match spawn_output_thread_confirmed(shared, &config) {
+        let error = match spawn_output_thread_confirmed(shared, &config, None) {
             Ok(_) => panic!("bogus device must fail to start"),
             Err(error) => error,
         };

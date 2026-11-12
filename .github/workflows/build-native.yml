@@ -259,8 +259,8 @@ jobs:
           set -euo pipefail
           cd native/echo-audio-player
           # 串行执行：少数测试会真实 initialize/destroy 全局 runtime，并行会互相拆台。
-          # 跳过依赖本地 HTTP 服务的 transition 用例：它们在 CI 上偶发 loopback
-          # transport error，与本 crate 的音频逻辑无关。
+          # 这是缩略测试集：跳过依赖本地 HTTP 服务的 transition 用例（CI 上偶发
+          # loopback transport error）；本地/夜间仍需跑一次无 --skip 的全量测试。
           cargo test --lib --release -- --test-threads=1 --skip http_
 
       - name: Stage and verify native addons

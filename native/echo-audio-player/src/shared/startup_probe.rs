@@ -315,6 +315,26 @@ mod tests {
     }
 
     #[test]
+    fn stage_timing_excludes_gate_wait() {
+        let probe = OutputStartupProbe::default();
+        let attempt = probe.begin_attempt();
+        let start = Instant::now() - Duration::from_millis(500);
+        probe.record_gate_wait(attempt, 450);
+        probe.advance(attempt, output_startup_stage::INITIALIZE, start);
+
+        let described = probe.describe();
+        let entered_ms: u64 = described
+            .split("entered_at_ms=")
+            .nth(1)
+            .and_then(|rest| rest.split(',').next())
+            .and_then(|value| value.parse().ok())
+            .expect("entered_at_ms in describe");
+        // 500ms 总耗时里扣掉 450ms 闸门等待，剩余应约为 50ms 而不是 500ms。
+        assert!(entered_ms < 200, "{described}");
+        assert!(described.contains("gate_wait_ms=450"), "{described}");
+    }
+
+    #[test]
     fn slow_stage_is_reported_at_most_once_per_attempt() {
         let probe = OutputStartupProbe::default();
         let attempt = probe.begin_attempt();

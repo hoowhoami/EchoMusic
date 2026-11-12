@@ -42,8 +42,9 @@ const WASAPI_OPEN_GATE_HOLDER_WARN_MS: u64 = 2_000;
 /// Initialize」；后面被取消的线程也会在离开临界区前让出闸门。
 struct EndpointOpenGate {
     mutex: Mutex<()>,
-    /// 当前持闸线程开始持锁的时刻（进程启动起的毫秒，0 表示空闲）。
-    /// 等待者据此判断「是不是有流永久卡在 Initialize」并输出 holder age。
+    /// 当前持闸线程开始持锁的时刻（进程启动起的毫秒）。0 保留表示空闲，
+    /// 因此实际持锁时间写入 `max(1)`，避免 0ms 的语义双关；等待者据此判断
+    /// 「是不是有流永久卡在 Initialize」并输出 holder age。
     holder_acquired_ms: AtomicU64,
 }
 
@@ -68,6 +69,7 @@ impl Drop for EndpointOpenGuard<'_> {
     }
 }
 
+/// 端点数量受设备枚举限制，这里不做淘汰也保持有界（不会随播放次数增长）。
 static ENDPOINT_OPEN_GATES: OnceLock<Mutex<HashMap<String, Arc<EndpointOpenGate>>>> =
     OnceLock::new();
 /// 闸门时间的统一基准；`Instant` 单调且不受系统时间调整影响。
@@ -94,6 +96,13 @@ fn endpoint_open_gate(endpoint_key: &str) -> Arc<EndpointOpenGate> {
     guard.entry(endpoint_key.to_string()).or_default().clone()
 }
 
+/// 闸门等待期间打日志所需的上下文（打包参数，避免函数超出 clippy 参数上限）。
+struct GateWaitLog<'a> {
+    endpoint_key: &'a str,
+    share_mode: WasapiShareMode,
+    emit: fn(PlayerEvent),
+}
+
 /// 取消感知地获取端点闸门：等待期间一旦输出被弃用（设备切换 / 启动超时），
 /// 立刻退出而不是继续排队。返回 `None` 表示本次启动已被取消。
 ///
@@ -105,7 +114,7 @@ fn lock_endpoint_open_gate<'a>(
     start_notify: &mut Option<OutputStartSender>,
     probe_attempt: u64,
     attempt_start: Instant,
-    emit: fn(PlayerEvent),
+    log: GateWaitLog<'_>,
 ) -> Option<(EndpointOpenGuard<'a>, u64)> {
     let wait_started = Instant::now();
     let mut waiting_stage_reported = false;
@@ -139,10 +148,12 @@ fn lock_endpoint_open_gate<'a>(
                 }
                 if holder_age_ms >= WASAPI_OPEN_GATE_HOLDER_WARN_MS && !holder_age_warned {
                     holder_age_warned = true;
-                    emit(PlayerEvent::log(
+                    (log.emit)(PlayerEvent::log(
                         "warn",
                         format!(
-                            "WASAPI output open is waiting for a previous stream that has been initializing for {holder_age_ms} ms"
+                            "WASAPI {} output open is waiting for a previous stream on device='{}' that has been initializing for {holder_age_ms} ms",
+                            log.share_mode.label(),
+                            log.endpoint_key,
                         ),
                     ));
                 }
@@ -165,7 +176,7 @@ fn lock_endpoint_open_gate<'a>(
             return None;
         }
         gate.holder_acquired_ms
-            .store(gate_now_ms(), Ordering::Release);
+            .store(gate_now_ms().max(1), Ordering::Release);
         return Some((
             EndpointOpenGuard {
                 _guard: acquired,
@@ -521,6 +532,11 @@ fn run_wasapi_output(
         }
     };
     let open_gate = endpoint_open_gate(&endpoint_key);
+    let gate_log = GateWaitLog {
+        endpoint_key: &endpoint_key,
+        share_mode,
+        emit,
+    };
     let output_format;
     let event;
     let output = {
@@ -531,7 +547,7 @@ fn run_wasapi_output(
             start_notify,
             probe_attempt,
             attempt_start,
-            emit,
+            gate_log,
         ) {
             Some(acquired) => acquired,
             None => return Ok(()),
@@ -1187,7 +1203,7 @@ mod tests {
             let _guard = holder.mutex.lock().unwrap();
             holder
                 .holder_acquired_ms
-                .store(gate_now_ms(), Ordering::Release);
+                .store(gate_now_ms().max(1), Ordering::Release);
             let _ = held_tx.send(());
             thread::sleep(Duration::from_millis(60));
             holder.holder_acquired_ms.store(0, Ordering::Release);
@@ -1196,6 +1212,11 @@ mod tests {
 
         let stop = OutputStopToken::new();
         let mut start_notify = None;
+        let gate_log = GateWaitLog {
+            endpoint_key: "test-endpoint",
+            share_mode: WasapiShareMode::Shared,
+            emit: ignore_event,
+        };
         let wait_started = Instant::now();
         let (guard, waited_ms) = lock_endpoint_open_gate(
             &gate,
@@ -1204,7 +1225,7 @@ mod tests {
             &mut start_notify,
             attempt,
             Instant::now(),
-            ignore_event,
+            gate_log,
         )
         .expect("gate must be acquired after the holder releases");
         assert!(wait_started.elapsed() >= Duration::from_millis(40));
@@ -1226,7 +1247,11 @@ mod tests {
             &mut cancelled_notify,
             attempt,
             Instant::now(),
-            ignore_event,
+            GateWaitLog {
+                endpoint_key: "test-endpoint",
+                share_mode: WasapiShareMode::Shared,
+                emit: ignore_event,
+            },
         )
         .is_none());
     }

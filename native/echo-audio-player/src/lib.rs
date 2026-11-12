@@ -834,8 +834,8 @@ fn prepare_source(
     shared.set_volume(user_volume());
     shared.set_position_secs(start_position);
     shared.paused.store(true, Ordering::Release);
-    let interrupt = decoder.interrupt_handle();
-    shared.bind_interrupt(interrupt);
+    let decoder_interrupt = decoder.interrupt_handle();
+    shared.bind_interrupt(decoder_interrupt);
 
     let (control_signal_tx, control_signal_rx) = sync_channel::<()>(CONTROL_SIGNAL_WAKE_CAPACITY);
     let (telemetry_signal_tx, telemetry_signal_rx) = sync_channel::<PlaybackSignal>(32);
@@ -1025,25 +1025,9 @@ fn prepare_source(
         })
         .map_err(|err| format!("failed to spawn signal thread: {err}"))?;
 
-    // 加载阶段就在后台确认一次输出启动（AsyncTask 工作线程，不阻塞 UI）：
-    // 前端随后调用 play 时句柄已经确认可用，play 只负责解除暂停，不再走冷 open。
-    // 必须走确认路径，绝不能在加载阶段留下一条未受看门狗管理的输出线程——那正是
-    // 上一版「load 先开流 + play 看到未启动又开一条」双开超时的根因。
-    let output_thread = match control::spawn_output_thread_confirmed(shared.clone(), &config) {
-        Ok(output) => Some(output),
-        Err(err) => {
-            // 预热失败不阻断加载：会话仍可加载为暂停态，首次 play 会再尝试一次，
-            // 届时的失败会按正常播放错误路径回报给前端。
-            emit_event(PlayerEvent::log(
-                "warn",
-                format!("audio output prewarm failed: {err}"),
-            ));
-            None
-        }
-    };
     let mut session = PlaybackSession {
         shared: shared.clone(),
-        output_thread,
+        output_thread: None,
         filter_thread: None,
         decode_thread: None,
         decode_commands: None,
@@ -1069,6 +1053,33 @@ fn prepare_source(
         };
     session.decode_thread = Some(decode_thread);
     session.decode_commands = Some(decode_commands);
+
+    // 加载阶段预热输出（AsyncTask 工作线程，不阻塞 UI），但必须走带看门狗和端点
+    // 闸门的确认路径；绝不能在加载阶段留下一条未受看门狗管理的输出线程——那正是
+    // 「load 先开流 + play 看到未启动又开一条」双开超时的根因。
+    // 预热前先做 staleness 检查：快速连点切歌时旧 load 必须尽早退出，不能排在端点
+    // 闸门后面把最新一首的首帧拖成 (N-1)×启动耗时，也不能长期占满 AsyncTask 池。
+    if interrupt.load(Ordering::Acquire) {
+        session.stop_background();
+        return Err("source open cancelled".to_string());
+    }
+    match control::spawn_output_thread_confirmed(shared.clone(), &config, Some(interrupt.as_ref()))
+    {
+        Ok(output) => session.output_thread = Some(output),
+        Err(_) if interrupt.load(Ordering::Acquire) => {
+            // 预热等待期间被新 load 取代：尽快退出，不再让后续 play/apply 处理。
+            session.stop_background();
+            return Err("source open cancelled".to_string());
+        }
+        Err(err) => {
+            // 预热失败不阻断加载：会话仍可加载为暂停态，首次 play 会再尝试一次，
+            // 届时的失败会按正常播放错误路径回报给前端。
+            emit_event(PlayerEvent::log(
+                "warn",
+                format!("audio output prewarm failed: {err}"),
+            ));
+        }
+    }
     Ok(PreparedSource {
         session,
         embedded_metadata,
