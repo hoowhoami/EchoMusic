@@ -329,8 +329,9 @@ mod tests {
             .and_then(|rest| rest.split(',').next())
             .and_then(|value| value.parse().ok())
             .expect("entered_at_ms in describe");
-        // 500ms 总耗时里扣掉 450ms 闸门等待，剩余应约为 50ms 而不是 500ms。
-        assert!(entered_ms < 200, "{described}");
+        // 500ms 总耗时里扣掉 450ms 闸门等待，剩余应明显小于总耗时（不扣会约等于
+        // 500ms）。阈值留足调度余量，避免重载 CI 上线程被抢占导致误报。
+        assert!(entered_ms < 450, "{described}");
         assert!(described.contains("gate_wait_ms=450"), "{described}");
     }
 

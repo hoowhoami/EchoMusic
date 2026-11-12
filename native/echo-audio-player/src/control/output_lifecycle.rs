@@ -1,6 +1,7 @@
 use super::*;
 use crate::output::OUTPUT_START_CANCELLED_MESSAGE;
 use crate::shared::startup_probe::OutputStartupProbe;
+use std::sync::mpsc::Receiver;
 
 /// 暂停后保留共享输出流的时长。3 s 会把每次「暂停 → 播放」都变成一次冷启动的
 /// `Initialize`，而 WASAPI/audiodg 的端点拆除是异步的，冷启动很容易撞上尚未
@@ -682,7 +683,18 @@ fn confirm_output_start_once(
         emit_event,
         Some(start_tx),
     );
+    await_output_start_once(output_thread, &start_rx, shared, config, cancel)
+}
 
+/// 等待输出线程确认启动；每 50ms 复查一次取消令牌。独立成函数便于单测
+/// 「等待途中被取消」这条路径（spawn 本身依赖真实后端，无法在单测里跑）。
+fn await_output_start_once(
+    output_thread: crate::output::AudioOutputHandle,
+    start_rx: &Receiver<Result<(), String>>,
+    shared: &Arc<SharedAudio>,
+    config: &PlayerConfig,
+    cancel: Option<&AtomicBool>,
+) -> Result<crate::output::AudioOutputHandle, String> {
     let deadline = Instant::now() + OUTPUT_START_WATCHDOG;
     loop {
         if cancel.is_some_and(|flag| flag.load(Ordering::Acquire)) {
@@ -724,7 +736,13 @@ fn confirm_output_start_once(
                 &shared.output_startup_probe,
             ));
         }
-        match start_rx.recv_timeout(remaining.min(OUTPUT_START_POLL_INTERVAL)) {
+        // 没有取消令牌（restart/recovery 路径）时一次等到截止，不做 50ms 空转。
+        let poll = if cancel.is_some() {
+            remaining.min(OUTPUT_START_POLL_INTERVAL)
+        } else {
+            remaining
+        };
+        match start_rx.recv_timeout(poll) {
             Ok(Ok(())) => return Ok(output_thread),
             Ok(Err(err)) => {
                 output_thread.shutdown();
@@ -1070,6 +1088,50 @@ mod tests {
             .err()
             .expect("cancelled prewarm must not spawn an output thread");
         assert_eq!(error, crate::output::OUTPUT_START_CANCELLED_MESSAGE);
+    }
+
+    #[test]
+    fn awaited_output_start_observes_cancellation_while_waiting() {
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &DspSettings::default(),
+        ));
+        let config = PlayerConfig::default();
+        // sender 保持存活，让 recv_timeout 反复 Timeout 而不是 Disconnected。
+        let (_start_tx, start_rx) = sync_channel::<Result<(), String>>(1);
+        let stop = crate::output::OutputStopToken::new();
+        let thread_stop = stop.clone();
+        let thread_shared = shared.clone();
+        let thread = thread::spawn(move || {
+            while !thread_stop.should_stop(&thread_shared) {
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
+        let output_thread = crate::output::AudioOutputHandle::new(stop, thread);
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_for_thread = cancel.clone();
+        let canceller = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(30));
+            cancel_for_thread.store(true, Ordering::Release);
+        });
+
+        let started = Instant::now();
+        let error = await_output_start_once(
+            output_thread,
+            &start_rx,
+            &shared,
+            &config,
+            Some(cancel.as_ref()),
+        )
+        .err()
+        .expect("waiting prewarm must observe cancellation");
+        assert_eq!(error, crate::output::OUTPUT_START_CANCELLED_MESSAGE);
+        assert!(started.elapsed() >= Duration::from_millis(20));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        canceller.join().unwrap();
     }
 
     #[cfg(target_os = "windows")]

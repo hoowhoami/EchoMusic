@@ -74,6 +74,8 @@ use std::time::{Duration, Instant};
 const GAPLESS_PREDECODE_SECS: f64 = 0.5;
 const TRANSPORT_FADE_OUT_MS: u64 = 24;
 const CONTROL_SIGNAL_WAKE_CAPACITY: usize = 1;
+/// 加载被新的 source 请求取代时的统一取消文案。
+const SOURCE_OPEN_CANCELLED: &str = "source open cancelled";
 
 static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
 /// 串行化会真实 initialize/destroy 全局 runtime 的测试：并行执行时它们会互相
@@ -760,7 +762,7 @@ fn prepare_source(
         &config.stream_options(),
     )?;
     if interrupt.load(Ordering::Acquire) {
-        return Err("source open cancelled".to_string());
+        return Err(SOURCE_OPEN_CANCELLED.to_string());
     }
     if start_position > 0.0 {
         decoder.seek(start_position)?;
@@ -781,7 +783,7 @@ fn prepare_source(
         requested_mix_sample_rate,
     )?;
     if interrupt.load(Ordering::Acquire) {
-        return Err("source open cancelled".to_string());
+        return Err(SOURCE_OPEN_CANCELLED.to_string());
     }
     let mix_sample_rate = mix_format.sample_rate;
     let process_sample_rate = initial_filter_graph.process_format().sample_rate;
@@ -1061,15 +1063,24 @@ fn prepare_source(
     // 闸门后面把最新一首的首帧拖成 (N-1)×启动耗时，也不能长期占满 AsyncTask 池。
     if interrupt.load(Ordering::Acquire) {
         session.stop_background();
-        return Err("source open cancelled".to_string());
+        return Err(SOURCE_OPEN_CANCELLED.to_string());
     }
     match control::spawn_output_thread_confirmed(shared.clone(), &config, Some(interrupt.as_ref()))
     {
-        Ok(output) => session.output_thread = Some(output),
+        Ok(output) => {
+            // 预热成功与返回之间仍可能被新 load 取代：复查一次，命中就立刻收掉，
+            // 不把这条流留给 apply 阶段的 stop_background 再拆。
+            if interrupt.load(Ordering::Acquire) {
+                output.shutdown();
+                session.stop_background();
+                return Err(SOURCE_OPEN_CANCELLED.to_string());
+            }
+            session.output_thread = Some(output);
+        }
         Err(_) if interrupt.load(Ordering::Acquire) => {
             // 预热等待期间被新 load 取代：尽快退出，不再让后续 play/apply 处理。
             session.stop_background();
-            return Err("source open cancelled".to_string());
+            return Err(SOURCE_OPEN_CANCELLED.to_string());
         }
         Err(err) => {
             // 预热失败不阻断加载：会话仍可加载为暂停态，首次 play 会再尝试一次，
@@ -1230,12 +1241,19 @@ fn replace_source_async(
     let mut prepared = match prepared {
         Ok(prepared) => Some(prepared),
         Err(err) => {
-            echo_native_log::warn(format!(
-                "audio source load failed: seq={seq}, stream={}, error={err}",
-                audio_stream_ordinal
-                    .map(|stream| stream.to_string())
-                    .unwrap_or_else(|| "-".to_string())
-            ));
+            let stream = audio_stream_ordinal
+                .map(|stream| stream.to_string())
+                .unwrap_or_else(|| "-".to_string());
+            if err == SOURCE_OPEN_CANCELLED {
+                // 快速切歌时被取代的 load 属正常控制流，降为 debug，避免 warn 噪音。
+                echo_native_log::debug(format!(
+                    "audio source load cancelled: seq={seq}, stream={stream}"
+                ));
+            } else {
+                echo_native_log::warn(format!(
+                    "audio source load failed: seq={seq}, stream={stream}, error={err}"
+                ));
+            }
             let interrupt_for_command = interrupt.clone();
             let current = call_core_command("finish-source-open-error", move |runtime| {
                 if !runtime.clear_source_open_if_current(open_request_seq, &interrupt_for_command) {
