@@ -40,7 +40,9 @@ const favorite = computed(() => props.stats.topSongs[0]);
 const album = computed(() => props.stats.topAlbum);
 
 const coverSize = computed(() => (compact.value ? 132 : Math.min(160, heroWidth.value * 0.29)));
-const favoritePlayable = computed(() => Boolean(favorite.value && favorite.value.id && favorite.value.id !== '0'));
+const favoritePlayable = computed(() =>
+  Boolean(favorite.value && favorite.value.id && favorite.value.id !== '0'),
+);
 
 /** 指标卡列数：≥640 四列 / ≥300 两列 / 其余单列（对齐 Next metrics） */
 const metricColumns = computed(() => (rootWidth.value >= 640 ? 4 : rootWidth.value >= 300 ? 2 : 1));
@@ -93,7 +95,7 @@ const metricText = (card: { value: string; unit: string }) =>
           <span class="hero-eyebrow">01 / 你的单曲循环</span>
           <Icon :icon="iconRepeat" width="18" height="18" class="hero-eyebrow-icon" />
         </div>
-        <div class="hero-body" :class="{ narrow: compact }">
+        <div class="hero-body" :class="{ 'is-compact': compact }">
           <Cover
             class="hero-cover"
             :url="favorite?.cover"
@@ -285,7 +287,7 @@ const metricText = (card: { value: string; unit: string }) =>
   align-items: center;
 }
 
-.hero-body.narrow {
+.hero-body.is-compact {
   grid-template-columns: minmax(0, 1fr);
   gap: 18px;
 }

@@ -20,7 +20,9 @@ const props = withDefaults(
 );
 
 const enterDelay = computed(() => `${Math.min(props.order * 32, 96)}ms`);
-const enterStyle = computed(() => (props.animate ? { animationDelay: enterDelay.value } : undefined));
+const enterStyle = computed(() =>
+  props.animate ? { animationDelay: enterDelay.value } : undefined,
+);
 </script>
 
 <template>

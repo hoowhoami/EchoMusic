@@ -29,7 +29,11 @@ const hasData = computed(() => props.stats.totalSongs > 0);
 const hasError = computed(() => props.errorMessage.length > 0);
 
 const emptyTitle = computed(() =>
-  props.loading ? '正在整理听歌记录' : hasError.value ? '暂时无法读取记录' : '下一首，就是故事的开始',
+  props.loading
+    ? '正在整理听歌记录'
+    : hasError.value
+      ? '暂时无法读取记录'
+      : '下一首，就是故事的开始',
 );
 const emptyBody = computed(() =>
   props.loading
@@ -46,7 +50,7 @@ const emptyBody = computed(() =>
       :stats="stats"
       :interactive="interactive"
       :animate="animate"
-      @play="id => emit('play', id)"
+      @play="(id) => emit('play', id)"
     />
     <HistoryStatsActivity v-if="hasData" :stats="stats" :animate="animate" />
     <HistoryStatsRankings
@@ -54,7 +58,7 @@ const emptyBody = computed(() =>
       :stats="stats"
       :interactive="interactive"
       :animate="animate"
-      @play="id => emit('play', id)"
+      @play="(id) => emit('play', id)"
     />
     <div v-if="!hasData" class="stats-empty">
       <Icon :icon="iconHeadphones" width="32" height="32" class="empty-icon" />

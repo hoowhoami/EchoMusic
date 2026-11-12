@@ -52,7 +52,7 @@ import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import TabsContent from '@/components/ui/TabsContent.vue';
 import HistoryStatsContent from '@/components/history/stats/HistoryStatsContent.vue';
-import { buildHistoryStats } from '../../shared/historyStats';
+import { buildHistoryStats, resolveSongId } from '../../shared/historyStats';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 
 const playlistStore = usePlaylistStore();
@@ -162,19 +162,17 @@ const formatShareTimestamp = (date = new Date()) => {
 
 // 统计快照：逐行对齐 EchoMusicNext buildStats 的口径（见 src/shared/historyStats.ts）
 const historyStats = computed(() => buildHistoryStats(historyStore.entries));
-const statsLoading = computed(
-  () => !historyStore.hydrated && historyStore.entries.length === 0,
-);
+const statsLoading = computed(() => !historyStore.hydrated && historyStore.entries.length === 0);
 // 本地历史加载无失败态暴露，错误文案恒为空，保留结构以便与 Next 的错误空态对齐
+// TODO: hydrate() 目前失败只 logger.warn 不暴露状态；接通后此空态卡可展示真实错误信息
 const statsErrorMessage = ref('');
 const retryStats = () => {
   void historyStore.hydrate();
 };
 
 /** 播放统计区中的歌曲（hero「再听一次」与 Top 歌曲 tile 共用） */
-const resolveEntryId = (song: Song) => String(song.mixSongId || song.fileId || song.id || '0');
 const playStatSong = async (id: string) => {
-  const entry = historyStore.entries.find((item) => resolveEntryId(item.song) === id);
+  const entry = historyStore.entries.find((item) => resolveSongId(item.song) === id);
   if (!entry) return;
   await replaceQueueAndPlay(playlistStore, playerStore, [entry.song], 0, entry.song, {
     queueId: 'queue:history',
@@ -722,6 +720,11 @@ onUnmounted(() => {
 
 .stats-content.is-share-capture :deep(.stats-enter) {
   opacity: 1 !important;
+  animation: none !important;
+}
+
+/* 克隆节点重新插入文档会让 CSS 动画重播：时钟指针须直接呈现最终比例，避免截到半高 */
+.stats-content.is-share-capture :deep(.hour-bar-fill) {
   animation: none !important;
 }
 

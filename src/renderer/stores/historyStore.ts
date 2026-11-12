@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { Song } from '@/models/song';
 import type { StorageHistoryEntry } from '../../shared/storage';
+import { resolveSongId } from '../../shared/historyStats';
 import { withoutEmbeddedMetadata } from '../../shared/embeddedMetadata';
 import logger from '@/utils/logger';
 import { completeSongMetadata } from '@/services/songMetadata';
@@ -35,16 +36,15 @@ const toLocalEntry = (entry: StorageHistoryEntry): LocalHistoryEntry => ({
   historyKey: entry.historyKey,
 });
 
-const resolveSongHistoryId = (song: Song) =>
-  String(song.mixSongId || song.fileId || song.id || '0');
+// 歌曲唯一 ID 的解析统一走 shared/historyStats 的 resolveSongId（与统计口径一致）
 
 const upsertEntryAtTop = (
   current: LocalHistoryEntry[],
   entry: LocalHistoryEntry,
   maxEntries: number,
 ) => {
-  const targetId = resolveSongHistoryId(entry.song);
-  const filtered = current.filter((item) => resolveSongHistoryId(item.song) !== targetId);
+  const targetId = resolveSongId(entry.song);
+  const filtered = current.filter((item) => resolveSongId(item.song) !== targetId);
   return [entry, ...filtered].slice(0, maxEntries);
 };
 
@@ -136,7 +136,7 @@ export const useHistoryStore = defineStore('history', () => {
     promotedKey.value = null;
     const current = entries.value;
     const existingIndex = current.findIndex(
-      (item) => resolveSongHistoryId(item.song) === resolveSongHistoryId(entry.song),
+      (item) => resolveSongId(item.song) === resolveSongId(entry.song),
     );
 
     if (existingIndex <= 0) {
@@ -164,8 +164,8 @@ export const useHistoryStore = defineStore('history', () => {
     if (!hydrated.value) await hydrate();
     if (requestGeneration !== generation) return;
     const now = Date.now();
-    const mxid = resolveSongHistoryId(song);
-    const existing = entries.value.find((entry) => resolveSongHistoryId(entry.song) === mxid);
+    const mxid = resolveSongId(song);
+    const existing = entries.value.find((entry) => resolveSongId(entry.song) === mxid);
 
     let stored: StorageHistoryEntry | null | undefined;
     try {

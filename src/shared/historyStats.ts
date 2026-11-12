@@ -147,10 +147,15 @@ const formatRangeDate = (timestamp: number) => {
 /** 歌手名解析：结构化字段优先，否则按分隔符切分原始串（对齐 Next artistNames） */
 const artistNames = (song: HistoryStatsEntrySong): string[] => {
   const names: string[] = [];
-  const structured = [...(song.artists ?? []), ...(song.singers ?? [])];
-  for (const ref of structured) {
+  // 本项目 mapper 会在同一歌曲对象上把 artists/singers 设为同一数组，
+  // 拼接后必须按名去重，否则每位歌手的 plays/songs 被双倍计入
+  const seen = new Set<string>();
+  for (const ref of [...(song.artists ?? []), ...(song.singers ?? [])]) {
     const name = ref.name?.trim();
-    if (name) names.push(name);
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      names.push(name);
+    }
   }
   if (names.length > 0) return names;
   const text = song.artist ?? '';
@@ -163,7 +168,9 @@ const artistNames = (song: HistoryStatsEntrySong): string[] => {
   return names;
 };
 
-const songId = (song: HistoryStatsEntrySong) => String(song.mixSongId || song.fileId || song.id || '0');
+/** 歌曲唯一 ID：mixSongId 优先，其次 fileId/id，兜底 '0'（三处调用方共用） */
+export const resolveSongId = (song: HistoryStatsEntrySong) =>
+  String(song.mixSongId || song.fileId || song.id || '0');
 
 const startOfDay = (timestamp: number) => {
   const date = new Date(timestamp);
@@ -180,7 +187,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const buildHistoryStats = (entries: HistoryStatsEntry[]): HistoryStats => {
   let totalPlays = 0;
   // 结算收听毫秒：本项目本地历史无此字段，恒为 0（时长指标卡显示占位）
-  let listenedMs = 0;
+  const listenedMs = 0;
   let replayed = 0;
   let latestAt = 0;
   let oldestAt = 0;
@@ -230,7 +237,13 @@ export const buildHistoryStats = (entries: HistoryStatsEntry[]): HistoryStats =>
       artists.set(name, artist);
     }
     const albumName = (song.albumName || song.album || '').trim() || UNKNOWN_ALBUM;
-    const album = albums.get(albumName) ?? { name: albumName, cover: '', coverPlays: -1, plays: 0, songs: 0 };
+    const album = albums.get(albumName) ?? {
+      name: albumName,
+      cover: '',
+      coverPlays: -1,
+      plays: 0,
+      songs: 0,
+    };
     album.plays += plays;
     album.songs += 1;
     const cover = song.coverUrl || song.cover || '';
@@ -241,7 +254,7 @@ export const buildHistoryStats = (entries: HistoryStatsEntry[]): HistoryStats =>
     albums.set(albumName, album);
     songs.push({
       key: entry.historyKey,
-      id: songId(song),
+      id: resolveSongId(song),
       title: song.name || UNKNOWN_SONG,
       artist: song.artist || UNKNOWN_ARTIST,
       cover,
@@ -265,7 +278,8 @@ export const buildHistoryStats = (entries: HistoryStatsEntry[]): HistoryStats =>
       // 占位口径：本地未结算收听时长（Next 为 listened_ms 结算值）
       value: listenDuration(listenedMs / 1000),
       unit: '',
-      caption: '来自已结算的收听记录',
+      // 本地历史无结算数据，数字恒为占位；文案明示口径，不暗示有真实时长
+      caption: '本地暂未结算收听时长',
     },
     {
       label: '常听歌手',
@@ -282,7 +296,8 @@ export const buildHistoryStats = (entries: HistoryStatsEntry[]): HistoryStats =>
   ];
 
   const artistList = Array.from(artists.values()).sort(
-    (a, b) => b.plays - a.plays || b.songs - a.songs || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+    (a, b) =>
+      b.plays - a.plays || b.songs - a.songs || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
   );
   const maxArtistPlays = artistList.length > 0 ? artistList[0].plays : 1;
   const topArtists: HistoryTopArtist[] = artistList.slice(0, 12).map((artist) => ({
@@ -294,7 +309,8 @@ export const buildHistoryStats = (entries: HistoryStatsEntry[]): HistoryStats =>
 
   songs.sort((a, b) => b.plays - a.plays || b.at - a.at);
   const albumList = Array.from(albums.values()).sort(
-    (a, b) => b.plays - a.plays || b.songs - a.songs || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+    (a, b) =>
+      b.plays - a.plays || b.songs - a.songs || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
   );
   const topAlbum: HistoryTopAlbum = albumList[0]
     ? {
@@ -383,9 +399,7 @@ export const buildHistoryStats = (entries: HistoryStatsEntry[]): HistoryStats =>
     replayPercent,
     datedSongs: playedAts.length,
     dateRangeLabel:
-      oldestAt > 0
-        ? `${formatRangeDate(oldestAt)} — ${formatRangeDate(latestAt)}`
-        : '',
+      oldestAt > 0 ? `${formatRangeDate(oldestAt)} — ${formatRangeDate(latestAt)}` : '',
     latestPlayedLabel: playDate(latestAt),
   };
 };

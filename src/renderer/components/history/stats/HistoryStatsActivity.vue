@@ -12,7 +12,8 @@ import HistoryStatsPanel from './HistoryStatsPanel.vue';
 import { useContainerWidth } from './useContainerWidth';
 import './statsShared.css';
 
-const props = withDefaults(
+// animate 仅在模板中使用，无需 script 内引用
+withDefaults(
   defineProps<{
     stats: HistoryStats;
     animate?: boolean;
@@ -27,9 +28,6 @@ const stacked = computed(() => rootWidth.value < 700);
 
 const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
 const DIAL_MARKS = ['00', '06', '12', '18'];
-
-const enterStyle = (order: number) =>
-  props.animate ? { animationDelay: `${Math.min(order * 32, 96)}ms` } : undefined;
 
 /** 日历格底色：有足迹时按比例混入主题色（.18 + .72×ratio），否则用文字色 3.5% 的灰底 */
 const dayBackground = (count: number, ratio: number) => {
@@ -120,7 +118,6 @@ const markClass = (index: number) =>
             <Tooltip :content="hourTooltipTime(hour.hour)" :description="hourTooltipText(hour)">
               <div class="hour-bar">
                 <div
-                  v-if="barRatio(hour.ratio) > 0"
                   class="hour-bar-fill"
                   :style="{
                     height: `${barRatio(hour.ratio) * 100}%`,
