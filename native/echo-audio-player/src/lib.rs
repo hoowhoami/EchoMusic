@@ -26,9 +26,9 @@ mod transition_tests;
 use control::{
     armed_transition_from_prepared, attach_restarted_decoder, handle_output_device_list_change,
     handle_playback_output_device_event, mark_seek_plan_failed, open_decoder_at_position,
-    prepare_dsp_settings_for_mix_rate, prepare_transition_audio, request_output_recovery,
-    restart_output_for_runtime, schedule_idle_output_release_for_runtime, PreparationCancellation,
-    PreparedTransitionInputs, SeekPlan,
+    output_needs_restart, prepare_dsp_settings_for_mix_rate, prepare_transition_audio,
+    request_output_recovery, restart_output_for_runtime, schedule_idle_output_release_for_runtime,
+    PreparationCancellation, PreparedTransitionInputs, SeekPlan,
 };
 pub use control::{
     cancel_fade, configure_spectrum, fade, get_audio_devices, get_audio_graph,
@@ -74,8 +74,14 @@ use std::time::{Duration, Instant};
 const GAPLESS_PREDECODE_SECS: f64 = 0.5;
 const TRANSPORT_FADE_OUT_MS: u64 = 24;
 const CONTROL_SIGNAL_WAKE_CAPACITY: usize = 1;
+/// 加载被新的 source 请求取代时的统一取消文案。
+const SOURCE_OPEN_CANCELLED: &str = "source open cancelled";
 
 static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
+/// 串行化会真实 initialize/destroy 全局 runtime 的测试：并行执行时它们会互相
+/// 拆台（一个测试 destroy 掉另一个刚 initialize 的 runtime），表现为随机失败。
+#[cfg(test)]
+pub(crate) static TEST_RUNTIME_LOCK: Mutex<()> = Mutex::new(());
 /// Mirrors `RUNTIME.is_some()` for lock-free readiness checks on hot control
 /// paths. All authoritative writes happen while holding the RUNTIME guard
 /// (initialize sets true, shutdown sets false before take()), so ready==true
@@ -214,7 +220,6 @@ struct PreparedSource {
     seq: u64,
     duration: f64,
     start_position: f64,
-    autostart: bool,
 }
 
 struct PreparedNextSource {
@@ -742,7 +747,6 @@ fn prepare_source(
     audio_stream_ordinal: Option<usize>,
     seq: u64,
     start_position: f64,
-    autostart: bool,
     config: PlayerConfig,
     dsp_settings: DspSettings,
     spatial_file_path: Option<String>,
@@ -758,7 +762,7 @@ fn prepare_source(
         &config.stream_options(),
     )?;
     if interrupt.load(Ordering::Acquire) {
-        return Err("source open cancelled".to_string());
+        return Err(SOURCE_OPEN_CANCELLED.to_string());
     }
     if start_position > 0.0 {
         decoder.seek(start_position)?;
@@ -779,7 +783,7 @@ fn prepare_source(
         requested_mix_sample_rate,
     )?;
     if interrupt.load(Ordering::Acquire) {
-        return Err("source open cancelled".to_string());
+        return Err(SOURCE_OPEN_CANCELLED.to_string());
     }
     let mix_sample_rate = mix_format.sample_rate;
     let process_sample_rate = initial_filter_graph.process_format().sample_rate;
@@ -831,9 +835,9 @@ fn prepare_source(
     shared.set_track_seq(seq);
     shared.set_volume(user_volume());
     shared.set_position_secs(start_position);
-    shared.paused.store(!autostart, Ordering::Release);
-    let interrupt = decoder.interrupt_handle();
-    shared.bind_interrupt(interrupt);
+    shared.paused.store(true, Ordering::Release);
+    let decoder_interrupt = decoder.interrupt_handle();
+    shared.bind_interrupt(decoder_interrupt);
 
     let (control_signal_tx, control_signal_rx) = sync_channel::<()>(CONTROL_SIGNAL_WAKE_CAPACITY);
     let (telemetry_signal_tx, telemetry_signal_rx) = sync_channel::<PlaybackSignal>(32);
@@ -1023,16 +1027,9 @@ fn prepare_source(
         })
         .map_err(|err| format!("failed to spawn signal thread: {err}"))?;
 
-    let output_thread = output::spawn_output_backend(
-        config.audio_device.clone(),
-        config.exclusive_output,
-        shared.clone(),
-        emit_event,
-        None,
-    );
     let mut session = PlaybackSession {
         shared: shared.clone(),
-        output_thread: Some(output_thread),
+        output_thread: None,
         filter_thread: None,
         decode_thread: None,
         decode_commands: None,
@@ -1058,6 +1055,42 @@ fn prepare_source(
         };
     session.decode_thread = Some(decode_thread);
     session.decode_commands = Some(decode_commands);
+
+    // 加载阶段预热输出（AsyncTask 工作线程，不阻塞 UI），但必须走带看门狗和端点
+    // 闸门的确认路径；绝不能在加载阶段留下一条未受看门狗管理的输出线程——那正是
+    // 「load 先开流 + play 看到未启动又开一条」双开超时的根因。
+    // 预热前先做 staleness 检查：快速连点切歌时旧 load 必须尽早退出，不能排在端点
+    // 闸门后面把最新一首的首帧拖成 (N-1)×启动耗时，也不能长期占满 AsyncTask 池。
+    if interrupt.load(Ordering::Acquire) {
+        session.stop_background();
+        return Err(SOURCE_OPEN_CANCELLED.to_string());
+    }
+    match control::spawn_output_thread_confirmed(shared.clone(), &config, Some(interrupt.as_ref()))
+    {
+        Ok(output) => {
+            // 预热成功与返回之间仍可能被新 load 取代：复查一次，命中就立刻收掉，
+            // 不把这条流留给 apply 阶段的 stop_background 再拆。
+            if interrupt.load(Ordering::Acquire) {
+                output.shutdown();
+                session.stop_background();
+                return Err(SOURCE_OPEN_CANCELLED.to_string());
+            }
+            session.output_thread = Some(output);
+        }
+        Err(_) if interrupt.load(Ordering::Acquire) => {
+            // 预热等待期间被新 load 取代：尽快退出，不再让后续 play/apply 处理。
+            session.stop_background();
+            return Err(SOURCE_OPEN_CANCELLED.to_string());
+        }
+        Err(err) => {
+            // 预热失败不阻断加载：会话仍可加载为暂停态，首次 play 会再尝试一次，
+            // 届时的失败会按正常播放错误路径回报给前端。
+            emit_event(PlayerEvent::log(
+                "warn",
+                format!("audio output prewarm failed: {err}"),
+            ));
+        }
+    }
     Ok(PreparedSource {
         session,
         embedded_metadata,
@@ -1066,7 +1099,6 @@ fn prepare_source(
         seq,
         duration,
         start_position: start_position.max(0.0),
-        autostart,
     })
 }
 
@@ -1101,7 +1133,6 @@ fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) 
         seq,
         duration,
         start_position,
-        autostart,
     } = prepared;
     runtime.cancel_idle_output_release();
     runtime.cancel_pending_gapless_prepare();
@@ -1118,33 +1149,22 @@ fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) 
     runtime.latest_load_seq = runtime.latest_load_seq.max(seq);
     runtime.state.duration = duration;
     runtime.state.time_pos = start_position;
-    runtime.state.playing = autostart;
-    runtime.state.paused = !autostart;
+    // 加载结果一律是暂停态，播放由前端随后的 play() 驱动；输出流已在加载阶段
+    // 预热并确认，play 只负责解除暂停。
+    runtime.state.playing = false;
+    runtime.state.paused = true;
     update_runtime_audio_graph(runtime);
-    set_runtime_core_state(
-        runtime,
-        if autostart {
-            PlaybackCoreState::Playing
-        } else {
-            PlaybackCoreState::Paused
-        },
-        "source-applied",
-    );
+    set_runtime_core_state(runtime, PlaybackCoreState::Paused, "source-applied");
 
-    emit_runtime_events(runtime, {
-        let mut events = vec![
+    emit_runtime_events(
+        runtime,
+        vec![
             PlayerEvent::duration_change(duration),
             PlayerEvent::file_loaded(url, seq),
             PlayerEvent::state_change(runtime.state.clone()),
-        ];
-        if autostart {
-            events.push(PlayerEvent::playback_restart(start_position, "load"));
-        }
-        events
-    });
-    if !autostart {
-        schedule_idle_output_release_for_runtime(runtime);
-    }
+        ],
+    );
+    schedule_idle_output_release_for_runtime(runtime);
 }
 
 fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
@@ -1199,7 +1219,6 @@ fn replace_source_async(
     audio_stream_ordinal: Option<usize>,
     seq: u64,
     start_position: f64,
-    autostart: bool,
     config: PlayerConfig,
     dsp_settings: DspSettings,
     spatial_file_path: Option<String>,
@@ -1213,7 +1232,6 @@ fn replace_source_async(
         audio_stream_ordinal,
         seq,
         start_position,
-        autostart,
         config,
         dsp_settings,
         spatial_file_path,
@@ -1223,12 +1241,19 @@ fn replace_source_async(
     let mut prepared = match prepared {
         Ok(prepared) => Some(prepared),
         Err(err) => {
-            echo_native_log::warn(format!(
-                "audio source load failed: seq={seq}, stream={}, error={err}",
-                audio_stream_ordinal
-                    .map(|stream| stream.to_string())
-                    .unwrap_or_else(|| "-".to_string())
-            ));
+            let stream = audio_stream_ordinal
+                .map(|stream| stream.to_string())
+                .unwrap_or_else(|| "-".to_string());
+            if err == SOURCE_OPEN_CANCELLED {
+                // 快速切歌时被取代的 load 属正常控制流，降为 debug，避免 warn 噪音。
+                echo_native_log::debug(format!(
+                    "audio source load cancelled: seq={seq}, stream={stream}"
+                ));
+            } else {
+                echo_native_log::warn(format!(
+                    "audio source load failed: seq={seq}, stream={stream}, error={err}"
+                ));
+            }
             let interrupt_for_command = interrupt.clone();
             let current = call_core_command("finish-source-open-error", move |runtime| {
                 if !runtime.clear_source_open_if_current(open_request_seq, &interrupt_for_command) {
@@ -1924,7 +1949,6 @@ impl Task for LoadFileTask {
                 audio_stream,
                 seq,
                 0.0,
-                false,
                 config,
                 dsp_settings,
                 spatial_file_path,
@@ -2568,15 +2592,9 @@ impl Task for CommitPreparedNextSourceTask {
                                 if !matches_session {
                                     return Ok(());
                                 }
-                                let output_needs_restart =
-                                    runtime.session.as_ref().is_some_and(|session| {
-                                        session
-                                            .output_thread
-                                            .as_ref()
-                                            .is_none_or(output::AudioOutputHandle::has_exited)
-                                            || !session.shared.output_has_started()
-                                    });
-                                if output_needs_restart {
+                                let needs_output_restart =
+                                    runtime.session.as_ref().is_some_and(output_needs_restart);
+                                if needs_output_restart {
                                     let config = runtime.config.clone();
                                     restart_output_for_runtime(runtime, config, false)?;
                                     runtime.cancel_idle_output_release();
@@ -2702,14 +2720,9 @@ impl Task for CommitPreparedNextSourceTask {
                         "audio session changed while committing prepared track".to_string(),
                     ));
                 }
-                let output_needs_restart = runtime.session.as_ref().is_some_and(|session| {
-                    session
-                        .output_thread
-                        .as_ref()
-                        .is_none_or(output::AudioOutputHandle::has_exited)
-                        || !session.shared.output_has_started()
-                });
-                if output_needs_restart {
+                let needs_output_restart =
+                    runtime.session.as_ref().is_some_and(output_needs_restart);
+                if needs_output_restart {
                     let config = runtime.config.clone();
                     restart_output_for_runtime(runtime, config, false)?;
                     runtime.cancel_idle_output_release();
@@ -2937,11 +2950,7 @@ fn resume_runtime_playback(runtime: &mut PlayerRuntime, fade_in: bool) -> napi::
             "no audio source loaded".to_string(),
         ));
     };
-    let output_needs_restart = session
-        .output_thread
-        .as_ref()
-        .is_none_or(output::AudioOutputHandle::has_exited)
-        || !session.shared.output_has_started();
+    let output_needs_restart = output_needs_restart(session);
     if output_needs_restart {
         let config = runtime.config.clone();
         restart_output_for_runtime(runtime, config, false)?;

@@ -773,7 +773,9 @@ fn seek_during_overlap_abandons_deck_a_and_continues_on_b() {
     rig.stop();
 }
 
-static TEST_SERIAL: Mutex<()> = Mutex::new(());
+// 与 fade/source_change 的全局 runtime 测试共用同一把锁：这些用例都会真实
+// initialize/destroy，分成两把互不相关的锁等于没锁。
+use crate::TEST_RUNTIME_LOCK as TEST_SERIAL;
 
 #[test]
 fn seek_on_outgoing_track_drops_the_old_plan_and_keeps_a_live() {

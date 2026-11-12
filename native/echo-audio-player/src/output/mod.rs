@@ -276,6 +276,21 @@ pub(crate) fn output_buffer_mode_for_frames(frames: u32) -> String {
     }
 }
 
+/// 进程内已成功初始化、尚未释放的 WASAPI 输出流数量（诊断用；其他后端恒为 0）。
+/// 注意口径：仍卡在 `Initialize` 里的 client 不计入，这类情况由启动探针的
+/// `gate_holder_age_ms` 反映，两者配合才能区分「上一代流占着端点」与
+/// 「端点本身初始化慢」。
+pub(crate) fn live_output_stream_count() -> u32 {
+    #[cfg(target_os = "windows")]
+    {
+        wasapi::live_output_stream_count()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        0
+    }
+}
+
 pub(crate) fn is_disconnect_recovery_reason(reason: &str) -> bool {
     reason == "device-not-available" || reason == "stream-invalidated"
 }

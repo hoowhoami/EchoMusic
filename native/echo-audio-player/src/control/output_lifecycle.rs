@@ -1,15 +1,28 @@
 use super::*;
+use crate::output::OUTPUT_START_CANCELLED_MESSAGE;
 use crate::shared::startup_probe::OutputStartupProbe;
+use std::sync::mpsc::Receiver;
 
-const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
+/// 暂停后保留共享输出流的时长。3 s 会把每次「暂停 → 播放」都变成一次冷启动的
+/// `Initialize`，而 WASAPI/audiodg 的端点拆除是异步的，冷启动很容易撞上尚未
+/// 完成的释放。30 s 仍然满足蓝牙端点休眠的诉求，同时让常见的暂停/恢复直接复用
+/// 已启动的流，避免把冷启动成本摊到每次暂停上。
+const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 30;
+/// 独占模式沿用较短的释放窗口：暂停时继续占着设备会阻止其他应用独占播放，
+/// 而独占流的冷启动通常很快，不需要用设备占用换恢复速度。
+const IDLE_EXCLUSIVE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
 
 /// 输出启动看门狗：超过该时长未收到启动确认即判失败。
 const OUTPUT_START_WATCHDOG: Duration = Duration::from_secs(3);
-/// 看门狗超时后在同端点重试的总尝试次数。第一次失败常是引擎/驱动侧的
-/// 瞬时串行化（端点刚经历路由切换或被弃用线程占用），立即重试一次通常即可成功。
+/// 看门狗超时后在同端点重试的总尝试次数。只有 `AUDCLNT_E_DEVICE_IN_USE` 这类
+/// 立即返回的瞬时错误才重试；看门狗超时**不再重试**——被弃用的线程仍卡在
+/// `Initialize` 里并持有端点闸门，立刻再 spawn 一个只会让两次初始化继续排队。
 const OUTPUT_START_ATTEMPTS: u32 = 2;
 /// 两次尝试之间的间隔：给被弃用的输出线程留出撞上停止令牌检查点退出的时间。
 const OUTPUT_START_RETRY_DELAY: Duration = Duration::from_millis(250);
+/// 启动确认的轮询步长。加载预热需要在等待期间响应新请求的取消令牌，
+/// 避免 stale load 排满端点闸门、拖慢最新一首的首帧。
+const OUTPUT_START_POLL_INTERVAL: Duration = Duration::from_millis(50);
 /// 看门狗超时消息前缀；重试判定与消息构造共用，避免文案漂移。
 const OUTPUT_START_TIMEOUT_MESSAGE_PREFIX: &str = "audio output did not start within";
 
@@ -26,14 +39,19 @@ pub(crate) fn schedule_idle_output_release_for_runtime(runtime: &mut PlayerRunti
         return;
     };
     let release_seq = runtime.next_idle_output_release_seq();
-    schedule_idle_output_release(shared, release_seq);
+    let delay_secs = if runtime.config.exclusive_output {
+        IDLE_EXCLUSIVE_OUTPUT_RELEASE_DELAY_SECS
+    } else {
+        IDLE_OUTPUT_RELEASE_DELAY_SECS
+    };
+    schedule_idle_output_release(shared, release_seq, delay_secs);
 }
 
-fn schedule_idle_output_release(shared: Arc<SharedAudio>, release_seq: u64) {
+fn schedule_idle_output_release(shared: Arc<SharedAudio>, release_seq: u64, delay_secs: u64) {
     let _ = thread::Builder::new()
         .name("player-output-idle-release".to_string())
         .spawn(move || {
-            thread::sleep(Duration::from_secs(IDLE_OUTPUT_RELEASE_DELAY_SECS));
+            thread::sleep(Duration::from_secs(delay_secs));
             dispatch_core_command(
                 "idle-output-release",
                 Box::new(move |runtime| {
@@ -62,10 +80,7 @@ fn schedule_idle_output_release(shared: Arc<SharedAudio>, release_seq: u64) {
                         runtime,
                         PlayerEvent::log(
                             "info",
-                            format!(
-                                "audio output released after {}s pause",
-                                IDLE_OUTPUT_RELEASE_DELAY_SECS
-                            ),
+                            format!("audio output released after {delay_secs}s pause"),
                         ),
                     );
                 }),
@@ -332,6 +347,19 @@ fn run_output_recovery(shared: Arc<SharedAudio>, reason: &'static str, message: 
     );
 }
 
+/// 是否需要重建输出流。
+///
+/// 会话里的句柄只有在启动确认成功后才写入（加载预热与 restart 都走
+/// `spawn_output_thread_confirmed`），所以「句柄存在且线程未退出」即等价于
+/// 「输出已经启动」。这里绝不能把启动中的线程判成未启动——那会在同一端点上
+/// 叠加第二次 open，正是共享模式 3 s 看门狗超时的直接来源。
+pub(crate) fn output_needs_restart(session: &PlaybackSession) -> bool {
+    session
+        .output_thread
+        .as_ref()
+        .is_none_or(crate::output::AudioOutputHandle::has_exited)
+}
+
 #[derive(Clone)]
 struct OutputPlaybackSnapshot {
     output_paused: bool,
@@ -414,7 +442,7 @@ pub(crate) fn restart_output_for_runtime(
     }
 
     shared.prepare_output_start();
-    match spawn_output_thread_confirmed(shared.clone(), &next_config) {
+    match spawn_output_thread_confirmed(shared.clone(), &next_config, None) {
         Ok(output) => {
             let Some(session) = runtime.session.as_mut() else {
                 output.shutdown();
@@ -465,7 +493,7 @@ fn restore_previous_output(
     playback: &OutputPlaybackSnapshot,
 ) -> napi::Result<()> {
     shared.prepare_output_start();
-    let output = match spawn_output_thread_confirmed(shared.clone(), &previous_config) {
+    let output = match spawn_output_thread_confirmed(shared.clone(), &previous_config, None) {
         Ok(output) => output,
         Err(err) => {
             shared.paused.store(true, Ordering::Release);
@@ -566,12 +594,13 @@ fn validate_output_restart_config(
     device::validate_output_device(&config.audio_device, config.exclusive_output)
 }
 
-fn spawn_output_thread_confirmed(
+pub(crate) fn spawn_output_thread_confirmed(
     shared: Arc<SharedAudio>,
     config: &PlayerConfig,
+    cancel: Option<&AtomicBool>,
 ) -> Result<crate::output::AudioOutputHandle, String> {
     confirm_output_start_with_retries(
-        || confirm_output_start_once(&shared, config),
+        || confirm_output_start_once(&shared, config, cancel),
         OUTPUT_START_ATTEMPTS,
         OUTPUT_START_RETRY_DELAY,
         is_retryable_output_start_error,
@@ -612,12 +641,12 @@ where
 }
 
 /// 启动错误是否值得在同端点立即重试。
-/// 只重试看门狗超时（端点可能被弃用的旧线程占着）与端点占用这类瞬时错误；
-/// 取消、设备不存在、格式不支持等永久错误立即返回。
+/// 只重试端点占用（`AUDCLNT_E_DEVICE_IN_USE`）这种立即返回的瞬时错误；
+/// 看门狗超时意味着旧线程可能仍卡在 `Initialize` 里占着端点闸门，此时再 spawn
+/// 一个只会把两次 open 继续排进 audiodg 的串行队列；取消、设备不存在、格式
+/// 不支持等永久错误同样立即返回。
 fn is_retryable_output_start_error(message: &str) -> bool {
-    message.starts_with(OUTPUT_START_TIMEOUT_MESSAGE_PREFIX)
-        || message.contains("0x88890010")
-        || message.contains("device is already in use")
+    message.contains("0x88890010") || message.contains("device is already in use")
 }
 
 /// 看门狗超时的错误消息。只承载受控字段（exclusive 标志 + 启动探针快照），
@@ -641,7 +670,11 @@ fn output_start_timeout_message(
 fn confirm_output_start_once(
     shared: &Arc<SharedAudio>,
     config: &PlayerConfig,
+    cancel: Option<&AtomicBool>,
 ) -> Result<crate::output::AudioOutputHandle, String> {
+    if cancel.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+        return Err(OUTPUT_START_CANCELLED_MESSAGE.to_string());
+    }
     let (start_tx, start_rx) = sync_channel(1);
     let output_thread = crate::output::spawn_output_backend(
         config.audio_device.clone(),
@@ -650,14 +683,34 @@ fn confirm_output_start_once(
         emit_event,
         Some(start_tx),
     );
+    await_output_start_once(output_thread, &start_rx, shared, config, cancel)
+}
 
-    match start_rx.recv_timeout(OUTPUT_START_WATCHDOG) {
-        Ok(Ok(())) => Ok(output_thread),
-        Ok(Err(err)) => {
-            output_thread.shutdown();
-            Err(err)
+/// 等待输出线程确认启动；每 50ms 复查一次取消令牌。独立成函数便于单测
+/// 「等待途中被取消」这条路径（spawn 本身依赖真实后端，无法在单测里跑）。
+fn await_output_start_once(
+    output_thread: crate::output::AudioOutputHandle,
+    start_rx: &Receiver<Result<(), String>>,
+    shared: &Arc<SharedAudio>,
+    config: &PlayerConfig,
+    cancel: Option<&AtomicBool>,
+) -> Result<crate::output::AudioOutputHandle, String> {
+    let deadline = Instant::now() + OUTPUT_START_WATCHDOG;
+    loop {
+        if cancel.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+            // 预热已被新 load 取代：后台回收线程（可能正卡在 Initialize），立刻返回。
+            output_thread.shutdown_in_background("cancelled-prewarm");
+            emit_shared_event(
+                shared,
+                PlayerEvent::log(
+                    "debug",
+                    "audio output startup cancelled by superseded load".to_string(),
+                ),
+            );
+            return Err(OUTPUT_START_CANCELLED_MESSAGE.to_string());
         }
-        Err(RecvTimeoutError::Timeout) => {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
             output_thread.shutdown_in_background("startup-timeout");
             // 超时不是系统返回的错误，线程卡在哪个启动调用里必须跟着报出来，
             // 否则共享模式这类"无 HRESULT 的 3 秒静默超时"完全无法定位。
@@ -669,22 +722,37 @@ fn confirm_output_start_once(
                 PlayerEvent::log(
                     "warn",
                     format!(
-                        "audio output startup timeout diagnostics: device='{}', exclusive={}, startup {}",
+                        "audio output startup timeout diagnostics: device='{}', exclusive={}, active_streams={}, startup {}",
                         config.audio_device,
                         config.exclusive_output,
+                        crate::output::live_output_stream_count(),
                         shared.output_startup_probe.describe(),
                     ),
                 ),
             );
-            Err(output_start_timeout_message(
+            return Err(output_start_timeout_message(
                 OUTPUT_START_WATCHDOG,
                 config.exclusive_output,
                 &shared.output_startup_probe,
-            ))
+            ));
         }
-        Err(RecvTimeoutError::Disconnected) => {
-            output_thread.shutdown();
-            Err("audio output exited before startup completed".to_string())
+        // 没有取消令牌（restart/recovery 路径）时一次等到截止，不做 50ms 空转。
+        let poll = if cancel.is_some() {
+            remaining.min(OUTPUT_START_POLL_INTERVAL)
+        } else {
+            remaining
+        };
+        match start_rx.recv_timeout(poll) {
+            Ok(Ok(())) => return Ok(output_thread),
+            Ok(Err(err)) => {
+                output_thread.shutdown();
+                return Err(err);
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => {
+                output_thread.shutdown();
+                return Err("audio output exited before startup completed".to_string());
+            }
         }
     }
 }
@@ -812,6 +880,52 @@ mod tests {
     }
 
     #[test]
+    fn output_restart_depends_on_handle_presence_and_liveness() {
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &DspSettings::default(),
+        ));
+        let session = |output_thread| PlaybackSession {
+            shared: shared.clone(),
+            output_thread,
+            filter_thread: None,
+            decode_thread: None,
+            decode_commands: None,
+            position_thread: None,
+        };
+
+        // 没有输出线程 → 需要重建。
+        assert!(output_needs_restart(&session(None)));
+
+        let stop = crate::output::OutputStopToken::new();
+        let thread_stop = stop.clone();
+        let thread_shared = shared.clone();
+        let thread = thread::spawn(move || {
+            while !thread_stop.should_stop(&thread_shared) {
+                thread::sleep(Duration::from_millis(5));
+            }
+        });
+        let mut live_session = session(Some(crate::output::AudioOutputHandle::new(stop, thread)));
+        // 活着的句柄一定来自启动确认成功的路径 → 直接复用，不再叠加 open。
+        assert!(!output_needs_restart(&live_session));
+        live_session.output_thread.take().unwrap().shutdown();
+
+        // 线程已经退出 → 需要重建。
+        let exited = crate::output::AudioOutputHandle::new(
+            crate::output::OutputStopToken::new(),
+            thread::spawn(|| {}),
+        );
+        let mut attempts = 0;
+        while !exited.has_exited() && attempts < 2000 {
+            thread::sleep(Duration::from_millis(1));
+            attempts += 1;
+        }
+        assert!(output_needs_restart(&session(Some(exited))));
+    }
+
+    #[test]
     fn output_start_retry_exhausts_attempts_and_returns_last_error() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
@@ -822,7 +936,7 @@ mod tests {
             move || {
                 let attempt = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 Err(format!(
-                    "{OUTPUT_START_TIMEOUT_MESSAGE_PREFIX} 3 ms (attempt-{attempt})"
+                    "failed to open WASAPI shared output: device is already in use (0x88890010, attempt-{attempt})"
                 ))
             },
             OUTPUT_START_ATTEMPTS,
@@ -840,10 +954,34 @@ mod tests {
         assert_eq!(
             error,
             format!(
-                "{OUTPUT_START_TIMEOUT_MESSAGE_PREFIX} 3 ms (attempt-{})",
+                "failed to open WASAPI shared output: device is already in use (0x88890010, attempt-{})",
                 OUTPUT_START_ATTEMPTS
             )
         );
+    }
+
+    #[test]
+    fn output_start_timeout_is_not_retried_while_the_zombie_open_may_hold_the_gate() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let counter = attempts.clone();
+        let result = confirm_output_start_with_retries(
+            move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                Err(output_start_timeout_message(
+                    OUTPUT_START_WATCHDOG,
+                    false,
+                    &OutputStartupProbe::default(),
+                ))
+            },
+            OUTPUT_START_ATTEMPTS,
+            Duration::from_millis(1),
+            is_retryable_output_start_error,
+        );
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -888,7 +1026,7 @@ mod tests {
                 let attempt = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 if attempt < OUTPUT_START_ATTEMPTS as usize {
                     Err(format!(
-                        "{OUTPUT_START_TIMEOUT_MESSAGE_PREFIX} 3 ms (attempt-{attempt})"
+                        "failed to open WASAPI shared output: device is already in use (0x88890010, attempt-{attempt})"
                     ))
                 } else {
                     slot.lock()
@@ -910,8 +1048,8 @@ mod tests {
 
     #[test]
     fn output_start_retry_classifies_transient_and_permanent_errors() {
-        assert!(is_retryable_output_start_error(
-            "audio output did not start within 3000 ms (exclusive=false, startup stage=initialize)"
+        assert!(!is_retryable_output_start_error(
+            "audio output did not start within 3000 ms (exclusive=false, startup stage=initialize, last_hresult=pending)"
         ));
         assert!(is_retryable_output_start_error(
             "failed to open WASAPI shared output: device is already in use by another exclusive stream or driver session (0x88890010)"
@@ -937,6 +1075,70 @@ mod tests {
         assert!(message.contains("startup stage=not-reported"), "{message}");
     }
 
+    #[test]
+    fn cancelled_prewarm_returns_before_spawning_an_output() {
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &DspSettings::default(),
+        ));
+        let cancel = AtomicBool::new(true);
+        let error = confirm_output_start_once(&shared, &PlayerConfig::default(), Some(&cancel))
+            .err()
+            .expect("cancelled prewarm must not spawn an output thread");
+        assert_eq!(error, crate::output::OUTPUT_START_CANCELLED_MESSAGE);
+    }
+
+    #[test]
+    fn awaited_output_start_observes_cancellation_while_waiting() {
+        // 取消分支会经 emit_shared_event 向全局 TEST_EVENT_SINK 注入日志事件；
+        // 与其它触碰全局事件管道的测试共用一把锁，避免并行时污染断言。
+        let _runtime_guard = crate::TEST_RUNTIME_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &DspSettings::default(),
+        ));
+        let config = PlayerConfig::default();
+        // sender 保持存活，让 recv_timeout 反复 Timeout 而不是 Disconnected。
+        let (_start_tx, start_rx) = sync_channel::<Result<(), String>>(1);
+        let stop = crate::output::OutputStopToken::new();
+        let thread_stop = stop.clone();
+        let thread_shared = shared.clone();
+        let thread = thread::spawn(move || {
+            while !thread_stop.should_stop(&thread_shared) {
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
+        let output_thread = crate::output::AudioOutputHandle::new(stop, thread);
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_for_thread = cancel.clone();
+        let canceller = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(30));
+            cancel_for_thread.store(true, Ordering::Release);
+        });
+
+        let started = Instant::now();
+        let error = await_output_start_once(
+            output_thread,
+            &start_rx,
+            &shared,
+            &config,
+            Some(cancel.as_ref()),
+        )
+        .err()
+        .expect("waiting prewarm must observe cancellation");
+        assert_eq!(error, crate::output::OUTPUT_START_CANCELLED_MESSAGE);
+        assert!(started.elapsed() >= Duration::from_millis(20));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        canceller.join().unwrap();
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn output_start_confirmed_reports_backend_failure_for_bogus_device() {
@@ -948,7 +1150,7 @@ mod tests {
         ));
         let mut config = PlayerConfig::default();
         config.set_audio_device("echo-music-nonexistent-output-endpoint");
-        let error = match spawn_output_thread_confirmed(shared, &config) {
+        let error = match spawn_output_thread_confirmed(shared, &config, None) {
             Ok(_) => panic!("bogus device must fail to start"),
             Err(error) => error,
         };
