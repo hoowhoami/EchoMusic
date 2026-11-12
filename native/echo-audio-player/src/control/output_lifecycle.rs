@@ -1092,6 +1092,11 @@ mod tests {
 
     #[test]
     fn awaited_output_start_observes_cancellation_while_waiting() {
+        // 取消分支会经 emit_shared_event 向全局 TEST_EVENT_SINK 注入日志事件；
+        // 与其它触碰全局事件管道的测试共用一把锁，避免并行时污染断言。
+        let _runtime_guard = crate::TEST_RUNTIME_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let shared = Arc::new(SharedAudio::new(
             MixFormat::stereo_f32(48_000),
             0.2,
