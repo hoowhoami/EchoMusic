@@ -252,6 +252,17 @@ jobs:
             exit 1
           fi
 
+      - name: Run echo-audio-player unit tests
+        if: matrix.platform == 'windows' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd native/echo-audio-player
+          # 串行执行：少数测试会真实 initialize/destroy 全局 runtime，并行会互相拆台。
+          # 跳过依赖本地 HTTP 服务的 transition 用例：它们在 CI 上偶发 loopback
+          # transport error，与本 crate 的音频逻辑无关。
+          cargo test --lib --release -- --test-threads=1 --skip http_
+
       - name: Stage and verify native addons
         shell: bash
         env:

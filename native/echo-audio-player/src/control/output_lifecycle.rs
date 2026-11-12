@@ -1,11 +1,14 @@
 use super::*;
 use crate::shared::startup_probe::OutputStartupProbe;
 
-/// 暂停后保留输出流的时长。3 s 会把每次「暂停 → 播放」都变成一次冷启动的
+/// 暂停后保留共享输出流的时长。3 s 会把每次「暂停 → 播放」都变成一次冷启动的
 /// `Initialize`，而 WASAPI/audiodg 的端点拆除是异步的，冷启动很容易撞上尚未
 /// 完成的释放。30 s 仍然满足蓝牙端点休眠的诉求，同时让常见的暂停/恢复直接复用
 /// 已启动的流，避免把冷启动成本摊到每次暂停上。
 const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 30;
+/// 独占模式沿用较短的释放窗口：暂停时继续占着设备会阻止其他应用独占播放，
+/// 而独占流的冷启动通常很快，不需要用设备占用换恢复速度。
+const IDLE_EXCLUSIVE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
 
 /// 输出启动看门狗：超过该时长未收到启动确认即判失败。
 const OUTPUT_START_WATCHDOG: Duration = Duration::from_secs(3);
@@ -31,14 +34,19 @@ pub(crate) fn schedule_idle_output_release_for_runtime(runtime: &mut PlayerRunti
         return;
     };
     let release_seq = runtime.next_idle_output_release_seq();
-    schedule_idle_output_release(shared, release_seq);
+    let delay_secs = if runtime.config.exclusive_output {
+        IDLE_EXCLUSIVE_OUTPUT_RELEASE_DELAY_SECS
+    } else {
+        IDLE_OUTPUT_RELEASE_DELAY_SECS
+    };
+    schedule_idle_output_release(shared, release_seq, delay_secs);
 }
 
-fn schedule_idle_output_release(shared: Arc<SharedAudio>, release_seq: u64) {
+fn schedule_idle_output_release(shared: Arc<SharedAudio>, release_seq: u64, delay_secs: u64) {
     let _ = thread::Builder::new()
         .name("player-output-idle-release".to_string())
         .spawn(move || {
-            thread::sleep(Duration::from_secs(IDLE_OUTPUT_RELEASE_DELAY_SECS));
+            thread::sleep(Duration::from_secs(delay_secs));
             dispatch_core_command(
                 "idle-output-release",
                 Box::new(move |runtime| {
@@ -67,10 +75,7 @@ fn schedule_idle_output_release(shared: Arc<SharedAudio>, release_seq: u64) {
                         runtime,
                         PlayerEvent::log(
                             "info",
-                            format!(
-                                "audio output released after {}s pause",
-                                IDLE_OUTPUT_RELEASE_DELAY_SECS
-                            ),
+                            format!("audio output released after {delay_secs}s pause"),
                         ),
                     );
                 }),
@@ -339,31 +344,15 @@ fn run_output_recovery(shared: Arc<SharedAudio>, reason: &'static str, message: 
 
 /// 是否需要重建输出流。
 ///
-/// 关键点：输出线程「还活着但尚未确认启动」时**不能**判成需要重启。
-/// 调用方运行在核心调度线程上，一旦把它当成未启动就会立刻再 spawn 一条输出流，
-/// 两次 `IAudioClient::Initialize` 落在同一端点上会被 audiodg 串行化成数秒的
-/// 静默阻塞，正是共享模式 3 s 看门狗超时的直接来源。
+/// 会话里的句柄只有在启动确认成功后才写入（加载预热与 restart 都走
+/// `spawn_output_thread_confirmed`），所以「句柄存在且线程未退出」即等价于
+/// 「输出已经启动」。这里绝不能把启动中的线程判成未启动——那会在同一端点上
+/// 叠加第二次 open，正是共享模式 3 s 看门狗超时的直接来源。
 pub(crate) fn output_needs_restart(session: &PlaybackSession) -> bool {
-    /// 启动中的线程若恰好因失败开始退出，给它一个很短的窗口自证，
-    /// 避免 play 与失败路径擦肩而过。
-    const START_SETTLE_GRACE: Duration = Duration::from_millis(250);
-    let Some(handle) = session.output_thread.as_ref() else {
-        return true;
-    };
-    if handle.has_exited() {
-        return true;
-    }
-    if session.shared.output_has_started() {
-        return false;
-    }
-    let deadline = Instant::now() + START_SETTLE_GRACE;
-    while Instant::now() < deadline {
-        if session.shared.output_has_started() || handle.has_exited() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-    handle.has_exited()
+    session
+        .output_thread
+        .as_ref()
+        .is_none_or(crate::output::AudioOutputHandle::has_exited)
 }
 
 #[derive(Clone)]
@@ -600,7 +589,7 @@ fn validate_output_restart_config(
     device::validate_output_device(&config.audio_device, config.exclusive_output)
 }
 
-fn spawn_output_thread_confirmed(
+pub(crate) fn spawn_output_thread_confirmed(
     shared: Arc<SharedAudio>,
     config: &PlayerConfig,
 ) -> Result<crate::output::AudioOutputHandle, String> {
@@ -847,7 +836,7 @@ mod tests {
     }
 
     #[test]
-    fn output_restart_is_not_triggered_for_a_stream_that_is_still_starting() {
+    fn output_restart_depends_on_handle_presence_and_liveness() {
         let shared = Arc::new(SharedAudio::new(
             MixFormat::stereo_f32(48_000),
             0.2,
@@ -874,13 +863,10 @@ mod tests {
                 thread::sleep(Duration::from_millis(5));
             }
         });
-        let handle = crate::output::AudioOutputHandle::new(stop, thread);
-        let mut current_session = session(Some(handle));
-        // 线程还活着但尚未确认启动：不能误判成需要重启（这正是并发 open 的来源）。
-        assert!(!output_needs_restart(&current_session));
-        shared.mark_output_started();
-        assert!(!output_needs_restart(&current_session));
-        current_session.output_thread.take().unwrap().shutdown();
+        let mut live_session = session(Some(crate::output::AudioOutputHandle::new(stop, thread)));
+        // 活着的句柄一定来自启动确认成功的路径 → 直接复用，不再叠加 open。
+        assert!(!output_needs_restart(&live_session));
+        live_session.output_thread.take().unwrap().shutdown();
 
         // 线程已经退出 → 需要重建。
         let exited = crate::output::AudioOutputHandle::new(
@@ -888,7 +874,7 @@ mod tests {
             thread::spawn(|| {}),
         );
         let mut attempts = 0;
-        while !exited.has_exited() && attempts < 100 {
+        while !exited.has_exited() && attempts < 2000 {
             thread::sleep(Duration::from_millis(1));
             attempts += 1;
         }

@@ -45,8 +45,9 @@ pub(crate) mod output_startup_stage {
     }
 }
 
-/// 一次 COM 调用的结果状态。区分「尚未发起调用」「已发起但未返回」「返回了错误码」，
-/// 否则看门狗超时只能看到一个 `-`，无法判断是卡在调用里还是根本没调用到。
+/// 一次阻塞调用（COM / Win32）的结果状态。区分「尚未发起调用」「已发起但未返回」
+/// 「返回了错误码」，否则看门狗超时只能看到一个 `-`，无法判断是卡在调用里还是
+/// 根本没调用到。
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum HresultState {
     #[default]
@@ -73,6 +74,8 @@ struct ProbeState {
     device_in_use_retries: u32,
     /// 等待同一端点上一代输出流释放 / 其他 open 完成所花的毫秒数。
     gate_wait_ms: u64,
+    /// 等待期间读到的闸门持有者已持锁毫秒数（用于识别永久卡在 Initialize 的流）。
+    gate_holder_age_ms: u64,
     /// 本次尝试中已上报过慢启动日志的阶段位图（bit = stage）。
     slow_stages_reported: u32,
 }
@@ -102,6 +105,7 @@ impl OutputStartupProbe {
         state.last_hresult = HresultState::Unset;
         state.device_in_use_retries = 0;
         state.gate_wait_ms = 0;
+        state.gate_holder_age_ms = 0;
         state.slow_stages_reported = 0;
         state.generation
     }
@@ -114,7 +118,9 @@ impl OutputStartupProbe {
         if state.generation != attempt {
             return None;
         }
-        let entered_ms = attempt_start.elapsed().as_millis() as u64;
+        // 排除等待端点闸门的时间，避免把排队时间算到 activate/initialize 头上。
+        let entered_ms =
+            (attempt_start.elapsed().as_millis() as u64).saturating_sub(state.gate_wait_ms);
         state.stage_entered_ms = entered_ms;
         state.stage = stage;
         // 进入一个执行 COM 调用的阶段 → 该调用已发起但还没有结果；超时时若停在
@@ -150,6 +156,14 @@ impl OutputStartupProbe {
         }
     }
 
+    /// 记录等待期间观察到的闸门持有者年龄；0 表示闸门已空闲/已拿到。
+    pub(crate) fn record_gate_holder_age(&self, attempt: u64, age_ms: u64) {
+        let mut state = self.lock_state();
+        if state.generation == attempt {
+            state.gate_holder_age_ms = age_ms;
+        }
+    }
+
     pub(crate) fn record_device_in_use_retry(&self, attempt: u64) {
         let mut state = self.lock_state();
         if state.generation == attempt {
@@ -157,22 +171,23 @@ impl OutputStartupProbe {
         }
     }
 
-    /// 看门狗超时侧读取的快照：(阶段, 进入毫秒, 最后 HRESULT, 闸门等待, 端点释放重试次数)。
+    /// 看门狗超时侧读取的快照：(阶段, 进入毫秒, 最后 HRESULT, 闸门等待, 持有者年龄, 端点释放重试次数)。
     /// 所有字段在同一临界区内读取，不会再拼出跨尝试的混合状态。
-    fn snapshot(&self) -> (u8, u64, HresultState, u64, u32) {
+    fn snapshot(&self) -> (u8, u64, HresultState, u64, u64, u32) {
         let state = self.lock_state();
         (
             state.stage,
             state.stage_entered_ms,
             state.last_hresult,
             state.gate_wait_ms,
+            state.gate_holder_age_ms,
             state.device_in_use_retries,
         )
     }
 
     /// 拼进看门狗超时错误消息的诊断尾巴。
     pub(crate) fn describe(&self) -> String {
-        let (stage, entered_ms, last_hresult, gate_wait_ms, device_in_use_retries) =
+        let (stage, entered_ms, last_hresult, gate_wait_ms, gate_holder_age_ms, retries) =
             self.snapshot();
         let hresult_text = match last_hresult {
             HresultState::Unset => "unset".to_string(),
@@ -180,7 +195,7 @@ impl OutputStartupProbe {
             HresultState::Recorded(code) => format!("0x{code:08X}"),
         };
         format!(
-            "stage={}, entered_at_ms={entered_ms}, last_hresult={hresult_text}, gate_wait_ms={gate_wait_ms}, device_in_use_retries={device_in_use_retries}",
+            "stage={}, entered_at_ms={entered_ms}, last_hresult={hresult_text}, gate_wait_ms={gate_wait_ms}, gate_holder_age_ms={gate_holder_age_ms}, device_in_use_retries={retries}",
             output_startup_stage::label(stage),
         )
     }
@@ -197,13 +212,14 @@ mod tests {
         let attempt = probe.begin_attempt();
         assert_eq!(
             probe.describe(),
-            "stage=not-reported, entered_at_ms=0, last_hresult=unset, gate_wait_ms=0, device_in_use_retries=0"
+            "stage=not-reported, entered_at_ms=0, last_hresult=unset, gate_wait_ms=0, gate_holder_age_ms=0, device_in_use_retries=0"
         );
 
         let start = Instant::now();
         probe.advance(attempt, output_startup_stage::CHOOSE_FORMAT, start);
         probe.record_hresult(attempt, -1);
         probe.record_gate_wait(attempt, 42);
+        probe.record_gate_holder_age(attempt, 1234);
         probe.record_device_in_use_retry(attempt);
         probe.record_device_in_use_retry(attempt);
 
@@ -214,6 +230,7 @@ mod tests {
         );
         assert!(described.contains("last_hresult=0xFFFFFFFF"), "{described}");
         assert!(described.contains("gate_wait_ms=42"), "{described}");
+        assert!(described.contains("gate_holder_age_ms=1234"), "{described}");
         assert!(described.contains("device_in_use_retries=2"), "{described}");
     }
 
@@ -260,13 +277,16 @@ mod tests {
         );
         probe.record_hresult(attempt, -1);
         probe.record_gate_wait(attempt, 12);
+        probe.record_gate_holder_age(attempt, 34);
         probe.begin_attempt();
         assert!(probe.describe().contains("last_hresult=unset"));
         assert!(probe.describe().contains("gate_wait_ms=0"));
-        let (stage, _, last_hresult, gate_wait_ms, _) = probe.snapshot();
+        assert!(probe.describe().contains("gate_holder_age_ms=0"));
+        let (stage, _, last_hresult, gate_wait_ms, gate_holder_age_ms, _) = probe.snapshot();
         assert_eq!(stage, output_startup_stage::NOT_REPORTED);
         assert_eq!(last_hresult, HresultState::Unset);
         assert_eq!(gate_wait_ms, 0);
+        assert_eq!(gate_holder_age_ms, 0);
     }
 
     #[test]
@@ -280,10 +300,11 @@ mod tests {
         probe.record_hresult(stale, -1);
         probe.record_device_in_use_retry(stale);
         probe.record_gate_wait(stale, 99);
+        probe.record_gate_holder_age(stale, 88);
 
         assert_eq!(
             probe.describe(),
-            "stage=not-reported, entered_at_ms=0, last_hresult=unset, gate_wait_ms=0, device_in_use_retries=0"
+            "stage=not-reported, entered_at_ms=0, last_hresult=unset, gate_wait_ms=0, gate_holder_age_ms=0, device_in_use_retries=0"
         );
 
         probe.advance(current, output_startup_stage::CHOOSE_FORMAT, start);

@@ -208,6 +208,9 @@ mod tests {
 
     #[test]
     fn delayed_fade_play_cannot_resume_a_superseded_source() {
+        let _runtime_guard = crate::TEST_RUNTIME_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         initialize(None).unwrap();
         let mut task = PlayWithFadeTask {
             target_volume: 50.0,
@@ -224,6 +227,9 @@ mod tests {
 
     #[test]
     fn fade_play_requires_a_loaded_source_before_acknowledging_start() {
+        let _runtime_guard = crate::TEST_RUNTIME_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         initialize(None).unwrap();
         let mut task = PlayWithFadeTask {
             target_volume: 50.0,

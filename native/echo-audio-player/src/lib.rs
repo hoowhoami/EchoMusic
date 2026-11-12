@@ -76,6 +76,10 @@ const TRANSPORT_FADE_OUT_MS: u64 = 24;
 const CONTROL_SIGNAL_WAKE_CAPACITY: usize = 1;
 
 static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
+/// 串行化会真实 initialize/destroy 全局 runtime 的测试：并行执行时它们会互相
+/// 拆台（一个测试 destroy 掉另一个刚 initialize 的 runtime），表现为随机失败。
+#[cfg(test)]
+pub(crate) static TEST_RUNTIME_LOCK: Mutex<()> = Mutex::new(());
 /// Mirrors `RUNTIME.is_some()` for lock-free readiness checks on hot control
 /// paths. All authoritative writes happen while holding the RUNTIME guard
 /// (initialize sets true, shutdown sets false before take()), so ready==true
@@ -214,7 +218,6 @@ struct PreparedSource {
     seq: u64,
     duration: f64,
     start_position: f64,
-    autostart: bool,
 }
 
 struct PreparedNextSource {
@@ -742,7 +745,6 @@ fn prepare_source(
     audio_stream_ordinal: Option<usize>,
     seq: u64,
     start_position: f64,
-    autostart: bool,
     config: PlayerConfig,
     dsp_settings: DspSettings,
     spatial_file_path: Option<String>,
@@ -831,7 +833,7 @@ fn prepare_source(
     shared.set_track_seq(seq);
     shared.set_volume(user_volume());
     shared.set_position_secs(start_position);
-    shared.paused.store(!autostart, Ordering::Release);
+    shared.paused.store(true, Ordering::Release);
     let interrupt = decoder.interrupt_handle();
     shared.bind_interrupt(interrupt);
 
@@ -1023,13 +1025,25 @@ fn prepare_source(
         })
         .map_err(|err| format!("failed to spawn signal thread: {err}"))?;
 
-    // 输出流延迟到首次 play 时才创建：加载得到的会话一定是暂停态，此时并不需要
-    // 渲染流。过去在加载阶段先 spawn 一个不受看门狗管理的输出线程，前端紧接着
-    // 调用 play 时会看到 output_has_started() 仍为 false，于是 restart 又 spawn
-    // 第二个线程——同一端点上两次 Initialize 并发，正是共享模式超时的根因。
+    // 加载阶段就在后台确认一次输出启动（AsyncTask 工作线程，不阻塞 UI）：
+    // 前端随后调用 play 时句柄已经确认可用，play 只负责解除暂停，不再走冷 open。
+    // 必须走确认路径，绝不能在加载阶段留下一条未受看门狗管理的输出线程——那正是
+    // 上一版「load 先开流 + play 看到未启动又开一条」双开超时的根因。
+    let output_thread = match control::spawn_output_thread_confirmed(shared.clone(), &config) {
+        Ok(output) => Some(output),
+        Err(err) => {
+            // 预热失败不阻断加载：会话仍可加载为暂停态，首次 play 会再尝试一次，
+            // 届时的失败会按正常播放错误路径回报给前端。
+            emit_event(PlayerEvent::log(
+                "warn",
+                format!("audio output prewarm failed: {err}"),
+            ));
+            None
+        }
+    };
     let mut session = PlaybackSession {
         shared: shared.clone(),
-        output_thread: None,
+        output_thread,
         filter_thread: None,
         decode_thread: None,
         decode_commands: None,
@@ -1063,7 +1077,6 @@ fn prepare_source(
         seq,
         duration,
         start_position: start_position.max(0.0),
-        autostart,
     })
 }
 
@@ -1098,7 +1111,6 @@ fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) 
         seq,
         duration,
         start_position,
-        autostart,
     } = prepared;
     runtime.cancel_idle_output_release();
     runtime.cancel_pending_gapless_prepare();
@@ -1115,33 +1127,22 @@ fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) 
     runtime.latest_load_seq = runtime.latest_load_seq.max(seq);
     runtime.state.duration = duration;
     runtime.state.time_pos = start_position;
-    runtime.state.playing = autostart;
-    runtime.state.paused = !autostart;
+    // 加载结果一律是暂停态，播放由前端随后的 play() 驱动；输出流已在加载阶段
+    // 预热并确认，play 只负责解除暂停。
+    runtime.state.playing = false;
+    runtime.state.paused = true;
     update_runtime_audio_graph(runtime);
-    set_runtime_core_state(
-        runtime,
-        if autostart {
-            PlaybackCoreState::Playing
-        } else {
-            PlaybackCoreState::Paused
-        },
-        "source-applied",
-    );
+    set_runtime_core_state(runtime, PlaybackCoreState::Paused, "source-applied");
 
-    emit_runtime_events(runtime, {
-        let mut events = vec![
+    emit_runtime_events(
+        runtime,
+        vec![
             PlayerEvent::duration_change(duration),
             PlayerEvent::file_loaded(url, seq),
             PlayerEvent::state_change(runtime.state.clone()),
-        ];
-        if autostart {
-            events.push(PlayerEvent::playback_restart(start_position, "load"));
-        }
-        events
-    });
-    if !autostart {
-        schedule_idle_output_release_for_runtime(runtime);
-    }
+        ],
+    );
+    schedule_idle_output_release_for_runtime(runtime);
 }
 
 fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
@@ -1196,7 +1197,6 @@ fn replace_source_async(
     audio_stream_ordinal: Option<usize>,
     seq: u64,
     start_position: f64,
-    autostart: bool,
     config: PlayerConfig,
     dsp_settings: DspSettings,
     spatial_file_path: Option<String>,
@@ -1210,7 +1210,6 @@ fn replace_source_async(
         audio_stream_ordinal,
         seq,
         start_position,
-        autostart,
         config,
         dsp_settings,
         spatial_file_path,
@@ -1921,7 +1920,6 @@ impl Task for LoadFileTask {
                 audio_stream,
                 seq,
                 0.0,
-                false,
                 config,
                 dsp_settings,
                 spatial_file_path,

@@ -93,6 +93,9 @@ fn source_switch_eof_during_preflight_is_deferred_but_live_disconnect_and_full_q
 
 #[test]
 fn source_change_retains_output_session_but_drains_and_invalidates_old_audio() {
+    let _runtime_guard = crate::TEST_RUNTIME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     initialize(None).unwrap();
     let shared = Arc::new(SharedAudio::new(
         shared::MixFormat::stereo_f32(44_100),
@@ -166,6 +169,9 @@ fn source_change_retains_output_session_but_drains_and_invalidates_old_audio() {
 
 #[test]
 fn latest_load_produces_new_audio_and_an_advancing_clock_after_rapid_skips() {
+    let _runtime_guard = crate::TEST_RUNTIME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     initialize(None).unwrap();
     let shared = Arc::new(SharedAudio::new(
         shared::MixFormat::stereo_f32(44_100),

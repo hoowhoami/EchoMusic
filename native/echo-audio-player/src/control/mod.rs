@@ -38,6 +38,7 @@ pub use output::{
 pub(crate) use output_lifecycle::{
     handle_output_device_list_change, handle_playback_output_device_event, output_needs_restart,
     request_output_recovery, restart_output_for_runtime, schedule_idle_output_release_for_runtime,
+    spawn_output_thread_confirmed,
 };
 pub use provider::inspect_dsp_provider;
 pub(crate) use seek::{
