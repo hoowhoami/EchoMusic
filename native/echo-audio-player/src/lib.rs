@@ -26,9 +26,9 @@ mod transition_tests;
 use control::{
     armed_transition_from_prepared, attach_restarted_decoder, handle_output_device_list_change,
     handle_playback_output_device_event, mark_seek_plan_failed, open_decoder_at_position,
-    prepare_dsp_settings_for_mix_rate, prepare_transition_audio, request_output_recovery,
-    restart_output_for_runtime, schedule_idle_output_release_for_runtime, PreparationCancellation,
-    PreparedTransitionInputs, SeekPlan,
+    output_needs_restart, prepare_dsp_settings_for_mix_rate, prepare_transition_audio,
+    request_output_recovery, restart_output_for_runtime, schedule_idle_output_release_for_runtime,
+    PreparationCancellation, PreparedTransitionInputs, SeekPlan,
 };
 pub use control::{
     cancel_fade, configure_spectrum, fade, get_audio_devices, get_audio_graph,
@@ -1023,16 +1023,13 @@ fn prepare_source(
         })
         .map_err(|err| format!("failed to spawn signal thread: {err}"))?;
 
-    let output_thread = output::spawn_output_backend(
-        config.audio_device.clone(),
-        config.exclusive_output,
-        shared.clone(),
-        emit_event,
-        None,
-    );
+    // 输出流延迟到首次 play 时才创建：加载得到的会话一定是暂停态，此时并不需要
+    // 渲染流。过去在加载阶段先 spawn 一个不受看门狗管理的输出线程，前端紧接着
+    // 调用 play 时会看到 output_has_started() 仍为 false，于是 restart 又 spawn
+    // 第二个线程——同一端点上两次 Initialize 并发，正是共享模式超时的根因。
     let mut session = PlaybackSession {
         shared: shared.clone(),
-        output_thread: Some(output_thread),
+        output_thread: None,
         filter_thread: None,
         decode_thread: None,
         decode_commands: None,
@@ -2568,15 +2565,9 @@ impl Task for CommitPreparedNextSourceTask {
                                 if !matches_session {
                                     return Ok(());
                                 }
-                                let output_needs_restart =
-                                    runtime.session.as_ref().is_some_and(|session| {
-                                        session
-                                            .output_thread
-                                            .as_ref()
-                                            .is_none_or(output::AudioOutputHandle::has_exited)
-                                            || !session.shared.output_has_started()
-                                    });
-                                if output_needs_restart {
+                                let needs_output_restart =
+                                    runtime.session.as_ref().is_some_and(output_needs_restart);
+                                if needs_output_restart {
                                     let config = runtime.config.clone();
                                     restart_output_for_runtime(runtime, config, false)?;
                                     runtime.cancel_idle_output_release();
@@ -2702,14 +2693,9 @@ impl Task for CommitPreparedNextSourceTask {
                         "audio session changed while committing prepared track".to_string(),
                     ));
                 }
-                let output_needs_restart = runtime.session.as_ref().is_some_and(|session| {
-                    session
-                        .output_thread
-                        .as_ref()
-                        .is_none_or(output::AudioOutputHandle::has_exited)
-                        || !session.shared.output_has_started()
-                });
-                if output_needs_restart {
+                let needs_output_restart =
+                    runtime.session.as_ref().is_some_and(output_needs_restart);
+                if needs_output_restart {
                     let config = runtime.config.clone();
                     restart_output_for_runtime(runtime, config, false)?;
                     runtime.cancel_idle_output_release();
@@ -2937,11 +2923,7 @@ fn resume_runtime_playback(runtime: &mut PlayerRuntime, fade_in: bool) -> napi::
             "no audio source loaded".to_string(),
         ));
     };
-    let output_needs_restart = session
-        .output_thread
-        .as_ref()
-        .is_none_or(output::AudioOutputHandle::has_exited)
-        || !session.shared.output_has_started();
+    let output_needs_restart = output_needs_restart(session);
     if output_needs_restart {
         let config = runtime.config.clone();
         restart_output_for_runtime(runtime, config, false)?;

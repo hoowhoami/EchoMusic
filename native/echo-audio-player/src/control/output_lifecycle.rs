@@ -1,12 +1,17 @@
 use super::*;
 use crate::shared::startup_probe::OutputStartupProbe;
 
-const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
+/// 暂停后保留输出流的时长。3 s 会把每次「暂停 → 播放」都变成一次冷启动的
+/// `Initialize`，而 WASAPI/audiodg 的端点拆除是异步的，冷启动很容易撞上尚未
+/// 完成的释放。30 s 仍然满足蓝牙端点休眠的诉求，同时让常见的暂停/恢复直接复用
+/// 已启动的流，避免把冷启动成本摊到每次暂停上。
+const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 30;
 
 /// 输出启动看门狗：超过该时长未收到启动确认即判失败。
 const OUTPUT_START_WATCHDOG: Duration = Duration::from_secs(3);
-/// 看门狗超时后在同端点重试的总尝试次数。第一次失败常是引擎/驱动侧的
-/// 瞬时串行化（端点刚经历路由切换或被弃用线程占用），立即重试一次通常即可成功。
+/// 看门狗超时后在同端点重试的总尝试次数。只有 `AUDCLNT_E_DEVICE_IN_USE` 这类
+/// 立即返回的瞬时错误才重试；看门狗超时**不再重试**——被弃用的线程仍卡在
+/// `Initialize` 里并持有端点闸门，立刻再 spawn 一个只会让两次初始化继续排队。
 const OUTPUT_START_ATTEMPTS: u32 = 2;
 /// 两次尝试之间的间隔：给被弃用的输出线程留出撞上停止令牌检查点退出的时间。
 const OUTPUT_START_RETRY_DELAY: Duration = Duration::from_millis(250);
@@ -332,6 +337,35 @@ fn run_output_recovery(shared: Arc<SharedAudio>, reason: &'static str, message: 
     );
 }
 
+/// 是否需要重建输出流。
+///
+/// 关键点：输出线程「还活着但尚未确认启动」时**不能**判成需要重启。
+/// 调用方运行在核心调度线程上，一旦把它当成未启动就会立刻再 spawn 一条输出流，
+/// 两次 `IAudioClient::Initialize` 落在同一端点上会被 audiodg 串行化成数秒的
+/// 静默阻塞，正是共享模式 3 s 看门狗超时的直接来源。
+pub(crate) fn output_needs_restart(session: &PlaybackSession) -> bool {
+    /// 启动中的线程若恰好因失败开始退出，给它一个很短的窗口自证，
+    /// 避免 play 与失败路径擦肩而过。
+    const START_SETTLE_GRACE: Duration = Duration::from_millis(250);
+    let Some(handle) = session.output_thread.as_ref() else {
+        return true;
+    };
+    if handle.has_exited() {
+        return true;
+    }
+    if session.shared.output_has_started() {
+        return false;
+    }
+    let deadline = Instant::now() + START_SETTLE_GRACE;
+    while Instant::now() < deadline {
+        if session.shared.output_has_started() || handle.has_exited() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    handle.has_exited()
+}
+
 #[derive(Clone)]
 struct OutputPlaybackSnapshot {
     output_paused: bool,
@@ -612,12 +646,12 @@ where
 }
 
 /// 启动错误是否值得在同端点立即重试。
-/// 只重试看门狗超时（端点可能被弃用的旧线程占着）与端点占用这类瞬时错误；
-/// 取消、设备不存在、格式不支持等永久错误立即返回。
+/// 只重试端点占用（`AUDCLNT_E_DEVICE_IN_USE`）这种立即返回的瞬时错误；
+/// 看门狗超时意味着旧线程可能仍卡在 `Initialize` 里占着端点闸门，此时再 spawn
+/// 一个只会把两次 open 继续排进 audiodg 的串行队列；取消、设备不存在、格式
+/// 不支持等永久错误同样立即返回。
 fn is_retryable_output_start_error(message: &str) -> bool {
-    message.starts_with(OUTPUT_START_TIMEOUT_MESSAGE_PREFIX)
-        || message.contains("0x88890010")
-        || message.contains("device is already in use")
+    message.contains("0x88890010") || message.contains("device is already in use")
 }
 
 /// 看门狗超时的错误消息。只承载受控字段（exclusive 标志 + 启动探针快照），
@@ -669,9 +703,10 @@ fn confirm_output_start_once(
                 PlayerEvent::log(
                     "warn",
                     format!(
-                        "audio output startup timeout diagnostics: device='{}', exclusive={}, startup {}",
+                        "audio output startup timeout diagnostics: device='{}', exclusive={}, active_streams={}, startup {}",
                         config.audio_device,
                         config.exclusive_output,
+                        crate::output::live_output_stream_count(),
                         shared.output_startup_probe.describe(),
                     ),
                 ),
@@ -812,6 +847,55 @@ mod tests {
     }
 
     #[test]
+    fn output_restart_is_not_triggered_for_a_stream_that_is_still_starting() {
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &DspSettings::default(),
+        ));
+        let session = |output_thread| PlaybackSession {
+            shared: shared.clone(),
+            output_thread,
+            filter_thread: None,
+            decode_thread: None,
+            decode_commands: None,
+            position_thread: None,
+        };
+
+        // 没有输出线程 → 需要重建。
+        assert!(output_needs_restart(&session(None)));
+
+        let stop = crate::output::OutputStopToken::new();
+        let thread_stop = stop.clone();
+        let thread_shared = shared.clone();
+        let thread = thread::spawn(move || {
+            while !thread_stop.should_stop(&thread_shared) {
+                thread::sleep(Duration::from_millis(5));
+            }
+        });
+        let handle = crate::output::AudioOutputHandle::new(stop, thread);
+        let mut current_session = session(Some(handle));
+        // 线程还活着但尚未确认启动：不能误判成需要重启（这正是并发 open 的来源）。
+        assert!(!output_needs_restart(&current_session));
+        shared.mark_output_started();
+        assert!(!output_needs_restart(&current_session));
+        current_session.output_thread.take().unwrap().shutdown();
+
+        // 线程已经退出 → 需要重建。
+        let exited = crate::output::AudioOutputHandle::new(
+            crate::output::OutputStopToken::new(),
+            thread::spawn(|| {}),
+        );
+        let mut attempts = 0;
+        while !exited.has_exited() && attempts < 100 {
+            thread::sleep(Duration::from_millis(1));
+            attempts += 1;
+        }
+        assert!(output_needs_restart(&session(Some(exited))));
+    }
+
+    #[test]
     fn output_start_retry_exhausts_attempts_and_returns_last_error() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
@@ -822,7 +906,7 @@ mod tests {
             move || {
                 let attempt = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 Err(format!(
-                    "{OUTPUT_START_TIMEOUT_MESSAGE_PREFIX} 3 ms (attempt-{attempt})"
+                    "failed to open WASAPI shared output: device is already in use (0x88890010, attempt-{attempt})"
                 ))
             },
             OUTPUT_START_ATTEMPTS,
@@ -840,10 +924,34 @@ mod tests {
         assert_eq!(
             error,
             format!(
-                "{OUTPUT_START_TIMEOUT_MESSAGE_PREFIX} 3 ms (attempt-{})",
+                "failed to open WASAPI shared output: device is already in use (0x88890010, attempt-{})",
                 OUTPUT_START_ATTEMPTS
             )
         );
+    }
+
+    #[test]
+    fn output_start_timeout_is_not_retried_while_the_zombie_open_may_hold_the_gate() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let counter = attempts.clone();
+        let result = confirm_output_start_with_retries(
+            move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                Err(output_start_timeout_message(
+                    OUTPUT_START_WATCHDOG,
+                    false,
+                    &OutputStartupProbe::default(),
+                ))
+            },
+            OUTPUT_START_ATTEMPTS,
+            Duration::from_millis(1),
+            is_retryable_output_start_error,
+        );
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -888,7 +996,7 @@ mod tests {
                 let attempt = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 if attempt < OUTPUT_START_ATTEMPTS as usize {
                     Err(format!(
-                        "{OUTPUT_START_TIMEOUT_MESSAGE_PREFIX} 3 ms (attempt-{attempt})"
+                        "failed to open WASAPI shared output: device is already in use (0x88890010, attempt-{attempt})"
                     ))
                 } else {
                     slot.lock()
@@ -910,8 +1018,8 @@ mod tests {
 
     #[test]
     fn output_start_retry_classifies_transient_and_permanent_errors() {
-        assert!(is_retryable_output_start_error(
-            "audio output did not start within 3000 ms (exclusive=false, startup stage=initialize)"
+        assert!(!is_retryable_output_start_error(
+            "audio output did not start within 3000 ms (exclusive=false, startup stage=initialize, last_hresult=pending)"
         ));
         assert!(is_retryable_output_start_error(
             "failed to open WASAPI shared output: device is already in use by another exclusive stream or driver session (0x88890010)"

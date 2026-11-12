@@ -8,15 +8,17 @@ use crate::device::platform_windows::{
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::output::{
     build_output_stats, output_buffer_mode_for_frames, output_start_was_cancelled,
-    report_output_start, report_output_start_failure, service_wasapi_event,
-    OutputStartSender, OutputStopToken, OUTPUT_START_CANCELLED_MESSAGE,
+    report_output_start, report_output_start_failure, service_wasapi_event, OutputStartSender,
+    OutputStopToken, OUTPUT_START_CANCELLED_MESSAGE,
 };
 use crate::platform_qos;
 use crate::shared::startup_probe::output_startup_stage;
 use crate::shared::SharedAudio;
+use std::collections::HashMap;
 use std::ptr;
 use std::slice;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, TryLockError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use windows::core::HRESULT;
@@ -29,6 +31,92 @@ const WASAPI_EVENT_WAIT_MS: u32 = 10;
 // 拿到 AUDCLNT_E_DEVICE_IN_USE，统一等待重试而不是立即判失败。
 const WASAPI_DEVICE_RELEASE_TIMEOUT: Duration = Duration::from_millis(1500);
 const WASAPI_DEVICE_RELEASE_RETRY: Duration = Duration::from_millis(50);
+/// 等待端点闸门超过该时长时打一条日志，便于确认 open 是否被上一代流拖住。
+const WASAPI_OPEN_GATE_LOG_MS: u64 = 50;
+
+/// 端点级 open 闸门：audiodg 对同一端点的新建流是串行的，两个线程并发
+/// `IAudioClient::Initialize` 时后到者会继承前者的耗时，最终一起撞满启动看门狗。
+/// 因此同一端点同一时刻只允许一条输出线程执行「激活客户端 → 协商格式 →
+/// Initialize」；后面被取消的线程也会在离开临界区前让出闸门。
+static ENDPOINT_OPEN_GATES: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+
+/// 当前进程内仍然存活的 WASAPI 输出流数量。启动超时时带上这个值，
+/// 可以区分「端点被上一代 client 占着」与「端点本身就初始化得慢」。
+static LIVE_OUTPUT_STREAMS: AtomicU32 = AtomicU32::new(0);
+
+pub(crate) fn live_output_stream_count() -> u32 {
+    LIVE_OUTPUT_STREAMS.load(Ordering::Acquire)
+}
+
+fn endpoint_open_gate(endpoint_key: &str) -> Arc<Mutex<()>> {
+    let gates = ENDPOINT_OPEN_GATES.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = gates
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    guard.entry(endpoint_key.to_string()).or_default().clone()
+}
+
+/// 取消感知地获取端点闸门：等待期间一旦输出被弃用（设备切换 / 启动超时），
+/// 立刻退出而不是继续排队。返回 `None` 表示本次启动已被取消。
+fn lock_endpoint_open_gate<'a>(
+    gate: &'a Mutex<()>,
+    endpoint_key: &str,
+    share_mode: WasapiShareMode,
+    stop: &OutputStopToken,
+    shared: &SharedAudio,
+    start_notify: &mut Option<OutputStartSender>,
+    probe_attempt: u64,
+    attempt_start: Instant,
+    emit: fn(PlayerEvent),
+) -> Option<MutexGuard<'a, ()>> {
+    let wait_started = Instant::now();
+    let mut waiting_stage_reported = false;
+    loop {
+        match gate.try_lock() {
+            Ok(guard) => {
+                let waited_ms = wait_started.elapsed().as_millis() as u64;
+                shared
+                    .output_startup_probe
+                    .record_gate_wait(probe_attempt, waited_ms);
+                // 等待期间也可能被弃用；拿到闸门后立刻复查，别再白白激活一个 client。
+                if output_start_was_cancelled(stop, shared, start_notify) {
+                    return None;
+                }
+                if waited_ms >= WASAPI_OPEN_GATE_LOG_MS {
+                    emit(PlayerEvent::log(
+                        "info",
+                        format!(
+                            "WASAPI {} output open serialized behind previous stream: device='{endpoint_key}', waited_ms={waited_ms}, active_streams={}",
+                            share_mode.label(),
+                            live_output_stream_count(),
+                        ),
+                    ));
+                }
+                return Some(guard);
+            }
+            Err(TryLockError::Poisoned(poisoned)) => return Some(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) => {
+                let waited_ms = wait_started.elapsed().as_millis() as u64;
+                shared
+                    .output_startup_probe
+                    .record_gate_wait(probe_attempt, waited_ms);
+                if !waiting_stage_reported {
+                    // 让超时诊断直接显示「卡在等端点闸门」，而不是停在 resolve 阶段。
+                    shared.output_startup_probe.advance(
+                        probe_attempt,
+                        output_startup_stage::WAITING_ENDPOINT,
+                        attempt_start,
+                    );
+                    waiting_stage_reported = true;
+                }
+                if output_start_was_cancelled(stop, shared, start_notify) {
+                    return None;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
+}
 
 struct EventHandle(HANDLE);
 
@@ -90,6 +178,12 @@ struct WasapiOutput {
     buffer_frames: u32,
     buffer_duration: i64,
     stream_latency_100ns: i64,
+}
+
+impl Drop for WasapiOutput {
+    fn drop(&mut self) {
+        LIVE_OUTPUT_STREAMS.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -334,76 +428,107 @@ fn run_wasapi_output(
         attempt_start,
     );
     let device = resolve_wasapi_output_device(device_name).map_err(WasapiOutputFailure::backend)?;
-    advance_startup_stage(
-        &shared,
-        share_mode,
-        emit,
-        probe_attempt,
-        output_startup_stage::PROBE_ACTIVATE,
-        attempt_start,
-    );
-    let probe_client =
-        activate_wasapi_audio_client(&device).map_err(WasapiOutputFailure::backend)?;
     let preferred_output_format = shared.preferred_output_sample_format();
-    advance_startup_stage(
-        &shared,
-        share_mode,
-        emit,
-        probe_attempt,
-        output_startup_stage::CHOOSE_FORMAT,
-        attempt_start,
-    );
-    let resolved_format = match share_mode {
-        WasapiShareMode::Shared => {
-            choose_wasapi_shared_output_format(&probe_client, shared.mix_format.channels)
-                .map_err(WasapiOutputFailure::backend)?
-        }
-        WasapiShareMode::Exclusive => choose_wasapi_output_format(
-            &probe_client,
-            shared.mix_format.sample_rate,
-            shared.mix_format.channels,
-            preferred_output_format,
-        )
-        .map_err(WasapiOutputFailure::backend)?,
-    };
-    let output_format = resolved_format.output;
-    advance_startup_stage(
-        &shared,
-        share_mode,
-        emit,
-        probe_attempt,
-        output_startup_stage::CREATE_EVENT,
-        attempt_start,
-    );
-    let event = EventHandle(
-        unsafe { Threading::CreateEventA(None, false, false, windows::core::PCSTR(ptr::null())) }
+    // 同端点只允许一条 open 序列在飞：后面的线程（设备切换、超时后的替代尝试）
+    // 在这里排队等待，而不是与前者并发调用 Initialize 被 audiodg 串行化。
+    let endpoint_key = crate::device::platform_windows::wasapi_endpoint_id(&device)
+        .unwrap_or_else(|| device_name.to_string());
+    let open_gate = endpoint_open_gate(&endpoint_key);
+    let output_format;
+    let event;
+    let output = {
+        let _open_guard = match lock_endpoint_open_gate(
+            &open_gate,
+            &endpoint_key,
+            share_mode,
+            &stop,
+            &shared,
+            start_notify,
+            probe_attempt,
+            attempt_start,
+            emit,
+        ) {
+            Some(guard) => guard,
+            None => return Ok(()),
+        };
+        advance_startup_stage(
+            &shared,
+            share_mode,
+            emit,
+            probe_attempt,
+            output_startup_stage::PROBE_ACTIVATE,
+            attempt_start,
+        );
+        let probe_client =
+            activate_wasapi_audio_client(&device).map_err(WasapiOutputFailure::backend)?;
+        advance_startup_stage(
+            &shared,
+            share_mode,
+            emit,
+            probe_attempt,
+            output_startup_stage::CHOOSE_FORMAT,
+            attempt_start,
+        );
+        let resolved_format = match share_mode {
+            WasapiShareMode::Shared => {
+                choose_wasapi_shared_output_format(&probe_client, shared.mix_format.channels)
+                    .map_err(WasapiOutputFailure::backend)?
+            }
+            WasapiShareMode::Exclusive => choose_wasapi_output_format(
+                &probe_client,
+                shared.mix_format.sample_rate,
+                shared.mix_format.channels,
+                preferred_output_format,
+            )
+            .map_err(WasapiOutputFailure::backend)?,
+        };
+        output_format = resolved_format.output;
+        advance_startup_stage(
+            &shared,
+            share_mode,
+            emit,
+            probe_attempt,
+            output_startup_stage::CREATE_EVENT,
+            attempt_start,
+        );
+        event = EventHandle(
+            unsafe {
+                Threading::CreateEventA(None, false, false, windows::core::PCSTR(ptr::null()))
+            }
             .map_err(|err| {
-            WasapiOutputFailure::backend(format!("failed to create WASAPI output event: {err}"))
-        })?,
-    );
-    if output_start_was_cancelled(&stop, &shared, start_notify) {
-        return Ok(());
-    }
-    let open_context = WasapiOpenContext {
-        stop: &stop,
-        shared: &shared,
-        probe_attempt,
-        attempt_start,
-    };
-    let output = match open_wasapi_output(
-        &device,
-        event.0,
-        resolved_format,
-        share_mode,
-        emit,
-        &open_context,
-    )? {
-        Some(output) => output,
-        None => {
-            // open 中途被弃用：向启动确认通道回报取消后静默退出，不再打 opening 日志。
-            report_output_start(start_notify, Err(OUTPUT_START_CANCELLED_MESSAGE.to_string()));
+                WasapiOutputFailure::backend(format!("failed to create WASAPI output event: {err}"))
+            })?,
+        );
+        if output_start_was_cancelled(&stop, &shared, start_notify) {
             return Ok(());
         }
+        let open_context = WasapiOpenContext {
+            stop: &stop,
+            shared: &shared,
+            probe_attempt,
+            attempt_start,
+        };
+        let output = match open_wasapi_output(
+            &device,
+            event.0,
+            resolved_format,
+            share_mode,
+            emit,
+            &open_context,
+        )? {
+            Some(output) => output,
+            None => {
+                // open 中途被弃用：向启动确认通道回报取消后静默退出，不再打 opening 日志。
+                report_output_start(
+                    start_notify,
+                    Err(OUTPUT_START_CANCELLED_MESSAGE.to_string()),
+                );
+                return Ok(());
+            }
+        };
+        // 流已初始化完成，立即让出端点闸门；后续 Start/渲染循环不需要串行。
+        drop(_open_guard);
+        output
     };
     let device_buffer_secs =
         output.buffer_frames as f64 / f64::from(output_format.sample_rate.max(1));
@@ -636,6 +761,11 @@ fn open_wasapi_output(
 
         match result {
             Ok(()) => unsafe {
+                // Initialize 可能已经让线程在端点闸门里排了很久；返回后立刻检查
+                // 弃用状态，把闸门尽早让给后继线程，避免"僵尸流"继续占着端点。
+                if stop.should_stop(shared) {
+                    return Ok(None);
+                }
                 advance_startup_stage(
                     shared,
                     share_mode,
@@ -676,6 +806,7 @@ fn open_wasapi_output(
                     )
                 })?;
                 let stream_latency_100ns = audio_client.GetStreamLatency().unwrap_or(0);
+                LIVE_OUTPUT_STREAMS.fetch_add(1, Ordering::AcqRel);
                 return Ok(Some(WasapiOutput {
                     audio_client,
                     render_client,
@@ -941,6 +1072,69 @@ fn fill_wasapi_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn endpoint_open_gate_serializes_opens_and_skips_cancelled_waiters() {
+        fn ignore_event(_: PlayerEvent) {}
+
+        let shared = Arc::new(SharedAudio::new(
+            crate::shared::MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &crate::dsp::DspSettings::default(),
+        ));
+        let gate = Arc::new(Mutex::new(()));
+        let attempt = shared.output_startup_probe.begin_attempt();
+
+        let holder = gate.clone();
+        let (held_tx, held_rx) = std::sync::mpsc::sync_channel(1);
+        let holder_thread = thread::spawn(move || {
+            let _guard = holder.lock().unwrap();
+            let _ = held_tx.send(());
+            thread::sleep(Duration::from_millis(60));
+        });
+        held_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let stop = OutputStopToken::new();
+        let mut start_notify = None;
+        let wait_started = Instant::now();
+        let guard = lock_endpoint_open_gate(
+            &gate,
+            "test-endpoint",
+            WasapiShareMode::Shared,
+            &stop,
+            &shared,
+            &mut start_notify,
+            attempt,
+            Instant::now(),
+            ignore_event,
+        )
+        .expect("gate must be acquired after the holder releases");
+        assert!(wait_started.elapsed() >= Duration::from_millis(40));
+        assert!(shared
+            .output_startup_probe
+            .describe()
+            .contains("gate_wait_ms="));
+        drop(guard);
+        holder_thread.join().unwrap();
+
+        // 已经取消的等待者不会占用闸门，也不会再发起一次 open。
+        let cancelled = OutputStopToken::new();
+        cancelled.request_stop();
+        let mut cancelled_notify = None;
+        assert!(lock_endpoint_open_gate(
+            &gate,
+            "test-endpoint",
+            WasapiShareMode::Shared,
+            &cancelled,
+            &shared,
+            &mut cancelled_notify,
+            attempt,
+            Instant::now(),
+            ignore_event,
+        )
+        .is_none());
+    }
 
     #[test]
     fn spatial_format_change_recovers_even_with_pause_on_disconnect() {

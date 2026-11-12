@@ -24,6 +24,8 @@ pub(crate) mod output_startup_stage {
     pub(crate) const BUFFER_QUERY: u8 = 8;
     pub(crate) const WRITE_AND_START: u8 = 9;
     pub(crate) const STARTED: u8 = 10;
+    /// 正在等待同一端点上一条输出流让出 open 闸门；此时还没有发起新的 COM 调用。
+    pub(crate) const WAITING_ENDPOINT: u8 = 11;
 
     pub(crate) fn label(stage: u8) -> &'static str {
         match stage {
@@ -37,9 +39,20 @@ pub(crate) mod output_startup_stage {
             BUFFER_QUERY => "buffer-query",
             WRITE_AND_START => "write-and-start",
             STARTED => "started",
+            WAITING_ENDPOINT => "waiting-endpoint",
             _ => "not-reported",
         }
     }
+}
+
+/// 一次 COM 调用的结果状态。区分「尚未发起调用」「已发起但未返回」「返回了错误码」，
+/// 否则看门狗超时只能看到一个 `-`，无法判断是卡在调用里还是根本没调用到。
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum HresultState {
+    #[default]
+    Unset,
+    Pending,
+    Recorded(i32),
 }
 
 /// 一次启动尝试的完整诊断状态。整体包在互斥锁里，保证「校验代号 + 写入字段」
@@ -54,10 +67,12 @@ struct ProbeState {
     stage: u8,
     /// 进入当前阶段时距本次尝试开始的毫秒数。
     stage_entered_ms: u64,
-    /// 最近一次记录的 COM HRESULT；0 表示尚未记录。
-    last_hresult: i32,
+    /// 当前阶段 COM 调用的结果状态。
+    last_hresult: HresultState,
     /// 端点释放等待（AUDCLNT_E_DEVICE_IN_USE）的重试次数。
     device_in_use_retries: u32,
+    /// 等待同一端点上一代输出流释放 / 其他 open 完成所花的毫秒数。
+    gate_wait_ms: u64,
     /// 本次尝试中已上报过慢启动日志的阶段位图（bit = stage）。
     slow_stages_reported: u32,
 }
@@ -84,8 +99,9 @@ impl OutputStartupProbe {
         state.generation = state.generation.wrapping_add(1);
         state.stage = output_startup_stage::NOT_REPORTED;
         state.stage_entered_ms = 0;
-        state.last_hresult = 0;
+        state.last_hresult = HresultState::Unset;
         state.device_in_use_retries = 0;
+        state.gate_wait_ms = 0;
         state.slow_stages_reported = 0;
         state.generation
     }
@@ -101,6 +117,15 @@ impl OutputStartupProbe {
         let entered_ms = attempt_start.elapsed().as_millis() as u64;
         state.stage_entered_ms = entered_ms;
         state.stage = stage;
+        // 进入一个执行 COM 调用的阶段 → 该调用已发起但还没有结果；超时时若停在
+        // Pending，说明线程正卡在这条调用里（没有错误码可报）。等待端点闸门不是
+        // COM 调用，保持 Unset。
+        state.last_hresult = match stage {
+            output_startup_stage::NOT_REPORTED
+            | output_startup_stage::STARTED
+            | output_startup_stage::WAITING_ENDPOINT => HresultState::Unset,
+            _ => HresultState::Pending,
+        };
         if entered_ms < OUTPUT_START_SLOW_STAGE_MS || stage >= 32 {
             return None;
         }
@@ -113,7 +138,15 @@ impl OutputStartupProbe {
     pub(crate) fn record_hresult(&self, attempt: u64, code: i32) {
         let mut state = self.lock_state();
         if state.generation == attempt {
-            state.last_hresult = code;
+            state.last_hresult = HresultState::Recorded(code);
+        }
+    }
+
+    /// 记录等待上一代输出流让出端点的耗时（open 串行化闸门）。
+    pub(crate) fn record_gate_wait(&self, attempt: u64, waited_ms: u64) {
+        let mut state = self.lock_state();
+        if state.generation == attempt {
+            state.gate_wait_ms = waited_ms;
         }
     }
 
@@ -124,28 +157,30 @@ impl OutputStartupProbe {
         }
     }
 
-    /// 看门狗超时侧读取的快照：(阶段, 进入毫秒, 最后 HRESULT, 端点释放重试次数)。
-    /// 四元组在同一临界区内读取，不会再拼出跨尝试的混合状态。
-    pub(crate) fn snapshot(&self) -> (u8, u64, i32, u32) {
+    /// 看门狗超时侧读取的快照：(阶段, 进入毫秒, 最后 HRESULT, 闸门等待, 端点释放重试次数)。
+    /// 所有字段在同一临界区内读取，不会再拼出跨尝试的混合状态。
+    fn snapshot(&self) -> (u8, u64, HresultState, u64, u32) {
         let state = self.lock_state();
         (
             state.stage,
             state.stage_entered_ms,
             state.last_hresult,
+            state.gate_wait_ms,
             state.device_in_use_retries,
         )
     }
 
     /// 拼进看门狗超时错误消息的诊断尾巴。
     pub(crate) fn describe(&self) -> String {
-        let (stage, entered_ms, last_hresult, device_in_use_retries) = self.snapshot();
-        let hresult_text = if last_hresult == 0 {
-            "-".to_string()
-        } else {
-            format!("0x{last_hresult:08X}")
+        let (stage, entered_ms, last_hresult, gate_wait_ms, device_in_use_retries) =
+            self.snapshot();
+        let hresult_text = match last_hresult {
+            HresultState::Unset => "unset".to_string(),
+            HresultState::Pending => "pending".to_string(),
+            HresultState::Recorded(code) => format!("0x{code:08X}"),
         };
         format!(
-            "stage={}, entered_at_ms={entered_ms}, last_hresult={hresult_text}, device_in_use_retries={device_in_use_retries}",
+            "stage={}, entered_at_ms={entered_ms}, last_hresult={hresult_text}, gate_wait_ms={gate_wait_ms}, device_in_use_retries={device_in_use_retries}",
             output_startup_stage::label(stage),
         )
     }
@@ -162,19 +197,55 @@ mod tests {
         let attempt = probe.begin_attempt();
         assert_eq!(
             probe.describe(),
-            "stage=not-reported, entered_at_ms=0, last_hresult=-, device_in_use_retries=0"
+            "stage=not-reported, entered_at_ms=0, last_hresult=unset, gate_wait_ms=0, device_in_use_retries=0"
         );
 
         let start = Instant::now();
         probe.advance(attempt, output_startup_stage::CHOOSE_FORMAT, start);
         probe.record_hresult(attempt, -1);
+        probe.record_gate_wait(attempt, 42);
         probe.record_device_in_use_retry(attempt);
         probe.record_device_in_use_retry(attempt);
 
         let described = probe.describe();
-        assert!(described.starts_with("stage=choose-format, entered_at_ms="), "{described}");
+        assert!(
+            described.starts_with("stage=choose-format, entered_at_ms="),
+            "{described}"
+        );
         assert!(described.contains("last_hresult=0xFFFFFFFF"), "{described}");
+        assert!(described.contains("gate_wait_ms=42"), "{described}");
         assert!(described.contains("device_in_use_retries=2"), "{described}");
+    }
+
+    #[test]
+    fn describe_distinguishes_pending_call_from_unset_and_error() {
+        let probe = OutputStartupProbe::default();
+        let attempt = probe.begin_attempt();
+        let start = Instant::now();
+
+        // 进入 Initialize 阶段 → 调用已发起但未返回。
+        probe.advance(attempt, output_startup_stage::INITIALIZE, start);
+        assert!(
+            probe.describe().contains("last_hresult=pending"),
+            "{}",
+            probe.describe()
+        );
+
+        // 返回错误后 → 记录真实 HRESULT。
+        probe.record_hresult(attempt, 0x88890008u32 as i32);
+        assert!(
+            probe.describe().contains("last_hresult=0x88890008"),
+            "{}",
+            probe.describe()
+        );
+
+        // 启动成功 → 不再有在飞调用。
+        probe.advance(attempt, output_startup_stage::STARTED, start);
+        assert!(
+            probe.describe().contains("last_hresult=unset"),
+            "{}",
+            probe.describe()
+        );
     }
 
     #[test]
@@ -188,11 +259,14 @@ mod tests {
             None
         );
         probe.record_hresult(attempt, -1);
+        probe.record_gate_wait(attempt, 12);
         probe.begin_attempt();
-        assert!(probe.describe().contains("last_hresult=-"));
-        let (stage, _, last_hresult, _) = probe.snapshot();
+        assert!(probe.describe().contains("last_hresult=unset"));
+        assert!(probe.describe().contains("gate_wait_ms=0"));
+        let (stage, _, last_hresult, gate_wait_ms, _) = probe.snapshot();
         assert_eq!(stage, output_startup_stage::NOT_REPORTED);
-        assert_eq!(last_hresult, 0);
+        assert_eq!(last_hresult, HresultState::Unset);
+        assert_eq!(gate_wait_ms, 0);
     }
 
     #[test]
@@ -205,10 +279,11 @@ mod tests {
         probe.advance(stale, output_startup_stage::INITIALIZE, start);
         probe.record_hresult(stale, -1);
         probe.record_device_in_use_retry(stale);
+        probe.record_gate_wait(stale, 99);
 
         assert_eq!(
             probe.describe(),
-            "stage=not-reported, entered_at_ms=0, last_hresult=-, device_in_use_retries=0"
+            "stage=not-reported, entered_at_ms=0, last_hresult=unset, gate_wait_ms=0, device_in_use_retries=0"
         );
 
         probe.advance(current, output_startup_stage::CHOOSE_FORMAT, start);

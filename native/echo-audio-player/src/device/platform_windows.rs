@@ -596,6 +596,11 @@ pub(crate) fn resolve_wasapi_device_name(device_key: &str) -> Option<String> {
         .or_else(|| friendly_name_for_endpoint_id(endpoint_id))
 }
 
+/// 已解析端点的稳定 ID，用作输出流 open 串行化闸门的键。
+pub(crate) fn wasapi_endpoint_id(device: &Audio::IMMDevice) -> Option<String> {
+    endpoint_id(device).ok()
+}
+
 pub(crate) fn is_wasapi_device_key(value: &str) -> bool {
     value.starts_with(WASAPI_DEVICE_KEY_PREFIX)
 }
