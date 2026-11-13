@@ -227,3 +227,75 @@ test('healthy catalog rights never trigger the tracker probe', async () => {
   assert.equal(result.url, 'https://audio.example/standard.mp3');
   assert.equal(result.failureReason, undefined);
 });
+
+test('a rejected tracker probe keeps the fallback chain and the unsupported failure', async () => {
+  const { resolver, calls, ensureCalls } = setupResolver({
+    privilegesByUrl: { default: removedPayload },
+    getSongUrl: async (_hash, quality) => {
+      if (quality === '') throw new Error('tracker unavailable');
+      return { status: 1, url: ['https://audio.example/standard.mp3'] };
+    },
+  });
+  const result = await resolver.resolveAudioUrl({ ...track }, { forceReload: true });
+  assert.deepEqual(
+    calls.filter((call) => call.quality === ''),
+    [
+      {
+        hash: OLD_HASH,
+        quality: '',
+        ppageId: undefined,
+        albumId: '69386141',
+        albumAudioId: '588704117',
+      },
+    ],
+    'the failed probe is not retried',
+  );
+  assert.deepEqual(ensureCalls, [OLD_HASH], 'no rights refresh after a failed probe');
+  assert.equal(result.url, '');
+  assert.equal(result.failureReason, '歌曲不支持');
+});
+
+test('relate_goods entries short-circuit the probe even when quality_vip reports nothing', async () => {
+  const { resolver, calls, ensureCalls } = setupResolver({
+    privilegesByUrl: {
+      default: {
+        ...removedPayload,
+        data: [{ ...removedPayload.data[0], relate_goods: [{ hash: OLD_HASH, quality: '128' }] }],
+      },
+    },
+    getSongUrl: async (_hash, quality) => {
+      if (quality === '') throw new Error('probe must not run');
+      return { status: 1, url: ['https://audio.example/standard.mp3'] };
+    },
+  });
+  const result = await resolver.resolveAudioUrl({ ...track }, { forceReload: true });
+  assert.deepEqual(
+    calls.filter((call) => call.quality === ''),
+    [],
+    'existing rights entries are the next-matching signal that a probe is pointless',
+  );
+  assert.deepEqual(ensureCalls, [OLD_HASH]);
+  assert.equal(result.url, '');
+  assert.equal(result.failureReason, '歌曲不支持');
+});
+
+test('a nested tracker response still yields the re-discovered hash', async () => {
+  const { resolver, calls, ensureCalls } = setupResolver({
+    privilegesByUrl: { [OLD_HASH.toLowerCase()]: removedPayload, default: rediscoveredPayload },
+    getSongUrl: async (_hash, quality) => {
+      if (quality === '') {
+        // 兼容 data 包一层的历史响应形态，hash 从 data 内读取
+        return { status: 1, data: { hash: NEW_HASH, url: ['https://audio.example/probe.mp3'] } };
+      }
+      return { status: 1, url: ['https://audio.example/standard.mp3'] };
+    },
+  });
+  const result = await resolver.resolveAudioUrl({ ...track }, { forceReload: true });
+  assert.deepEqual(
+    calls.map((call) => call.quality),
+    ['', '128'],
+  );
+  assert.deepEqual(ensureCalls, [OLD_HASH, NEW_HASH.toLowerCase()]);
+  assert.equal(result.url, 'https://audio.example/standard.mp3');
+  assert.equal(result.failureReason, undefined);
+});

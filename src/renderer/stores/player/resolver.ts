@@ -630,13 +630,16 @@ export const createResolver = (
     // 返回资源级错误 _errno=6 且 relate_goods 为空，quality_vip 会把全部音质标成
     // “歌曲不支持”；但授权 tracker 仍可用保留的 album_audio_id 映射到现存文件。
     // 先以空音质探测一次 tracker（服务端归一化为 128），拿到新的有效 hash 后重查权益，
-    // 再走正常音质候选计划。仅探测一次，失败则维持原兜底链不变。
+    // 再走正常音质候选计划。仅探测一次，失败则维持原兜底链不变；失败后 compatibilityMode
+    // 兜底可能以相同参数再请求一次（next 的 failCatalogRefresh 是直接跳出），属有意权衡。
     const refreshMissingCatalogResource = async (): Promise<boolean> => {
       if (!catalogHash) return false;
       const source = getRecord(privilegePayload);
       const resource = getRecord(Array.isArray(source.data) ? source.data[0] : null);
       if (Number(resource._errno) !== 6) return false;
       const goods = resource.relate_goods;
+      // next 要求 relate_goods 是数组才继续判定（非数组直接放弃）；这里有意放宽为
+      // “缺失或非数组同样视为无可用权益条目”，让字段形态异常的上游响应也能重发现。
       if (Array.isArray(goods) && goods.length > 0) return false;
       logger.warn(
         'PlayerResolver',
@@ -695,8 +698,14 @@ export const createResolver = (
       const apiEffect = isVocalEffect ? 'acappella' : audioEffect;
 
       const matchedEffect = relateGoods.find((item) => item.quality === apiEffect && item.hash);
+      // 去重不区分大小写：relate_goods 可能回传大写原样 hash，与已归一化的
+      // catalogHash 实为同一资源
       const effectHashes = [matchedEffect?.hash, catalogHash].filter(
-        (value, index, list): value is string => !!value && list.indexOf(value) === index,
+        (value, index, list): value is string => {
+          if (!value) return false;
+          const normalized = value.toLowerCase();
+          return list.findIndex((item) => item?.toLowerCase() === normalized) === index;
+        },
       );
 
       for (const effectHash of effectHashes) {
