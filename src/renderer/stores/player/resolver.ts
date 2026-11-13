@@ -65,6 +65,13 @@ const readMetadataNumber = (value: unknown): number | undefined => {
   return Number.isInteger(parsed) ? parsed : undefined;
 };
 
+/** 从 tracker 响应中读取资源 hash（顶层优先，兼容 data 包一层的历史形态）。 */
+const readResponseHash = (payload: unknown): string => {
+  const record = getRecord(payload);
+  const hash = readMetadataString(record.hash, getRecord(record.data).hash);
+  return /^[0-9a-fA-F]{32}$/.test(hash) ? hash : '';
+};
+
 export const parseTrackMetadataFromPrivilege = (payload: unknown): Partial<Song> => {
   const record = getPrivilegeTrackRecord(payload);
   if (!record) return {};
@@ -463,6 +470,9 @@ export const createResolver = (
             relateGoods: track.relateGoods,
           }
         : track;
+    // 曲库资源 hash 与 catalogTrack 解耦：上游资源重发现成功后会替换为新 hash，
+    // 不反写队列中的 track 身份（与 next 的 m_catalogHash 语义一致）。
+    let catalogHash = catalogTrack.hash;
     let catalogLoudness: ReturnType<typeof resolveTrackLoudness> = null;
     const getCatalogUrlOptions = () => ({
       albumId: catalogTrack.albumId,
@@ -490,11 +500,11 @@ export const createResolver = (
     };
 
     const resolveCatalogTrackLoudness = async () => {
-      if (catalogLoudness || !catalogTrack.hash || !settingStore.volumeNormalization) {
+      if (catalogLoudness || !catalogHash || !settingStore.volumeNormalization) {
         return catalogLoudness;
       }
       try {
-        const res = await getSongUrl(catalogTrack.hash, '', undefined, getCatalogUrlOptions());
+        const res = await getSongUrl(catalogHash, '', undefined, getCatalogUrlOptions());
         return rememberCatalogTrackLoudness(res);
       } catch (error) {
         logger.debug('PlayerResolver', 'Fetch catalog loudness for cloud source failed:', error, {
@@ -572,7 +582,7 @@ export const createResolver = (
       if (transformed) return transformed;
     }
 
-    if (!catalogTrack.hash) {
+    if (!catalogHash) {
       const afterCatalogPlugin = await resolvePluginAt('after-catalog');
       if (afterCatalogPlugin) return afterCatalogPlugin;
       const resolved = didTryCloudAudioSource ? null : await tryCloudAudioSource();
@@ -596,12 +606,15 @@ export const createResolver = (
 
     let relateGoods: SongRelateGood[] = [];
     let qualityAccess: SongQualityAccess[] | null = null;
+    // 保留最近一次权益响应原文，供资源重发现判定读取 mediastore 的 _errno / relate_goods。
+    let privilegePayload: unknown = null;
     const isCurrentQualityAccess = qualityAccessStore.captureAccessRequest();
     try {
       relateGoods = await ensureTrackRelateGoods(catalogTrack, {
         forceRefresh: catalogTrack === track && !options?.reuseRelateGoods,
         onPrivilege: (payload) => {
-          qualityAccess = parseSongQualityAccess(payload, catalogTrack.hash!);
+          privilegePayload = payload;
+          qualityAccess = parseSongQualityAccess(payload, catalogHash);
         },
       });
     } catch (error) {
@@ -609,6 +622,65 @@ export const createResolver = (
         track: summarizeSong(catalogTrack),
       });
     }
+    if (!isCurrentQualityAccess()) {
+      return { url: '', quality: null, effect: 'none', loudness: null };
+    }
+
+    // 复刻 next 的 refreshMissingCatalogResource 兼容：mediastore 对已被上游移除的资源
+    // 返回资源级错误 _errno=6 且 relate_goods 为空，quality_vip 会把全部音质标成
+    // “歌曲不支持”；但授权 tracker 仍可用保留的 album_audio_id 映射到现存文件。
+    // 先以空音质探测一次 tracker（服务端归一化为 128），拿到新的有效 hash 后重查权益，
+    // 再走正常音质候选计划。仅探测一次，失败则维持原兜底链不变；失败后 compatibilityMode
+    // 兜底可能以相同参数再请求一次（next 的 failCatalogRefresh 是直接跳出），属有意权衡。
+    const refreshMissingCatalogResource = async (): Promise<boolean> => {
+      if (!catalogHash) return false;
+      const source = getRecord(privilegePayload);
+      const resource = getRecord(Array.isArray(source.data) ? source.data[0] : null);
+      if (Number(resource._errno) !== 6) return false;
+      const goods = resource.relate_goods;
+      // next 要求 relate_goods 是数组才继续判定（非数组直接放弃）；这里有意放宽为
+      // “缺失或非数组同样视为无可用权益条目”，让字段形态异常的上游响应也能重发现。
+      if (Array.isArray(goods) && goods.length > 0) return false;
+      logger.warn(
+        'PlayerResolver',
+        'Catalog resource removed upstream, trying tracker re-discovery',
+        summarizeSong(catalogTrack),
+      );
+      try {
+        const probeRes = await getSongUrl(catalogHash, '', undefined, getCatalogUrlOptions());
+        const urls = resolveUrlsFromResponse(probeRes);
+        const hash = readResponseHash(probeRes);
+        // 映射回原 hash 说明 tracker 侧同样无可用资源，避免无意义的权益重查
+        if (!urls.length || !hash || hash.toLowerCase() === catalogHash.toLowerCase()) {
+          logger.debug('PlayerResolver', 'Tracker re-discovery found no replacement resource', {
+            track: summarizeSong(catalogTrack),
+            urls: urls.length,
+          });
+          return false;
+        }
+        catalogHash = hash.toLowerCase();
+        const refreshedTrack: Song = { ...catalogTrack, hash: catalogHash };
+        relateGoods = await ensureTrackRelateGoods(refreshedTrack, {
+          forceRefresh: true,
+          onPrivilege: (payload) => {
+            privilegePayload = payload;
+            qualityAccess = parseSongQualityAccess(payload, catalogHash);
+          },
+        });
+        logger.debug('PlayerResolver', 'Catalog resource re-discovered via tracker', {
+          track: summarizeSong(catalogTrack),
+          hash: catalogHash,
+          qualities: relateGoods.length,
+        });
+        return true;
+      } catch (error) {
+        logger.warn('PlayerResolver', 'Catalog resource re-discovery failed:', error, {
+          track: summarizeSong(catalogTrack),
+        });
+        return false;
+      }
+    };
+    await refreshMissingCatalogResource();
     if (!isCurrentQualityAccess()) {
       return { url: '', quality: null, effect: 'none', loudness: null };
     }
@@ -626,8 +698,14 @@ export const createResolver = (
       const apiEffect = isVocalEffect ? 'acappella' : audioEffect;
 
       const matchedEffect = relateGoods.find((item) => item.quality === apiEffect && item.hash);
-      const effectHashes = [matchedEffect?.hash, catalogTrack.hash].filter(
-        (value, index, list): value is string => !!value && list.indexOf(value) === index,
+      // 去重不区分大小写：relate_goods 可能回传大写原样 hash，与已归一化的
+      // catalogHash 实为同一资源
+      const effectHashes = [matchedEffect?.hash, catalogHash].filter(
+        (value, index, list): value is string => {
+          if (!value) return false;
+          const normalized = value.toLowerCase();
+          return list.findIndex((item) => item?.toLowerCase() === normalized) === index;
+        },
       );
 
       for (const effectHash of effectHashes) {
@@ -715,7 +793,7 @@ export const createResolver = (
 
     if (compatibilityMode && candidates.length > 0 && isCurrentQualityAccess()) {
       try {
-        const res = await getSongUrl(catalogTrack.hash, '', undefined, getCatalogUrlOptions());
+        const res = await getSongUrl(catalogHash, '', undefined, getCatalogUrlOptions());
         const loudness = rememberCatalogTrackLoudness(res);
         const urls = resolveUrlsFromResponse(res);
         if (urls.length > 0) {
@@ -738,7 +816,7 @@ export const createResolver = (
 
     if (candidates.length > 0 && isCurrentQualityAccess()) {
       try {
-        const res = await getSongUrl(catalogTrack.hash, '', 356753938, getCatalogUrlOptions());
+        const res = await getSongUrl(catalogHash, '', 356753938, getCatalogUrlOptions());
         const loudness = rememberCatalogTrackLoudness(res);
         const urls = resolveUrlsFromResponse(res);
         if (urls.length > 0) {

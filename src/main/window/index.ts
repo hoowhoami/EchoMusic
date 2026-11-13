@@ -82,7 +82,8 @@ let systemSuspended = false;
 let powerSaveBlockerId = -1;
 
 // 启动时同步开机自启动状态，确保注册表与设置一致
-app.setLoginItemSettings({ openAtLogin: initialSettings.autoLaunch });
+// dev 模式下 Electron.app 为临时构建产物且未签名，macOS 会拒绝注册登录项，跳过避免报错
+if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: initialSettings.autoLaunch });
 
 let win: BrowserWindow | null = null;
 let mainWindowStartup: Promise<void> | null = null;
@@ -409,7 +410,8 @@ export const registerMainWindowPreferenceHandlers = () => {
 
   ipcRegistry.registerListener('update-auto-launch', (_event, enabled: boolean) => {
     setMainAppSetting('autoLaunch', enabled);
-    app.setLoginItemSettings({ openAtLogin: enabled });
+    // dev 模式下跳过登录项注册（未签名 app 必然被 macOS 拒绝），仅持久化设置
+    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled });
   });
 
   ipcRegistry.registerListener('update-power-save-blocker', (_event, payload) => {
