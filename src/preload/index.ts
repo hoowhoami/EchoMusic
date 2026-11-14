@@ -7,6 +7,7 @@ import type { PlayMode } from '../shared/playback';
 import type { PlayerRuntimeSession, PlayerSessionRestore } from '../shared/playerSession';
 import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
 import type { TaskbarLyricSettings, TaskbarLyricState } from '../shared/taskbar';
+import type { BootInfo } from '../shared/system';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
@@ -379,6 +380,9 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('app:open-settings', listener);
       return () => ipcRenderer.removeListener('app:open-settings', listener);
     },
+  },
+  system: {
+    getBootInfo: () => ipcRenderer.invoke('system:get-boot-info') as Promise<BootInfo>,
   },
   share: {
     copy: (text: string) => ipcRenderer.invoke('share:copy', text) as Promise<boolean>,
