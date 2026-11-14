@@ -2,6 +2,7 @@
 import '@/theme/sliders.css';
 import { neutralThemePalette, DEFAULT_THEME_ACCENT } from '../../shared/themePalette';
 import { createAccentPaletteFromPrimary } from '../../shared/accentPalette';
+import { buildFontFamily } from '../../shared/font';
 import {
   DEFAULT_TASKBAR_LYRIC_SETTINGS,
   normalizeTaskbarLyricSettings,
@@ -28,7 +29,7 @@ import { resolveContentWidth, MIN_CONTENT_WIDTH } from './lyricWidth';
 const { snapshot, playback, lyric, line, nextLine, timeMs, error } = useTaskbarLyrics();
 const settings = ref({ ...DEFAULT_TASKBAR_LYRIC_SETTINGS });
 const dark = ref(true);
-const anchor = ref<'left' | 'right'>('left');
+const anchor = ref<'left' | 'center' | 'right'>('left');
 const maxWidth = ref(400);
 const hovered = ref(false);
 const focused = ref(false);
@@ -37,6 +38,12 @@ const primaryWidth = ref(0);
 const secondaryWidth = ref(0);
 const coverFailed = ref('');
 const root = ref<HTMLElement>();
+const FALLBACK_FONT_FAMILY = '"Segoe UI", "Microsoft YaHei", sans-serif';
+const resolveFontFamily = () => {
+  const name = settings.value.fontFamily || 'follow';
+  if (name === 'follow') return snapshot.value?.appearance.fontFamily || FALLBACK_FONT_FAMILY;
+  return buildFontFamily(name);
+};
 const colors = computed(() => {
   const palette = neutralThemePalette(dark.value);
   const accent = snapshot.value?.appearance.accentColor || DEFAULT_THEME_ACCENT;
@@ -48,12 +55,14 @@ const colors = computed(() => {
     '--accent-text': createAccentPaletteFromPrimary(accent, dark.value, [palette.main]).primaryText,
     '--font-size': `${settings.value.fontSize}px`,
     '--lyric-unplayed': palette.secondary,
-    fontFamily:
-      snapshot.value?.appearance.fontFamily || '"Segoe UI", "Microsoft YaHei", sans-serif',
+    fontFamily: resolveFontFamily(),
   };
 });
 const title = computed(() => playback.value?.title || 'EchoMusic');
-const primary = computed(() => error.value || line.value?.text || title.value);
+// 没在放歌时不再兜底出一行「EchoMusic」：歌词区会整块收起，只留封面。
+const primary = computed(
+  () => error.value || line.value?.text || (playback.value ? title.value : ''),
+);
 const secondary = computed(() => {
   if (error.value) return '';
   if (line.value) {
@@ -79,6 +88,28 @@ const lineEndTimeMs = computed(() => {
 const expanded = computed(() =>
   Boolean(playback.value && (hovered.value || focused.value || isDragging.value)),
 );
+/** 歌词区收起动画时长，与控制条展开同一套曲线。 */
+const LYRIC_COLLAPSE_MS = 300;
+/**
+ * 不播放时只留封面：歌词滑出、窗口按封面收窄。
+ *
+ * 判据是 isPlaying 而不是「有没有歌」——暂停时同样收起，悬停仍能展开出控制条，
+ * 点播放后歌词再滑回来。
+ */
+const lyricsCollapsed = computed(() => !playback.value?.isPlaying);
+/**
+ * 歌词行只区分左右滚动方向：中间对齐时内容仍从左侧开始排，溢出方向同左对齐。
+ *
+ * TaskbarLyricLine 的 anchor 只有 left/right，这里收敛一次，避免把 center 传下去。
+ */
+const lyricAnchor = computed<'left' | 'right'>(() => (anchor.value === 'right' ? 'right' : 'left'));
+/**
+ * 居中档把窗口宽度锁在展开上限。
+ *
+ * 宽度变一次就要重新对中一次，而歌词每换一行宽度都会变、悬停出控制条也会变，
+ * 结果就是条子一直在左右跳。锁宽后只有暂停收起（idle）才会改动宽度。
+ */
+const pinned = computed(() => anchor.value === 'center' && !lyricsCollapsed.value);
 let hoverLeaveTimer: ReturnType<typeof setTimeout> | undefined;
 const setHovered = (value: boolean) => {
   clearTimeout(hoverLeaveTimer);
@@ -106,6 +137,14 @@ let disposeState: (() => void) | undefined;
  * 连续切行的中途误放行、重现被裁。
  */
 let rolling = false;
+/**
+ * 收起动画进行中：期间同样不收窄窗口。
+ *
+ * 窗口宽度就是可见区，先收窄等于把歌词裁掉，滑动会变成瞬间消失。这里用定时器
+ * 而不是 transitionend：收起完成后歌词块已经 opacity:0，拿不到稳定的事件。
+ */
+let collapsing = false;
+let collapseTimer: ReturnType<typeof setTimeout> | undefined;
 const reportWidth = async () => {
   await nextTick();
   if (!alive) return;
@@ -117,14 +156,17 @@ const reportWidth = async () => {
     ? (element.querySelector('.cover')?.getBoundingClientRect().width ?? 0) +
       parseFloat(style.columnGap)
     : 0;
-  const naturalWidth = Math.ceil(
-    Math.max(primaryWidth.value, secondaryWidth.value) + coverWidth + padding + 8,
-  );
+  // 收起态歌词已经让出位置，但两行的实测宽度还停在收起前的值，
+  // 必须在这里直接按 0 计，否则窗口收不窄。
+  const textWidth = lyricsCollapsed.value ? 0 : Math.max(primaryWidth.value, secondaryWidth.value);
+  const naturalWidth = Math.ceil(textWidth + coverWidth + padding + 8);
   width.value = resolveContentWidth({
     natural: naturalWidth,
     maxWidth: maxWidth.value,
     expanded: expanded.value,
-    rolling,
+    idle: lyricsCollapsed.value,
+    pinned: pinned.value,
+    rolling: rolling || collapsing,
     current: width.value,
   });
   if (lastWidth === width.value) return;
@@ -143,7 +185,19 @@ const finishRoll = () => {
   void reportWidth();
 };
 // settings 由 normalizeTaskbarLyricSettings 整体替换，其余源为标量 ref，无需 deep 遍历
-watch([expanded, maxWidth, primaryWidth, secondaryWidth, settings], reportWidth);
+watch([expanded, maxWidth, primaryWidth, secondaryWidth, settings, pinned], reportWidth);
+watch(lyricsCollapsed, (collapsed) => {
+  clearTimeout(collapseTimer);
+  collapsing = Boolean(collapsed);
+  if (!collapsed) {
+    void reportWidth();
+    return;
+  }
+  collapseTimer = setTimeout(() => {
+    collapsing = false;
+    void reportWidth();
+  }, LYRIC_COLLAPSE_MS);
+});
 watch(secondary, (value) => {
   if (!value) secondaryWidth.value = 0;
 });
@@ -155,7 +209,8 @@ const stateListener = (raw: unknown) => {
   const value = raw as TaskbarLyricState;
   receivedState = true;
   dark.value = Boolean(value.isDark);
-  anchor.value = value.anchor === 'right' ? 'right' : 'left';
+  anchor.value =
+    value.anchor === 'right' ? 'right' : value.anchor === 'center' ? 'center' : 'left';
   maxWidth.value = Number(value.maxWidth) || 400;
   settings.value = normalizeTaskbarLyricSettings(value.settings);
 };
@@ -177,13 +232,14 @@ onMounted(async () => {
 onUnmounted(() => {
   alive = false;
   clearTimeout(hoverLeaveTimer);
+  clearTimeout(collapseTimer);
   disposeState?.();
 });
 </script>
 <template>
   <section
     class="taskbar"
-    :class="{ dark, right: anchor === 'right' }"
+    :class="{ dark, right: anchor === 'right', center: anchor === 'center', pinned }"
     :style="colors"
     aria-label="任务栏歌词"
     @mouseenter="setHovered(true)"
@@ -252,7 +308,11 @@ onUnmounted(() => {
           </button>
         </div>
         <div class="details" :class="{ 'has-progress': playback && duration }">
-          <div class="copy" :aria-hidden="expanded">
+          <div
+            class="copy"
+            :class="{ collapsed: lyricsCollapsed }"
+            :aria-hidden="expanded || lyricsCollapsed"
+          >
             <!-- 两个钩子用来在换行动画期间冻结/解冻窗口宽度，规则见 lyricWidth.ts：
                  新文本一测量完就会把窗口收窄，而旧行还要再向上滑出 0.5s，
                  这段时间被裁掉的就是旧行的尾巴。 -->
@@ -269,7 +329,7 @@ onUnmounted(() => {
                   :time-ms="timeMs"
                   :end-time-ms="lineEndTimeMs"
                   :word-by-word="settings.wordByWord"
-                  :anchor="anchor"
+                  :anchor="lyricAnchor"
                   @width="primaryWidth = $event"
                 />
                 <TaskbarLyricLine
@@ -277,7 +337,7 @@ onUnmounted(() => {
                   class="secondary"
                   :text="secondary"
                   :time-ms="timeMs"
-                  :anchor="anchor"
+                  :anchor="lyricAnchor"
                   @width="secondaryWidth = $event"
                 />
               </div>
@@ -340,6 +400,16 @@ body,
 .taskbar.right {
   justify-content: flex-end;
 }
+.taskbar.center {
+  justify-content: center;
+}
+/* 居中档锁宽后窗口不再随内容收缩，内容从窗口左沿开始排：
+   宽度不变就不需要对中，换行与悬停都不会再把整条挪走。 */
+.taskbar.center.pinned {
+  justify-content: flex-start;
+}
+/* 控制条仍按原样从 0 展开（悬停时把歌词向右让开），
+   但窗口宽度已被锁住，所以让位只发生在窗口内部，整条不再移动。 */
 .taskbar.right .content,
 .taskbar.right .body {
   flex-direction: row-reverse;
@@ -392,11 +462,19 @@ body,
   position: relative;
   width: 100%;
   min-width: 0;
+  max-width: 100%;
   height: 100%;
   overflow: hidden;
   line-height: 1.2;
   opacity: 1;
-  transition: opacity 180ms ease;
+  /* 与控制条同一套曲线：max-width 收起/展开，opacity 同步淡出。 */
+  transition:
+    max-width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease;
+}
+.copy.collapsed {
+  max-width: 0;
+  opacity: 0;
 }
 /* 换行动画作用在整块歌词上，而不是每一行各自动画。
    两行放进同一个满高容器里滚动，裁切也只在这一层做——若每行各自在

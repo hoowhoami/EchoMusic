@@ -16,6 +16,7 @@ import type { PlayMode } from '../shared/playback';
 import type { PlayerRuntimeSession, PlayerSessionRestore } from '../shared/playerSession';
 import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
 import type { TaskbarLyricSettings, TaskbarLyricState } from '../shared/taskbar';
+import type { BootInfo } from '../shared/system';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
@@ -420,6 +421,9 @@ export interface IElectronAPI {
     command: (command: NowPlayingCommand) => void;
     invokeCommand: (command: NowPlayingCommand) => Promise<boolean>;
     onCommand: (func: (command: NowPlayingCommand) => void) => () => void;
+  };
+  system: {
+    getBootInfo: () => Promise<BootInfo>;
   };
   taskbarLyric: {
     getState: () => Promise<TaskbarLyricState>;

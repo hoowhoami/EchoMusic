@@ -1,7 +1,8 @@
 export interface TaskbarLyricSettings {
-  position: 'auto' | 'left' | 'right';
+  position: 'auto' | 'left' | 'center' | 'right';
   maxWidth: number;
   fontSize: number;
+  fontFamily: string;
   showCover: boolean;
   showTranslation: boolean;
   wordByWord: boolean;
@@ -11,6 +12,7 @@ export const DEFAULT_TASKBAR_LYRIC_SETTINGS: TaskbarLyricSettings = {
   position: 'auto',
   maxWidth: 400,
   fontSize: 14,
+  fontFamily: 'follow',
   showCover: true,
   showTranslation: true,
   wordByWord: true,
@@ -27,11 +29,15 @@ export function normalizeTaskbarLyricSettings(input: unknown = {}): TaskbarLyric
       ? Math.round(Math.min(max, Math.max(min, input)))
       : fallback;
   return {
-    position: ['auto', 'left', 'right'].includes(value.position ?? '')
+    position: ['auto', 'left', 'center', 'right'].includes(value.position ?? '')
       ? value.position!
       : defaults.position,
     maxWidth: number(value.maxWidth, defaults.maxWidth, 160, 800),
     fontSize: number(value.fontSize, defaults.fontSize, 11, 22),
+    fontFamily:
+      typeof value.fontFamily === 'string' && value.fontFamily.trim()
+        ? value.fontFamily.trim()
+        : defaults.fontFamily,
     showCover: typeof value.showCover === 'boolean' ? value.showCover : defaults.showCover,
     showTranslation:
       typeof value.showTranslation === 'boolean' ? value.showTranslation : defaults.showTranslation,
@@ -58,7 +64,7 @@ export interface TaskbarLyricState {
   enabled: boolean;
   visible: boolean;
   isDark: boolean;
-  anchor: 'left' | 'right';
+  anchor: 'left' | 'center' | 'right';
   maxWidth: number;
   settings: TaskbarLyricSettings;
 }
@@ -69,12 +75,24 @@ export function resolveTaskbarLyricRegion(
 ) {
   if (!layout.available || !Number.isFinite(layout.scaleFactor) || layout.scaleFactor <= 0)
     return null;
+  // center 也要先落到某一块空闲区上：两块空闲区中间隔着任务栏按钮，
+  // 没法跨簇居中，只能在选中那一块里居中。
   const side =
-    settings.position === 'auto'
+    settings.position === 'auto' || settings.position === 'center'
       ? layout.centered && layout.left.width >= layout.right.width
         ? 'left'
         : 'right'
       : settings.position;
+  /**
+   * 内容在空闲区里的横向偏移。center 取正中，并夹在两侧 8px 内边距之间，
+   * 空闲区只比内容宽一点时也不会贴到任务栏按钮上。
+   */
+  const alignOffset = (anchor: 'left' | 'center' | 'right', available: number, content: number) => {
+    if (anchor === 'right') return available - content - 8;
+    if (anchor === 'center')
+      return Math.max(8, Math.min(available - content - 8, (available - content) / 2));
+    return 8;
+  };
   const resolveSide = (regionSide: 'left' | 'right') => {
     const rect = layout[regionSide];
     // 可用区域与内容锚定分开：回退到另一块空闲区时仍保留用户选择的对齐方向。
@@ -87,7 +105,7 @@ export function resolveTaskbarLyricRegion(
     return {
       anchor,
       bounds: {
-        x: Math.round(rect.x / scale + (anchor === 'right' ? rect.width / scale - width - 8 : 8)),
+        x: Math.round(rect.x / scale + alignOffset(anchor, rect.width / scale, width)),
         y: Math.round(rect.y / scale),
         width,
         height,

@@ -40,8 +40,10 @@ import {
   extractSearchTotal,
   getAlbumCardProps,
   getArtistCardProps,
+  getLongAudioCardProps,
   getPlaylistCardProps,
   replaceResultsByType as applyResultsByType,
+  resolveSearchRequest,
   SEARCH_PAGE_SIZE,
   TAB_SEARCH_TYPES,
   type SearchTabType,
@@ -77,6 +79,7 @@ const hotSearchCategories = ref<SearchHotCategory[]>([]);
 const songResults = ref<Song[]>([]);
 const playlistResults = ref<PlaylistMeta[]>([]);
 const albumResults = ref<AlbumMeta[]>([]);
+const longaudioResults = ref<AlbumMeta[]>([]);
 const artistResults = ref<ArtistMeta[]>([]);
 const lyricResults = ref<Song[]>([]);
 const mvResults = ref<SearchMvCardProps[]>([]);
@@ -84,6 +87,7 @@ const resultRefs = {
   songResults,
   playlistResults,
   albumResults,
+  longaudioResults,
   artistResults,
   lyricResults,
   mvResults,
@@ -93,6 +97,7 @@ const paginationState = reactive<Record<SearchTabType, SearchPaginationState>>({
   song: createSearchPaginationState(),
   special: createSearchPaginationState(),
   album: createSearchPaginationState(),
+  longaudio: createSearchPaginationState(),
   author: createSearchPaginationState(),
   lyric: createSearchPaginationState(),
   mv: createSearchPaginationState(),
@@ -335,7 +340,8 @@ const applyPaginationState = (
 };
 
 const fetchSearchPage = async (keywords: string, type: SearchTabType, page = 1) => {
-  const response = await search(keywords, type, page, SEARCH_PAGE_SIZE);
+  const request = resolveSearchRequest(type);
+  const response = await search(keywords, request.type, page, SEARCH_PAGE_SIZE, request.category);
   const lists = extractSearchLists(response);
   const total = extractSearchTotal(response);
   return { lists, total };
@@ -347,6 +353,7 @@ const clearSearchResults = () => {
   songResults.value = [];
   playlistResults.value = [];
   albumResults.value = [];
+  longaudioResults.value = [];
   artistResults.value = [];
   lyricResults.value = [];
   mvResults.value = [];
@@ -477,6 +484,9 @@ const playlistCards = computed(() =>
   playlistResults.value.map((entry) => getPlaylistCardProps(entry)),
 );
 const albumCards = computed(() => albumResults.value.map((entry) => getAlbumCardProps(entry)));
+const longaudioCards = computed(() =>
+  longaudioResults.value.map((entry) => getLongAudioCardProps(entry)),
+);
 const artistCards = computed(() => artistResults.value.map((entry) => getArtistCardProps(entry)));
 const mvCards = computed(() => mvResults.value);
 
@@ -553,7 +563,7 @@ onBeforeUnmount(() => {
         :has-searched="hasSearched"
         :keyword="currentSearchKeyword"
         :show-pinned-tabs="showPinnedTabs"
-        :tabs="['单曲', '歌单', '专辑', '歌手', '歌词', 'MV']"
+        :tabs="['单曲', '歌单', '专辑', '听书', '歌手', '歌词', 'MV']"
         @update:active-tab-index="selectSearchTab"
       />
 
@@ -672,9 +682,38 @@ onBeforeUnmount(() => {
 
         <div v-else-if="activeTabIndex === 3" class="motion-content-enter">
           <SearchGridResultsPanel
+            :items="longaudioCards"
+            :loading="paginationState.longaudio.loading && !paginationState.longaudio.loaded"
+            :active="activeTabIndex === 3"
+            :item-min-width="180"
+            :item-aspect-ratio="1"
+            :item-chrome-height="66"
+            :gap="20"
+            key-field="id"
+          >
+            <template #default="{ item }">
+              <AlbumCard
+                :id="item.id"
+                :name="item.name"
+                :cover-url="item.coverUrl"
+                :artist="item.artist"
+                :subtitle="item.subtitle"
+              />
+            </template>
+          </SearchGridResultsPanel>
+          <SearchLoadMoreStatus
+            :active-pagination="activePagination"
+            :has-items="longaudioResults.length > 0"
+            :set-sentinel-ref="setLoadMoreSentinelRef"
+            @retry="loadMoreActiveResults"
+          />
+        </div>
+
+        <div v-else-if="activeTabIndex === 4" class="motion-content-enter">
+          <SearchGridResultsPanel
             :items="artistCards"
             :loading="paginationState.author.loading && !paginationState.author.loaded"
-            :active="activeTabIndex === 3"
+            :active="activeTabIndex === 4"
             :item-min-width="180"
             :item-aspect-ratio="1"
             :item-chrome-height="68"
@@ -699,7 +738,7 @@ onBeforeUnmount(() => {
           />
         </div>
 
-        <div v-else-if="activeTabIndex === 4" class="motion-content-enter">
+        <div v-else-if="activeTabIndex === 5" class="motion-content-enter">
           <SearchSongResultsPanel
             ref="lyricResultsPanelRef"
             :active-song-id="activeSongId"
@@ -731,7 +770,7 @@ onBeforeUnmount(() => {
           <SearchGridResultsPanel
             :items="mvCards"
             :loading="paginationState.mv.loading && !paginationState.mv.loaded"
-            :active="activeTabIndex === 5"
+            :active="activeTabIndex === 6"
             :item-min-width="220"
             :item-aspect-ratio="1.78"
             :item-chrome-height="66"
