@@ -1,7 +1,7 @@
 import { BrowserWindow, Menu, nativeTheme, screen } from 'electron';
 import { join } from 'node:path';
 import { ipcRegistry } from './ipc/registry';
-import { getMainWindow, showMainWindow } from './window';
+import { getMainWindow, quitApplication, showMainWindow } from './window';
 import { getMainAppSettings, setMainAppSetting } from './storage/settings';
 import { getNativeTaskbarLyric, type NativeTaskbarLyricSession } from './native/platform';
 import {
@@ -242,6 +242,17 @@ async function createBar(): Promise<void> {
           void showMainWindow();
         },
       },
+      { type: 'separator' },
+      {
+        // 歌词窗口挂在任务栏上，没有关闭按钮，这里给一个出口。
+        // 走 quitApplication 而不是裸 app.quit()，让 isQuitting 先置位，
+        // 否则关闭主窗口的拦截逻辑会把退出当成「收进托盘」。
+        label: '关闭 EchoMusic',
+        click: () => {
+          quitApplication();
+        },
+      },
+      { type: 'separator' },
       {
         label: '关闭任务栏歌词',
         click: () => {
