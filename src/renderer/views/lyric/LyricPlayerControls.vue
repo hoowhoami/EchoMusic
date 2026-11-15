@@ -16,6 +16,7 @@ import { useDeferredSeek } from '@/composables/useDeferredSeek';
 import { usePlaybackProgressStatus } from '@/composables/usePlaybackProgressStatus';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
+import { useOverlayToggles } from '@/composables/useOverlayToggles';
 import { useToastStore } from '@/stores/toast';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -54,6 +55,8 @@ import {
   iconList,
   iconPlaylistAdd,
   iconTypography,
+  iconLayoutBottombar,
+  iconImage,
   iconMessageCircle,
   iconShare,
   iconShirt,
@@ -73,6 +76,17 @@ const emit = defineEmits<{
 
 const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
+const overlayToggles = useOverlayToggles();
+/** 桌面层歌词的当前形态：桌面歌词或动态壁纸，两者互斥。 */
+const desktopSurfaceActive = computed(
+  () => overlayToggles.wallpaperEnabled.value || desktopLyricStore.settings.enabled,
+);
+const desktopSurfaceHint = computed(() => {
+  if (overlayToggles.desktopSurfaceLocked.value) return '刚切换过，请稍候';
+  if (overlayToggles.wallpaperEnabled.value) return '关闭动态歌词壁纸';
+  if (desktopLyricStore.settings.enabled) return '切换到动态歌词壁纸';
+  return '开启桌面歌词';
+});
 const toastStore = useToastStore();
 const outputStore = useOutputStore();
 const slots = useSlots();
@@ -398,23 +412,36 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   },
   {
     id: 'desktop-lyric',
-    title: '桌面歌词',
-    icon: iconTypography as IconifyIcon,
-    tooltip: desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词',
+    // 桌面歌词与动态壁纸合成一个按钮：图标和提示跟着当前形态走。
+    title: overlayToggles.wallpaperEnabled.value ? '动态歌词壁纸' : '桌面歌词',
+    icon: (overlayToggles.wallpaperEnabled.value ? iconImage : iconTypography) as IconifyIcon,
+    tooltip: desktopSurfaceHint.value,
     defaultPlacement: 'right',
     order: 50,
     visible: true,
-    active: desktopLyricStore.settings.enabled,
-    badge: settingStore.showDesktopLyricStatus
-      ? desktopLyricStore.settings.enabled
-        ? 'ON'
-        : 'OFF'
-      : desktopLyricStore.settings.enabled
-        ? 'ON'
-        : 'OFF',
-    badgeTitle: '桌面歌词',
+    active: desktopSurfaceActive.value,
+    badge: desktopSurfaceActive.value ? 'ON' : 'OFF',
+    badgeTitle: overlayToggles.wallpaperEnabled.value ? '动态歌词壁纸' : '桌面歌词',
     badgeDefaultVisible: settingStore.showDesktopLyricStatus,
-    onClick: toggleDesktopLyric,
+    onClick: () => void overlayToggles.cycleDesktopSurface(),
+  },
+  {
+    id: 'taskbar-lyric',
+    title: '任务栏歌词',
+    icon: iconLayoutBottombar as IconifyIcon,
+    tooltip: overlayToggles.taskbarLocked.value
+      ? '刚切换过，请稍候'
+      : overlayToggles.taskbarEnabled.value
+        ? '关闭任务栏歌词'
+        : '开启任务栏歌词',
+    defaultPlacement: 'right',
+    order: 51,
+    visible: overlayToggles.supported,
+    active: overlayToggles.taskbarEnabled.value,
+    badge: overlayToggles.taskbarEnabled.value ? 'ON' : 'OFF',
+    badgeTitle: '任务栏歌词',
+    badgeDefaultVisible: false,
+    onClick: () => void overlayToggles.toggleTaskbar(),
   },
   {
     id: 'cast',

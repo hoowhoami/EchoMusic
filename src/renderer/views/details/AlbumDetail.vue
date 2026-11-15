@@ -4,7 +4,7 @@ import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'album-detail' });
 import { ref, shallowRef, onMounted, onActivated, onBeforeUnmount, computed, watch } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useRouteId } from '@/composables/useRouteId';
 import {
   getAlbumDetail,
@@ -59,6 +59,7 @@ import { PagedSongLoader } from '@/utils/PagedSongLoader';
 import { captureUserSession, userSessionSources } from '@/utils/userSession';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
+const route = useRoute();
 const router = useRouter();
 const { id: currentId, onIdChange } = useRouteId();
 const getAlbumId = () => currentId.value;
@@ -335,6 +336,10 @@ const fetchData = async () => {
       if (!meta?.id) return;
       album.value = meta;
       albumArtists.value = parseAlbumArtists(detailRaw);
+      // 从「听书」入口打开的书：登记成书并记住总章数，之后任何入口播放它的章节都算这本书
+      if (String(route.query.category ?? '') === '2') {
+        playerStore.registerResumeBook(String(meta.id));
+      }
     })
     .catch((e) => {
       if (!isCurrent()) return;

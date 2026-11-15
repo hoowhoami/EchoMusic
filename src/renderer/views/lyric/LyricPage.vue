@@ -1,6 +1,20 @@
 <script setup lang="ts">
 defineOptions({ name: 'lyric-page' });
 
+// 壁纸窗口复用同一套歌词页：presentation 为 'wallpaper' 时只保留画面，隐藏全部操作控件
+const props = defineProps<{
+  presentation?: 'host' | 'wallpaper';
+  /** 壁纸「仅歌词」模式：背景压成半透明黑，歌词直接浮在桌面壁纸上。 */
+  clearBackground?: boolean;
+  /** 壁纸「仅歌词」：是否叠加压暗层（对应壁纸设置里的布纹压暗开关，关掉就完全不压黑）。 */
+  dimWallpaper?: boolean;
+  /** 壁纸窗口使用：写真皮肤的歌词收起状态由播放页决定。 */
+  portraitCollapsed?: boolean;
+  /** 壁纸配色自带的歌词颜色；空值表示跟随皮肤设置。 */
+  lyricColor?: string;
+}>();
+const isWallpaper = computed(() => props.presentation === 'wallpaper');
+
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
@@ -9,6 +23,7 @@ import { useToastStore } from '@/stores/toast';
 import { useThemeStore } from '@/stores/theme';
 import { lyricPageColorVariables } from '@/theme/colors';
 import { usePlayerControls } from '@/composables/usePlayerControls';
+import { vTooltip } from '@/components/ui/tooltip';
 import { useLyricBackground } from './composables/useLyricBackground';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverDisplayUrl } from '@/utils/cover';
@@ -115,7 +130,6 @@ const viewMode = computed(() => {
   if (key === `${HOST_SKIN_PREFIX}amll`) return 'amll';
   return 'lyric';
 });
-
 // 模糊背景封面 URL（用较小尺寸节省内存）
 const blurCoverUrl = computed(() => {
   if (!settingStore.lyricPageBackgroundBlur || !displayCoverUrl.value) return '';
@@ -179,12 +193,18 @@ const backgroundStyle = computed(() => {
   return { backgroundColor: '#1a1d22' };
 });
 
+// 壁纸的「仅歌词」要露出系统桌面壁纸，页面不能自带不透明底色；
+// 写真皮肤原本把底色写在行内样式里，会把桌面盖成纯黑。
+const isClearWallpaper = computed(() => isWallpaper.value && props.clearBackground === true);
+
 const pageStyle = computed(() => ({
   ...lyricPageColorVariables(
     themeStore.accentColor,
     (isBuiltinSkin.value && backgroundStyle.value.backgroundColor) || '#171718',
   ),
-  ...(isBuiltinSkin.value && viewMode.value === 'portrait' ? backgroundStyle.value : {}),
+  ...(isBuiltinSkin.value && viewMode.value === 'portrait' && !isClearWallpaper.value
+    ? backgroundStyle.value
+    : {}),
 }));
 
 // 设置 Drawer：'skins' 为换肤面板（点皮肤卡进入该皮肤设置），'settings' 直接进入当前皮肤设置
@@ -285,6 +305,7 @@ const isMouseActive = ref(false);
 let mouseActiveTimer: number | null = null;
 
 const handlePageMouseMove = () => {
+  if (isWallpaper.value) return;
   isMouseActive.value = true;
   if (mouseActiveTimer) window.clearTimeout(mouseActiveTimer);
   mouseActiveTimer = window.setTimeout(() => {
@@ -442,6 +463,8 @@ onUnmounted(() => {
     :class="{
       'is-portrait': isBuiltinSkin && viewMode === 'portrait',
       'is-plugin-page': !!pluginPage,
+      'is-clear-wallpaper': isWallpaper && props.clearBackground,
+      'is-texture-dim': isWallpaper && props.clearBackground && props.dimWallpaper !== false,
     }"
     :style="pageStyle"
     @mousemove="handlePageMouseMove"
@@ -478,7 +501,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Always the lyric overlay header, not MainLayout's TitleBar. -->
-    <LyricPageTitlebar v-if="titlebar === 'host'" @close="closeLyricPage" />
+    <LyricPageTitlebar v-if="titlebar === 'host' && !isWallpaper" @close="closeLyricPage" />
 
     <!-- 弹幕层：对所有皮肤统一渲染 -->
     <BarrageLayer
@@ -507,7 +530,7 @@ onUnmounted(() => {
 
     <!-- 自定义皮肤右侧歌词工具按钮 -->
     <div
-      v-if="pluginPage && pluginTools === 'host'"
+      v-if="pluginPage && pluginTools === 'host' && !isWallpaper"
       class="lyric-page-tools no-drag"
       :style="{
         opacity: isContentHovered ? 1 : 0,
@@ -620,9 +643,12 @@ onUnmounted(() => {
               opacity: isCollapsed && !isMouseActive ? 0 : 1,
               pointerEvents: isCollapsed && !isMouseActive ? 'none' : 'auto',
             }"
-            :aria-expanded="!portraitModeRef.isLyricCollapsed"
-            :tooltip="portraitModeRef.isLyricCollapsed ? '展开歌词' : '收起歌词'"
-            tooltip-side="bottom"
+            :aria-label="portraitModeRef.isLyricCollapsed ? '展开歌词' : '收起歌词'"
+            v-tooltip="{
+              content: portraitModeRef.isLyricCollapsed ? '展开歌词' : '收起歌词',
+              side: 'bottom',
+              mode: 'always',
+            }"
             @click="portraitModeRef.handleCollapseClick()"
           >
             <Icon
@@ -691,10 +717,15 @@ onUnmounted(() => {
           @mouseenter="handleContentEnter"
           @mouseleave="handleContentLeave"
         >
-          <CoverMode v-if="viewMode === 'cover'" />
-          <PortraitMode v-else-if="viewMode === 'portrait'" ref="portraitModeRef" />
-          <AmllMode v-else-if="viewMode === 'amll'" />
-          <LyricMode v-else />
+          <CoverMode v-if="viewMode === 'cover'" :color-override="lyricColor" />
+          <PortraitMode
+            v-else-if="viewMode === 'portrait'"
+            ref="portraitModeRef"
+            :forced-collapsed="isWallpaper ? portraitCollapsed : undefined"
+            :color-override="lyricColor"
+          />
+          <AmllMode v-else-if="viewMode === 'amll'" :color-override="lyricColor" />
+          <LyricMode v-else :color-override="lyricColor" />
         </div>
 
         <!-- 歌词同步警告 -->
@@ -704,6 +735,7 @@ onUnmounted(() => {
 
         <!-- 底部控制栏 -->
         <LyricPlayerControls
+          v-if="!isWallpaper"
           :style="{
             opacity:
               portraitModeRef?.isLyricCollapsed && settingStore.lyricCollapseHideControls ? 0 : 1,
@@ -745,7 +777,6 @@ onUnmounted(() => {
 
       <!-- 歌词工具按钮：从右上方固定起点排列 -->
       <div
-        v-if="!isCollapsed"
         class="lyric-page-tools no-drag"
         :style="{
           opacity: isContentHovered ? 1 : 0,
@@ -1165,6 +1196,57 @@ onUnmounted(() => {
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
     color var(--motion-duration-fast) var(--motion-ease-standard),
     box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+/* 壁纸「仅歌词」：保留当前皮肤自己的歌词排版，只把背景与封面摘掉。
+   放在样式表末尾以覆盖各皮肤自带的底色。 */
+.lyric-page.is-clear-wallpaper,
+.lyric-page.is-clear-wallpaper.is-portrait {
+  background: transparent;
+  text-shadow: 0 1px 10px rgb(0 0 0 / 45%);
+}
+
+/* 压暗层：歌词所在的中部约 50%，越往屏幕四周越暗。
+   与布纹压暗是同一组效果，关掉布纹压暗时这里也不再压黑，桌面原样露出来。 */
+.lyric-page.is-clear-wallpaper.is-texture-dim,
+.lyric-page.is-clear-wallpaper.is-texture-dim.is-portrait {
+  background: radial-gradient(
+    120% 90% at 50% 50%,
+    rgb(0 0 0 / 55%) 0%,
+    rgb(0 0 0 / 62%) 42%,
+    rgb(0 0 0 / 82%) 78%,
+    rgb(0 0 0 / 94%) 100%
+  );
+}
+
+.lyric-page.is-clear-wallpaper .lyric-background {
+  display: none;
+}
+
+/* AMLL 皮肤本身是「整列靠左、每行文字左对齐」（Apple Music 原样）。
+   摘掉封面侧栏后这一列会贴到屏幕左边，这里把它收成一栏并居中放置。
+   宽度跟随视口：跟随播放页时歌词栏约占 62%，这里沿用同一比例；
+   上下限只为极端尺寸兜底（小屏不至于挤成一列，超宽屏不至于拉成一条长句）。 */
+.lyric-page.is-clear-wallpaper :deep(.amll-mode) {
+  justify-content: center;
+  max-width: none;
+  padding: 0 clamp(16px, 2.5vw, 48px);
+}
+
+.lyric-page.is-clear-wallpaper :deep(.amll-player-area) {
+  flex: 0 1 clamp(360px, 62vw, 1080px);
+  max-width: clamp(360px, 62vw, 1080px);
+}
+
+/* 封面、写真背景、歌曲信息栏都不属于歌词本身。
+   写真皮肤还有一层全屏压暗遮罩，背景摘掉以后它就只剩一块黑，一并隐藏。 */
+.lyric-page.is-clear-wallpaper :deep(.cover-side),
+.lyric-page.is-clear-wallpaper :deep(.amll-side),
+.lyric-page.is-clear-wallpaper :deep(.portrait-backdrop),
+.lyric-page.is-clear-wallpaper :deep(.portrait-media-stack),
+.lyric-page.is-clear-wallpaper :deep(.portrait-overlay),
+.lyric-page.is-clear-wallpaper :deep(.portrait-blur-overlay) {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -16,6 +16,7 @@ import { consumePlayedQueuedNextTrack } from '../../../shared/playbackQueueExecu
 import type { PluginAudioSourceTransformStage } from '@/plugins/audioSource';
 import { isPlayableSong } from '@/utils/song';
 import type { PlayerState } from './state';
+import { resolveResumeEntry, resolveResumePosition } from './resume';
 import { normalizePlayerErrorPayload, type PlayerEngine } from '@/utils/player';
 import type { usePlaylistStore } from '../playlist';
 import type { useSettingStore } from '../setting';
@@ -1548,7 +1549,22 @@ export const createPlaybackManager = (
     state.currentResolvedAudioEffect = 'none';
     state.currentResolvedAudioLoudness = null;
     state.currentResolvedSourceKind = track.source === 'cloud' ? 'cloud' : 'catalog';
-    state.currentTime = 0;
+    // 有声书/播客这类长内容接着上次的位置播，普通歌曲仍从头开始
+    const resumeEntry = resolveResumeEntry(state, {
+      queueId:
+        state.currentSourceQueueId ??
+        playlistStore.activeQueue?.id ??
+        playlistStore.activeQueueId ??
+        null,
+      playMode: state.playMode,
+      albumId: track.albumId ?? null,
+    });
+    state.currentTime = resolveResumePosition(
+      state,
+      resolvedId,
+      Number(track.duration) || 0,
+      resumeEntry,
+    );
     state.currentTimeUpdatedAt = Date.now();
     state.duration = 0;
     beginPlaybackIntent(state, {
@@ -1692,6 +1708,13 @@ export const createPlaybackManager = (
     try {
       await engine.setSource(state.currentPlaybackSource ?? resolved.url, { force: true });
       if (requestSeq !== state.playbackRequestSeq) return;
+      if (state.currentTime > 0.5) {
+        try {
+          await engine.seek(state.currentTime);
+        } catch (error) {
+          logger.warn('PlayerPlayback', 'Resume position seek failed', error);
+        }
+      }
       if (
         options?.fmCandidate &&
         options.fmCandidate.sessionEpoch !== playlistStore.personalFmSessionEpoch

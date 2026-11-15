@@ -2,7 +2,8 @@ import type { Component } from 'vue';
 import type { PluginIcon } from '@/plugins/registry';
 
 export function getPlayerBarBadgeTone(key: string, value: string | null) {
-  if (key === 'desktop-lyric' || key === 'cast') {
+  // 桌面层开关（桌面歌词 / 任务栏歌词 / 动态壁纸）与投屏：开着就该是强调色 + ON 徽标。
+  if (key === 'desktop-lyric' || key === 'taskbar-lyric' || key === 'cast') {
     return value === 'OFF' ? 'muted' : 'accent';
   }
   return 'neutral';

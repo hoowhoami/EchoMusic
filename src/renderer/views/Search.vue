@@ -693,6 +693,7 @@ onBeforeUnmount(() => {
           >
             <template #default="{ item }">
               <AlbumCard
+                :query="{ category: '2' }"
                 :id="item.id"
                 :name="item.name"
                 :cover-url="item.coverUrl"

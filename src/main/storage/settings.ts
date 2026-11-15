@@ -4,6 +4,11 @@ import { DEFAULT_DEVTOOLS_DEBUG_PORT, normalizeDevToolsDebugPort } from '../../s
 import { normalizeClosePreferences, type ClosePreferences, type ThemeMode } from '../../shared/app';
 import type { DesktopLyricSettings } from '../../shared/desktopLyric';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../shared/desktopLyric';
+import {
+  DEFAULT_WALLPAPER_SETTINGS,
+  normalizeWallpaperSettings,
+  type WallpaperSettings,
+} from '../../shared/wallpaper';
 import type { LogSettings } from '../../shared/logging';
 import { DEFAULT_LOG_SETTINGS } from '../../shared/logging';
 import { getKvStorage } from './kv';
@@ -46,6 +51,8 @@ export type MainAppSettings = ClosePreferences & {
   taskbarProgress: boolean;
   taskbarPlayerEnabled: boolean;
   taskbarLyric: TaskbarLyricSettings;
+  wallpaperEnabled: boolean;
+  wallpaper: WallpaperSettings;
   windowState: MainWindowState;
   miniPlayerWindowState: MiniPlayerWindowState;
 };
@@ -81,6 +88,8 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   taskbarProgress: true,
   taskbarPlayerEnabled: false,
   taskbarLyric: { ...DEFAULT_TASKBAR_LYRIC_SETTINGS },
+  wallpaperEnabled: false,
+  wallpaper: { ...DEFAULT_WALLPAPER_SETTINGS },
   windowState: {
     ...MAIN_WINDOW_DEFAULT_SIZE,
     isMaximized: false,
@@ -117,6 +126,7 @@ export const getMainAppSettings = (): MainAppSettings => {
     ...merged,
     ...normalizeClosePreferences(merged),
     taskbarLyric: normalizeTaskbarLyricSettings(saved?.taskbarLyric),
+    wallpaper: normalizeWallpaperSettings(saved?.wallpaper),
     windowState: {
       ...DEFAULT_MAIN_APP_SETTINGS.windowState,
       ...(saved?.windowState ?? {}),

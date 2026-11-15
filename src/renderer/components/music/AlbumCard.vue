@@ -10,6 +10,7 @@ interface Props {
   publishTime?: string;
   subtitle?: string;
   coverSize?: number;
+  query?: Record<string, string>;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -18,7 +19,7 @@ const props = withDefaults(defineProps<Props>(), {
 const router = useRouter();
 
 const handleClick = () => {
-  router.push({ name: 'album-detail', params: { id: props.id } });
+  router.push({ name: 'album-detail', params: { id: props.id }, query: props.query });
 };
 </script>
 

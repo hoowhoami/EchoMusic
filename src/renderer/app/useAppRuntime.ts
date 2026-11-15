@@ -22,7 +22,10 @@ export type AppPlayer = ReturnType<(typeof import('@/stores/player'))['usePlayer
 type SyncGlobalShortcuts = (typeof import('@/utils/shortcuts'))['syncGlobalShortcuts'];
 
 /** Startup ordering and bridges owned by the main renderer, including Mini and taskbar sync. */
-export function useAppRuntime(isMiniPlayerRoute: Readonly<Ref<boolean>>) {
+export function useAppRuntime(
+  isMiniPlayerRoute: Readonly<Ref<boolean>>,
+  isWallpaperRoute?: Readonly<Ref<boolean>>,
+) {
   const router = useRouter();
   const settings = useSettingStore();
   const updateStore = useUpdateStore();
@@ -139,9 +142,12 @@ export function useAppRuntime(isMiniPlayerRoute: Readonly<Ref<boolean>>) {
     });
     lifetime.add(() => setOpenThemesHandler(null));
     appearance.apply();
-    void initDesktopLyricSync().then(lifetime.add);
-    // Taskbar lyrics consume this shared now-playing channel; no separate publisher is needed.
-    void initNowPlayingSync().then(lifetime.add);
+    // 壁纸窗口是纯消费者：它没有播放引擎，不该往主进程推歌词和播放状态。
+    if (!isWallpaperRoute?.value) {
+      void initDesktopLyricSync().then(lifetime.add);
+      // Taskbar lyrics consume this shared now-playing channel; no separate publisher is needed.
+      void initNowPlayingSync().then(lifetime.add);
+    }
     void initMiniPlayerSync().then(lifetime.add);
     await appearance.initWindowBackground();
     if (!lifetime.active) return;

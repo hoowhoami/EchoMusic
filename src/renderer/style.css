@@ -203,6 +203,13 @@
     background-color: transparent !important;
   }
 
+  html.desktop-wallpaper-window,
+  html.desktop-wallpaper-window body,
+  html.desktop-wallpaper-window #app {
+    background: transparent !important;
+    background-color: transparent !important;
+  }
+
   input,
   textarea,
   select {
