@@ -294,7 +294,32 @@ test('mixSongId stands in for albumAudioId when the queue entry lacks it', async
     },
     { forceReload: true },
   );
-  assert.equal(calls[0]?.albumAudioId, 27602112);
+  assert.equal(calls[0]?.albumAudioId, '27602112');
+});
+
+test("a '0' albumAudioId placeholder falls back to mixSongId", async () => {
+  const { resolver, calls } = setupResolver({
+    privilegesByUrl: {
+      default: { ...removedPayload, data: [{ ...removedPayload.data[0], album_audio_id: 0 }] },
+    },
+    getSongUrl: async () => ({
+      status: 1,
+      hash: OLD_HASH,
+      url: ['https://audio.example/same.mp3'],
+    }),
+  });
+  await resolver.resolveAudioUrl(
+    {
+      id: track.id,
+      hash: track.hash,
+      albumId: track.albumId,
+      title: track.title,
+      albumAudioId: '0',
+      mixSongId: 27602112,
+    },
+    { forceReload: true },
+  );
+  assert.equal(calls[0]?.albumAudioId, '27602112');
 });
 
 test('healthy catalog rights never trigger the tracker probe', async () => {

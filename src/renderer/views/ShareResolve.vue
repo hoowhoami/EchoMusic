@@ -14,7 +14,7 @@ import { getSongPrivilegeLite, searchLyric } from '@/api/music';
 import { getPlaylistDetail } from '@/api/playlist';
 import Button from '@/components/ui/Button.vue';
 import { iconArrowLeft, iconHome, iconRefreshCw, iconShare, iconTriangleAlert } from '@/icons';
-import { extractFirstObject } from '@/utils/extractors';
+import { extractFirstObject, extractList } from '@/utils/extractors';
 import { mapAlbumDetailMeta, mapArtistDetailMeta, mapPlaylistMeta } from '@/utils/mappers';
 import { readPositiveId } from '@/utils/mappers/shared';
 import { isSongHashId, readShareDetailQuery } from '@/utils/share';
@@ -254,11 +254,18 @@ const buildSongDetailQuery = (hash: string, record: Record<string, unknown>) => 
 const normalizeSongTitle = (value: string) =>
   value.toLowerCase().replace(/[\s\-—–_·・,，.。!！?？'"“”‘’()（）[\]【】《》<>]/g, '');
 
-const readLyricCandidate = (payload: unknown) => {
+type LyricCandidate = {
+  song: string;
+  singer: string;
+  duration: number;
+};
+
+const readLyricCandidate = (payload: unknown): LyricCandidate | null => {
   if (!isRecord(payload)) return null;
   const data = isRecord(payload.data) ? payload.data : null;
-  const list = [data?.candidates, payload.candidates, data?.info, payload.info].find((value) =>
-    Array.isArray(value),
+  // 与 lyric store 的候选解析保持一致：空 candidates 要让位给 info 等后备数组。
+  const list = [data?.candidates, payload.candidates, data?.info, payload.info].find(
+    (value) => Array.isArray(value) && value.length > 0,
   ) as unknown[] | undefined;
   for (const item of list ?? []) {
     if (!isRecord(item)) continue;
@@ -271,13 +278,6 @@ const readLyricCandidate = (payload: unknown) => {
     };
   }
   return null;
-};
-
-const readAlbumSongList = (payload: unknown) => {
-  if (!isRecord(payload)) return [];
-  const data = isRecord(payload.data) ? payload.data : null;
-  const list = Array.isArray(data?.songs) ? data.songs : payload.songs;
-  return Array.isArray(list) ? list : [];
 };
 
 /**
@@ -298,45 +298,65 @@ const enrichRemovedSongRecord = async (
     base.audio_name,
     base.songname,
   );
-  if (existingTitle) return record;
+  const existingAlbumAudioId = readPositiveId(
+    record.album_audio_id,
+    record.mixsongid,
+    base.album_audio_id,
+    base.mixsongid,
+  );
+  // 身份完整时不做额外请求；只缺 album_audio_id 时仍尝试按专辑映射。
+  if (existingTitle && existingAlbumAudioId) return record;
 
-  let candidate: ReturnType<typeof readLyricCandidate> = null;
-  try {
-    candidate = readLyricCandidate(await searchLyric({ hash, man: 'yes' }));
-  } catch (error) {
-    logger.debug('ShareResolve', 'Removed song lyric lookup failed:', error);
+  let title = existingTitle;
+  let singer = readFirstText(
+    record.singername,
+    record.author_name,
+    base.author_name,
+    base.singername,
+  );
+  let candidate: LyricCandidate | null = null;
+  if (!title) {
+    try {
+      candidate = readLyricCandidate(await searchLyric({ hash, man: 'yes' }));
+    } catch (error) {
+      logger.debug('ShareResolve', 'Removed song lyric lookup failed:', error);
+    }
+    if (!candidate) return record;
+    title = candidate.song;
+    singer = singer || candidate.singer;
   }
-  if (!candidate) return record;
 
   const enriched: Record<string, unknown> = {
     ...record,
-    name: candidate.song,
+    name: title,
     base: {
       ...base,
-      audio_name: candidate.song,
-      ...(candidate.singer ? { author_name: candidate.singer } : {}),
+      audio_name: title,
+      ...(singer ? { author_name: singer } : {}),
     },
-    ...(candidate.singer ? { singername: candidate.singer, author_name: candidate.singer } : {}),
+    ...(singer ? { singername: singer, author_name: singer } : {}),
   };
-  if (!albumId) return enriched;
+  if (!albumId || existingAlbumAudioId) return enriched;
 
   try {
-    const songs = readAlbumSongList(await getAlbumSongs(albumId, 1, 50));
-    const targetTitle = normalizeSongTitle(candidate.song);
+    const songs = extractList(await getAlbumSongs(albumId, 1, 50));
+    const targetTitle = normalizeSongTitle(title);
     let matched: Record<string, unknown> | null = null;
     let matchedDurationDelta = Number.POSITIVE_INFINITY;
     for (const item of songs) {
       if (!isRecord(item)) continue;
       const itemBase = readRecord(item, 'base');
-      const title = normalizeSongTitle(
+      const itemTitle = normalizeSongTitle(
         readFirstText(itemBase.audio_name, itemBase.songname, item.audio_name),
       );
-      if (!title || title !== targetTitle) continue;
-      // 同名曲目用时长挑最接近的一条（预告版/现场版常与正式版同名）
+      if (!itemTitle || itemTitle !== targetTitle) continue;
+      // 同名曲目用时长挑最接近的一条（预告版/现场版常与正式版同名）。
       const duration =
         Number(readFirstText(readRecord(item, 'audio_info').duration, itemBase.duration)) || 0;
       const delta =
-        candidate.duration > 0 && duration > 0 ? Math.abs(duration - candidate.duration) : 0;
+        candidate && candidate.duration > 0 && duration > 0
+          ? Math.abs(duration - candidate.duration)
+          : 0;
       if (!matched || delta < matchedDurationDelta) {
         matched = item;
         matchedDurationDelta = delta;
@@ -344,20 +364,20 @@ const enrichRemovedSongRecord = async (
     }
     if (matched) {
       const matchedBase = readRecord(matched, 'base');
-      const albumAudioId = readFirstText(
+      const albumAudioId = readPositiveId(
         matchedBase.album_audio_id,
         matchedBase.mixsongid,
         matched.album_audio_id,
       );
-      const enrichedBase = readRecord(enriched, 'base');
-      enriched.base = {
-        ...enrichedBase,
-        ...(albumAudioId ? { album_audio_id: albumAudioId } : {}),
-        ...(readFirstText(matchedBase.album_id)
-          ? { album_id: readFirstText(matchedBase.album_id) }
-          : {}),
-      };
-      if (albumAudioId) enriched.album_audio_id = albumAudioId;
+      const matchedAlbumId = readPositiveId(matchedBase.album_id, matched.album_id);
+      if (albumAudioId) {
+        enriched.base = {
+          ...readRecord(enriched, 'base'),
+          album_audio_id: albumAudioId,
+          ...(matchedAlbumId ? { album_id: matchedAlbumId } : {}),
+        };
+        enriched.album_audio_id = albumAudioId;
+      }
       const matchedAlbumInfo = readRecord(matched, 'album_info');
       if (Object.keys(matchedAlbumInfo).length > 0) enriched.album_info = matchedAlbumInfo;
       if (Array.isArray(matched.authors)) enriched.authors = matched.authors;
@@ -373,15 +393,20 @@ const resolveSong = async (id: string) => {
   const record = getSongPrivilegeRecord(await getSongPrivilegeLite(id, detailQuery.value.albumId));
   if (!record) return false;
   let query = buildSongDetailQuery(id, record);
-  if (!query.mixSongId || !query.title) {
+  if (!query.albumAudioId || !query.title) {
     const base = readRecord(record, 'base');
-    const albumId =
-      readText(detailQuery.value.albumId) ||
-      readFirstText(record.album_id, record.albumid, base.album_id, base.albumid);
+    const albumId = readPositiveId(
+      detailQuery.value.albumId,
+      record.album_id,
+      record.albumid,
+      base.album_id,
+      base.albumid,
+    );
     const enriched = await enrichRemovedSongRecord(id, albumId, record);
     if (enriched !== record) query = buildSongDetailQuery(id, enriched);
   }
-  if (!query.mixSongId || !query.title) return false;
+  const removedResource = Number(record._errno) === 6;
+  if (!query.mixSongId || !query.title || (removedResource && !query.albumAudioId)) return false;
   router.replace({
     name: 'song-detail',
     params: { id },
