@@ -112,33 +112,36 @@ const track = {
 const setupResolver = ({ privilegesByUrl, getSongUrl }) => {
   const calls = [];
   const ensureCalls = [];
-  const { createResolver } = compile('../src/renderer/stores/player/resolver.ts', {
-    '@/api/music': {
-      getSongPrivilegeLite: async () => ({ status: 1, data: [] }),
-      getSongUrl: async (hash, quality, ppageId, options) => {
-        calls.push({
-          hash,
-          quality,
-          ppageId,
-          albumId: options?.albumId,
-          albumAudioId: options?.albumAudioId,
-        });
-        return getSongUrl(hash, quality, ppageId);
+  const { createResolver, parseTrackMetadataFromPrivilege } = compile(
+    '../src/renderer/stores/player/resolver.ts',
+    {
+      '@/api/music': {
+        getSongPrivilegeLite: async () => ({ status: 1, data: [] }),
+        getSongUrl: async (hash, quality, ppageId, options) => {
+          calls.push({
+            hash,
+            quality,
+            ppageId,
+            albumId: options?.albumId,
+            albumAudioId: options?.albumAudioId,
+          });
+          return getSongUrl(hash, quality, ppageId, options);
+        },
       },
+      '@/utils/logger': { debug() {}, info() {}, warn() {} },
+      '@/utils/cover': cover,
+      '@/utils/song': song,
+      '@/utils/songQualityAccess': compile('../src/renderer/utils/songQualityAccess.ts', {
+        './accountVip': compile('../src/renderer/utils/accountVip.ts'),
+      }),
+      '@/plugins/audioSource': {
+        resolvePluginAudioSource: async () => null,
+        transformPluginAudioSource: async (_context, source) => source,
+      },
+      '@/services/cloudAudioIndex': { getCloudAudioSourceForSong: async () => null },
+      './utils': utils,
     },
-    '@/utils/logger': { debug() {}, info() {}, warn() {} },
-    '@/utils/cover': cover,
-    '@/utils/song': song,
-    '@/utils/songQualityAccess': compile('../src/renderer/utils/songQualityAccess.ts', {
-      './accountVip': compile('../src/renderer/utils/accountVip.ts'),
-    }),
-    '@/plugins/audioSource': {
-      resolvePluginAudioSource: async () => null,
-      transformPluginAudioSource: async (_context, source) => source,
-    },
-    '@/services/cloudAudioIndex': { getCloudAudioSourceForSong: async () => null },
-    './utils': utils,
-  });
+  );
   const resolver = createResolver(
     { audioEffect: 'none', currentTrackId: track.id },
     { refreshFavoriteSongIdentity() {} },
@@ -152,7 +155,7 @@ const setupResolver = ({ privilegesByUrl, getSongUrl }) => {
       captureAccessRequest: () => () => true,
     },
   );
-  return { resolver, calls, ensureCalls };
+  return { resolver, calls, ensureCalls, parseTrackMetadataFromPrivilege };
 };
 
 test('removed upstream resource is re-discovered through the tracker and playback proceeds', async () => {
@@ -182,12 +185,13 @@ test('removed upstream resource is re-discovered through the tracker and playbac
   assert.equal(result.failureReason, undefined);
 });
 
-test('tracker probe mapping back to the removed hash keeps the unsupported failure', async () => {
+test('tracker probe keeping the removed hash plays its urls as the standard fallback', async () => {
   const { resolver, calls, ensureCalls } = setupResolver({
     privilegesByUrl: { default: removedPayload },
     getSongUrl: async () => ({
       status: 1,
       hash: OLD_HASH,
+      volume: -10,
       url: ['https://audio.example/same.mp3'],
     }),
   });
@@ -206,8 +210,91 @@ test('tracker probe mapping back to the removed hash keeps the unsupported failu
     'only one tracker probe is attempted',
   );
   assert.deepEqual(ensureCalls, [OLD_HASH], 'no rights refresh without a new hash');
+  assert.equal(result.url, 'https://audio.example/same.mp3');
+  assert.equal(result.quality, '128');
+  assert.equal(result.loudness?.lufs, -10);
+  assert.equal(result.failureReason, undefined, 'the requested standard quality is audible');
+});
+
+test('tracker probe without urls keeps the unsupported failure', async () => {
+  const { resolver, calls, ensureCalls } = setupResolver({
+    privilegesByUrl: { default: removedPayload },
+    getSongUrl: async (_hash, quality) => {
+      if (quality === '') return { status: 1, hash: OLD_HASH, url: [] };
+      return { status: 1, url: ['https://audio.example/standard.mp3'] };
+    },
+  });
+  const result = await resolver.resolveAudioUrl({ ...track }, { forceReload: true });
+  assert.equal(calls.filter((call) => call.quality === '').length, 1, 'probe is not retried');
+  assert.deepEqual(ensureCalls, [OLD_HASH], 'no rights refresh without usable urls');
   assert.equal(result.url, '');
   assert.equal(result.failureReason, '歌曲不支持');
+});
+
+test('removed resource metadata does not clobber the retained album audio id', async () => {
+  const removedWithoutAudioId = {
+    ...removedPayload,
+    data: [{ ...removedPayload.data[0], album_audio_id: 0, id: 0, audio_id: 0 }],
+  };
+  const { resolver, calls, ensureCalls } = setupResolver({
+    privilegesByUrl: {
+      [OLD_HASH.toLowerCase()]: removedWithoutAudioId,
+      default: rediscoveredPayload,
+    },
+    getSongUrl: async (_hash, quality) => {
+      if (quality === '') {
+        return { status: 1, hash: NEW_HASH, url: ['https://audio.example/probe.mp3'] };
+      }
+      return { status: 1, url: ['https://audio.example/standard.mp3'] };
+    },
+  });
+  const target = { ...track, albumAudioId: '588704117' };
+  const result = await resolver.resolveAudioUrl(target, { forceReload: true });
+  assert.equal(
+    calls[0]?.albumAudioId,
+    '588704117',
+    'the probe keeps the id retained by the queue instead of the 0 placeholder',
+  );
+  assert.deepEqual(ensureCalls, [OLD_HASH, NEW_HASH.toLowerCase()]);
+  assert.equal(result.url, 'https://audio.example/standard.mp3');
+  assert.equal(target.albumAudioId, '588704117', 'metadata backfill leaves the identity intact');
+});
+
+test('resource ids skip zero placeholders and keep later valid candidates', () => {
+  const { parseTrackMetadataFromPrivilege } = setupResolver({
+    privilegesByUrl: { default: removedPayload },
+    getSongUrl: async () => ({ status: 1, url: [] }),
+  });
+  const metadata = parseTrackMetadataFromPrivilege({
+    data: [{ album_audio_id: 0, mixsongid: 27602112, id: 0, audio_id: 942642 }],
+  });
+  assert.equal(metadata.albumAudioId, '27602112');
+  assert.equal(metadata.mixSongId, '27602112');
+  assert.equal(metadata.songId, '942642');
+});
+
+test('mixSongId stands in for albumAudioId when the queue entry lacks it', async () => {
+  const { resolver, calls } = setupResolver({
+    privilegesByUrl: {
+      default: { ...removedPayload, data: [{ ...removedPayload.data[0], album_audio_id: 0 }] },
+    },
+    getSongUrl: async () => ({
+      status: 1,
+      hash: OLD_HASH,
+      url: ['https://audio.example/same.mp3'],
+    }),
+  });
+  await resolver.resolveAudioUrl(
+    {
+      id: track.id,
+      hash: track.hash,
+      albumId: track.albumId,
+      title: track.title,
+      mixSongId: 27602112,
+    },
+    { forceReload: true },
+  );
+  assert.equal(calls[0]?.albumAudioId, 27602112);
 });
 
 test('healthy catalog rights never trigger the tracker probe', async () => {

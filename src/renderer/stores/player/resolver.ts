@@ -65,6 +65,19 @@ const readMetadataNumber = (value: unknown): number | undefined => {
   return Number.isInteger(parsed) ? parsed : undefined;
 };
 
+// 正整数形式的资源 id。mediastore 对已下架资源会回传 album_audio_id=0 / id=0，
+// 这类占位值不能当作有效身份，否则会把队列里保留的 album_audio_id 覆盖掉。
+// 逐个候选值检查，避免第一个字段是 0 时漏掉后面仍然有效的 id。
+const readMetadataId = (...values: unknown[]) => {
+  for (const value of values) {
+    if (typeof value !== 'string' && typeof value !== 'number') continue;
+    const normalized = String(value).trim();
+    if (!/^\d+$/.test(normalized) || Number(normalized) <= 0) continue;
+    return normalized;
+  }
+  return '';
+};
+
 /** 从 tracker 响应中读取资源 hash（顶层优先，兼容 data 包一层的历史形态）。 */
 const readResponseHash = (payload: unknown): string => {
   const record = getRecord(payload);
@@ -77,11 +90,7 @@ export const parseTrackMetadataFromPrivilege = (payload: unknown): Partial<Song>
   if (!record) return {};
   const info = getRecord(record.info);
   const transParam = getRecord(record.trans_param ?? record.transParam);
-  const albumAudioId = readMetadataString(
-    record.album_audio_id,
-    record.albumAudioId,
-    record.mixsongid,
-  );
+  const albumAudioId = readMetadataId(record.album_audio_id, record.albumAudioId, record.mixsongid);
   const coverUrl = normalizeCoverUrl(
     readMetadataString(
       info.image,
@@ -114,8 +123,8 @@ export const parseTrackMetadataFromPrivilege = (payload: unknown): Partial<Song>
           album: readMetadataString(record.albumname, record.album_name),
         }
       : {}),
-    ...(readMetadataString(record.id, record.audio_id)
-      ? { songId: readMetadataString(record.id, record.audio_id) }
+    ...(readMetadataId(record.id, record.audio_id)
+      ? { songId: readMetadataId(record.id, record.audio_id) }
       : {}),
   };
 };
@@ -476,7 +485,9 @@ export const createResolver = (
     let catalogLoudness: ReturnType<typeof resolveTrackLoudness> = null;
     const getCatalogUrlOptions = () => ({
       albumId: catalogTrack.albumId,
-      albumAudioId: catalogTrack.albumAudioId,
+      // 酷狗曲库里 mixSongId 与 album_audio_id 同值；旧队列/插件来源可能只保留了
+      // mixSongId，tracker 重发现需要 album_audio_id 才能映射到现存文件。
+      albumAudioId: catalogTrack.albumAudioId || catalogTrack.mixSongId,
     });
 
     const syncTrackRelateGoods = (relateGoods: Song['relateGoods']) => {
@@ -629,18 +640,24 @@ export const createResolver = (
     // 复刻 next 的 refreshMissingCatalogResource 兼容：mediastore 对已被上游移除的资源
     // 返回资源级错误 _errno=6 且 relate_goods 为空，quality_vip 会把全部音质标成
     // “歌曲不支持”；但授权 tracker 仍可用保留的 album_audio_id 映射到现存文件。
-    // 先以空音质探测一次 tracker（服务端归一化为 128），拿到新的有效 hash 后重查权益，
-    // 再走正常音质候选计划。仅探测一次，失败则维持原兜底链不变；失败后 compatibilityMode
-    // 兜底可能以相同参数再请求一次（next 的 failCatalogRefresh 是直接跳出），属有意权衡。
-    const refreshMissingCatalogResource = async (): Promise<boolean> => {
-      if (!catalogHash) return false;
+    // 先以空音质探测一次 tracker（服务端归一化为 128）：
+    // - 拿到新的有效 hash：重查权益，继续正常音质候选计划；
+    // - hash 未变化但返回了可用地址：说明文件本身仍可访问，直接以标准音质兜底播放。
+    // 仅探测一次，失败则维持原兜底链不变；失败后 compatibilityMode 兜底可能以相同参数
+    // 再请求一次（next 的 failCatalogRefresh 是直接跳出），属有意权衡。
+    type MissingResourceRediscovery =
+      | { status: 'none' }
+      | { status: 'refreshed' }
+      | { status: 'recovered'; source: ResolvedAudioSource };
+    const refreshMissingCatalogResource = async (): Promise<MissingResourceRediscovery> => {
+      if (!catalogHash) return { status: 'none' };
       const source = getRecord(privilegePayload);
       const resource = getRecord(Array.isArray(source.data) ? source.data[0] : null);
-      if (Number(resource._errno) !== 6) return false;
+      if (Number(resource._errno) !== 6) return { status: 'none' };
       const goods = resource.relate_goods;
       // next 要求 relate_goods 是数组才继续判定（非数组直接放弃）；这里有意放宽为
       // “缺失或非数组同样视为无可用权益条目”，让字段形态异常的上游响应也能重发现。
-      if (Array.isArray(goods) && goods.length > 0) return false;
+      if (Array.isArray(goods) && goods.length > 0) return { status: 'none' };
       logger.warn(
         'PlayerResolver',
         'Catalog resource removed upstream, trying tracker re-discovery',
@@ -648,15 +665,38 @@ export const createResolver = (
       );
       try {
         const probeRes = await getSongUrl(catalogHash, '', undefined, getCatalogUrlOptions());
+        const loudness = rememberCatalogTrackLoudness(probeRes);
         const urls = resolveUrlsFromResponse(probeRes);
-        const hash = readResponseHash(probeRes);
-        // 映射回原 hash 说明 tracker 侧同样无可用资源，避免无意义的权益重查
-        if (!urls.length || !hash || hash.toLowerCase() === catalogHash.toLowerCase()) {
+        if (!urls.length) {
           logger.debug('PlayerResolver', 'Tracker re-discovery found no replacement resource', {
             track: summarizeSong(catalogTrack),
-            urls: urls.length,
+            urls: 0,
           });
-          return false;
+          return { status: 'none' };
+        }
+        const hash = readResponseHash(probeRes);
+        if (!hash || hash.toLowerCase() === catalogHash.toLowerCase()) {
+          // mediastore 只是丢了资源索引，tracker 仍按原 hash 返回了可播地址。
+          // 没有新身份可重查权益，直接把这批地址当作标准音质兜底。
+          logger.warn(
+            'PlayerResolver',
+            'Tracker kept the original hash but returned playable urls',
+            {
+              track: summarizeSong(catalogTrack),
+              urls: urls.length,
+            },
+          );
+          return {
+            status: 'recovered',
+            source: {
+              url: urls[0],
+              urls,
+              quality: '128',
+              effect: 'none',
+              sourceKind: 'catalog',
+              loudness,
+            },
+          };
         }
         catalogHash = hash.toLowerCase();
         const refreshedTrack: Song = { ...catalogTrack, hash: catalogHash };
@@ -672,15 +712,15 @@ export const createResolver = (
           hash: catalogHash,
           qualities: relateGoods.length,
         });
-        return true;
+        return { status: 'refreshed' };
       } catch (error) {
         logger.warn('PlayerResolver', 'Catalog resource re-discovery failed:', error, {
           track: summarizeSong(catalogTrack),
         });
-        return false;
+        return { status: 'none' };
       }
     };
-    await refreshMissingCatalogResource();
+    const rediscovery = await refreshMissingCatalogResource();
     if (!isCurrentQualityAccess()) {
       return { url: '', quality: null, effect: 'none', loudness: null };
     }
@@ -738,6 +778,14 @@ export const createResolver = (
           logger.warn('PlayerResolver', 'Fetch effect url failed:', error);
         }
       }
+    }
+
+    // 音效不可用时才用重发现拿到的标准音质地址兜底，优先尊重用户选择的音效。
+    if (rediscovery.status === 'recovered') {
+      // 请求音质高于 128 时保留失败原因，让上层提示“已降级为标准音质”，但不再阻断播放。
+      qualityFailureReason = accessReason(audioQuality) || undefined;
+      const recovered = await finalizeResolvedSource(rediscovery.source, 'catalog');
+      if (recovered) return recovered;
     }
 
     qualityFailureReason = accessReason(audioQuality) || undefined;

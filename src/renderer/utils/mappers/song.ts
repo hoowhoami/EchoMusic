@@ -704,6 +704,9 @@ export const mapSearchSong = (json: unknown): Song => {
     cover,
     audioUrl: '',
     hash: readString(pickValue(record.FileHash, '')),
+    // 搜索结果没有独立的 album_audio_id 字段，MixSongID 即曲库的 album_audio_id。
+    // 保留下来，资源被上游移除后播放端才能用 tracker 重新映射到现存文件。
+    albumAudioId: readPositiveId(record.MixSongID, record.album_audio_id) || undefined,
     mvHash: readString(pickValue(record.video_hash, record.mvhash, record.MVHash, ''), ''),
     mixSongId: parseIntSafe(pickValue(record.MixSongID, 0)),
     fileId: parseOptionalInt(
