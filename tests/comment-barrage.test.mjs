@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { buildSync } from 'esbuild';
 const require = createRequire(import.meta.url);
 const source = buildSync({
-  entryPoints: [new URL('../src/renderer/api/comment.ts', import.meta.url).pathname],
+  entryPoints: [fileURLToPath(new URL('../src/renderer/api/comment.ts', import.meta.url))],
   bundle: true,
   format: 'cjs',
   platform: 'node',
@@ -143,7 +144,9 @@ test('unresolved barrage hash does not trigger a send', async () => {
 
 test('verification only resolves on an explicit successful business response', async () => {
   const output = buildSync({
-    entryPoints: [new URL('../src/renderer/utils/kugouVerification.ts', import.meta.url).pathname],
+    entryPoints: [
+      fileURLToPath(new URL('../src/renderer/utils/kugouVerification.ts', import.meta.url)),
+    ],
     bundle: true,
     format: 'cjs',
     platform: 'node',
