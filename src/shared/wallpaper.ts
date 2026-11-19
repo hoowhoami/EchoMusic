@@ -25,6 +25,8 @@ export interface WallpaperTextureSettings {
   dimEnabled: boolean;
   /** 是否叠加浮尘粒子。 */
   particleEnabled: boolean;
+  /** 壁纸是否穿透底色层：开启时桌面壁纸直通，关闭时由配色底色把壁纸盖住。 */
+  passthroughEnabled: boolean;
 }
 
 export const DEFAULT_WALLPAPER_TEXTURE: WallpaperTextureSettings = {
@@ -34,6 +36,7 @@ export const DEFAULT_WALLPAPER_TEXTURE: WallpaperTextureSettings = {
   particleSize: 1,
   dimEnabled: true,
   particleEnabled: true,
+  passthroughEnabled: false,
 };
 
 /** 「仅歌词」的整套配色：压暗底色、浮尘颜色与歌词颜色。 */
@@ -52,10 +55,10 @@ export interface WallpaperPalette {
 
 export const WALLPAPER_PALETTES: WallpaperPalette[] = [
   { key: 'ink', label: '墨黑', dim: '#000000', particle: '#ffffff', lyric: '' },
-  { key: 'warm', label: '暖褐', dim: '#1f0a02', particle: '#ffc48d', lyric: '#ff9d4a' },
-  { key: 'ocean', label: '深海', dim: '#020f19', particle: '#9cc4ff', lyric: '#5f9bff' },
-  { key: 'dusk', label: '暮紫', dim: '#15041d', particle: '#c6a4ff', lyric: '#9d63ff' },
-  { key: 'moss', label: '苔绿', dim: '#03110a', particle: '#a1e8bd', lyric: '#5fd693' },
+  { key: 'warm', label: '暖褐', dim: '#190802', particle: '#ffc48d', lyric: '#ff9d4a' },
+  { key: 'ocean', label: '深海', dim: '#020c15', particle: '#9cc4ff', lyric: '#5f9bff' },
+  { key: 'dusk', label: '暮紫', dim: '#110318', particle: '#c6a4ff', lyric: '#9d63ff' },
+  { key: 'moss', label: '苔绿', dim: '#020e08', particle: '#a1e8bd', lyric: '#5fd693' },
 ];
 
 export const DEFAULT_WALLPAPER_PALETTE_KEY: WallpaperPaletteKey = 'ink';
@@ -179,11 +182,6 @@ const CONTENT_MODES: WallpaperContentMode[] = ['follow', 'lyric'];
 
 const PALETTE_KEYS: WallpaperPaletteKey[] = WALLPAPER_PALETTES.map((item) => item.key);
 
-const clampNumber = (value: unknown, fallback: number, min: number, max: number): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
-  return Math.min(max, Math.max(min, Math.round(value)));
-};
-
 const clampDecimal = (value: unknown, fallback: number, min: number, max: number): number => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
   return Math.min(max, Math.max(min, value));
@@ -205,6 +203,8 @@ const normalizeTexture = (
     particleSize: clampDecimal(raw.particleSize, DEFAULT_WALLPAPER_TEXTURE.particleSize, 0, 2),
     dimEnabled: raw.dimEnabled !== false,
     particleEnabled: raw.particleEnabled !== false,
+    // 默认关闭：老配置里没有这个字段时也按「不穿透」处理。
+    passthroughEnabled: raw.passthroughEnabled === true,
   };
 };
 

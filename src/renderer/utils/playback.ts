@@ -3,6 +3,7 @@ import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { MANUAL_PLAYBACK_QUEUE_ID } from '@/stores/playlist';
 import { toRawSongList } from '@/stores/playlist/helpers';
 import { isPlayableSong, isSameSong, splitValidSongs } from '@/utils/song';
+import { maybePromptAudiobookResume } from '@/utils/audiobookResumePrompt';
 import type { PlayMode } from '../types';
 
 export interface PlaybackQueueStoreLike {
@@ -36,6 +37,11 @@ export interface PlaybackPlayerLike {
   isPlaying?: boolean;
   togglePlay?: () => void;
   playMode?: PlayMode;
+  resumeScopes?: ReadonlyArray<{
+    kind?: string;
+    id?: string | number | null;
+    trackId?: string | number | null;
+  }>;
 }
 
 export interface ResolvedPlayableQueue {
@@ -124,6 +130,27 @@ export const replaceQueueAndPlay = async (
   const firstPlayable = resolved.firstPlayable;
   if (!firstPlayable) return false;
 
+  const targetForPrompt = requestedSong ?? firstPlayable;
+  if (
+    maybePromptAudiobookResume(
+      targetForPrompt,
+      options?.queueId ? String(options.queueId) : null,
+      playerStore.resumeScopes ?? [],
+      () => {
+        void replaceQueueAndPlay(
+          playlistStore,
+          playerStore,
+          songs,
+          filteredInvalidCount,
+          requestedSong,
+          options,
+        );
+      },
+    )
+  ) {
+    return false;
+  }
+
   const requestKey = buildReplaceQueueRequestKey(
     resolved,
     requestedSong,
@@ -196,11 +223,25 @@ export const queueAndPlaySong = async (
 ): Promise<boolean> => {
   const manualQueueOptions = playlistStore.getPreferredManualQueueOptions?.(options) ?? options;
   const queueId = manualQueueOptions?.queueId;
+  const resolvedSong = resolvePlayableSongForRequest(song, [song]);
+  if (!resolvedSong) return false;
+
+  if (
+    maybePromptAudiobookResume(
+      resolvedSong,
+      queueId ? String(queueId) : null,
+      playerStore.resumeScopes ?? [],
+      () => {
+        void queueAndPlaySong(playlistStore, playerStore, song, options);
+      },
+    )
+  ) {
+    return false;
+  }
+
   if (queueId) await playlistStore.ensurePlaybackQueueSongsLoaded?.(queueId);
   const preferredList = queueId ? (playlistStore.getPlaybackQueueSongs?.(queueId) ?? []) : [];
   const activeList = queueId ? preferredList : (playlistStore.defaultList ?? []);
-  const resolvedSong = resolvePlayableSongForRequest(song, [song]);
-  if (!resolvedSong) return false;
   const nextList = activeList.slice();
   const exists = nextList.some((item) => isSameSong(item, resolvedSong));
   const sourceList = toRawSongList(exists ? activeList : [...nextList, resolvedSong]);

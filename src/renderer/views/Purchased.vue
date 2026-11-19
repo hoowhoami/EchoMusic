@@ -2,6 +2,7 @@
 import { watchUserSession } from '@/utils/watchUserSession';
 
 import { useRouteTabs } from '@/composables/useRouteTabs';
+import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'purchased' });
 import { computed, onUnmounted, ref, shallowRef } from 'vue';
@@ -48,6 +49,10 @@ const {
   state: { tab: activeTab },
   select: selectTabs,
 } = useRouteTabs({ tab: ['songs', 'albums'] });
+
+// 双击 tab 回到顶部：本页是 PageScrollContainer 的父组件，useScrollContainer() 只能拿到 null
+const pageScrollRef = ref<PageScrollHandle | null>(null);
+const { onTabPointerDown, onTabDoubleClick } = useTabDoubleClickTop(() => pageScrollRef.value);
 const sliverHeaderRef = ref<InstanceType<typeof SliverHeader> | null>(null);
 const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
@@ -391,7 +396,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <PageScrollContainer class="purchased-view-container">
+  <PageScrollContainer ref="pageScrollRef" class="purchased-view-container">
     <div class="purchased-view bg-bg-main min-h-full">
       <div
         v-if="!isLoggedIn"
@@ -478,7 +483,11 @@ onUnmounted(() => {
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">
                 <div class="flex items-center justify-between h-14">
-                  <TabsList class="bg-transparent border-none gap-8">
+                  <TabsList
+                    class="bg-transparent border-none gap-8"
+                    @pointerdown="onTabPointerDown"
+                    @dblclick="onTabDoubleClick"
+                  >
                     <TabsTrigger value="songs">
                       <span class="badge-label">单曲 <Badge :count="totalSongs" /></span>
                     </TabsTrigger>

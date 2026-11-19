@@ -1748,20 +1748,20 @@ onBeforeUnmount(() => {
       </p>
       <template #footer>
         <Button
-          variant="secondary"
-          size="default"
-          :disabled="dismissingOwnedRoom"
-          @click="dismissOwnedOpen = false"
-        >
-          取消
-        </Button>
-        <Button
           variant="danger"
           size="default"
           :loading="dismissingOwnedRoom"
           @click="confirmDismissOwnedRoom"
         >
           确认解散
+        </Button>
+        <Button
+          variant="secondary"
+          size="default"
+          :disabled="dismissingOwnedRoom"
+          @click="dismissOwnedOpen = false"
+        >
+          取消
         </Button>
       </template>
     </Dialog>

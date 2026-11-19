@@ -8,7 +8,7 @@ export function search(
   type = 'song',
   page = 1,
   pagesize = 30,
-  /** 专辑类搜索的内容类别：'1' 音乐专辑（默认），'2' 听书/有声书，'0' 两者混合。 */
+  /** 专辑类搜索的内容类别：'1' 音乐专辑（默认），'2' 有声/长专，'0' 两者混合。 */
   category?: string,
 ) {
   return request.get('/search', {

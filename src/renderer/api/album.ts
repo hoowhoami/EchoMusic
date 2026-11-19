@@ -46,6 +46,11 @@ export function favoriteAlbum(id: string | number, name: string, singerId?: numb
   });
 }
 
+/** 专辑内容类别：'1' 音乐专辑，'2' 有声/长专 */
+export type AlbumCategory = '1' | '2';
+
+const ALBUM_CATEGORY_CHUNK = 50;
+
 /**
  * 取消收藏专辑
  */
@@ -53,4 +58,35 @@ export function unfavoriteAlbum(listid: string | number) {
   return request.get('/playlist/del', {
     params: { listid },
   });
+}
+
+/**
+ * 批量回查专辑内容类别（收藏列表接口不返回类别）
+ * 返回 专辑 ID → 类别；查不到的 ID 不在映射里，调用方按音乐专辑处理
+ */
+export async function getAlbumCategories(
+  ids: (string | number)[],
+): Promise<Map<string, AlbumCategory>> {
+  const categories = new Map<string, AlbumCategory>();
+  const uniqueIds = Array.from(new Set(ids.map((id) => String(id)).filter((id) => id.length > 0)));
+
+  for (let start = 0; start < uniqueIds.length; start += ALBUM_CATEGORY_CHUNK) {
+    const chunk = uniqueIds.slice(start, start + ALBUM_CATEGORY_CHUNK);
+    const res = await request.get('/album/batch', {
+      params: { ids: chunk.join(',') },
+      skipKugouVerification: true,
+    });
+    const list = Array.isArray(res?.data)
+      ? res.data
+      : Array.isArray(res?.data?.data)
+        ? res.data.data
+        : [];
+    for (const item of list as Array<Record<string, unknown>>) {
+      const id = String(item?.album_id ?? '');
+      const category = String(item?.category ?? '');
+      if (id && (category === '1' || category === '2')) categories.set(id, category);
+    }
+  }
+
+  return categories;
 }

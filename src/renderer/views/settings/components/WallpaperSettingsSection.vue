@@ -152,8 +152,11 @@ const setTextureKnob = (knob: TextureKnob, value: number) => {
 const formatKnob = (knob: TextureKnob, value: number) =>
   knob.unit === 'percent' ? value + '%' : value.toFixed(1) + 'px';
 
-// 压暗与浮尘各自一个开关，关掉时它下面的参数也一起收起来
-const setTextureFlag = (key: 'dimEnabled' | 'particleEnabled', value: boolean) => {
+// 压暗、壁纸穿透与浮尘各自一个开关，关掉时它下面的参数也一起收起来
+const setTextureFlag = (
+  key: 'dimEnabled' | 'particleEnabled' | 'passthroughEnabled',
+  value: boolean,
+) => {
   void setSettings({ texture: { ...currentTexture.value, [key]: value } });
 };
 
@@ -165,9 +168,11 @@ const nearSlider = (a: number, b: number) => Math.abs(a - b) < 1e-6;
 
 // 只有「已经打开的那一组」参数偏离默认时才让按钮可点；没开的项不归它管。
 // 配色是独立设置，不参与这里。
+// 壁纸穿透没有自己的滑杆，只要它偏离默认（开着）就让按钮可点，否则压暗关掉时没入口复位它。
 const canResetTexture = computed(() => {
   const current = currentTexture.value;
   const defaults = DEFAULT_WALLPAPER_TEXTURE;
+  if (current.passthroughEnabled !== defaults.passthroughEnabled) return true;
   if (
     current.dimEnabled &&
     (!nearSlider(current.edgeStart, defaults.edgeStart) ||
@@ -182,7 +187,8 @@ const canResetTexture = computed(() => {
   );
 });
 
-// 只把已打开的那一组拉回默认值，不会顺手把没开的开关打开
+// 只把已打开的那一组拉回默认值，不会顺手把没开的开关打开；
+// 壁纸穿透不跟压暗走，一并复位成默认（关闭）
 const resetTexture = () => {
   const current = currentTexture.value;
   const defaults = DEFAULT_WALLPAPER_TEXTURE;
@@ -195,6 +201,7 @@ const resetTexture = () => {
     next.particleDensity = defaults.particleDensity;
     next.particleSize = defaults.particleSize;
   }
+  next.passthroughEnabled = defaults.passthroughEnabled;
   void setSettings({ texture: next });
 };
 
@@ -203,6 +210,8 @@ let receivedState = false;
 let disposeState: (() => void) | undefined;
 
 const displayIds = computed(() => settings.value.displayIds);
+// 只有一块屏幕时按屏开关没有任何含义，整块不渲染（不是置灰）。
+const multiDisplay = computed(() => displays.value.length > 1);
 // 每一项换行都要解释清楚，否则用户只能靠猜。
 const contentModeHint = computed(() => {
   switch (settings.value.contentMode) {
@@ -325,18 +334,20 @@ const displayLabel = (display: WallpaperState['displays'][number]) =>
     </div>
     <!-- 关闭壁纸时下面的细项没有意义，收起来保持界面干净 -->
     <template v-if="enabled">
-      <div v-for="display in displays" :key="display.id" class="settings-item">
-        <div class="min-w-0 flex-1 space-y-1">
-          <h3 class="font-semibold">{{ display.label }}</h3>
-          <p class="text-sm text-text-secondary">{{ displayLabel(display) }}</p>
+      <template v-if="multiDisplay">
+        <div v-for="display in displays" :key="display.id" class="settings-item">
+          <div class="min-w-0 flex-1 space-y-1">
+            <h3 class="font-semibold">{{ display.label }}</h3>
+            <p class="text-sm text-text-secondary">{{ displayLabel(display) }}</p>
+          </div>
+          <Switch
+            :aria-label="`在${display.label}显示壁纸`"
+            :model-value="displayIds.includes(display.id)"
+            :disabled="displayIds.length === 1 && displayIds.includes(display.id)"
+            @update:model-value="toggleDisplay(display.id, Boolean($event))"
+          />
         </div>
-        <Switch
-          :aria-label="`在${display.label}显示壁纸`"
-          :model-value="displayIds.includes(display.id)"
-          :disabled="displayIds.length === 1 && displayIds.includes(display.id)"
-          @update:model-value="toggleDisplay(display.id, Boolean($event))"
-        />
-      </div>
+      </template>
       <!-- 配色是整体外观，只在仅歌词下有意义，不参与「画面质感」的恢复默认 -->
       <template v-if="settings.contentMode === 'lyric'">
         <div class="settings-item">
@@ -449,6 +460,18 @@ const displayLabel = (display: WallpaperState['displays'][number]) =>
             />
           </div>
         </template>
+        <!-- 壁纸穿透只在压暗打开时才有意义：没压暗就不存在"要不要透出壁纸"的选择 -->
+        <div v-if="currentTexture.dimEnabled" class="settings-item">
+          <div class="min-w-0 flex-1 space-y-1">
+            <h3 class="font-semibold">壁纸穿透</h3>
+            <p class="text-sm text-text-secondary">开启时露出桌面壁纸，关闭只显示当前配色的底色</p>
+          </div>
+          <Switch
+            aria-label="壁纸穿透"
+            :model-value="currentTexture.passthroughEnabled"
+            @update:model-value="setTextureFlag('passthroughEnabled', Boolean($event))"
+          />
+        </div>
         <div class="settings-item">
           <div class="min-w-0 flex-1 space-y-1">
             <h3 class="font-semibold">浮尘粒子</h3>

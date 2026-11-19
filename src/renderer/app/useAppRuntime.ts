@@ -4,7 +4,7 @@ import { useSettingStore } from '@/stores/setting';
 import { useOutputStore } from '@/stores/output';
 import { useUpdateStore } from '@/stores/update';
 import { usePlaylistStore } from '@/stores/playlist';
-import { useHistoryStore } from '@/stores/historyStore';
+import { resolveSongHistoryId, useHistoryStore } from '@/stores/historyStore';
 import { useUserStore } from '@/stores/user';
 import { waitForSqlitePersistHydration } from '@/stores/sqlitePersist';
 import { normalizeQuality } from '@/stores/player/utils';
@@ -123,6 +123,21 @@ export function useAppRuntime(
     if (!lifetime.active) return;
     const recoveredLiveSession = await activePlayer.init();
     if (!lifetime.active) return;
+
+    // 续播记录跟播放历史共用一份容量：历史里已经没有的曲目，续播进度与桶一并清掉。
+    const pruneResumeWithHistory = () => {
+      activePlayer.pruneResumeAgainstHistory(
+        historyStore.entries.map((entry) => resolveSongHistoryId(entry.song)),
+      );
+    };
+    pruneResumeWithHistory();
+    activePlayer.dedupeAlbumAudiobookScopes();
+    lifetime.add(
+      watch(
+        [() => historyStore.entries.length, () => historyStore.playRecordVersion],
+        pruneResumeWithHistory,
+      ),
+    );
 
     if (
       !recoveredLiveSession &&

@@ -10,10 +10,12 @@ const props = withDefaults(
     placeholder?: string;
     ariaLabel?: string;
     inputClass?: string;
+    disabled?: boolean;
   }>(),
   {
     placeholder: '搜索歌曲...',
     inputClass: 'w-52',
+    disabled: false,
   },
 );
 
@@ -36,8 +38,9 @@ const clear = () => {
       type="text"
       :placeholder="placeholder"
       :aria-label="resolvedAriaLabel"
+      :disabled="disabled"
       :class="[
-        'song-search-input h-9 pl-8 pr-8 rounded-lg text-text-main placeholder:text-text-secondary placeholder:opacity-100 outline-none text-[12px] transition-all',
+        'song-search-input h-9 pl-8 pr-8 rounded-lg text-text-main placeholder:text-text-secondary placeholder:opacity-100 outline-none text-[12px] transition-all disabled:opacity-60 disabled:cursor-not-allowed',
         inputClass,
       ]"
     />
@@ -48,7 +51,7 @@ const clear = () => {
       height="14"
     />
     <Button
-      v-if="model"
+      v-if="model && !disabled"
       variant="unstyled"
       size="none"
       class="action-icon song-search-clear"

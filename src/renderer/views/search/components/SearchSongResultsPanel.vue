@@ -38,16 +38,16 @@ const emit = defineEmits<{
 }>();
 
 const drawerOpen = ref(false);
-const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
+const songListRef = ref<{ scrollToActive?: () => Promise<boolean> } | null>(null);
 
 const openBatchDrawer = () => {
   if (props.songs.length === 0) return;
   drawerOpen.value = true;
 };
 
-const scrollToActive = () => {
-  songListRef.value?.scrollToActive?.();
-};
+/** 返回是否已经滚到位：当前播放不在结果里时是 false，调用方负责提示。 */
+const scrollToActive = async (): Promise<boolean> =>
+  (await songListRef.value?.scrollToActive?.()) ?? false;
 
 defineExpose({ scrollToActive });
 </script>

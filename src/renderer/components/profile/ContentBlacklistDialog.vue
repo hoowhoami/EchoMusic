@@ -415,6 +415,9 @@ watch(activeTab, () => {
     :closeOnInteractOutside="!removingKey"
   >
     <template #footer>
+      <Button size="default" :loading="Boolean(removingKey)" @click="confirmRemoval">
+        {{ pendingRemoval?.label === 'singer' ? '取消屏蔽' : '确认撤销' }}
+      </Button>
       <Button
         variant="outline"
         size="default"
@@ -422,9 +425,6 @@ watch(activeTab, () => {
         @click="pendingRemoval = null"
       >
         取消
-      </Button>
-      <Button size="default" :loading="Boolean(removingKey)" @click="confirmRemoval">
-        {{ pendingRemoval?.label === 'singer' ? '取消屏蔽' : '确认撤销' }}
       </Button>
     </template>
   </Dialog>

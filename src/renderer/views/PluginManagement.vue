@@ -692,20 +692,20 @@ const getPluginAccentStyle = (pluginId: string) => {
       </label>
       <template #footer>
         <Button
-          variant="secondary"
-          size="default"
-          :disabled="isUninstalling"
-          @click="showUninstallDialog = false"
-        >
-          取消
-        </Button>
-        <Button
           variant="danger"
           size="default"
           :loading="isUninstalling"
           @click="confirmUninstallPlugin"
         >
           卸载
+        </Button>
+        <Button
+          variant="secondary"
+          size="default"
+          :disabled="isUninstalling"
+          @click="showUninstallDialog = false"
+        >
+          取消
         </Button>
       </template>
     </Dialog>

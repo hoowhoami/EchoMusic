@@ -143,6 +143,8 @@ export const useSettingStore = defineStore('setting', {
     hideMenuBarInBackground: false,
     playbackQueueMode: 'context' as 'context' | 'single',
     autoPlayOnLaunch: false,
+    /** 有声/长专详情页「定位上次播放」后是否自动续播（高亮结束再起播）。 */
+    resumeAutoPlayOnLocate: false,
     volumeFade: true,
     volumeFadeTime: 1000,
     /** 歌曲过渡设置：无缝 / 淡入淡出 / 智能混音基础 / 智能混音进阶 / 关闭。 */

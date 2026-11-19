@@ -6,6 +6,7 @@ import { portraitLyricCollapsed } from '@/views/lyric/portraitCollapseState';
 import { setPageFrozen } from '@/utils/pageFreeze';
 import { setRenderFrameRate } from '@/utils/frameBudget';
 import WallpaperDim from './WallpaperDim.vue';
+import { hexColor, mixColor, parseHexColor } from './hexColor';
 import WallpaperParticles from './WallpaperParticles.vue';
 import {
   DEFAULT_WALLPAPER_SETTINGS,
@@ -29,6 +30,15 @@ const texture = computed<WallpaperTextureSettings>(
 );
 // 整套配色：压暗底色、浮尘颜色、歌词颜色都从这里取，只在壁纸窗口生效。
 const palette = computed(() => getWallpaperPalette(settings.value.palette));
+// 底色层：每套配色各有一套底色，全部由该配色现有的压暗色与浮尘亮色派生，不新增色值。
+// 壁纸穿透关闭时它铺满全屏，压在桌面壁纸之上、压暗层之下；开启时整层不渲染。
+// 混合比例越小底色越接近压暗色本身（更深、更偏黑），0.15 保留一点浮尘色相不至于变成死黑。
+const BASE_TINT_RATIO = 0.15;
+const baseColor = computed(() => {
+  const dim = parseHexColor(palette.value.dim);
+  const tint = parseHexColor(palette.value.particle, { r: 255, g: 255, b: 255 });
+  return hexColor(mixColor(dim, tint, BASE_TINT_RATIO));
+});
 // 配色自带的歌词颜色只在「仅歌词」时生效；「跟随播放页」必须与播放页完全一致。
 const lyricColor = computed(() =>
   settings.value.contentMode === 'lyric' ? palette.value.lyric || undefined : undefined,
@@ -144,6 +154,13 @@ onUnmounted(() => {
     />
     <!-- 「仅歌词」：贴边压暗 + 浮尘粒子，让画面有层次 -->
     <template v-if="settings.contentMode === 'lyric'">
+      <!-- 底色层：壁纸穿透关闭时铺在壁纸与压暗层之间 -->
+      <div
+        v-if="!texture.passthroughEnabled"
+        class="wallpaper-base"
+        :style="{ background: baseColor }"
+        aria-hidden="true"
+      ></div>
       <WallpaperDim
         v-if="texture.dimEnabled"
         :edge-start="texture.edgeStart"
@@ -175,6 +192,15 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   background: var(--surface-main-base, #1a1d22);
+}
+
+/* 底色层：桌面壁纸之上、歌词与压暗之下。与压暗层同一色相（同一配色的压暗色派生），
+   两层之间只有明度过渡，不会出现色块边界或分层感。 */
+.wallpaper-base {
+  position: fixed;
+  inset: 0;
+  z-index: 1290;
+  pointer-events: none;
 }
 
 /* 兜底：歌词页里所有可操作元素在壁纸中不显示 */

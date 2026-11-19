@@ -6,6 +6,7 @@ import { withoutEmbeddedMetadata } from '../../shared/embeddedMetadata';
 import logger from '@/utils/logger';
 import { completeSongMetadata } from '@/services/songMetadata';
 import { needsSongMetadata } from '@/utils/mappers/songMetadata';
+import { HISTORY_MAX_ENTRIES } from '@/utils/historyLimits';
 
 export interface LocalHistoryEntry {
   /** 歌曲完整信息（可独立渲染，不依赖远端 API） */
@@ -18,7 +19,6 @@ export interface LocalHistoryEntry {
   historyKey: string;
 }
 
-const DEFAULT_MAX_ENTRIES = 500;
 /** 退场动画时长（ms），需与 CSS animation-duration 一致 */
 const EXIT_ANIM_MS = 250;
 
@@ -34,7 +34,7 @@ const toLocalEntry = (entry: StorageHistoryEntry): LocalHistoryEntry => ({
   historyKey: entry.historyKey,
 });
 
-const resolveSongHistoryId = (song: Song) =>
+export const resolveSongHistoryId = (song: Song) =>
   String(song.mixSongId || song.fileId || song.id || '0');
 
 const upsertEntryAtTop = (
@@ -49,7 +49,7 @@ const upsertEntryAtTop = (
 
 export const useHistoryStore = defineStore('history', () => {
   const entries = ref<LocalHistoryEntry[]>([]);
-  const maxEntries = ref(DEFAULT_MAX_ENTRIES);
+  const maxEntries = ref(HISTORY_MAX_ENTRIES);
   const hydrated = ref(false);
 
   /**

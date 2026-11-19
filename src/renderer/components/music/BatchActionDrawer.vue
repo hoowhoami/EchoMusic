@@ -31,7 +31,7 @@ interface Props {
     onProgress?: (done: number, total: number) => void,
   ) => void | Promise<void>;
   /** 删除操作的上下文，用于显示正确的确认对话框文案 */
-  removeContext?: 'playlist' | 'history' | 'cloud';
+  removeContext?: 'playlist' | 'history' | 'cloud' | 'favorites';
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -205,8 +205,14 @@ const addToPlaybackQueues = computed(() =>
   ),
 );
 
-const canPlaySelected = computed(() => selectedSongs.value.some((song) => isPlayableSong(song)));
-const canAddSelected = computed(() => userStore.isLoggedIn && selectedSongs.value.length > 0);
+/** 列表本身为空时，三个批量按钮一律不可用（与列表空态保持一致） */
+const hasSongs = computed(() => props.songs.length > 0);
+const canPlaySelected = computed(
+  () => hasSongs.value && selectedSongs.value.some((song) => isPlayableSong(song)),
+);
+const canAddSelected = computed(
+  () => hasSongs.value && userStore.isLoggedIn && selectedSongs.value.length > 0,
+);
 /** 歌单专用删除：需要 sourceId + 登录 + 是自己创建的歌单 */
 const canRemoveFromPlaylist = computed(
   () =>
@@ -218,7 +224,7 @@ const canRemoveFromPlaylist = computed(
 
 /** 通用批量删除：有自定义回调时直接可用，否则回退到歌单删除逻辑 */
 const canBatchRemove = computed(() => {
-  if (selectedSongs.value.length === 0) return false;
+  if (!hasSongs.value || selectedSongs.value.length === 0) return false;
   if (props.onBatchRemove) return true;
   return canRemoveFromPlaylist.value;
 });
@@ -226,6 +232,7 @@ const canBatchRemove = computed(() => {
 const removeDialogTitle = computed(() => {
   if (props.removeContext === 'history') return '从播放历史移除';
   if (props.removeContext === 'cloud') return '删除云盘歌曲';
+  if (props.removeContext === 'favorites') return '取消收藏';
   return '从歌单移除';
 });
 
@@ -236,11 +243,29 @@ const removeDialogDescription = computed(() => {
   if (props.removeContext === 'cloud') {
     return `确认从云盘删除选中的 ${selectedSongs.value.length} 首歌曲？此操作无法撤销。`;
   }
+  if (props.removeContext === 'favorites') {
+    return `确认取消收藏选中的 ${selectedSongs.value.length} 首歌曲？取消后将从「我最喜爱」中移除。`;
+  }
   return `确认从当前歌单移除选中的 ${selectedSongs.value.length} 首歌曲？此操作无法撤销。`;
 });
 
-const removeConfirmText = computed(() =>
-  props.removeContext === 'cloud' ? '确认删除' : '确认移除',
+const removeConfirmText = computed(() => {
+  if (props.removeContext === 'cloud') return '确认删除';
+  if (props.removeContext === 'favorites') return '取消收藏';
+  return '确认移除';
+});
+
+/** 确认弹窗的否定按钮：我最喜爱页与侧边栏一致用「暂时保留」 */
+const removeCancelText = computed(() =>
+  props.removeContext === 'favorites' ? '暂时保留' : '取消',
+);
+
+/** 底部危险按钮文案：我最喜爱页是「取消收藏」 */
+const removeActionText = computed(() =>
+  props.removeContext === 'favorites' ? '取消收藏' : '删除',
+);
+const removeBusyText = computed(() =>
+  props.removeContext === 'favorites' ? '取消收藏中' : '删除中',
 );
 
 const handlePlaySelected = async () => {
@@ -524,9 +549,9 @@ const confirmRemoveFromPlaylist = async () => {
         >
           <Icon v-if="batchOp !== 'remove'" :icon="iconTrash" width="16" height="16" />
           <template v-if="batchOp === 'remove'">
-            删除中 {{ batchProgress.done }}/{{ batchProgress.total }}
+            {{ removeBusyText }} {{ batchProgress.done }}/{{ batchProgress.total }}
           </template>
-          <template v-else>删除</template>
+          <template v-else>{{ removeActionText }}</template>
         </Button>
       </div>
     </div>
@@ -553,9 +578,11 @@ const confirmRemoveFromPlaylist = async () => {
     contentClass="max-w-[420px]"
   >
     <template #footer>
-      <Button variant="outline" size="default" @click="showRemoveConfirm = false">取消</Button>
       <Button variant="danger" size="default" @click="confirmBatchRemove">
         {{ removeConfirmText }}
+      </Button>
+      <Button variant="outline" size="default" @click="showRemoveConfirm = false">
+        {{ removeCancelText }}
       </Button>
     </template>
   </Dialog>

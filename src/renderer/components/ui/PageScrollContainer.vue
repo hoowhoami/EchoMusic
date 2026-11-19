@@ -32,6 +32,7 @@ withDefaults(defineProps<Props>(), {
 
 const attrs = useAttrs();
 const scrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
+const backToTopRef = ref<InstanceType<typeof BackToTop> | null>(null);
 const scrollContainerEl = ref<HTMLElement | null>(null);
 const {
   target: stickyLayer,
@@ -112,10 +113,16 @@ const setScrollTop = (value: number) => {
   scrollbarRef.value?.setScrollTop(value);
 };
 
+/** 回顶只有一份实现：转发给 BackToTop 自己的 scrollToTop */
+const scrollToTop = () => {
+  backToTopRef.value?.scrollToTop();
+};
+
 defineExpose({
   scrollContainerEl,
   scrollTo,
   setScrollTop,
+  scrollToTop,
 });
 </script>
 
@@ -136,6 +143,7 @@ defineExpose({
     </div>
     <BackToTop
       v-if="!hideBackToTop"
+      ref="backToTopRef"
       :scroll-container="scrollContainerEl"
       :threshold="backToTopThreshold"
     />

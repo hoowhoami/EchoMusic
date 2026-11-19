@@ -1549,15 +1549,24 @@ export const createPlaybackManager = (
     state.currentResolvedAudioEffect = 'none';
     state.currentResolvedAudioLoudness = null;
     state.currentResolvedSourceKind = track.source === 'cloud' ? 'cloud' : 'catalog';
-    // 有声书/播客这类长内容接着上次的位置播，普通歌曲仍从头开始
+    // 记录线归属：只有「这次播放的列表就是这个队列」时才算该队列对应的详情页，
+    // 否则一律按单曲播放。以前从 activeQueue 兜底推断，导致在搜索里播一首歌会沿用
+    // 上次打开过的有声/长专/专辑页队列，把这单曲顶到那条记录线上。
+    const attributionQueueId = (() => {
+      const queueId = sourceQueueId ? String(sourceQueueId) : '';
+      if (!queueId || sourceList.length === 0) return null;
+      const queueSongs = playlistStore.getQueueById(queueId)?.songs ?? [];
+      if (queueSongs.length !== sourceList.length) return null;
+      return sourceList.every((song, index) => String(song.id) === String(queueSongs[index]?.id))
+        ? queueId
+        : null;
+    })();
+    // 有声/长专/播客这类长内容接着上次的位置播，普通歌曲仍从头开始
     const resumeEntry = resolveResumeEntry(state, {
-      queueId:
-        state.currentSourceQueueId ??
-        playlistStore.activeQueue?.id ??
-        playlistStore.activeQueueId ??
-        null,
+      queueId: attributionQueueId,
       playMode: state.playMode,
       albumId: track.albumId ?? null,
+      trackId: resolvedId,
     });
     state.currentTime = resolveResumePosition(
       state,

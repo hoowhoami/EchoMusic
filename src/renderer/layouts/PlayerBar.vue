@@ -399,7 +399,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
     active: overlayToggles.taskbarEnabled.value,
     badge: overlayToggles.taskbarEnabled.value ? 'ON' : 'OFF',
     badgeTitle: '任务栏歌词',
-    badgeDefaultVisible: false,
+    badgeDefaultVisible: true,
     onClick: () => void overlayToggles.toggleTaskbar(),
   },
   {

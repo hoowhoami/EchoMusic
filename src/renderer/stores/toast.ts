@@ -25,7 +25,6 @@ let activeToastTimer: number | null = null;
 let activeToastStartedAt = 0;
 let activeToastRemaining = 0;
 
-const MAX_TOAST_ITEMS = 3;
 const MINI_MESSAGE_MAX_LENGTH = 30;
 
 const clearActiveToastTimer = () => {
@@ -92,27 +91,30 @@ export const useToastStore = defineStore('toast', {
       }
 
       const id = ++toastId;
-      const wasEmpty = this.items.length === 0;
-      this.items.push({
-        id,
-        title: normalizedTitle,
-        message: normalized,
-        tone,
-        duration,
-        variant: normalizedTitle
-          ? 'standard'
-          : resolveToastVariant(normalized, action, presentation),
-        count: 1,
-        action,
-      });
-
-      if (this.items.length > MAX_TOAST_ITEMS) {
-        // 保留正在展示的卡片和最新消息，丢弃最早进入等待队列的提示。
-        this.items.splice(1, this.items.length - MAX_TOAST_ITEMS);
-      }
-
-      if (wasEmpty) this.scheduleVisibleRemoval(duration);
+      // 新提示直接顶替正在显示的提示：旧提示立刻消失，不排队等待。
+      clearActiveToastTimer();
+      this.items = [
+        {
+          id,
+          title: normalizedTitle,
+          message: normalized,
+          tone,
+          duration,
+          variant: normalizedTitle
+            ? 'standard'
+            : resolveToastVariant(normalized, action, presentation),
+          count: 1,
+          action,
+        },
+      ];
+      this.scheduleVisibleRemoval(duration);
       return id;
+    },
+    // 定位提示用：先清掉现有提示再弹，旧提示立刻消失、重复弹也不会叠出 ×N 角标
+    showExclusive(message: string, tone: ToastTone = 'info', duration = 2600) {
+      clearActiveToastTimer();
+      this.items = [];
+      return this.show(message, tone, duration);
     },
     showAction(message: string, action: ToastAction, tone: ToastTone = 'info', duration = 8000) {
       return this.show(message, tone, duration, action, 'standard');

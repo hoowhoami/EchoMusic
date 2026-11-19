@@ -648,7 +648,17 @@ onUnmounted(() => {
         >
           <div ref="searchContainerRef" class="tb-search">
             <div class="tb-search-input-wrap">
-              <Icon :icon="iconSearch" width="15" height="15" class="tb-search-icon" />
+              <Button
+                variant="unstyled"
+                size="none"
+                class="tb-search-icon-btn"
+                :class="{ 'has-query': searchQuery.trim() }"
+                aria-label="搜索"
+                @mousedown.prevent
+                @click="searchQuery.trim() && submitSearch()"
+              >
+                <Icon :icon="iconSearch" width="15" height="15" class="tb-search-icon" />
+              </Button>
               <input
                 ref="searchInputRef"
                 v-model="searchQuery"
@@ -957,6 +967,26 @@ onUnmounted(() => {
 
 .tb-search-input-wrap:focus-within {
   background: var(--field-focus-bg);
+}
+
+.tb-search-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.tb-search-icon-btn.has-query {
+  cursor: pointer;
+}
+
+.tb-search-icon-btn.has-query:hover .tb-search-icon {
+  color: var(--text-main);
 }
 
 .tb-search-icon {

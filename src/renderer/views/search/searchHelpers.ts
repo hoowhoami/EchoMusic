@@ -159,15 +159,13 @@ export const getAlbumCardProps = (album: AlbumMeta): SearchAlbumCardProps => ({
 });
 
 /**
- * 听书在酷狗搜索接口里不是独立 type，而是专辑搜索的 category=2。
+ * 有声/长专在酷狗搜索接口里不是独立 type，而是专辑搜索的 category=2。
  * 服务端只认 special/lyric/song/album/author/mv，所以这里做一次映射。
  */
-export const resolveSearchRequest = (
-  tab: SearchTabType,
-): { type: string; category?: string } =>
+export const resolveSearchRequest = (tab: SearchTabType): { type: string; category?: string } =>
   tab === 'longaudio' ? { type: 'album', category: '2' } : { type: tab };
 
-/** 听书专辑复用专辑卡片，只把「N 首歌曲」换成「N 集」。 */
+/** 有声/长专专辑复用专辑卡片，只把「N 首歌曲」换成「N 集」。 */
 export const getLongAudioCardProps = (album: AlbumMeta): SearchAlbumCardProps => ({
   id: album.id,
   name: album.name,

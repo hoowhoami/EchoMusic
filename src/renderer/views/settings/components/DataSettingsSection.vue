@@ -476,6 +476,9 @@ onBeforeUnmount(() => {
       备份内容未加密，任何拿到数据的人都可能读取其中的插件账号与数据。选择插件存储时，备份数据会交给对应插件处理。
     </p>
     <template #footer>
+      <Button size="default" :disabled="!canExport" :loading="isExporting" @click="handleExport">
+        {{ createActionLabel }}
+      </Button>
       <Button
         variant="outline"
         size="default"
@@ -483,9 +486,6 @@ onBeforeUnmount(() => {
         @click="showExportDialog = false"
       >
         取消
-      </Button>
-      <Button size="default" :disabled="!canExport" :loading="isExporting" @click="handleExport">
-        {{ createActionLabel }}
       </Button>
     </template>
   </Dialog>
@@ -564,20 +564,20 @@ onBeforeUnmount(() => {
 
     <template #footer>
       <Button
-        variant="outline"
-        size="default"
-        :disabled="isInspecting"
-        @click="showRestoreSourceDialog = false"
-      >
-        取消
-      </Button>
-      <Button
         size="default"
         :disabled="!canReadSelectedBackup || isListingBackups"
         :loading="isInspecting"
         @click="handleChooseImport"
       >
         {{ selectedRestoreProvider ? '读取所选备份' : '选择本地备份' }}
+      </Button>
+      <Button
+        variant="outline"
+        size="default"
+        :disabled="isInspecting"
+        @click="showRestoreSourceDialog = false"
+      >
+        取消
       </Button>
     </template>
   </Dialog>
@@ -617,6 +617,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <template #footer>
+      <Button size="default" :disabled="!canImport" :loading="isImporting" @click="handleImport">
+        恢复并重启
+      </Button>
       <Button
         variant="outline"
         size="default"
@@ -624,9 +627,6 @@ onBeforeUnmount(() => {
         @click="showImportDialog = false"
       >
         取消
-      </Button>
-      <Button size="default" :disabled="!canImport" :loading="isImporting" @click="handleImport">
-        恢复并重启
       </Button>
     </template>
   </Dialog>

@@ -38,20 +38,20 @@ const handleLogin = async () => {
   >
     <template #footer>
       <Button
-        class="auth-expired-btn auth-expired-btn--ghost"
-        variant="outline"
-        size="default"
-        @click="authStore.hideSessionExpiredDialog()"
-      >
-        稍后再说
-      </Button>
-      <Button
         class="auth-expired-btn auth-expired-btn--primary"
         variant="primary"
         size="default"
         @click="handleLogin"
       >
         去登录
+      </Button>
+      <Button
+        class="auth-expired-btn auth-expired-btn--ghost"
+        variant="outline"
+        size="default"
+        @click="authStore.hideSessionExpiredDialog()"
+      >
+        稍后再说
       </Button>
     </template>
   </Dialog>

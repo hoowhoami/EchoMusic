@@ -7,6 +7,7 @@ import { useLyricPageTransition } from '@/composables/useLyricPageTransition';
 import { loadLyricPage } from '@/views/lyric/loaders';
 import { pageTransitionState } from '@/plugins/runtime/theme';
 import { useAppRuntime } from '@/app/useAppRuntime';
+import AudiobookResumePromptDialog from '@/components/music/AudiobookResumePromptDialog.vue';
 const AuthExpiredDialog = defineAsyncComponent(
   () => import('@/components/app/AuthExpiredDialog.vue'),
 );
@@ -98,6 +99,7 @@ watch(
   <ToastViewport v-if="!isOverlayWindow" :lyric-view-open="Boolean(player?.isLyricViewOpen)" />
   <UpdateDialog v-if="!isOverlayWindow" dismiss-label="稍后" />
   <SettingsDialog v-if="!isOverlayWindow" />
+  <AudiobookResumePromptDialog v-if="!isOverlayWindow" />
 </template>
 
 <style>

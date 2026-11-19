@@ -32,6 +32,13 @@ const availableAudioQualityOptions = computed(() =>
     (option) => settingStore.viperQualityEnabled !== false || !isViperAudioQuality(option.value),
   ),
 );
+// 描述跟着开关状态走：文案说的就是当前实际会发生的事
+const resumePlayOnLocateHint = computed(() =>
+  settingStore.resumeAutoPlayOnLocate
+    ? '详情页定位后从上次的位置接着播放，从续播卡或历史进入同理'
+    : '详情页只定位到那一行，不播放，从续播卡或历史进入同理',
+);
+
 const defaultAudioQuality = computed(() =>
   clampPreferredAudioQuality(settingStore.defaultAudioQuality, settingStore.viperQualityEnabled),
 );
@@ -121,6 +128,14 @@ const volumeNormalizationStatus = computed(() => {
         <p class="text-sm text-text-secondary">启动后自动播放恢复的会话</p>
       </div>
       <Switch v-model="settingStore.autoPlayOnLaunch" />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">定位后自动续播</h3>
+        <p class="text-sm text-text-secondary">{{ resumePlayOnLocateHint }}</p>
+      </div>
+      <Switch v-model="settingStore.resumeAutoPlayOnLocate" />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">

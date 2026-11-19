@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Tag from '@/components/ui/Tag.vue';
 import { useRouteTabs } from '@/composables/useRouteTabs';
+import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'song-detail-page' });
 import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue';
@@ -638,6 +639,10 @@ const scrollChipRowToActive = (container: HTMLElement | null) => {
 import { useScrollContainer } from '@/composables/usePageScroll';
 
 const scrollContainerRef = useScrollContainer();
+
+// 双击 tab 回到顶部：本页是 PageScrollContainer 的父组件，useScrollContainer() 只能拿到 null
+const pageScrollRef = ref<PageScrollHandle | null>(null);
+const { onTabPointerDown, onTabDoubleClick } = useTabDoubleClickTop(() => pageScrollRef.value);
 const commentSentinelRef = ref<HTMLElement | null>(null);
 let commentLoadMoreObserver: IntersectionObserver | null = null;
 
@@ -1284,7 +1289,25 @@ const loadCurrentResource = async () => {
   await fetchComments(true);
 };
 
+// 有声/长专桶不认「点进来就算」：回桶里定位上次播放的那一章，不把指针改成这首；
+// 专辑桶可以改，播放这首歌就自然把指针挪过来
+const jumpToResumeBucket = (): boolean => {
+  const albumId = String(songAlbumId.value ?? '');
+  if (!albumId) return false;
+  const scope = playerStore.resumeScopes.find(
+    (entry) => entry.id === albumId && entry.kind === 'audiobook',
+  );
+  if (!scope) return false;
+  void router.replace({
+    name: 'album-detail',
+    params: { id: albumId },
+    query: { locate: 'resume', category: '2' },
+  });
+  return true;
+};
+
 onMounted(async () => {
+  if (jumpToResumeBucket()) return;
   setupCommentLoadMoreObserver();
   await loadCurrentResource();
   loadActiveCommentTab();
@@ -1316,7 +1339,11 @@ watch(total, (value) => {
 </script>
 
 <template>
-  <PageScrollContainer class="comment-page-container" :back-to-top-threshold="360">
+  <PageScrollContainer
+    ref="pageScrollRef"
+    class="comment-page-container"
+    :back-to-top-threshold="360"
+  >
     <div class="comment-page bg-bg-main min-h-full">
       <DetailPageSkeleton
         v-if="isMusicType && detailLoading && !hasSongContent"
@@ -1437,7 +1464,11 @@ watch(total, (value) => {
               class="comment-main-tabs sticky z-120 bg-bg-main"
               :style="{ top: `${tabsTop}px` }"
             >
-              <TabsList class="comment-main-tab-list">
+              <TabsList
+                class="comment-main-tab-list"
+                @pointerdown="onTabPointerDown"
+                @dblclick="onTabDoubleClick"
+              >
                 <TabsTrigger value="detail" class="comment-main-tab-trigger">详情</TabsTrigger>
                 <TabsTrigger value="comment" class="comment-main-tab-trigger">评论</TabsTrigger>
               </TabsList>

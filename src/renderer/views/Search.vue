@@ -17,12 +17,18 @@ import { useRoute, useRouter } from 'vue-router';
 import { getSearchHot, search } from '@/api/search';
 import { useSettingStore } from '@/stores/setting';
 import { usePlaylistStore } from '@/stores/playlist';
+import { useUserStore } from '@/stores/user';
+import { useToastStore } from '@/stores/toast';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
 import type { AlbumMeta } from '@/models/album';
 import type { ArtistMeta } from '@/models/artist';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
+import { RESUME_SCOPE_LABEL, resumeRecordForScope } from '@/stores/player/resume';
+import { formatDuration } from '@/utils/format';
+import { resolvePlaylistRoute } from '@/utils/playlistRoute';
+import type { ResumeCardKind, ResumeEntryCard } from './search/resumeCard';
 import PlaylistCard from '@/components/music/PlaylistCard.vue';
 import AlbumCard from '@/components/music/AlbumCard.vue';
 import ArtistCard from '@/components/music/ArtistCard.vue';
@@ -30,6 +36,7 @@ import MvCard from '@/components/music/MvCard.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
+import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 import {
@@ -58,7 +65,9 @@ import SearchSongResultsPanel from './search/components/SearchSongResultsPanel.v
 
 const settingStore = useSettingStore();
 const playlistStore = usePlaylistStore();
+const userStore = useUserStore();
 const playerStore = usePlayerStore();
+const toastStore = useToastStore();
 const route = useRoute();
 const router = useRouter();
 
@@ -107,18 +116,20 @@ const searchErrors = reactive<Partial<Record<SearchTabType, string>>>({});
 const songSearchQuery = ref('');
 const songSortField = ref<SortField | null>(null);
 const songSortOrder = ref<SortOrder>(null);
-const songResultsPanelRef = ref<{ scrollToActive?: () => void } | null>(null);
+const songResultsPanelRef = ref<{ scrollToActive?: () => Promise<boolean> } | null>(null);
 
 const lyricSortField = ref<SortField | null>(null);
 const lyricSortOrder = ref<SortOrder>(null);
 const lyricSearchQuery = ref('');
-const lyricResultsPanelRef = ref<{ scrollToActive?: () => void } | null>(null);
+const lyricResultsPanelRef = ref<{ scrollToActive?: () => Promise<boolean> } | null>(null);
 
 const pinnedTabHeight = 50;
 const songToolbarOffset = computed(() => (showPinnedTabs.value ? pinnedTabHeight : 0));
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
 const scrollContainerRef = useScrollContainer();
+const pageScrollRef = ref<PageScrollHandle | null>(null);
+const { onTabPointerDown, onTabDoubleClick } = useTabDoubleClickTop(() => pageScrollRef.value);
 let scrollTarget: HTMLElement | null = null;
 
 const searchHistory = computed(() => settingStore.searchHistory ?? []);
@@ -309,8 +320,15 @@ const setLoadMoreSentinelRef = (el: Element | ComponentPublicInstance | null) =>
   loadMoreSentinelRef.value = el instanceof HTMLElement ? el : null;
 };
 
-const handleSongLocate = () => songResultsPanelRef.value?.scrollToActive?.();
-const handleLyricLocate = () => lyricResultsPanelRef.value?.scrollToActive?.();
+// 定位当前播放：滚不到就提示，别让人以为按钮点了没反应
+const locateInPanel = async (panel: { scrollToActive?: () => Promise<boolean> } | null) => {
+  if (!String(playerStore.currentTrackId ?? '')) return;
+  const reached = (await panel?.scrollToActive?.()) ?? false;
+  if (!reached) toastStore.info('当前播放不在搜索结果里');
+};
+
+const handleSongLocate = () => void locateInPanel(songResultsPanelRef.value);
+const handleLyricLocate = () => void locateInPanel(lyricResultsPanelRef.value);
 
 const resetPaginationState = () => {
   TAB_SEARCH_TYPES.forEach((type) => {
@@ -553,18 +571,124 @@ onBeforeUnmount(() => {
   });
   detachScrollTarget();
 });
+
+// 搜索页右上角「上次播放」：只查本地续播桶，按 有声/长专 > 歌单 > 歌手 > 专辑 排
+const RESUME_CARD_ORDER: ResumeCardKind[] = ['audiobook', 'playlist', 'artist', 'album'];
+
+// 只比文字，忽略标点与空白：「夜的·命名术」也算命中「夜的命名术」
+const normalizeName = (value: string) =>
+  value.toLowerCase().replace(/[^0-9a-z\u4e00-\u9fff\u3040-\u30ff]+/g, '');
+
+type ResumeScopeItem = (typeof playerStore.resumeScopes)[number];
+
+// 参与匹配的文字：桶名（有声/长专/专辑/歌单/歌手名）＋ 桶里记的那一首的标题
+// （有声/长专的章节名＝专辑/歌单里的歌曲名，所以同样参与匹配）
+const resumeTexts = (scope: ResumeScopeItem): string[] => {
+  const record = resumeRecordForScope(playerStore.$state, scope);
+  return [scope.name ?? '', record?.title ?? ''].map((text) => text.trim()).filter(Boolean);
+};
+
+const resumeEntries = computed<ResumeEntryCard[]>(() => {
+  const keyword = normalizeName(currentSearchKeyword.value.trim());
+  if (!hasSearched.value || !keyword) return [];
+  // 双向包含：关键词含文字（关键词更长）或文字含关键词（带后缀/前后缀）都算命中；桶名与章节名同等对待
+  const matched = playerStore.resumeScopes.filter((scope) => {
+    // 只打开过详情页、一次都没播放过的空桶不上卡片
+    if (!scope.trackId) return false;
+    return resumeTexts(scope).some((text) => {
+      const normalized = normalizeName(text);
+      return !!normalized && (normalized.includes(keyword) || keyword.includes(normalized));
+    });
+  });
+  const cards = matched.map<ResumeEntryCard>((scope) => {
+    const record = resumeRecordForScope(playerStore.$state, scope);
+    const where = record && record.position > 0 ? formatDuration(record.position) : '';
+    const hint = where
+      ? record?.title
+        ? `${record.title} · ${where}`
+        : `上次听到 ${where}`
+      : '还没播放过';
+    return {
+      key: `${scope.kind}:${scope.id}`,
+      kind: scope.kind,
+      id: scope.id,
+      kindLabel: RESUME_SCOPE_LABEL[scope.kind],
+      name: scope.name,
+      cover: scope.cover,
+      updatedAt: scope.updatedAt ?? 0,
+      hint,
+      routeId: scope.routeId,
+      routeType: scope.routeType,
+    };
+  });
+  // 展示顺序三档：完全命中(0) > 归一化包含(1) > 靠双向包含才命中(2)；桶名与章节名任一对上即算
+  const rawKeyword = currentSearchKeyword.value.trim().toLowerCase();
+  const tierOf = (scope: ResumeScopeItem): number => {
+    const texts = resumeTexts(scope);
+    if (!texts.length) return 2;
+    if (texts.some((text) => text.toLowerCase() === rawKeyword)) return 0;
+    if (texts.some((text) => normalizeName(text).includes(keyword))) return 1;
+    return 2;
+  };
+  const tierMap = new Map(matched.map((scope) => [`${scope.kind}:${scope.id}`, tierOf(scope)]));
+  const tier = (key: string): number => tierMap.get(key) ?? 2;
+  // 同档内：时间越新越靠前（最上面），同一时刻再按 有声/长专 > 歌单 > 歌手 > 专辑 兜底
+  const rank = (kind: ResumeCardKind): number => RESUME_CARD_ORDER.indexOf(kind);
+  return cards.sort(
+    (a, b) => tier(a.key) - tier(b.key) || b.updatedAt - a.updatedAt || rank(a.kind) - rank(b.kind),
+  );
+});
+
+const openResumeEntry = (entry: ResumeEntryCard) => {
+  const locate = { locate: 'resume' };
+  if (entry.kind === 'audiobook') {
+    void router.push({
+      name: 'album-detail',
+      params: { id: entry.id },
+      query: { ...locate, category: '2' },
+    });
+    return;
+  }
+  if (entry.kind === 'album') {
+    void router.push({ name: 'album-detail', params: { id: entry.id }, query: locate });
+    return;
+  }
+  if (entry.kind === 'playlist') {
+    // 桶里记的是歌单自己的 id，路由要的是 collection 串：桶上存过就直接用，没存过再按用户歌单列表反查
+    const target = entry.routeId
+      ? { id: entry.routeId, type: entry.routeType ?? null }
+      : resolvePlaylistRoute(entry.id, playlistStore.userPlaylists, userStore.info?.userid);
+    void router.push({
+      name: 'playlist-detail',
+      params: { id: target.id },
+      query: target.type ? { ...locate, type: target.type } : locate,
+    });
+    return;
+  }
+  void router.push({ name: 'artist-detail', params: { id: entry.id }, query: locate });
+};
+
+// 续播卡右键删除：把这条记录从续播桶里摘掉（下一次写盘就没了）
+const removeResumeEntry = (entry: ResumeEntryCard) => {
+  playerStore.forgetResumeScope(entry.kind, entry.id);
+};
 </script>
 
 <template>
-  <PageScrollContainer class="search-view-container">
+  <PageScrollContainer ref="pageScrollRef" class="search-view-container">
     <div class="search-view relative pb-10">
       <SearchHeader
         :active-tab-index="activeTabIndex"
         :has-searched="hasSearched"
         :keyword="currentSearchKeyword"
         :show-pinned-tabs="showPinnedTabs"
-        :tabs="['单曲', '歌单', '专辑', '听书', '歌手', '歌词', 'MV']"
+        :tabs="['单曲', '歌单', '专辑', '有声/长专', '歌手', '歌词', 'MV']"
+        :resume-entries="resumeEntries"
         @update:active-tab-index="selectSearchTab"
+        @open-resume="openResumeEntry"
+        @delete-resume="removeResumeEntry"
+        @tab-pointer-down="onTabPointerDown"
+        @tab-dblclick="onTabDoubleClick"
       />
 
       <SearchDiscovery

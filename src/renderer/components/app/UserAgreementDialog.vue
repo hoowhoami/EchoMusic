@@ -51,6 +51,9 @@ const handleReject = () => {
     </div>
 
     <template #footer>
+      <Button class="legal-button" variant="primary" size="default" @click="handleAccept">
+        同意并继续
+      </Button>
       <Button
         class="legal-button legal-button--danger"
         variant="danger"
@@ -58,9 +61,6 @@ const handleReject = () => {
         @click="handleReject"
       >
         不同意并退出
-      </Button>
-      <Button class="legal-button" variant="primary" size="default" @click="handleAccept">
-        同意并继续
       </Button>
     </template>
   </Dialog>

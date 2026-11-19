@@ -27,6 +27,7 @@ import { useScrollContainer } from '@/composables/usePageScroll';
 import { useVirtualList } from '@/composables/useVirtualList';
 import { songContextMenuExtensions } from './songContextMenuExtensions';
 import { copyShareTarget, createSongShareTarget } from '@/utils/share';
+import ContextMenuPanel from './ContextMenuPanel.vue';
 
 interface Props {
   songs: Song[];
@@ -363,11 +364,12 @@ const scheduleStickyOffsetRefresh = () => {
   });
 };
 
-const adjustActiveIntoView = () => {
+const adjustSongIntoView = (songIdInput: string) => {
+  const songId = String(songIdInput ?? '').trim();
   const scrollContainer = getScrollContainer();
-  if (!measurementActive.value || props.loading || !scrollContainer || !activeIdText.value) return;
+  if (!measurementActive.value || props.loading || !scrollContainer || !songId) return;
   const row = containerRef.value?.querySelector<HTMLElement>(
-    `[data-song-row][data-song-id="${activeIdText.value}"]`,
+    `[data-song-row][data-song-id="${songId}"]`,
   );
   if (!row) return;
   const containerRect = scrollContainer.getBoundingClientRect();
@@ -392,11 +394,12 @@ const adjustActiveIntoView = () => {
   }
 };
 
-const isActiveVisible = (): boolean => {
+const isSongVisible = (songIdInput: string): boolean => {
+  const songId = String(songIdInput ?? '').trim();
   const scrollContainer = getScrollContainer();
-  if (!scrollContainer || !activeIdText.value) return false;
+  if (!scrollContainer || !songId) return false;
   const row = containerRef.value?.querySelector<HTMLElement>(
-    `[data-song-row][data-song-id="${activeIdText.value}"]`,
+    `[data-song-row][data-song-id="${songId}"]`,
   );
   if (!row) return false;
   const containerRect = scrollContainer.getBoundingClientRect();
@@ -430,28 +433,62 @@ watch(
   { flush: 'sync' },
 );
 
-const scrollToActive = async () => {
+const flashedSongId = ref('');
+let flashTimer = 0;
+let flashFrame = 0;
+
+const clearFlash = () => {
+  if (flashTimer) {
+    window.clearTimeout(flashTimer);
+    flashTimer = 0;
+  }
+  if (flashFrame) {
+    cancelAnimationFrame(flashFrame);
+    flashFrame = 0;
+  }
+  flashedSongId.value = '';
+};
+
+/** 给某一首歌的行加一次性高亮（定位“上次播放”时用来标识目标）。 */
+const flashSong = (targetId: string) => {
+  const songId = String(targetId ?? '').trim();
+  if (!songId) return;
+  clearFlash();
+  flashFrame = requestAnimationFrame(() => {
+    flashFrame = 0;
+    flashedSongId.value = songId;
+    flashTimer = window.setTimeout(() => {
+      flashTimer = 0;
+      flashedSongId.value = '';
+    }, 1800);
+  });
+};
+
+/**
+ * 滚动到指定歌曲行。
+ * 返回是否已经滚到位：列表是虚拟滚动，数据刚到、容器刚开始测量时这里会失败，调用方可以重试。
+ */
+const scrollToSong = async (targetId: string): Promise<boolean> => {
   cancelLocation();
-  if (!measurementActive.value || props.loading || !activeIdText.value) return;
-  if (isActiveVisible()) return;
-  const songId = activeIdText.value;
+  const songId = String(targetId ?? '').trim();
+  if (!measurementActive.value || props.loading || !songId) return false;
+  if (isSongVisible(songId)) return true;
   const index = filteredSongIndexMap.value.get(songId);
   const scrollContainer = getScrollContainer();
   const scrollerEl = containerRef.value;
-  if (index === undefined || !scrollContainer || !scrollerEl) return;
+  if (index === undefined || !scrollContainer || !scrollerEl) return false;
   const revision = locationRevision;
   const isCurrent = () =>
     revision === locationRevision &&
     measurementActive.value &&
     !props.loading &&
-    activeIdText.value === songId &&
     filteredSongIndexMap.value.get(songId) === index &&
     getScrollContainer() === scrollContainer &&
     containerRef.value === scrollerEl;
 
   scrollToIndex(index, 'instant');
   await nextTick();
-  if (!isCurrent()) return;
+  if (!isCurrent()) return false;
   const containerRect = scrollContainer.getBoundingClientRect();
   const scrollerRect = scrollerEl.getBoundingClientRect();
   const scrollerOffset = scrollerRect.top - containerRect.top;
@@ -464,9 +501,12 @@ const scrollToActive = async () => {
   });
   locationFrame = requestAnimationFrame(() => {
     locationFrame = 0;
-    if (isCurrent()) adjustActiveIntoView();
+    if (isCurrent()) adjustSongIntoView(songId);
   });
+  return true;
 };
+
+const scrollToActive = () => scrollToSong(activeIdText.value);
 
 watch(
   () => playerStore.isPlaying,
@@ -489,16 +529,9 @@ const userStore = useUserStore();
 const contextMenuOpen = ref(false);
 const contextMenuTarget = ref<Song | null>(null);
 const contextMenuTargetId = ref<string | null>(null);
-const contextMenuRef = ref<HTMLElement | null>(null);
-const contextMenuPosition = ref({ x: 0, y: 0 });
+const contextMenuPoint = ref<{ x: number; y: number } | null>(null);
 const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
-let contextMenuPoint: { x: number; y: number } | null = null;
-
-const contextMenuStyle = computed(() => ({
-  left: `${contextMenuPosition.value.x}px`,
-  top: `${contextMenuPosition.value.y}px`,
-}));
 
 const selectablePlaylists = computed(() =>
   playlistStore.getCreatedPlaylists(userStore.info?.userid),
@@ -567,36 +600,7 @@ const closeContextMenu = () => {
 const clearContextMenuTarget = () => {
   contextMenuTarget.value = null;
   contextMenuTargetId.value = null;
-  contextMenuPoint = null;
-};
-
-const estimateContextMenuHeight = () => {
-  const itemCount =
-    6 +
-    extensionContextMenuItems.value.length +
-    pageContextMenuItems.value.length +
-    (contextMenuCanRemove.value ? 1 : 0);
-  const separatorCount =
-    (extensionContextMenuItems.value.length > 0 ? 1 : 0) +
-    (pageContextMenuItems.value.length > 0 ? 1 : 0) +
-    (contextMenuCanRemove.value ? 1 : 0) +
-    2;
-  return Math.min(window.innerHeight - 104, 14 + itemCount * 36 + separatorCount * 9);
-};
-
-const updateContextMenuPosition = () => {
-  if (!measurementActive.value || !contextMenuOpen.value || !contextMenuPoint) return;
-  const menu = contextMenuRef.value;
-  const width = menu?.offsetWidth || 180;
-  const height = menu?.offsetHeight || estimateContextMenuHeight();
-  const padding = 8;
-  const bottomPadding = 96;
-  const maxX = Math.max(padding, window.innerWidth - width - padding);
-  const maxY = Math.max(padding, window.innerHeight - height - bottomPadding);
-  contextMenuPosition.value = {
-    x: Math.round(Math.min(Math.max(contextMenuPoint.x, padding), maxX)),
-    y: Math.round(Math.min(Math.max(contextMenuPoint.y, padding), maxY)),
-  };
+  contextMenuPoint.value = null;
 };
 
 const handleContextMenu = (event: MouseEvent) => {
@@ -626,12 +630,10 @@ const handleContextMenu = (event: MouseEvent) => {
     return;
   }
   event.preventDefault();
-  contextMenuPoint = { x: event.clientX, y: event.clientY };
-  contextMenuPosition.value = contextMenuPoint;
+  contextMenuPoint.value = { x: event.clientX, y: event.clientY };
   contextMenuTarget.value = song;
   contextMenuTargetId.value = songId;
   contextMenuOpen.value = true;
-  void nextTick(updateContextMenuPosition);
 };
 
 const handleContextMenuAction = (action: () => void | Promise<void>) => {
@@ -639,50 +641,8 @@ const handleContextMenuAction = (action: () => void | Promise<void>) => {
   void action();
 };
 
-const handleDocumentPointerDown = (event: PointerEvent) => {
-  if (!contextMenuOpen.value) return;
-  const target = event.target as Node | null;
-  if (target && contextMenuRef.value?.contains(target)) return;
-  closeContextMenu();
-};
-
-const handleDocumentKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape' && contextMenuOpen.value) {
-    event.preventDefault();
-    closeContextMenu();
-  }
-};
-
-const handleWindowViewportChange = (event: Event) => {
-  // A long extension menu scrolls independently; only page/viewport changes dismiss it.
-  if (event.type === 'scroll' && contextMenuRef.value?.contains(event.target as Node)) return;
-  if (contextMenuOpen.value) closeContextMenu();
-};
-
-let releaseContextMenuResources: (() => void) | undefined;
-const bindContextMenuResources = () => {
-  const scrollContainer = scrollContainerRef.value;
-  const previousOverflow = scrollContainer?.style.overflow ?? '';
-  if (scrollContainer) scrollContainer.style.overflow = 'hidden';
-  document.addEventListener('pointerdown', handleDocumentPointerDown, true);
-  document.addEventListener('keydown', handleDocumentKeydown, true);
-  window.addEventListener('resize', handleWindowViewportChange);
-  window.addEventListener('scroll', handleWindowViewportChange, true);
-  return () => {
-    document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
-    document.removeEventListener('keydown', handleDocumentKeydown, true);
-    window.removeEventListener('resize', handleWindowViewportChange);
-    window.removeEventListener('scroll', handleWindowViewportChange, true);
-    if (scrollContainer?.style.overflow === 'hidden') {
-      scrollContainer.style.overflow = previousOverflow;
-    }
-  };
-};
-
 onBeforeUnmount(() => {
   closeContextMenu();
-  releaseContextMenuResources?.();
-  releaseContextMenuResources = undefined;
 });
 
 const ctxPlayNow = async () => {
@@ -822,22 +782,13 @@ const ctxPageContextAction = async (item: SongListContextMenuItem) => {
   }
 };
 
-// 仅菜单打开时订阅全局事件，并始终向原容器归还滚动样式。
+// 菜单关闭时只去掉行高亮：添加到歌单弹窗仍需要 target。
 watch(
   contextMenuOpen,
   (isOpen) => {
-    releaseContextMenuResources?.();
-    releaseContextMenuResources = undefined;
     if (!isOpen) {
-      // 添加到歌单弹窗仍需要 target，仅移除行高亮。
       contextMenuTargetId.value = null;
-      return;
     }
-    if (!measurementActive.value) {
-      closeContextMenu();
-      return;
-    }
-    releaseContextMenuResources = bindContextMenuResources();
   },
   { flush: 'sync' },
 );
@@ -874,7 +825,12 @@ watch(
   { flush: 'post' },
 );
 
-defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.value.length) });
+defineExpose({
+  scrollToActive,
+  scrollToSong,
+  flashSong,
+  filteredCount: computed(() => filteredSongsRef.value.length),
+});
 </script>
 
 <template>
@@ -897,6 +853,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
           :style="{ height: `${itemHeight}px`, opacity: entry.opacity }"
           :class="{
             'is-active': entry.isActive,
+            'is-flash': flashedSongId === entry.idText,
             'is-context-target': contextMenuOpen && contextMenuTargetId === entry.idText,
             'is-leaving':
               (promotedKey != null && entry.data.historyKey === promotedKey) ||
@@ -1025,103 +982,100 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
   </div>
 
   <!-- 单例右键菜单（整个列表共享一个实例） -->
-  <Teleport to="body">
-    <div
-      v-if="contextMenuOpen && contextMenuTarget"
-      ref="contextMenuRef"
-      class="song-context-menu"
-      :style="contextMenuStyle"
-      role="menu"
-      @contextmenu.prevent
+  <ContextMenuPanel
+    :open="contextMenuOpen && Boolean(contextMenuTarget)"
+    :x="contextMenuPoint?.x ?? 0"
+    :y="contextMenuPoint?.y ?? 0"
+    :scroll-lock-el="scrollContainerRef"
+    @close="closeContextMenu"
+  >
+    <button
+      type="button"
+      class="song-context-item"
+      role="menuitem"
+      @click="handleContextMenuAction(ctxPlayNow)"
     >
-      <button
-        type="button"
-        class="song-context-item"
-        role="menuitem"
-        @click="handleContextMenuAction(ctxPlayNow)"
-      >
-        立即播放
-      </button>
-      <button
-        type="button"
-        class="song-context-item"
-        role="menuitem"
-        @click="handleContextMenuAction(ctxPlayNext)"
-      >
-        下一首播放
-      </button>
-      <button
-        type="button"
-        class="song-context-item"
-        role="menuitem"
-        @click="handleContextMenuAction(ctxPlayLast)"
-      >
-        排队候播
-      </button>
-      <div class="song-context-separator"></div>
-      <button
-        type="button"
-        class="song-context-item"
-        role="menuitem"
-        @click="handleContextMenuAction(ctxAddToPlaylist)"
-      >
-        添加到
-      </button>
-      <div v-if="extensionContextMenuItems.length > 0" class="song-context-separator"></div>
-      <button
-        v-for="item in extensionContextMenuItems"
-        :key="item.id"
-        type="button"
-        class="song-context-item"
-        :class="{ 'is-danger': item.danger }"
-        :disabled="!isExtensionContextItemEnabled(item)"
-        role="menuitem"
-        @click="handleContextMenuAction(() => ctxExtensionAction(item))"
-      >
-        {{ item.label }}
-      </button>
-      <div v-if="pageContextMenuItems.length > 0" class="song-context-separator"></div>
-      <button
-        v-for="item in pageContextMenuItems"
-        :key="item.id"
-        type="button"
-        class="song-context-item"
-        :class="{ 'is-danger': item.danger }"
-        :disabled="!isPageContextItemEnabled(item)"
-        role="menuitem"
-        @click="handleContextMenuAction(() => ctxPageContextAction(item))"
-      >
-        {{ item.label }}
-      </button>
-      <div v-if="contextMenuCanRemove" class="song-context-separator"></div>
-      <button
-        v-if="contextMenuCanRemove"
-        type="button"
-        class="song-context-item is-danger"
-        role="menuitem"
-        @click="handleContextMenuAction(ctxRemoveFromPlaylist)"
-      >
-        从歌单删除
-      </button>
-      <div class="song-context-separator"></div>
-      <button
-        type="button"
-        class="song-context-item"
-        role="menuitem"
-        @click="handleContextMenuAction(ctxShareSong)"
-      >
-        分享
-      </button>
-      <button
-        type="button"
-        class="song-context-item"
-        role="menuitem"
-        @click="handleContextMenuAction(ctxCopySongInfo)"
-      >
-        复制信息
-      </button>
-    </div>
-  </Teleport>
+      立即播放
+    </button>
+    <button
+      type="button"
+      class="song-context-item"
+      role="menuitem"
+      @click="handleContextMenuAction(ctxPlayNext)"
+    >
+      下一首播放
+    </button>
+    <button
+      type="button"
+      class="song-context-item"
+      role="menuitem"
+      @click="handleContextMenuAction(ctxPlayLast)"
+    >
+      排队候播
+    </button>
+    <div class="song-context-separator"></div>
+    <button
+      type="button"
+      class="song-context-item"
+      role="menuitem"
+      @click="handleContextMenuAction(ctxAddToPlaylist)"
+    >
+      添加到
+    </button>
+    <div v-if="extensionContextMenuItems.length > 0" class="song-context-separator"></div>
+    <button
+      v-for="item in extensionContextMenuItems"
+      :key="item.id"
+      type="button"
+      class="song-context-item"
+      :class="{ 'is-danger': item.danger }"
+      :disabled="!isExtensionContextItemEnabled(item)"
+      role="menuitem"
+      @click="handleContextMenuAction(() => ctxExtensionAction(item))"
+    >
+      {{ item.label }}
+    </button>
+    <div v-if="pageContextMenuItems.length > 0" class="song-context-separator"></div>
+    <button
+      v-for="item in pageContextMenuItems"
+      :key="item.id"
+      type="button"
+      class="song-context-item"
+      :class="{ 'is-danger': item.danger }"
+      :disabled="!isPageContextItemEnabled(item)"
+      role="menuitem"
+      @click="handleContextMenuAction(() => ctxPageContextAction(item))"
+    >
+      {{ item.label }}
+    </button>
+    <div v-if="contextMenuCanRemove" class="song-context-separator"></div>
+    <button
+      v-if="contextMenuCanRemove"
+      type="button"
+      class="song-context-item is-danger"
+      role="menuitem"
+      @click="handleContextMenuAction(ctxRemoveFromPlaylist)"
+    >
+      从歌单删除
+    </button>
+    <div class="song-context-separator"></div>
+    <button
+      type="button"
+      class="song-context-item"
+      role="menuitem"
+      @click="handleContextMenuAction(ctxShareSong)"
+    >
+      分享
+    </button>
+    <button
+      type="button"
+      class="song-context-item"
+      role="menuitem"
+      @click="handleContextMenuAction(ctxCopySongInfo)"
+    >
+      复制信息
+    </button>
+  </ContextMenuPanel>
 </template>
 
 <style scoped>
@@ -1155,6 +1109,20 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 
 .song-list-row.is-active {
   background: var(--row-selected-bg);
+}
+
+.song-list-row.is-flash {
+  animation: song-list-flash 1.8s ease-out;
+}
+
+@keyframes song-list-flash {
+  0%,
+  55% {
+    background: var(--row-selected-bg);
+  }
+  100% {
+    background: transparent;
+  }
 }
 
 .song-list-row.is-context-target {
@@ -1204,120 +1172,5 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 
 .content-visibility-auto {
   content-visibility: auto;
-}
-
-:global(.song-context-menu) {
-  position: fixed;
-  box-sizing: border-box;
-  width: max-content;
-  min-width: min(180px, calc(100vw - 16px));
-  max-width: calc(100vw - 16px);
-  max-height: calc(100dvh - 104px);
-  padding: 6px;
-  border-radius: var(--radius-popover);
-  background: var(--floating-surface-bg);
-  -webkit-backdrop-filter: var(--floating-surface-filter);
-  backdrop-filter: var(--floating-surface-filter);
-  border: 1px solid var(--surface-outline);
-  box-shadow: var(--shadow-elevated);
-  display: flex;
-  flex-direction: column;
-  z-index: 1200;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  outline: none;
-  contain: paint;
-  isolation: isolate;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  animation: song-context-enter var(--motion-duration-fast) var(--motion-ease-standard);
-}
-
-:global(.song-context-item) {
-  appearance: none;
-  box-sizing: border-box;
-  border: 0;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  width: 100%;
-  min-height: 36px;
-  text-align: left;
-  padding: 8px 10px;
-  border-radius: var(--radius-control);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 20px;
-  overflow-wrap: anywhere;
-  cursor: pointer;
-  user-select: none;
-  color: var(--color-text-main);
-  box-shadow: none;
-  transition:
-    background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
-}
-
-:global(.song-context-item:not(:disabled):hover) {
-  background: var(--control-hover-bg);
-  box-shadow: none;
-}
-
-:global(.song-context-item:not(:disabled):active) {
-  background: var(--control-neutral-pressed-bg);
-}
-
-:global(.song-context-item.is-danger) {
-  color: var(--control-danger-text);
-}
-
-:global(.song-context-item.is-danger:not(:disabled):hover) {
-  background: var(--control-danger-hover-bg);
-  box-shadow: none;
-}
-
-:global(.song-context-item.is-danger:not(:disabled):active) {
-  background: var(--control-danger-pressed-bg);
-}
-
-:global(.song-context-item:not(:disabled):focus-visible),
-:global(.song-context-item.is-danger:not(:disabled):focus-visible) {
-  outline: none;
-  box-shadow: inset 0 0 0 1px var(--color-primary-text);
-}
-
-:global(.song-context-item:disabled) {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-:global(.song-context-separator) {
-  flex-shrink: 0;
-  border: 0;
-  border-top: 1px solid var(--border-subtle);
-  margin: 4px 6px;
-}
-
-@keyframes song-context-enter {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 4px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :global(.song-context-menu) {
-    animation: none;
-  }
-  :global(.song-context-item) {
-    transition: none;
-  }
 }
 </style>

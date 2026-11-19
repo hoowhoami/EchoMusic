@@ -23,6 +23,9 @@ const scrollToTop = () => {
   currentTarget.scrollTo({ top: 0, behavior: 'instant' });
 };
 
+/** 唯一的回顶入口：右下角图标点击、双击 tab 等都走这里，不要另写滚动逻辑 */
+defineExpose({ scrollToTop });
+
 const unbind = () => {
   if (currentTarget) {
     currentTarget.removeEventListener('scroll', handleScroll);

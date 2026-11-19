@@ -9,6 +9,8 @@ export interface ShareTarget {
   type: ShareResourceType;
   id: string;
   title?: string;
+  /** 仅用于分享文案里的称呼（例如「有声/长专」），不参与链接生成与解析。 */
+  label?: string;
   sharer?: string;
   query?: ShareTargetQuery;
 }
@@ -225,7 +227,7 @@ export const extractShareTarget = (value: string): ShareTarget | null => {
 export const buildShareText = (target: ShareTarget): string => {
   const title = readText(target.title);
   const sharer = readText(target.sharer) || 'EchoMusic';
-  const label = SHARE_TYPE_LABELS[target.type];
+  const label = readText(target.label) || SHARE_TYPE_LABELS[target.type];
   const headline = `${sharer} 给你分享了${label}${title ? `「${title}」` : ''}，快去看看吧`;
   return `${headline}\n${buildShareWebUrl(target)}`;
 };

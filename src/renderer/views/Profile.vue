@@ -2210,7 +2210,6 @@ onUnmounted(() => {
       :description="`移除“${pendingKickDevice?.title || '该设备'}”后，该设备需要重新登录。`"
     >
       <template #footer>
-        <Button variant="outline" size="default" @click="showKickConfirm = false">取消</Button>
         <Button
           variant="danger"
           size="default"
@@ -2221,6 +2220,7 @@ onUnmounted(() => {
         >
           确认移除
         </Button>
+        <Button variant="outline" size="default" @click="showKickConfirm = false">取消</Button>
       </template>
     </Dialog>
   </PageScrollContainer>

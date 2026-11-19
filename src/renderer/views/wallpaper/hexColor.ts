@@ -29,6 +29,20 @@ export const parseHexColor = (
   };
 };
 
+/** 把一种颜色按比例混向另一种颜色（ratio 为后者的占比），用于派生配色的中间调。 */
+export const mixColor = (from: RgbColor, to: RgbColor, ratio: number): RgbColor => {
+  const weight = Math.min(1, Math.max(0, ratio));
+  return {
+    r: Math.round(from.r + (to.r - from.r) * weight),
+    g: Math.round(from.g + (to.g - from.g) * weight),
+    b: Math.round(from.b + (to.b - from.b) * weight),
+  };
+};
+
+/** 把通道值拼回 #rrggbb，供 CSS 背景色使用。 */
+export const hexColor = (color: RgbColor): string =>
+  '#' + [color.r, color.g, color.b].map((value) => value.toString(16).padStart(2, '0')).join('');
+
 /** 把像素通道拼成画布能用的 rgba 颜色。 */
 export const rgba = (color: RgbColor, alpha: number): string =>
   'rgba(' + [color.r, color.g, color.b, alpha].join(', ') + ')';

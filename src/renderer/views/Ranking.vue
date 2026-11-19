@@ -32,6 +32,7 @@ import { useToastStore } from '@/stores/toast';
 import Badge from '@/components/ui/Badge.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
+import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 import { extractObject } from '@/utils/extractors';
 
@@ -40,6 +41,10 @@ const playerStore = usePlayerStore();
 const toastStore = useToastStore();
 const settingStore = useSettingStore();
 const themeStore = useThemeStore();
+
+// 双击 tab 回到顶部：本页是 PageScrollContainer 的父组件，useScrollContainer() 只能拿到 null
+const pageScrollRef = ref<PageScrollHandle | null>(null);
+const { onTabPointerDown, onTabDoubleClick } = useTabDoubleClickTop(() => pageScrollRef.value);
 
 const loadingRanks = ref(true);
 const loadingSongs = ref(false);
@@ -284,7 +289,7 @@ watch(
 </script>
 
 <template>
-  <PageScrollContainer class="ranking-view-container">
+  <PageScrollContainer ref="pageScrollRef" class="ranking-view-container">
     <div class="ranking-view bg-bg-main min-h-full">
       <DetailPageSkeleton v-if="loadingRanks" typeLabel="RANK" :expandedHeight="176" />
 
@@ -382,7 +387,11 @@ watch(
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">
                 <div class="flex items-center justify-between h-14">
-                  <TabsList class="bg-transparent border-none gap-8">
+                  <TabsList
+                    class="bg-transparent border-none gap-8"
+                    @pointerdown="onTabPointerDown"
+                    @dblclick="onTabDoubleClick"
+                  >
                     <TabsTrigger value="songs">
                       <span class="badge-label">歌曲 <Badge :count="songs.length" /></span>
                     </TabsTrigger>
