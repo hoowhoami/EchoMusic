@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import type { EchoPluginDescriptor } from '../src/shared/plugins.ts';
 import { buildSync } from 'esbuild';
 // Bundle extensionless internal imports as the application build does.
 const runtimeCode = buildSync({
   entryPoints: [
-    new URL('../src/renderer/plugins/runtime/runtimeServices.ts', import.meta.url).pathname,
+    fileURLToPath(new URL('../src/renderer/plugins/runtime/runtimeServices.ts', import.meta.url)),
   ],
   bundle: true,
   format: 'cjs',

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { buildSync } from 'esbuild';
 const require = createRequire(import.meta.url);
@@ -7,7 +8,7 @@ const { computed, createRenderer, h, KeepAlive, nextTick, watch } = require('vue
 const { createRouter, createMemoryHistory, RouterView } = require('vue-router');
 const load = (path) => {
   const source = buildSync({
-    entryPoints: [new URL(path, import.meta.url).pathname],
+    entryPoints: [fileURLToPath(new URL(path, import.meta.url))],
     bundle: true,
     platform: 'node',
     format: 'cjs',

@@ -3,18 +3,18 @@ defineOptions({ name: 'share-resolve-page' });
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getAlbumDetail } from '@/api/album';
+import { getAlbumDetail, getAlbumSongs } from '@/api/album';
 import { getArtistDetail } from '@/api/artist';
 import {
   getListenTogetherRoomDetail,
   getListenTogetherRoomState,
   ListenTogetherApiError,
 } from '@/api/listenTogether';
-import { getSongPrivilegeLite } from '@/api/music';
+import { getSongPrivilegeLite, searchLyric } from '@/api/music';
 import { getPlaylistDetail } from '@/api/playlist';
 import Button from '@/components/ui/Button.vue';
 import { iconArrowLeft, iconHome, iconRefreshCw, iconShare, iconTriangleAlert } from '@/icons';
-import { extractFirstObject } from '@/utils/extractors';
+import { extractFirstObject, extractList } from '@/utils/extractors';
 import { mapAlbumDetailMeta, mapArtistDetailMeta, mapPlaylistMeta } from '@/utils/mappers';
 import { readPositiveId } from '@/utils/mappers/shared';
 import { isSongHashId, readShareDetailQuery } from '@/utils/share';
@@ -251,12 +251,162 @@ const buildSongDetailQuery = (hash: string, record: Record<string, unknown>) => 
   };
 };
 
+const normalizeSongTitle = (value: string) =>
+  value.toLowerCase().replace(/[\s\-—–_·・,，.。!！?？'"“”‘’()（）[\]【】《》<>]/g, '');
+
+type LyricCandidate = {
+  song: string;
+  singer: string;
+  duration: number;
+};
+
+const readLyricCandidate = (payload: unknown): LyricCandidate | null => {
+  if (!isRecord(payload)) return null;
+  const data = isRecord(payload.data) ? payload.data : null;
+  // 与 lyric store 的候选解析保持一致：空 candidates 要让位给 info 等后备数组。
+  const list = [data?.candidates, payload.candidates, data?.info, payload.info].find(
+    (value) => Array.isArray(value) && value.length > 0,
+  ) as unknown[] | undefined;
+  for (const item of list ?? []) {
+    if (!isRecord(item)) continue;
+    const song = readFirstText(item.song, item.songname);
+    if (!song) continue;
+    return {
+      song,
+      singer: readFirstText(item.singer, item.singername),
+      duration: Number(item.duration) || 0,
+    };
+  }
+  return null;
+};
+
+/**
+ * 上游已移除的资源在 mediastore 里没有歌名和 album_audio_id，分享页因此无法打开。
+ * 用按 hash 的歌词候选补出歌名/歌手，再按歌名从专辑曲目映射回保留的 album_audio_id，
+ * 播放端就能用 tracker 重发现现存文件。
+ */
+const enrichRemovedSongRecord = async (
+  hash: string,
+  albumId: string,
+  record: Record<string, unknown>,
+): Promise<Record<string, unknown>> => {
+  const base = readRecord(record, 'base');
+  const existingTitle = readFirstText(
+    record.name,
+    record.songname,
+    record.audio_name,
+    base.audio_name,
+    base.songname,
+  );
+  const existingAlbumAudioId = readPositiveId(
+    record.album_audio_id,
+    record.mixsongid,
+    base.album_audio_id,
+    base.mixsongid,
+  );
+  // 身份完整时不做额外请求；只缺 album_audio_id 时仍尝试按专辑映射。
+  if (existingTitle && existingAlbumAudioId) return record;
+
+  let title = existingTitle;
+  let singer = readFirstText(
+    record.singername,
+    record.author_name,
+    base.author_name,
+    base.singername,
+  );
+  let candidate: LyricCandidate | null = null;
+  if (!title) {
+    try {
+      candidate = readLyricCandidate(await searchLyric({ hash, man: 'yes' }));
+    } catch (error) {
+      logger.debug('ShareResolve', 'Removed song lyric lookup failed:', error);
+    }
+    if (!candidate) return record;
+    title = candidate.song;
+    singer = singer || candidate.singer;
+  }
+
+  const enriched: Record<string, unknown> = {
+    ...record,
+    name: title,
+    base: {
+      ...base,
+      audio_name: title,
+      ...(singer ? { author_name: singer } : {}),
+    },
+    ...(singer ? { singername: singer, author_name: singer } : {}),
+  };
+  if (!albumId || existingAlbumAudioId) return enriched;
+
+  try {
+    const songs = extractList(await getAlbumSongs(albumId, 1, 50));
+    const targetTitle = normalizeSongTitle(title);
+    let matched: Record<string, unknown> | null = null;
+    let matchedDurationDelta = Number.POSITIVE_INFINITY;
+    for (const item of songs) {
+      if (!isRecord(item)) continue;
+      const itemBase = readRecord(item, 'base');
+      const itemTitle = normalizeSongTitle(
+        readFirstText(itemBase.audio_name, itemBase.songname, item.audio_name),
+      );
+      if (!itemTitle || itemTitle !== targetTitle) continue;
+      // 同名曲目用时长挑最接近的一条（预告版/现场版常与正式版同名）。
+      const duration =
+        Number(readFirstText(readRecord(item, 'audio_info').duration, itemBase.duration)) || 0;
+      const delta =
+        candidate && candidate.duration > 0 && duration > 0
+          ? Math.abs(duration - candidate.duration)
+          : 0;
+      if (!matched || delta < matchedDurationDelta) {
+        matched = item;
+        matchedDurationDelta = delta;
+      }
+    }
+    if (matched) {
+      const matchedBase = readRecord(matched, 'base');
+      const albumAudioId = readPositiveId(
+        matchedBase.album_audio_id,
+        matchedBase.mixsongid,
+        matched.album_audio_id,
+      );
+      const matchedAlbumId = readPositiveId(matchedBase.album_id, matched.album_id);
+      if (albumAudioId) {
+        enriched.base = {
+          ...readRecord(enriched, 'base'),
+          album_audio_id: albumAudioId,
+          ...(matchedAlbumId ? { album_id: matchedAlbumId } : {}),
+        };
+        enriched.album_audio_id = albumAudioId;
+      }
+      const matchedAlbumInfo = readRecord(matched, 'album_info');
+      if (Object.keys(matchedAlbumInfo).length > 0) enriched.album_info = matchedAlbumInfo;
+      if (Array.isArray(matched.authors)) enriched.authors = matched.authors;
+    }
+  } catch (error) {
+    logger.debug('ShareResolve', 'Removed song album mapping failed:', error);
+  }
+  return enriched;
+};
+
 const resolveSong = async (id: string) => {
   if (!isSongHashId(id)) return false;
   const record = getSongPrivilegeRecord(await getSongPrivilegeLite(id, detailQuery.value.albumId));
   if (!record) return false;
-  const query = buildSongDetailQuery(id, record);
-  if (!query.mixSongId || !query.title) return false;
+  let query = buildSongDetailQuery(id, record);
+  if (!query.albumAudioId || !query.title) {
+    const base = readRecord(record, 'base');
+    const albumId = readPositiveId(
+      detailQuery.value.albumId,
+      record.album_id,
+      record.albumid,
+      base.album_id,
+      base.albumid,
+    );
+    const enriched = await enrichRemovedSongRecord(id, albumId, record);
+    if (enriched !== record) query = buildSongDetailQuery(id, enriched);
+  }
+  const removedResource = Number(record._errno) === 6;
+  if (!query.mixSongId || !query.title || (removedResource && !query.albumAudioId)) return false;
   router.replace({
     name: 'song-detail',
     params: { id },
