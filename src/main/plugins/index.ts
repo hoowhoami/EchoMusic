@@ -1764,15 +1764,18 @@ const hydrateMarketplacePlugins = async (
     .filter((plugin) => enabledSourceIds.has(plugin.sourceId))
     .map((plugin) => {
       const installed = installedById.get(plugin.id);
+      const compatibility = getEchoMusicCompatibility(plugin.manifest);
       return {
         ...plugin,
         iconUrl: applyGithubProxyUrl(plugin.iconUrl, githubProxyUrl),
         installed: Boolean(installed),
         installedVersion: installed?.version ?? '',
         updateAvailable: installed
-          ? isMarketplaceVersionGreater(plugin.version, installed.version)
+          ? // 目录版本不兼容（主程序版本或平台）时不视为可更新，由兼容性提示统一解释
+            compatibility.compatible &&
+            isMarketplaceVersionGreater(plugin.version, installed.version)
           : false,
-        compatibility: getEchoMusicCompatibility(plugin.manifest),
+        compatibility,
         stats: getEmptyMarketplaceStats(),
       };
     });

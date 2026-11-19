@@ -12,8 +12,15 @@ import type {
   EchoPluginCompatibility,
   EchoPluginDescriptor,
   EchoPluginManifest,
+  PluginPlatform,
   PluginWindowDescriptor,
   PluginWindowManifest,
+} from '../../shared/plugins';
+import {
+  getManifestPluginPlatforms,
+  getPluginPlatformLabel,
+  PLUGIN_PLATFORM_LABELS,
+  validatePluginPlatformsRequirement,
 } from '../../shared/plugins';
 import {
   BARE_SEMVER_PATTERN,
@@ -178,6 +185,16 @@ export const readManifest = async (
 const getHostVersion = () =>
   semverValid(app.getVersion()) ?? semverCoerce(app.getVersion())?.version ?? '';
 
+/** process.platform 到插件平台声明的映射（win32/darwin/linux 之外视为未知平台） */
+const HOST_PLUGIN_PLATFORM_MAP: Record<string, PluginPlatform | ''> = {
+  win32: 'windows',
+  darwin: 'macos',
+  linux: 'linux',
+};
+
+const getCurrentPluginPlatform = (): PluginPlatform | '' =>
+  HOST_PLUGIN_PLATFORM_MAP[process.platform] ?? '';
+
 const normalizeEchoMusicVersionRequirement = (value: unknown) => {
   const text = String(value ?? '').trim();
   if (!text) return { range: '', error: '' };
@@ -271,34 +288,46 @@ export const getEchoMusicCompatibility = (
 ): EchoPluginCompatibility => {
   const requirement = String(manifest.requires?.echoMusicVersion ?? '').trim();
   const hostVersion = getHostVersion();
+  const currentPlatform = getCurrentPluginPlatform();
+  const platforms = getManifestPluginPlatforms(manifest.requires?.platforms);
+  const platformLabel = getPluginPlatformLabel(platforms);
+  const platformIncompatible =
+    platforms.length > 0 && (!currentPlatform || !platforms.includes(currentPlatform));
 
-  if (!requirement) {
-    return {
-      compatible: true,
-      currentEchoMusicVersion: hostVersion,
-      requiredEchoMusicVersion: '',
-      message: '',
-    };
+  let versionCompatible = true;
+  let versionMessage = '';
+  let requiredEchoMusicVersion = '';
+  if (requirement) {
+    const { range, error } = normalizeEchoMusicVersionRequirement(requirement);
+    if (error || !range || !hostVersion) {
+      versionCompatible = false;
+      requiredEchoMusicVersion = requirement;
+      versionMessage = error || '无法确认当前 EchoMusic 版本';
+    } else {
+      requiredEchoMusicVersion = range;
+      versionCompatible = semverSatisfies(hostVersion, range, { includePrerelease: true });
+      if (!versionCompatible) {
+        versionMessage = `版本不兼容：需要 EchoMusic 主程序 ${range}，当前版本 ${hostVersion}`;
+      }
+    }
   }
 
-  const { range, error } = normalizeEchoMusicVersionRequirement(requirement);
-  if (error || !range || !hostVersion) {
-    return {
-      compatible: false,
-      currentEchoMusicVersion: hostVersion,
-      requiredEchoMusicVersion: requirement,
-      message: error || '无法确认当前 EchoMusic 版本',
-    };
-  }
+  const compatible = versionCompatible && !platformIncompatible;
+  const message = platformIncompatible
+    ? `此插件仅支持 ${platformLabel}，当前平台为 ${
+        currentPlatform ? PLUGIN_PLATFORM_LABELS[currentPlatform] : process.platform
+      }`
+    : versionMessage;
 
-  const compatible = semverSatisfies(hostVersion, range, { includePrerelease: true });
   return {
     compatible,
     currentEchoMusicVersion: hostVersion,
-    requiredEchoMusicVersion: range,
-    message: compatible
-      ? ''
-      : `版本不兼容：需要 EchoMusic 主程序 ${range}，当前版本 ${hostVersion}`,
+    requiredEchoMusicVersion,
+    message,
+    currentPlatform,
+    platforms,
+    platformLabel,
+    platformIncompatible,
   };
 };
 
@@ -311,6 +340,10 @@ export const validateManifest = (manifest: EchoPluginManifest, manifestError: st
   if (capabilitiesError) return capabilitiesError;
   const versionRequirementError = validateEchoMusicVersionRequirement(manifest);
   if (versionRequirementError) return versionRequirementError;
+  const platformsRequirementError = validatePluginPlatformsRequirement(
+    manifest.requires?.platforms,
+  );
+  if (platformsRequirementError) return platformsRequirementError;
   return '';
 };
 

@@ -336,6 +336,7 @@ export const usePluginMarketplace = ({
   };
 
   const getMarketplaceInstallLabel = (plugin: PluginMarketplacePlugin) => {
+    if (!plugin.compatibility.compatible) return '不兼容';
     if (plugin.updateAvailable) return '更新';
     if (plugin.installed) return '已安装';
     return '安装';
@@ -347,7 +348,9 @@ export const usePluginMarketplace = ({
       : plugin.compatibility.message || '插件与当前 EchoMusic 主程序版本不兼容';
 
   const getMarketplaceStatusLabel = (plugin: PluginMarketplacePlugin) => {
-    if (!plugin.compatibility.compatible) return '版本要求';
+    if (!plugin.compatibility.compatible) {
+      return plugin.compatibility.platformIncompatible ? '平台不支持' : '版本要求';
+    }
     if (plugin.updateAvailable) return '可更新';
     if (plugin.installed) return '已安装';
     return '未安装';

@@ -819,6 +819,60 @@ export type PluginSqliteDeleteResult =
       error: string;
     };
 
+/** 插件平台声明的合法取值，与主程序运行平台一一对应 */
+export type PluginPlatform = 'windows' | 'macos' | 'linux';
+
+export const PLUGIN_PLATFORMS: readonly PluginPlatform[] = ['windows', 'macos', 'linux'];
+
+export const PLUGIN_PLATFORM_LABELS: Record<PluginPlatform, string> = {
+  windows: 'Windows',
+  macos: 'macOS',
+  linux: 'Linux',
+};
+
+/** 归一化 manifest 中声明的平台标识，非合法取值返回空串 */
+export const normalizePluginPlatform = (value: unknown): PluginPlatform | '' => {
+  const text = String(value ?? '').trim();
+  return PLUGIN_PLATFORMS.includes(text as PluginPlatform) ? (text as PluginPlatform) : '';
+};
+
+/** 将平台数组展示为 "Windows、macOS" 文本 */
+export const getPluginPlatformLabel = (platforms: readonly unknown[]): string =>
+  platforms
+    .map((platform) => {
+      const normalized = normalizePluginPlatform(platform);
+      return normalized ? PLUGIN_PLATFORM_LABELS[normalized] : '';
+    })
+    .filter(Boolean)
+    .join('、');
+
+/** 校验 manifest.requires.platforms 声明格式，返回错误文案；未声明时为空 */
+export const validatePluginPlatformsRequirement = (value: unknown): string => {
+  if (value === undefined) return '';
+  if (!Array.isArray(value) || value.length === 0 || value.length > PLUGIN_PLATFORMS.length) {
+    return 'requires.platforms 必须是非空且不超过 3 项的平台数组';
+  }
+  const seen = new Set<PluginPlatform>();
+  for (const item of value) {
+    const platform = normalizePluginPlatform(item);
+    if (!platform) return `requires.platforms 包含不支持的平台: ${String(item)}`;
+    if (seen.has(platform)) return `requires.platforms 存在重复平台: ${platform}`;
+    seen.add(platform);
+  }
+  return '';
+};
+
+/** 读取 manifest 声明的支持平台（保持声明顺序并去重）；未声明或全为非法项时为空数组 */
+export const getManifestPluginPlatforms = (value: unknown): PluginPlatform[] => {
+  if (!Array.isArray(value)) return [];
+  const platforms: PluginPlatform[] = [];
+  for (const item of value) {
+    const platform = normalizePluginPlatform(item);
+    if (platform && !platforms.includes(platform)) platforms.push(platform);
+  }
+  return platforms;
+};
+
 export interface EchoPluginManifest {
   tags?: string[];
   id: string;
@@ -859,6 +913,8 @@ export interface EchoPluginManifest {
   };
   requires?: {
     echoMusicVersion?: string;
+    /** 声明插件支持的平台（windows/macos/linux），省略表示全部平台 */
+    platforms?: PluginPlatform[];
   };
 }
 
@@ -867,6 +923,14 @@ export interface EchoPluginCompatibility {
   currentEchoMusicVersion: string;
   requiredEchoMusicVersion: string;
   message: string;
+  /** 当前宿主平台（windows/macos/linux），未知平台为空 */
+  currentPlatform: PluginPlatform | '';
+  /** manifest 声明的支持平台，空数组表示不限平台 */
+  platforms: PluginPlatform[];
+  /** 支持平台的展示文本，如 "Windows、macOS"；未声明时为空 */
+  platformLabel: string;
+  /** 当前平台不被 manifest 声明支持时为 true */
+  platformIncompatible: boolean;
 }
 
 export type PluginInstallSource =
