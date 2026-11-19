@@ -115,6 +115,20 @@ test(
     await fs.rm(f.output, { recursive: true });
   },
 );
+for (const [name, archiveMode, expectedMode] of [
+  ['executable permissions', 0o100755, 0o755],
+  ['ordinary file permissions', 0o100644, 0o644],
+  ['only ordinary permissions from special mode bits', 0o107755, 0o755],
+  ['default permissions when Unix attributes are absent', 0, 0o666 & ~process.umask()],
+  ['default permissions when permission bits are absent', 0o100000, 0o666 & ~process.umask()],
+]) {
+  test(`ZIP extraction preserves ${name}`, { skip: process.platform === 'win32' }, async (t) => {
+    const f = await fixture(t, [{ name: 'plugin/bin/helper', attr: (archiveMode << 16) >>> 0 }]);
+    await extractZipWithStreamZip(f.file, f.output);
+    const mode = (await fs.stat(path.join(f.output, 'plugin/bin/helper'))).mode & 0o7777;
+    assert.equal(mode, expectedMode);
+  });
+}
 for (const [name, entries] of [
   ['traversal', [{ name: '../outside.txt' }]],
   ['absolute path', [{ name: '/outside.txt' }]],

@@ -127,6 +127,11 @@ const extractZipWithStreamZip = async (zipPath: string, extractDirectory: string
         await pipeline(stream, budget, createWriteStream(target, { flags: 'wx' }), {
           signal: controller.signal,
         });
+        // 只恢复普通 Unix 权限，避免丢失执行位或带入 setuid/setgid/sticky 位。
+        const permissionMode = (entry.attr >>> 16) & 0o777;
+        if (process.platform !== 'win32' && permissionMode !== 0) {
+          await fs.chmod(target, permissionMode);
+        }
       }
     } finally {
       clearTimeout(timer);
