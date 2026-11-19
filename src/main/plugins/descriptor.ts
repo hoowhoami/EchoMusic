@@ -4,6 +4,7 @@ import { basename, extname, join } from 'path';
 import { pathToFileURL } from 'url';
 import {
   coerce as semverCoerce,
+  gt as semverGt,
   satisfies as semverSatisfies,
   valid as semverValid,
   validRange as semverValidRange,
@@ -186,7 +187,7 @@ const getHostVersion = () =>
   semverValid(app.getVersion()) ?? semverCoerce(app.getVersion())?.version ?? '';
 
 /** process.platform 到插件平台声明的映射（win32/darwin/linux 之外视为未知平台） */
-const HOST_PLUGIN_PLATFORM_MAP: Record<string, PluginPlatform | ''> = {
+const HOST_PLUGIN_PLATFORM_MAP: Record<string, PluginPlatform> = {
   win32: 'windows',
   darwin: 'macos',
   linux: 'linux',
@@ -330,6 +331,23 @@ export const getEchoMusicCompatibility = (
     platformIncompatible,
   };
 };
+
+const getComparableVersion = (value: string) =>
+  semverValid(value) ?? semverCoerce(value)?.version ?? '';
+
+const isMarketplaceVersionGreater = (candidate: string, current: string) => {
+  const nextVersion = getComparableVersion(candidate);
+  const currentVersion = getComparableVersion(current);
+  if (nextVersion && currentVersion) return semverGt(nextVersion, currentVersion);
+  return candidate.localeCompare(current, undefined, { numeric: true, sensitivity: 'base' }) > 0;
+};
+
+/** 目录版本是否视为可更新：版本需更高，且清单与当前环境（主程序版本/平台）兼容 */
+export const isMarketplaceUpdateAvailable = (
+  compatibility: EchoPluginCompatibility,
+  candidateVersion: string,
+  installedVersion: string,
+) => compatibility.compatible && isMarketplaceVersionGreater(candidateVersion, installedVersion);
 
 export const validateManifest = (manifest: EchoPluginManifest, manifestError: string) => {
   if (manifestError) return manifestError;

@@ -16,7 +16,10 @@ const slice = (start, end) => {
   return compile(source.slice(from, to));
 };
 const listCode = slice('const marketplaceRefreshes =', 'const downloadMarketplacePackage =');
-const fallbackCode = slice('const fetchMarketplaceSourceCatalog =', 'const getComparableVersion =');
+const fallbackCode = slice(
+  'const fetchMarketplaceSourceCatalog =',
+  'const hydrateMarketplacePlugins =',
+);
 const textCode = slice('const fetchMarketplaceText =', 'const fetchMarketplaceIndex =');
 const create = (code, name, deps) =>
   new Function(...Object.keys(deps), `${code}; return ${name};`)(...Object.values(deps));

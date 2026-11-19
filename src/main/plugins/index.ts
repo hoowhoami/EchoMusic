@@ -6,7 +6,6 @@ import { statSync } from 'fs';
 import fs from 'fs/promises';
 import { tmpdir } from 'os';
 import { extname, isAbsolute, join, resolve } from 'path';
-import { coerce as semverCoerce, gt as semverGt, valid as semverValid } from 'semver';
 import type {
   EchoPluginDescriptor,
   EchoPluginManifest,
@@ -87,6 +86,7 @@ import {
   appendUrlCacheKey,
   getEchoMusicCompatibility,
   getManifestIconSource,
+  isMarketplaceUpdateAvailable,
   isSupportedPluginImage,
   toDescriptor,
   validateManifest,
@@ -1738,16 +1738,6 @@ const fetchMarketplaceSourceCatalog = async (
   }
 };
 
-const getComparableVersion = (value: string) =>
-  semverValid(value) ?? semverCoerce(value)?.version ?? '';
-
-const isMarketplaceVersionGreater = (candidate: string, current: string) => {
-  const nextVersion = getComparableVersion(candidate);
-  const currentVersion = getComparableVersion(current);
-  if (nextVersion && currentVersion) return semverGt(nextVersion, currentVersion);
-  return candidate.localeCompare(current, undefined, { numeric: true, sensitivity: 'base' }) > 0;
-};
-
 const hydrateMarketplacePlugins = async (
   plugins: PluginMarketplaceCatalogPlugin[],
   sources: PluginMarketplaceSource[],
@@ -1772,8 +1762,7 @@ const hydrateMarketplacePlugins = async (
         installedVersion: installed?.version ?? '',
         updateAvailable: installed
           ? // 目录版本不兼容（主程序版本或平台）时不视为可更新，由兼容性提示统一解释
-            compatibility.compatible &&
-            isMarketplaceVersionGreater(plugin.version, installed.version)
+            isMarketplaceUpdateAvailable(compatibility, plugin.version, installed.version)
           : false,
         compatibility,
         stats: getEmptyMarketplaceStats(),

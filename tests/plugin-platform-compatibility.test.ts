@@ -27,7 +27,7 @@ export const normalizePluginId = (value) => String(value ?? '').trim().replace(/
 const bundle = await build({
   stdin: {
     contents:
-      "export { getEchoMusicCompatibility, validateManifest } from './src/main/plugins/descriptor';",
+      "export { getEchoMusicCompatibility, validateManifest, isMarketplaceUpdateAvailable } from './src/main/plugins/descriptor';",
     resolveDir: process.cwd(),
     loader: 'ts',
   },
@@ -70,7 +70,8 @@ new Function('require', 'module', 'exports', bundle.outputFiles[0].text)(
   descriptorModule,
   descriptorModule.exports,
 )
-const { getEchoMusicCompatibility, validateManifest } = descriptorModule.exports
+const { getEchoMusicCompatibility, validateManifest, isMarketplaceUpdateAvailable } =
+  descriptorModule.exports
 
 // process.platform 在用例间切换，结束后恢复真实值
 const withPlatform = (platform: string, run: () => void) => {
@@ -205,6 +206,38 @@ test('仅版本不满足时保持版本提示', () => {
     assert.match(compatibility.message, /版本不兼容/)
     // semver 会把裸版本范围归一化为完整三段式
     assert.equal(compatibility.requiredEchoMusicVersion, '>=99.0.0')
+  })
+})
+
+test('目录版本可更新判定叠加兼容门', () => {
+  // 兼容 + 更高版本 → 可更新
+  withPlatform('win32', () => {
+    const compatibility = getEchoMusicCompatibility({
+      id: 'demo',
+      name: 'demo',
+      version: '2.0.0',
+    })
+    assert.equal(isMarketplaceUpdateAvailable(compatibility, '2.0.0', '1.0.0'), true)
+    assert.equal(isMarketplaceUpdateAvailable(compatibility, '1.0.0', '1.0.0'), false)
+    assert.equal(isMarketplaceUpdateAvailable(compatibility, '0.9.0', '1.0.0'), false)
+
+    // 平台不兼容 + 更高版本 → 不可更新
+    const platformIncompatible = getEchoMusicCompatibility({
+      id: 'demo',
+      name: 'demo',
+      version: '2.0.0',
+      requires: { platforms: ['macos'] },
+    })
+    assert.equal(isMarketplaceUpdateAvailable(platformIncompatible, '2.0.0', '1.0.0'), false)
+
+    // 主程序版本不兼容 + 更高版本 → 不可更新
+    const versionIncompatible = getEchoMusicCompatibility({
+      id: 'demo',
+      name: 'demo',
+      version: '2.0.0',
+      requires: { echoMusicVersion: '>=99' },
+    })
+    assert.equal(isMarketplaceUpdateAvailable(versionIncompatible, '2.0.0', '1.0.0'), false)
   })
 })
 
