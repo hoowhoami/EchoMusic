@@ -3,6 +3,7 @@ import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { buildSync, transformSync } from 'esbuild';
 import * as vue from 'vue';
 import { createPinia, defineStore } from 'pinia';
@@ -427,7 +428,7 @@ test(
 
 const userMapper = evaluate(
   buildSync({
-    entryPoints: [new URL('../src/renderer/utils/mappers/user.ts', import.meta.url).pathname],
+    entryPoints: [fileURLToPath(new URL('../src/renderer/utils/mappers/user.ts', import.meta.url))],
     bundle: true,
     format: 'cjs',
     platform: 'node',

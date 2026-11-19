@@ -147,6 +147,8 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
   // 订阅范围限定为待持久化的顶层字段:Pinia 的 $subscribe 是对整个 $state 的
   // deep watch,每次突变都会全量 traverse(歌词 store 的候选缓存曾因此把单次
   // 行切换拖到 100ms 级阻塞);显式 watch 把 deep 遍历限制在持久化相关字段内。
+  // 注意 watch 只在字段变化时触发：某次写入失败后，如果用户不再修改设置，
+  // 要等下一次任意字段变更才会带着全量快照重试，不会自动重试。
   const stateKeys = Object.keys(store.$state);
   const watchedKeys =
     persist === true

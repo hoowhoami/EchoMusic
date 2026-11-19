@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { buildSync } from 'esbuild';
 const source = buildSync({
-  entryPoints: [new URL('../src/renderer/utils/kugouVerification.ts', import.meta.url).pathname],
+  entryPoints: [
+    fileURLToPath(new URL('../src/renderer/utils/kugouVerification.ts', import.meta.url)),
+  ],
   bundle: true,
   format: 'cjs',
   platform: 'node',
