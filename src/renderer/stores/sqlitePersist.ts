@@ -147,6 +147,8 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
   // 订阅范围限定为待持久化的顶层字段:Pinia 的 $subscribe 是对整个 $state 的
   // deep watch,每次突变都会全量 traverse(歌词 store 的候选缓存曾因此把单次
   // 行切换拖到 100ms 级阻塞);显式 watch 把 deep 遍历限制在持久化相关字段内。
+  // 注意 watch 只在字段变化时触发：某次写入失败后，如果用户不再修改设置，
+  // 要等下一次任意字段变更才会带着全量快照重试，不会自动重试。
   const stateKeys = Object.keys(store.$state);
   const watchedKeys =
     persist === true
@@ -156,13 +158,21 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
         : stateKeys.filter((key) => !persist.omit?.includes(key));
   persistScope.run(() => {
     watch(
-      () => watchedKeys.map((key) => store.$state[key]),
+      () => {
+        // Pinia 销毁会清空 pinia.state，此时 store.$state 为 undefined；
+        // 常驻 watch 仍可能在销毁后被触发（HMR、测试清理），需要防御性读取。
+        const state = store.$state as Record<string, unknown> | undefined;
+        return state ? watchedKeys.map((key) => state[key]) : [];
+      },
       () => {
         if (!hydrated || !window.electron?.storage) return;
         if (pendingSave) return;
         pendingSave = window.setTimeout(() => {
           pendingSave = 0;
-          const payload = buildPersistedState(store.$state, persist);
+          // 定时器触发时 store 可能已被销毁，此时没有可持久化的状态
+          const state = store.$state as Record<string, unknown> | undefined;
+          if (!state) return;
+          const payload = buildPersistedState(state, persist);
           writes = writes
             .then(async () => {
               if (lastPersistedState && isSamePersistedValue(payload, lastPersistedState)) return;

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -14,7 +15,7 @@ import { join } from 'node:path';
  * 没有 CSP 的入口（index.html / desktop-lyric.html）不受此限。
  */
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const ENTRY_HTML = readdirSync(ROOT).filter((name) => name.endsWith('.html'));
 
 /** 从 CSP 中取出某个指令的来源列表，空数组表示该指令未声明。 */
@@ -49,8 +50,5 @@ test('带 CSP 的入口必须在 img-src 放行内嵌封面协议', () => {
 test('CSP 解析本身可用（防止上面的断言因解析错误而空过）', () => {
   const entry = entries.find((item) => item.policy);
   assert.ok(entry, '预期至少一个入口声明了 CSP');
-  assert.ok(
-    directiveSources(entry.policy, 'img-src').length > 0,
-    '未能从 CSP 中解析出 img-src',
-  );
+  assert.ok(directiveSources(entry.policy, 'img-src').length > 0, '未能从 CSP 中解析出 img-src');
 });

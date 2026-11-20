@@ -51,7 +51,10 @@ test('platform addon is shared by composition and taskbar with one validated loa
   const e = setup();
   assert.equal(e.get(), e.api);
   assert.equal(e.get(), e.api);
-  assert.deepEqual(e.paths, ['/app/native/echo-platform-adaptor/echo-platform-adaptor.node']);
+  // 源码使用 path.join 拼路径，Windows 上分隔符为反斜杠，用 path 归一化期望值
+  assert.deepEqual(e.paths, [
+    path.join('/app/native/echo-platform-adaptor/echo-platform-adaptor.node'),
+  ]);
 });
 test('taskbar lyrics validate their native session independently of composition', () => {
   const e = setup();
@@ -67,7 +70,7 @@ test('taskbar lyrics validate their native session independently of composition'
 test('packaged loading uses the Windows extraResources destination', () => {
   const e = setup({ packaged: true });
   e.get();
-  assert.deepEqual(e.paths, ['/app/resources/native/echo-platform-adaptor.node']);
+  assert.deepEqual(e.paths, [path.join('/app/resources/native/echo-platform-adaptor.node')]);
 });
 test('missing ABI surface degrades once and non-Windows never loads the DLL', () => {
   const e = setup({ valid: false });

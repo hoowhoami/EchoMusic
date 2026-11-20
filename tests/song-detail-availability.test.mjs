@@ -63,6 +63,9 @@ const shared = evaluate(read('src/renderer/utils/mappers/shared.ts'), {
   '../cover': cover,
   '../../../shared/object': evaluate(read('src/shared/object.ts')),
 });
+const extractors = evaluate(read('src/renderer/utils/extractors.ts'), {
+  '../../shared/object': evaluate(read('src/shared/object.ts')),
+});
 const metadataMapping = evaluate(read('src/renderer/utils/mappers/songMetadata.ts'), {
   './shared': shared,
 });
@@ -466,7 +469,7 @@ test('share resolution carries album_audio_id but never treats album_id zero as 
     '@/api/music': { getSongPrivilegeLite: async () => ({ status: 1, data: [sharedSongRecord] }) },
     '@/components/ui/Button.vue': {},
     '@/icons': {},
-    '@/utils/extractors': {},
+    '@/utils/extractors': extractors,
     '@/utils/mappers': {},
     '@/utils/mappers/shared': shared,
     '@/utils/share': shareUtils,
@@ -487,4 +490,95 @@ test('share resolution carries album_audio_id but never treats album_id zero as 
   assert.equal(f.view.songArtistId.value, 10002646);
   assert.equal(f.view.songAlbumId.value, '80678641');
   assert.equal(f.view.songTitle.value, '每个人都有精神寄托');
+});
+
+test('a removed song share enriches identity from lyrics and album songs', async (t) => {
+  const scope = vue.effectScope();
+  t.after(() => scope.stop());
+  const removedHash = '7898F6BEEB0C7FF6EA33B9F96C0977D3';
+  const removedRecord = {
+    hash: removedHash,
+    _errno: 6,
+    _msg: 'Allow: the audio is not found.',
+    album_id: '528463',
+    album_audio_id: 0,
+    id: 0,
+    name: '',
+    singername: '',
+    relate_goods: [],
+  };
+  const albumSong = {
+    base: {
+      audio_name: '平淡日子里的刺',
+      author_name: '宋冬野',
+      album_audio_id: 27602112,
+      album_id: 528463,
+    },
+    audio_info: { duration: 228257 },
+    album_info: {
+      album_name: '我想和你好好的 电影原声带',
+      cover: 'http://imge.kugou.com/stdmusic/{size}/cover.jpg',
+    },
+    authors: [{ author_id: 85317, author_name: '宋冬野' }],
+  };
+  const replacements = [];
+  const lyricCalls = [];
+  const albumCalls = [];
+  const descriptor = parse(read('src/renderer/views/ShareResolve.vue')).descriptor;
+  const source = compileScript(descriptor, { id: 'share-removed-song' }).content;
+  const component = evaluate(source, {
+    vue: { ...vue, onMounted() {}, onBeforeUnmount() {} },
+    'vue-router': {
+      useRoute: () => ({
+        query: { type: 'song', id: removedHash, 'q.albumId': '528463' },
+      }),
+      useRouter: () => ({ replace: (route) => replacements.push(route) }),
+    },
+    '@/api/album': {
+      getAlbumSongs: async (id) => {
+        albumCalls.push(id);
+        return { status: 1, data: { total: 1, songs: [albumSong] } };
+      },
+    },
+    '@/api/artist': {},
+    '@/api/listenTogether': {},
+    '@/api/playlist': {},
+    '@/api/music': {
+      getSongPrivilegeLite: async () => ({ status: 1, data: [removedRecord] }),
+      searchLyric: async (query) => {
+        lyricCalls.push(query);
+        return {
+          status: 200,
+          candidates: [{ song: '平淡日子里的刺', singer: '宋冬野', duration: 226000 }],
+        };
+      },
+    },
+    '@/components/ui/Button.vue': {},
+    '@/icons': {},
+    '@/utils/extractors': extractors,
+    '@/utils/mappers': {},
+    '@/utils/mappers/shared': shared,
+    '@/utils/share': shareUtils,
+    '@/utils/listenTogether': {},
+    '@/utils/logger': {},
+    '../../shared/share': evaluate(read('src/shared/share.ts')),
+    '../../shared/object': evaluate(read('src/shared/object.ts')),
+  }).default;
+  const view = scope.run(() => component.setup({}, { expose() {} }));
+  // 空 candidates 必须让位给 info 后备数组，否则 enrich 会在该响应形态下静默失效。
+  assert.equal(
+    view.readLyricCandidate({ data: { candidates: [], info: [{ song: '后备候选' }] } })?.song,
+    '后备候选',
+  );
+  assert.equal(await view.resolveSong(removedHash), true);
+  assert.deepEqual(lyricCalls, [{ hash: removedHash, man: 'yes' }]);
+  assert.deepEqual(albumCalls, ['528463']);
+  assert.equal(replacements.length, 1);
+  assert.equal(replacements[0].name, 'song-detail');
+  assert.equal(replacements[0].query.albumAudioId, '27602112');
+  assert.equal(replacements[0].query.mixSongId, '27602112');
+  assert.equal(replacements[0].query.title, '平淡日子里的刺');
+  assert.equal(replacements[0].query.artist, '宋冬野');
+  assert.equal(replacements[0].query.album, '我想和你好好的 电影原声带');
+  assert.equal(replacements[0].query.albumId, '528463');
 });

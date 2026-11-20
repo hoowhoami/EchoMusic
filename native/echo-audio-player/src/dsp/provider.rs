@@ -61,6 +61,10 @@ pub struct NativeDspProvider {
     api: NonNull<EchoDspApi>,
     instance: NonNull<c_void>,
     info: EchoDspInfo,
+    /// `get_state_json` 返回的指针由 provider 自己管理，ABI 未约定其有效期与释放方式。
+    /// 每次取到后立即复制为自有字符串，后续只读这份副本，避免 provider 复用/释放
+    /// 缓冲后变成悬垂读取。
+    state_json: String,
 }
 
 unsafe impl Send for NativeDspProvider {}
@@ -136,6 +140,7 @@ impl NativeDspProvider {
             api,
             instance,
             info,
+            state_json: provider_string(info.state_json).unwrap_or_default(),
         })
     }
 
@@ -151,7 +156,7 @@ impl NativeDspProvider {
             preferred_block_frames: self.info.preferred_block_frames,
             max_channels: self.info.max_channels,
             manifest_json: provider_string(self.info.manifest_json).unwrap_or_default(),
-            state_json: provider_string(self.info.state_json).unwrap_or_default(),
+            state_json: self.state_json.clone(),
         }
     }
 
@@ -210,15 +215,14 @@ impl NativeDspProvider {
         if state.is_null() {
             return Err("DSP provider returned a null state JSON".to_string());
         }
-        self.info.state_json = state;
+        // 指针只在本次调用内有效：立刻复制为自有字符串，不保存裸指针。
+        let state_text = provider_string(state).unwrap_or_default();
+        self.state_json = state_text.clone();
         // ABI v2's create-time info is a snapshot. Presets can change the
         // processing delay without recreating the instance; newer engines
         // publish their current delay in state JSON. Older engines retain
         // their existing info value when this optional field is absent.
-        if let Some(latency) = provider_string(state)
-            .as_deref()
-            .and_then(state_latency_frames)
-        {
+        if let Some(latency) = state_latency_frames(&state_text) {
             self.info.latency_frames = latency;
         }
         Ok(())
@@ -230,7 +234,18 @@ impl NativeDspProvider {
         let channels = channels.max(1);
         let capacity_frames = 4096u32;
         let mut buffer = vec![0.0f32; capacity_frames as usize * channels];
+        // 防御不合规 provider：若每次 drain 都填满缓冲，原循环永不退出，
+        // output 会无界增长直到耗尽内存。上限按 64 轮（约 26 万帧）估算，
+        // 正常引擎的尾音远小于该量级。
+        const MAX_DRAIN_ITERATIONS: u32 = 64;
+        let mut iterations = 0u32;
         loop {
+            iterations += 1;
+            if iterations > MAX_DRAIN_ITERATIONS {
+                return Err(format!(
+                    "DSP provider drain exceeded {MAX_DRAIN_ITERATIONS} iterations without completing"
+                ));
+            }
             let mut written_frames = 0u32;
             let result = unsafe {
                 drain(

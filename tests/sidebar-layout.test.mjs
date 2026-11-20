@@ -7,7 +7,8 @@ const source = readFileSync(
   new URL('../src/renderer/layouts/sidebarLayout.ts', import.meta.url),
   'utf8',
 )
-  .replace(/^import type .*;\n/gm, '')
+  // 兼容 CRLF：Windows 检出的 import 行以 \r\n 结尾
+  .replace(/^import type .*;\r?\n/gm, '')
   .replace(/^export /gm, '');
 
 const { code } = transformSync(

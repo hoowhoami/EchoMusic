@@ -26,7 +26,10 @@ const bundle = await build({
     {
       name: 'host-fixture',
       setup(builder) {
-        builder.onResolve({ filter: /logger$/ }, () => ({ path: 'logger', namespace: 'fixture' }));
+        builder.onResolve({ filter: /logger$/ }, () => ({
+          path: 'logger',
+          namespace: 'fixture',
+        }));
         builder.onResolve({ filter: /storage\/native$|^\.\/native$/ }, () => ({
           path: 'native',
           namespace: 'fixture',
@@ -40,14 +43,15 @@ const bundle = await build({
           namespace: 'fixture',
         }));
         builder.onResolve({ filter: /^\.\/(windows|network)$/ }, (args) => {
-          if (args.importer.endsWith('/plugins/index.ts'))
+          // Windows 下 importer 使用反斜杠，必须同时兼容两种分隔符
+          if (/[\\/]plugins[\\/]index\.ts$/.test(args.importer))
             return { path: args.path.slice(2), namespace: 'fixture' };
         });
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, (args) => ({
           contents: {
-            logger: `export default { info(){}, warn(){}, error(){}, debug(){} };`,
+            logger: `export default { info(){}, warn(){}, error(){}, debug(){} }; export const isDiagnosticModeActive = () => false;`,
             native: `export const getNativeStorage = () => harness.native;`,
-            policy: `export const networkFetch = () => { throw new Error('Unexpected network request'); };`,
+            policy: `export const networkFetch = () => { throw new Error('Unexpected network request'); }; export const registerNetworkSession = async (session) => session; export const resolveNativeProxyUrls = async () => [];`,
             audio: `export const readAudioMetadata = async () => ({}); export const resolveAudioTitleAndArtist = () => ({});`,
             windows: `export const closePluginWindows = async (id) => { harness.closedWindows.push(id); };`,
             network: `export const requestPluginNetwork = async () => ({ status: 200, data: {} });`,
@@ -141,7 +145,8 @@ async function fixture(t) {
       return fs.readdir(path, ...args);
     },
     async cp(source, target, ...args) {
-      if (harness.failCopy && String(target).endsWith('/staged')) throw new Error('copy failed');
+      // Windows 下 target 使用反斜杠，必须同时兼容两种分隔符
+      if (harness.failCopy && /[\\/]staged$/.test(String(target))) throw new Error('copy failed');
       return fs.cp(source, target, ...args);
     },
   };
@@ -151,7 +156,14 @@ async function fixture(t) {
       return {
         app,
         shell: {},
-        BrowserWindow: {},
+        // showMessageBoxSafely 会先用 BrowserWindow.getAllWindows() 找一个可见窗口
+        // 置前；缺少该方法会抛错并被 launchPluginProcess 吞成「提前返回」，
+        // 导致等待确认框的用例永久挂起。这里提供一个可见窗口使其立即放行。
+        BrowserWindow: {
+          getAllWindows: () => [
+            { isDestroyed: () => false, isVisible: () => true, isMinimized: () => false },
+          ],
+        },
         dialog: { showMessageBox: (...args) => harness.confirm(...args) },
       };
     if (id === 'fs') return wrappedFs;
@@ -282,33 +294,38 @@ test('refresh failure rolls back files, metadata and the previous disabled prefe
   assert.throws(() => api.assertPluginTcpAccess('rgb'), /未启用/);
 });
 
-test(
-  'permission revoked while the process consent dialog is open prevents a late launch',
-  { skip: process.platform === 'win32' ? 'POSIX helper fixture' : false },
-  async (t) => {
-    const { api, harness, pluginDirectory } = await fixture(t);
-    const helper = join(pluginDirectory, 'helper.sh');
-    await fs.writeFile(helper, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-    let confirm;
-    let opened;
-    const waiting = new Promise((resolve) => {
-      opened = resolve;
+test('permission revoked while the process consent dialog is open prevents a late launch', async (t) => {
+  const { api, harness, pluginDirectory } = await fixture(t);
+  // 用 .exe 扩展名让用例同时适用于 Windows（白名单 .exe/.com）与 POSIX
+  // （只检查执行位）。用例在确认框阶段就会被权限撤销拦截，不会真的 spawn。
+  const helper = join(pluginDirectory, 'helper.exe');
+  await fs.writeFile(helper, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  let confirm;
+  let opened;
+  const waiting = new Promise((resolve) => {
+    opened = resolve;
+  });
+  harness.confirm = () => {
+    opened();
+    return new Promise((resolve) => {
+      confirm = resolve;
     });
-    harness.confirm = () => {
-      opened();
-      return new Promise((resolve) => {
-        confirm = resolve;
-      });
-    };
-    const launch = api.launchPluginProcess('rgb', { executable: 'helper.sh' });
-    await waiting;
-    await api.setPluginEnabled('rgb', false);
-    confirm({ response: 0 });
-    const result = await launch;
-    assert.equal(result.ok, false);
-    assert.match(result.error, /权限已失效/);
-  },
-);
+  };
+  const launch = api.launchPluginProcess('rgb', { executable: 'helper.exe' });
+  // 若 launch 在弹框前就提前返回（例如可执行文件校验失败），await waiting 会永久
+  // 挂起且没有诊断信息；这里让提前返回立即变成可读错误。
+  await Promise.race([
+    waiting,
+    launch.then((early) => {
+      throw new Error(`launch finished before the consent dialog: ${JSON.stringify(early)}`);
+    }),
+  ]);
+  await api.setPluginEnabled('rgb', false);
+  confirm({ response: 0 });
+  const result = await launch;
+  assert.equal(result.ok, false);
+  assert.match(result.error, /权限已失效/);
+});
 
 const failureRecord = (extra = {}) => ({
   reason: 'activation-error',

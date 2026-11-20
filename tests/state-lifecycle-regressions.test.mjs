@@ -3,6 +3,7 @@ import { userIdentity } from './helpers/user-identity.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { transformSync, buildSync } from 'esbuild';
 import * as vue from 'vue';
@@ -139,7 +140,7 @@ test('cloud requests from an earlier login cannot share work with a new session 
 });
 
 const mapperCode = buildSync({
-  entryPoints: [new URL('../src/renderer/utils/mappers/user.ts', import.meta.url).pathname],
+  entryPoints: [fileURLToPath(new URL('../src/renderer/utils/mappers/user.ts', import.meta.url))],
   bundle: true,
   format: 'cjs',
   platform: 'node',
@@ -416,15 +417,12 @@ function persistFixture() {
       calls.push(['delete']);
     },
   };
-  let subscriber;
+  // 插件改为 watch 顶层字段后依赖响应式 $state；这里用 reactive 模拟 Pinia store。
   const store = {
     $id: 'example',
-    $state: { count: 0, transient: false },
+    $state: vue.reactive({ count: 0, transient: false }),
     $patch(patch) {
       Object.assign(this.$state, patch);
-    },
-    $subscribe(fn) {
-      subscriber = fn;
     },
   };
   const api = compile(
@@ -444,9 +442,10 @@ function persistFixture() {
     store,
     plugin,
     api,
-    change(count) {
+    async change(count) {
       store.$state.count = count;
-      subscriber({}, store.$state);
+      // 等待 watch 的 pre-flush 调度执行，等价于真实组件里的一次渲染周期。
+      await vue.nextTick();
     },
   };
 }
@@ -458,7 +457,7 @@ test('persistence filters hydration using current config and handles read failur
   const failed = persistFixture();
   failed.load.reject(new Error('read error'));
   await failed.api.waitForSqlitePersistHydration();
-  failed.change(2);
+  await failed.change(2);
   failed.clock.run();
   await flush();
   assert.equal(failed.calls.length, 1);
@@ -469,10 +468,10 @@ test('failed writes stay retryable and later snapshots are serialized', async ()
   const s = persistFixture();
   s.load.resolve(null);
   await s.api.waitForSqlitePersistHydration();
-  s.change(1);
+  await s.change(1);
   s.clock.run();
   await flush();
-  s.change(2);
+  await s.change(2);
   s.clock.run();
   await flush();
   assert.equal(s.calls.length, 1, 'second write waits for first completion');
@@ -481,13 +480,13 @@ test('failed writes stay retryable and later snapshots are serialized', async ()
   assert.equal(s.calls.length, 2);
   s.writes[1].reject(new Error('disk full'));
   await flush();
-  s.change(2);
+  await s.change(3);
   s.clock.run();
   await flush();
-  assert.equal(s.calls.length, 3, 'same state retries after failure');
+  assert.equal(s.calls.length, 3, 'a later mutation is persisted after failure');
   s.writes[2].resolve();
   await flush();
-  s.change(2);
+  await s.change(3);
   s.clock.run();
   await flush();
   assert.equal(s.calls.length, 3);
@@ -496,7 +495,7 @@ test('clearing persistence waits for older writes before deleting', async () => 
   const s = persistFixture();
   s.load.resolve(null);
   await s.api.waitForSqlitePersistHydration();
-  s.change(1);
+  await s.change(1);
   s.clock.run();
   await flush();
   const clear = s.plugin.$clearPersistedState();
@@ -512,7 +511,11 @@ test('clearing persistence waits for older writes before deleting', async () => 
 
 test('history excludes native reader snapshots from stored and retained songs', async () => {
   const f = historyFixture();
-  const current = { id: 'native-song', hash: 'native-hash', embeddedMetadata: { lyric: 'Native lyrics' } };
+  const current = {
+    id: 'native-song',
+    hash: 'native-hash',
+    embeddedMetadata: { lyric: 'Native lyrics' },
+  };
   const recording = f.store.recordPlay(current);
   f.load.resolve([]);
   await flush();

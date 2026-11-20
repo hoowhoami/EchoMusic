@@ -147,6 +147,11 @@ const albumPayload = ref<Record<string, unknown>>({});
 const albumFallbackList = ref<unknown[]>([]);
 const loadingAlbums = ref(false);
 const tabLoaded = reactive({ rank: false, album: false, newSong: false, artist: false });
+// 三个加载函数各自的请求代次：快速切换分类/榜单时丢弃迟到响应，
+// 并避免旧请求的 finally 提前清掉新请求的 loading 状态。
+let playlistsRequestId = 0;
+let rankSongsRequestId = 0;
+let artistsRequestId = 0;
 const exploreHeaderHeight = 96;
 const exploreToolbarHeight = 60;
 const songToolbarOffset = exploreHeaderHeight + exploreToolbarHeight;
@@ -244,15 +249,17 @@ const loadPlaylistCategories = async () => {
 };
 
 const loadRecommendedPlaylists = async () => {
+  const requestId = ++playlistsRequestId;
   loadingPlaylists.value = true;
   try {
     const res = await getPlaylistByCategory(playlistCategoryId.value || '0', 0, 1);
+    if (requestId !== playlistsRequestId) return;
     const list = extractList(res).map((item) => mapPlaylistMeta(item));
     recommendedPlaylists.value = list;
   } catch {
-    recommendedPlaylists.value = [];
+    if (requestId === playlistsRequestId) recommendedPlaylists.value = [];
   } finally {
-    loadingPlaylists.value = false;
+    if (requestId === playlistsRequestId) loadingPlaylists.value = false;
   }
 };
 
@@ -296,18 +303,20 @@ const loadRanks = async () => {
 };
 
 const loadRankSongs = async (targetId: number) => {
+  const requestId = ++rankSongsRequestId;
   loadingRankSongs.value = true;
   try {
     const res = await getRankSongs(targetId, 1, 100);
+    if (requestId !== rankSongsRequestId) return;
     const list = extractList(res).map((item) => mapRankSong(item));
     rankSongs.value = list;
     rankSortField.value = null;
     rankSortOrder.value = null;
     rankSearchQuery.value = '';
   } catch {
-    rankSongs.value = [];
+    if (requestId === rankSongsRequestId) rankSongs.value = [];
   } finally {
-    loadingRankSongs.value = false;
+    if (requestId === rankSongsRequestId) loadingRankSongs.value = false;
   }
 };
 
@@ -326,6 +335,7 @@ const loadAlbums = async () => {
 };
 
 const loadArtists = async () => {
+  const requestId = ++artistsRequestId;
   loadingArtists.value = true;
   try {
     const res = await getArtistList({
@@ -333,6 +343,7 @@ const loadArtists = async () => {
       type: Number(artistTypeId.value.split(':')[0] ?? 0),
       musician: Number(artistTypeId.value.split(':')[1] ?? 0),
     });
+    if (requestId !== artistsRequestId) return;
     const record = res && typeof res === 'object' ? (res as Record<string, unknown>) : undefined;
     const data =
       record?.data && typeof record.data === 'object'
@@ -389,9 +400,9 @@ const loadArtists = async () => {
       }
     }
   } catch {
-    artistResults.value = [];
+    if (requestId === artistsRequestId) artistResults.value = [];
   } finally {
-    loadingArtists.value = false;
+    if (requestId === artistsRequestId) loadingArtists.value = false;
   }
 };
 

@@ -82,7 +82,8 @@ test('DWM starts with a local fallback bitmap, without a network request or JS m
   const f = setup();
   f.api.setupTaskbarThumbnail(f.window());
   assert.deepEqual(f.calls, [['enable', '1', Buffer.from('EchoMusic'), 512, 512]]);
-  assert.match(f.decodes[0], /build\/icons\/icon.png$/);
+  // 源码用 path.join 拼相对路径，Windows 分隔符为反斜杠，用 path 归一化期望值
+  assert.equal(f.decodes[0], join('/test/dist-electron/main', '../../build/icons/icon.png'));
 });
 test('covers decode only on change and long edge is bounded without changing aspect ratio', () => {
   const f = setup();

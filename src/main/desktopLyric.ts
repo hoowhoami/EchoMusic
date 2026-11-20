@@ -476,11 +476,10 @@ const onMainWindowMoveOrResizeEnd = () => {
 
 const bindMainWindowEvents = () => {
   if (desktopLyricMainWindowBound) return;
-  const lyricWin = getDesktopLyricWindow();
-  const mainWin = BrowserWindow.getAllWindows().find(
-    (win) => win !== lyricWin && !win.isDestroyed(),
-  );
-  if (!mainWin) return;
+  // 只跟随真正的主窗口。窗口列表里还可能存在插件窗口、mini 播放器等，
+  // 按“第一个非歌词窗口”猜测会在主窗口销毁重建期间绑错对象。
+  const mainWin = getMainWindow();
+  if (!mainWin || mainWin.isDestroyed()) return;
   desktopLyricMainWindowBound = true;
   mainWin.on('move', onMainWindowMoveOrResize);
   mainWin.on('resize', onMainWindowMoveOrResize);
@@ -493,11 +492,8 @@ const bindMainWindowEvents = () => {
 const unbindMainWindowEvents = () => {
   if (!desktopLyricMainWindowBound) return;
   desktopLyricMainWindowBound = false;
-  const lyricWin = getDesktopLyricWindow();
-  // 查找主窗口，忽略已销毁的窗口和桌面歌词窗口
-  const mainWin = BrowserWindow.getAllWindows().find(
-    (win) => win !== lyricWin && !win.isDestroyed(),
-  );
+  // 与 bind 保持一致，只对真正的主窗口移除监听
+  const mainWin = getMainWindow();
   // 即使找不到主窗口，也要清理定时器
   if (desktopLyricForwardRestoreTimer) {
     clearTimeout(desktopLyricForwardRestoreTimer);

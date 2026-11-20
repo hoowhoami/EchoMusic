@@ -1876,7 +1876,9 @@ test('prepared songs receive metadata only after the real playback boundary', as
 
 test('playing and replaying songs keeps native lyric text only on the current snapshot', async () => {
   const lyric = '内嵌歌词'.repeat(10000);
-  const e = setup({ metadata: async (seq) => ({ artist: 'Embedded singer', lyric: `${seq}:${lyric}` }) });
+  const e = setup({
+    metadata: async (seq) => ({ artist: 'Embedded singer', lyric: `${seq}:${lyric}` }),
+  });
   for (const id of ['a', 'b', 'c', 'a']) {
     await e.manager.playTrack(id, e.queue.songs);
     await flush();
@@ -1895,7 +1897,9 @@ test('playing and replaying songs keeps native lyric text only on the current sn
 
 test('metadata containing only reader tags does not replace queue arrays', async () => {
   let finish;
-  const pending = new Promise(resolve => { finish = resolve; });
+  const pending = new Promise((resolve) => {
+    finish = resolve;
+  });
   const e = setup({ metadata: () => pending });
   e.queue.songs[1].title = 'Catalog title';
   e.queue.songs[1].name = 'Catalog title';
@@ -1903,7 +1907,8 @@ test('metadata containing only reader tags does not replace queue arrays', async
   e.queue.songs[1].album = 'Catalog album';
   e.queue.songs[1].coverUrl = 'Catalog cover';
   await e.manager.playTrack('b', e.queue.songs);
-  const queueSongs = e.queue.songs, playlist = e.state.currentPlaylist;
+  const queueSongs = e.queue.songs,
+    playlist = e.state.currentPlaylist;
   finish({ title: 'Tag title', artist: 'Tag singer', lyric: 'Native lyrics' });
   await flush();
   assert.equal(e.state.currentTrackSnapshot.embeddedMetadata.lyric, 'Native lyrics');
@@ -1914,7 +1919,9 @@ test('metadata containing only reader tags does not replace queue arrays', async
 
 test('stop releases the displayed embedded lyric along with the active snapshot', () => {
   let clears = 0;
-  const e = setup({ lyrics: { currentCandidateKey: 'embedded', clear: () => clears++, fetchLyrics: noop } });
+  const e = setup({
+    lyrics: { currentCandidateKey: 'embedded', clear: () => clears++, fetchLyrics: noop },
+  });
   e.state.currentTrackSnapshot = { id: 'a', embeddedMetadata: { lyric: 'Native lyrics' } };
   e.manager.stop();
   assert.equal(e.state.currentTrackSnapshot, null);

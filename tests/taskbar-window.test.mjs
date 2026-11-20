@@ -516,10 +516,7 @@ test('the lyric is a taskbar child window, so bounds stay relative to the bar', 
 
   // 区域坐标非有限时回退到另一侧，两侧都不可信才隐藏。
   const broken = { x: NaN, y: 0, width: 400, height: 48 };
-  const fallback = shared.resolveTaskbarLyricRegion(
-    { ...layout(), left: broken },
-    settings,
-  );
+  const fallback = shared.resolveTaskbarLyricRegion({ ...layout(), left: broken }, settings);
   assert.equal(fallback.anchor, 'right');
   assert.equal(
     shared.resolveTaskbarLyricRegion({ ...layout(), left: broken, right: broken }, settings),
