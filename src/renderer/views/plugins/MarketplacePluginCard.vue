@@ -18,6 +18,7 @@ import {
   iconTriangleAlert,
 } from '@/icons';
 import type { PluginMarketplacePlugin } from '../../../shared/plugins';
+import { PLUGIN_PLATFORMS } from '../../../shared/plugins';
 
 const props = defineProps<{
   plugin: PluginMarketplacePlugin;
@@ -36,6 +37,13 @@ const props = defineProps<{
 }>();
 
 const displayTags = computed(() => [...new Set([...props.plugin.tags, ...props.featureTags])]);
+
+// 仅在声明了部分平台时展示平台标签；未声明或全平台支持时无需提示
+const platformTag = computed(() => {
+  const platforms = props.plugin.compatibility.platforms ?? [];
+  if (!platforms.length || platforms.length >= PLUGIN_PLATFORMS.length) return '';
+  return `仅 ${props.plugin.compatibility.platformLabel}`;
+});
 
 const versionLabel = computed(() => {
   const plugin = props.plugin;
@@ -126,7 +134,8 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       <span>{{ compatibilityMessage }}</span>
     </div>
 
-    <div v-if="displayTags.length" class="plugin-feature-tags">
+    <div v-if="platformTag || displayTags.length" class="plugin-feature-tags">
+      <Tag v-if="platformTag" size="sm">{{ platformTag }}</Tag>
       <Tag v-for="tag in displayTags" :key="tag" size="sm">{{ tag }}</Tag>
     </div>
 
