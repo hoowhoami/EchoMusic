@@ -175,6 +175,7 @@ import type {
   StorageHistoryAddListenTimeResult,
   StorageHistoryEntry,
   StorageHistoryGetEntriesPayload,
+  StorageHistoryListenTotalResult,
   StorageHistoryRecordPlayPayload,
   StorageHistoryRemoveEntriesPayload,
   StoragePlaybackSnapshot,
@@ -1771,6 +1772,8 @@ contextBridge.exposeInMainWorld('electron', {
         'storage:history:add-listen-time',
         payload,
       ),
+    getHistoryListenTotal: () =>
+      invokeWithPlainPayload<StorageHistoryListenTotalResult>('storage:history:get-listen-total'),
     removeHistoryEntries: (payload: StorageHistoryRemoveEntriesPayload) =>
       invokeWithPlainPayload<StorageResetResult>('storage:history:remove-entries', payload),
     clearHistory: () => ipcRenderer.invoke('storage:history:clear') as Promise<StorageResetResult>,

@@ -94,6 +94,10 @@ export const registerStorageHandlers = () => {
       getHistoryStorage().addListenTime(payload),
   );
 
+  ipcRegistry.registerHandler('storage:history:get-listen-total', () =>
+    getHistoryStorage().getListenTotal(),
+  );
+
   ipcRegistry.registerHandler(
     'storage:history:remove-entries',
     (_event, payload: StorageHistoryRemoveEntriesPayload) =>

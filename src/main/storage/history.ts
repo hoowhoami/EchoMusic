@@ -3,6 +3,7 @@ import type {
   StorageHistoryAddListenTimeResult,
   StorageHistoryEntry,
   StorageHistoryGetEntriesPayload,
+  StorageHistoryListenTotalResult,
   StorageHistoryRecordPlayPayload,
   StorageHistoryRemoveEntriesPayload,
   StorageResetResult,
@@ -42,6 +43,14 @@ export class HistoryStorage {
       getNativeStorage().historyAddListenTime(JSON.stringify(payload)),
       { ok: false, updated: 0 },
     );
+  }
+
+  /** 读取终身累计实听时长（独立于播放历史条目，历史裁剪/删除不影响） */
+  getListenTotal(): StorageHistoryListenTotalResult {
+    return parseJson<StorageHistoryListenTotalResult>(getNativeStorage().historyGetListenTotal(), {
+      ok: false,
+      listenedMs: 0,
+    });
   }
 
   removeEntries(payload: StorageHistoryRemoveEntriesPayload): StorageResetResult {

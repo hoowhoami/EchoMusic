@@ -170,6 +170,7 @@ import type {
   StorageHistoryAddListenTimeResult,
   StorageHistoryEntry,
   StorageHistoryGetEntriesPayload,
+  StorageHistoryListenTotalResult,
   StorageHistoryRecordPlayPayload,
   StorageHistoryRemoveEntriesPayload,
   StoragePlaybackSnapshot,
@@ -783,6 +784,7 @@ export interface IElectronAPI {
     addHistoryListenTime: (
       payload: StorageHistoryAddListenTimePayload,
     ) => Promise<StorageHistoryAddListenTimeResult>;
+    getHistoryListenTotal: () => Promise<StorageHistoryListenTotalResult>;
     removeHistoryEntries: (
       payload: StorageHistoryRemoveEntriesPayload,
     ) => Promise<StorageResetResult>;

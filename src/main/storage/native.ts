@@ -25,6 +25,7 @@ export interface NativeStorageAddon {
   historyGetEntries(payloadJson?: string): string;
   historyRecordPlay(payloadJson: string): string;
   historyAddListenTime(payloadJson: string): string;
+  historyGetListenTotal(): string;
   historyRemoveEntries(payloadJson: string): string;
   historyClear(): string;
   pluginSqliteOpen(databaseId: string, databasePath: string, optionsJson?: string | null): string;

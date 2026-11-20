@@ -150,8 +150,16 @@ export interface StorageHistoryAddListenTimeResult {
   ok: boolean;
   /** 受影响的条目数：0 表示该歌曲已不在历史中（不重建条目） */
   updated: number;
-  /** 累加后的权威总时长（ms）；updated 为 0 时为 0 */
+  /** 条目维度的权威总时长（ms）；updated 为 0 时为 0 */
   listenedMs?: number;
+  /** 终身累计实听毫秒（独立于条目，不受裁剪/删除/清空影响） */
+  totalListenedMs?: number;
+}
+
+export interface StorageHistoryListenTotalResult {
+  ok: boolean;
+  /** 终身累计实听毫秒 */
+  listenedMs: number;
 }
 
 export interface StorageHistoryRemoveEntriesPayload {

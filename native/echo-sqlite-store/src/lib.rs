@@ -164,6 +164,11 @@ fn ensure_schema(connection: &Connection) -> NativeResult<()> {
 
         CREATE INDEX IF NOT EXISTS idx_play_history_last_played_at
           ON play_history(last_played_at DESC);
+
+        CREATE TABLE IF NOT EXISTS listen_totals (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          listened_ms INTEGER NOT NULL DEFAULT 0
+        );
         "#,
     ))
 }
@@ -180,6 +185,26 @@ fn ensure_play_history_columns(connection: &Connection) -> NativeResult<()> {
         map_sql(connection.execute(
             "ALTER TABLE play_history ADD COLUMN listened_ms INTEGER NOT NULL DEFAULT 0",
             [],
+        ))?;
+    }
+    Ok(())
+}
+
+/// 终身累计表的首启回填：本特性早期版本只把时长写进 play_history，
+/// 首次建表时用历史条目之和作为起点，避免升级后统计卡回落为 0。
+/// 行已存在时直接返回，保证幂等。
+fn ensure_listen_totals(connection: &Connection) -> NativeResult<()> {
+    let existing: i64 =
+        map_sql(connection.query_row("SELECT COUNT(*) FROM listen_totals", [], |row| row.get(0)))?;
+    if existing == 0 {
+        let seeded: i64 = map_sql(connection.query_row(
+            "SELECT COALESCE(SUM(listened_ms), 0) FROM play_history",
+            [],
+            |row| row.get(0),
+        ))?;
+        map_sql(connection.execute(
+            "INSERT INTO listen_totals (id, listened_ms) VALUES (1, ?)",
+            params![seeded],
         ))?;
     }
     Ok(())
@@ -1015,6 +1040,7 @@ pub fn initialize(database_path: String) -> NativeResult<()> {
     let connection = map_sql(Connection::open(database_path))?;
     ensure_schema(&connection)?;
     ensure_play_history_columns(&connection)?;
+    ensure_listen_totals(&connection)?;
     cleanup_orphan_songs(&connection)?;
     let mut guard = DATABASE
         .lock()
@@ -1472,29 +1498,58 @@ pub fn history_add_listen_time(payload_json: String) -> NativeResult<String> {
     }
     let song_key = normalize_song_key(song);
 
-    with_connection(|connection| {
-        // 不做 upsert：条目已被删除/从未记录时 updated = 0，避免「删除后复活」。
+    with_connection_mut(|connection| {
+        let tx = map_sql(connection.transaction())?;
+        // 条目维度：不做 upsert，条目已被删除/从未记录时 updated = 0，避免「删除后复活」。
         // RETURNING 直接带回累加后的权威总值，前端据此覆盖本地缓存，避免增量漂移。
-        let total: Option<i64> = map_sql(
-            connection
-                .query_row(
-                    r#"
-                    UPDATE play_history
-                    SET listened_ms = listened_ms + ?
-                    WHERE song_key = ?
-                    RETURNING listened_ms
-                    "#,
-                    params![listened_ms, song_key.as_str()],
-                    |row| row.get(0),
-                )
-                .optional(),
+        let entry_total: Option<i64> = map_sql(
+            tx.query_row(
+                r#"
+                UPDATE play_history
+                SET listened_ms = listened_ms + ?
+                WHERE song_key = ?
+                RETURNING listened_ms
+                "#,
+                params![listened_ms, song_key.as_str()],
+                |row| row.get(0),
+            )
+            .optional(),
         )?;
-        let updated = i64::from(total.is_some());
+        // 终身累计独立于条目：条目被裁剪/删除后，实际听过的时长仍应计入。
+        let lifetime_total: i64 = map_sql(tx.query_row(
+            r#"
+            INSERT INTO listen_totals (id, listened_ms) VALUES (1, ?)
+            ON CONFLICT(id) DO UPDATE SET listened_ms = listen_totals.listened_ms + excluded.listened_ms
+            RETURNING listened_ms
+            "#,
+            params![listened_ms],
+            |row| row.get(0),
+        ))?;
+        map_sql(tx.commit())?;
+        let updated = i64::from(entry_total.is_some());
         map_json(serde_json::to_string(&json!({
             "ok": true,
             "updated": updated,
-            "listenedMs": total.unwrap_or(0),
+            "listenedMs": entry_total.unwrap_or(0),
+            "totalListenedMs": lifetime_total,
         })))
+    })
+}
+
+#[napi]
+pub fn history_get_listen_total() -> NativeResult<String> {
+    with_connection(|connection| {
+        let total: i64 = map_sql(
+            connection
+                .query_row(
+                    "SELECT listened_ms FROM listen_totals WHERE id = 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional(),
+        )?
+        .unwrap_or(0);
+        Ok(json!({ "ok": true, "listenedMs": total }).to_string())
     })
 }
 
@@ -1686,7 +1741,8 @@ pub fn plugin_sqlite_backup(source_path: String, destination_path: String) -> Na
 #[cfg(test)]
 mod tests {
     use super::{
-        close, history_add_listen_time, history_get_entries, history_record_play, initialize,
+        close, history_add_listen_time, history_clear, history_get_entries,
+        history_get_listen_total, history_record_play, history_remove_entries, initialize,
         kv_apply_batch, kv_get, kv_set, plugin_sqlite_backup,
     };
     use rusqlite::Connection;
@@ -1738,6 +1794,13 @@ mod tests {
     fn history_entries() -> Value {
         serde_json::from_str(&history_get_entries(None).expect("read history entries"))
             .expect("history entries json")
+    }
+
+    fn listen_total() -> i64 {
+        serde_json::from_str::<Value>(&history_get_listen_total().expect("read listen total"))
+            .expect("listen total json")["listenedMs"]
+            .as_i64()
+            .unwrap_or(-1)
     }
 
     #[test]
@@ -1850,6 +1913,7 @@ mod tests {
             // RETURNING 带回累加后的权威总值，前端用它覆盖本地缓存
             assert_eq!(result["listenedMs"].as_i64(), Some(expected_total));
         }
+        assert_eq!(listen_total(), 2_000);
 
         let entries = history_entries();
         let entry = entries.as_array().expect("entries array")[0].clone();
@@ -1874,6 +1938,8 @@ mod tests {
         )
         .expect("add result json");
         assert_eq!(missing["updated"].as_i64(), Some(0));
+        // 条目不存在也要计入终身累计：实际听过的时长不因条目缺失而丢弃
+        assert_eq!(missing["totalListenedMs"].as_i64(), Some(5_000));
         assert_eq!(history_entries().as_array().expect("entries").len(), 0);
 
         history_record_play(record_play_payload(7, 2_000)).expect("record play");
@@ -1886,6 +1952,8 @@ mod tests {
             assert_eq!(result["updated"].as_i64(), Some(0));
         }
         assert_eq!(history_entries()[0]["listenedMs"].as_i64(), Some(0));
+        // 零/负时长不改变终身累计
+        assert_eq!(listen_total(), 5_000);
 
         close();
         fs::remove_dir_all(root).expect("cleanup test directory");
@@ -1906,6 +1974,8 @@ mod tests {
         let entry = entries.as_array().expect("entries array")[0].clone();
         assert_eq!(entry["playCount"].as_i64(), Some(2));
         assert_eq!(entry["listenedMs"].as_i64(), Some(4_500));
+        // 再次记录播放不重复累加终身时长
+        assert_eq!(listen_total(), 4_500);
 
         close();
         fs::remove_dir_all(root).expect("cleanup test directory");
@@ -1960,13 +2030,90 @@ mod tests {
         let entry = entries.as_array().expect("entries array")[0].clone();
         assert_eq!(entry["playCount"].as_i64(), Some(3));
         assert_eq!(entry["listenedMs"].as_i64(), Some(0));
+        // 老库没有可回填的条目时长，终身累计从 0 起算
+        assert_eq!(listen_total(), 0);
         close();
 
         // 再次启动：补列逻辑幂等，不报错也不重置数据
         initialize(database_path.to_string_lossy().into_owned()).expect("reopen storage");
         assert_eq!(history_entries()[0]["listenedMs"].as_i64(), Some(0));
+        assert_eq!(listen_total(), 0);
         close();
 
+        fs::remove_dir_all(root).expect("cleanup test directory");
+    }
+
+    #[test]
+    fn history_lifetime_total_survives_prune_removal_and_clear() {
+        let _guard = test_db_lock();
+        let root = temp_db_root("history-lifetime");
+        let database_path = root.join("storage.sqlite");
+        initialize(database_path.to_string_lossy().into_owned()).expect("initialize storage");
+
+        history_record_play(record_play_payload(31, 1_000)).expect("record play");
+        let first: Value = serde_json::from_str(
+            &history_add_listen_time(add_listen_time_payload(31, 1_500)).expect("add listen time"),
+        )
+        .expect("add result json");
+        assert_eq!(first["totalListenedMs"].as_i64(), Some(1_500));
+
+        // 播放新歌触发上限裁剪：旧条目被删，终身累计不受影响
+        history_record_play(format!(
+            r#"{{"song":{},"playedAt":2000,"maxEntries":1}}"#,
+            song_payload(32)
+        ))
+        .expect("record second play");
+        assert_eq!(history_entries().as_array().expect("entries").len(), 1);
+        assert_eq!(listen_total(), 1_500);
+
+        // 条目已不存在时仍继续累加终身时长，但不会重建条目
+        let after_prune: Value = serde_json::from_str(
+            &history_add_listen_time(add_listen_time_payload(31, 500)).expect("add listen time"),
+        )
+        .expect("add result json");
+        assert_eq!(after_prune["updated"].as_i64(), Some(0));
+        assert_eq!(after_prune["totalListenedMs"].as_i64(), Some(2_000));
+
+        // 用户手动删除条目同样不影响终身累计
+        history_remove_entries(r#"{"historyKeys":["32:2000"]}"#.to_string()).expect("remove entry");
+        assert_eq!(history_entries().as_array().expect("entries").len(), 0);
+        assert_eq!(listen_total(), 2_000);
+
+        // 清空历史也不清空终身累计
+        history_clear().expect("clear history");
+        assert_eq!(history_entries().as_array().expect("entries").len(), 0);
+        assert_eq!(listen_total(), 2_000);
+
+        close();
+        fs::remove_dir_all(root).expect("cleanup test directory");
+    }
+
+    #[test]
+    fn initialize_backfills_lifetime_total_from_existing_entries() {
+        let _guard = test_db_lock();
+        let root = temp_db_root("history-backfill");
+        let database_path = root.join("storage.sqlite");
+        initialize(database_path.to_string_lossy().into_owned()).expect("initialize storage");
+
+        history_record_play(record_play_payload(51, 1_000)).expect("record play");
+        history_add_listen_time(add_listen_time_payload(51, 2_500)).expect("add listen time");
+        assert_eq!(listen_total(), 2_500);
+        close();
+
+        {
+            // 模拟本特性早期版本：条目已有累计时长，但还没有终身累计行
+            let raw = Connection::open(&database_path).expect("open raw database");
+            raw.execute("DELETE FROM listen_totals", [])
+                .expect("drop lifetime row");
+        }
+
+        initialize(database_path.to_string_lossy().into_owned()).expect("reopen storage");
+        // 首启回填用条目之和作为起点，避免升级后统计卡回落
+        assert_eq!(listen_total(), 2_500);
+        history_add_listen_time(add_listen_time_payload(51, 500)).expect("add listen time");
+        assert_eq!(listen_total(), 3_000);
+
+        close();
         fs::remove_dir_all(root).expect("cleanup test directory");
     }
 }
