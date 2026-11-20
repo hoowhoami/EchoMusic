@@ -45,12 +45,9 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
+        # server 是 pnpm workspace 成员（见 pnpm-workspace.yaml），
+        # 这一步会同时安装其运行依赖；契约测试直接 require 其源码模块。
         run: pnpm install --frozen-lockfile
-
-      # server 子模块的契约测试会加载其源码模块，需要它自己的运行依赖
-      # （与 build.yml 的打包前置步骤保持一致）。
-      - name: Install server dependencies
-        run: cd server && npm install --omit=dev --legacy-peer-deps
 
       - name: Lint
         run: pnpm lint:check
