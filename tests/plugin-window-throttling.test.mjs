@@ -83,6 +83,7 @@ function fixture(platform) {
     electron: {
       BrowserWindow: Window,
       screen: { getPrimaryDisplay: () => display, getDisplayNearestPoint: () => display },
+      shell: { openExternal: () => {} },
     },
     path: { join },
     '../ipc/registry': {},
