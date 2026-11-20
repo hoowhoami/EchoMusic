@@ -50,11 +50,30 @@ function setup({ saved, imported = {}, platform = 'darwin' } = {}) {
   );
   const mocks = {
     '../windowSizing': { MAIN_WINDOW_DEFAULT_SIZE: { width: 1150, height: 750 } },
+    // 设置存储依赖的调试端口工具，本测试只验证关闭偏好，给最小默认值桩
+    '../../shared/devTools': {
+      DEFAULT_DEVTOOLS_DEBUG_PORT: 9223,
+      MIN_DEVTOOLS_DEBUG_PORT: 1024,
+      MAX_DEVTOOLS_DEBUG_PORT: 65535,
+      normalizeDevToolsDebugPort: (value) => Number(value) || 9223,
+      parseDevToolsDebugPort: () => null,
+    },
     '../../shared/windowBackground': { DEFAULT_WINDOW_BACKGROUND: {} },
+    // taskbar 歌词设置与关闭偏好无关，测试只需字段存在，给空默认值桩
+    '../../shared/taskbar': {
+      DEFAULT_TASKBAR_LYRIC_SETTINGS: {},
+      normalizeTaskbarLyricSettings: (value) => value ?? {},
+    },
     '../../shared/desktopLyric': { DEFAULT_DESKTOP_LYRIC_SETTINGS: {} },
     './kv': { getKvStorage: () => kv },
     './storage/kv': { getKvStorage: () => kv },
     './logger': { warn() {}, error() {} },
+    // 备份模块改用 dialogHost 统一弹窗；这里直接返回测试预置的备份文件路径
+    './ipc/dialogHost': {
+      showOpenDialogSafely: async () => ({ canceled: false, filePaths: ['/test/backup'] }),
+      showSaveDialogSafely: async () => ({ canceled: true }),
+      showMessageBoxSafely: async () => ({ response: 0 }),
+    },
     './plugins': {},
     './plugins/sqlite': {},
     './plugins/webServer': {},

@@ -28,6 +28,7 @@ function setup({ available = true, diagnostics, legacy = false, modeMax = Infini
     __dirname: '/app/dist-electron/main',
     process: { platform: 'win32', cwd: () => '/app' },
     require(name) {
+      if (name === 'electron') return { nativeTheme: { shouldUseDarkColors: false } };
       if (name === '../native/platform')
         return { getNativePlatform: () => (available ? native : null) };
       if (name === './backgroundMaterial') return materialModule.exports;

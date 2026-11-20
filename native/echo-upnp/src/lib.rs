@@ -181,9 +181,31 @@ fn find_service<'a>(device: &'a rupnp::Device, service_id: &str) -> Result<&'a r
         .ok_or_else(|| Error::from_reason(format!("service not found: {service_id}")))
 }
 
+/// SOAP 动作参数由调用方以 XML 片段形式拼接。这里做最小防御：
+/// 拒绝控制字符与会提前闭合动作元素的序列，避免曲目名/元数据未转义时
+/// 破坏信封或向渲染设备注入额外 SOAP 动作。
+fn validate_action_args_xml(args_xml: &str) -> Result<()> {
+    if args_xml
+        .chars()
+        .any(|ch| ch.is_control() && ch != '\n' && ch != '\r' && ch != '\t')
+    {
+        return Err(Error::from_reason(
+            "action arguments contain a control character".to_string(),
+        ));
+    }
+    // vendored 信封使用 `<u:{action}>` 前缀，闭合序列必须由信封自身生成
+    if args_xml.to_ascii_lowercase().contains("</u:") {
+        return Err(Error::from_reason(
+            "action arguments must not close the SOAP body element".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 #[napi(js_name = "action")]
 #[allow(non_snake_case)]
 pub async fn action(description_url: String, service_id: String, action_name: String, args_xml: String) -> Result<String> {
+    validate_action_args_xml(&args_xml)?;
     let url = validate_description_url(&description_url)?;
     let device = match get_cached_device(&url) {
         Some(d) => d,

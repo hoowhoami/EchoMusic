@@ -1,5 +1,5 @@
 import { ipcRegistry } from '../ipc/registry';
-import { BrowserWindow, app, screen } from 'electron';
+import { BrowserWindow, screen } from 'electron';
 import { syncMacDockVisibility } from '../macBackgroundMode';
 import { installWindowBackgroundThrottling } from '../windowBackgroundThrottling';
 import { join } from 'path';
@@ -297,6 +297,13 @@ const createPluginWindow = async (
   });
 
   installWindowBackgroundThrottling(win);
+  // 插件窗口只承载宿主页面：拒绝窗口内导航与弹出新窗口。
+  // preload 会在每次页面加载时重新注入，若不拦截，插件代码跳转到任意远程页面
+  // 后该页面就会获得完整的宿主 IPC 桥。
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
+  });
   const record: PluginWindowRecord = {
     pluginId: descriptor.pluginId,
     windowId: descriptor.id,

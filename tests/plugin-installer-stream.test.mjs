@@ -22,7 +22,9 @@ const bundle = await build({
     {
       name: 'extract-fixture',
       setup(b) {
-        b.onLoad({ filter: /plugins\/installer\.ts$/ }, async (args) => ({
+        // Windows 下 esbuild 的 onLoad 回调会收到反斜杠路径，
+        // 过滤正则必须同时兼容两种分隔符，否则追加的导出不会生效。
+        b.onLoad({ filter: /plugins[\\/]installer\.ts$/ }, async (args) => ({
           loader: 'ts',
           contents: (await fs.readFile(args.path, 'utf8')) + '\nexport {extractZipWithStreamZip};',
         }));
@@ -115,19 +117,32 @@ test(
     await fs.rm(f.output, { recursive: true });
   },
 );
-for (const [name, archiveMode, expectedMode] of [
-  ['executable permissions', 0o100755, 0o755],
-  ['ordinary file permissions', 0o100644, 0o644],
-  ['only ordinary permissions from special mode bits', 0o107755, 0o755],
-  ['default permissions when Unix attributes are absent', 0, 0o666 & ~process.umask()],
-  ['default permissions when permission bits are absent', 0o100000, 0o666 & ~process.umask()],
+// 前三个用例断言压缩包里的 Unix 权限位被还原；Windows 文件系统不支持
+// 这些位（chmod 只影响只读标记），只在 POSIX 平台运行。
+for (const [name, archiveMode, expectedMode, posixOnly] of [
+  ['executable permissions', 0o100755, 0o755, true],
+  ['ordinary file permissions', 0o100644, 0o644, true],
+  ['only ordinary permissions from special mode bits', 0o107755, 0o755, true],
+  ['default permissions when Unix attributes are absent', 0, 0o666 & ~process.umask(), false],
+  [
+    'default permissions when permission bits are absent',
+    0o100000,
+    0o666 & ~process.umask(),
+    false,
+  ],
 ]) {
-  test(`ZIP extraction preserves ${name}`, { skip: process.platform === 'win32' }, async (t) => {
-    const f = await fixture(t, [{ name: 'plugin/bin/helper', attr: (archiveMode << 16) >>> 0 }]);
-    await extractZipWithStreamZip(f.file, f.output);
-    const mode = (await fs.stat(path.join(f.output, 'plugin/bin/helper'))).mode & 0o7777;
-    assert.equal(mode, expectedMode);
-  });
+  test(
+    `ZIP extraction preserves ${name}`,
+    {
+      skip: posixOnly && process.platform === 'win32' ? 'Windows 不支持 Unix 权限位' : false,
+    },
+    async (t) => {
+      const f = await fixture(t, [{ name: 'plugin/bin/helper', attr: (archiveMode << 16) >>> 0 }]);
+      await extractZipWithStreamZip(f.file, f.output);
+      const mode = (await fs.stat(path.join(f.output, 'plugin/bin/helper'))).mode & 0o7777;
+      assert.equal(mode, expectedMode);
+    },
+  );
 }
 for (const [name, entries] of [
   ['traversal', [{ name: '../outside.txt' }]],

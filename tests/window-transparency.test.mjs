@@ -21,6 +21,8 @@ test('one normalized amount enables native transparency without changing the fro
         transparency: amount,
         frosted,
         color: '',
+        // 新增的失焦保持毛玻璃开关，默认关闭
+        keepFrostedOnBlur: false,
       });
     }
     assert.equal(resolve(Infinity, frosted).enabled, frosted);
@@ -35,7 +37,9 @@ test('frost alone activates the native material and switching it off restores op
     transparency: 0,
     frosted: true,
     color: '',
+    keepFrostedOnBlur: false,
   });
+  assert.equal(resolve(0, true, true).keepFrostedOnBlur, true);
   assert.equal(resolve(0, false).enabled, false);
   assert.equal(resolve(50, false).enabled, true);
 });

@@ -26,7 +26,10 @@ const bundle = await build({
     {
       name: 'host-fixture',
       setup(builder) {
-        builder.onResolve({ filter: /logger$/ }, () => ({ path: 'logger', namespace: 'fixture' }));
+        builder.onResolve({ filter: /logger$/ }, () => ({
+          path: 'logger',
+          namespace: 'fixture',
+        }));
         builder.onResolve({ filter: /storage\/native$|^\.\/native$/ }, () => ({
           path: 'native',
           namespace: 'fixture',
@@ -40,14 +43,15 @@ const bundle = await build({
           namespace: 'fixture',
         }));
         builder.onResolve({ filter: /^\.\/(windows|network)$/ }, (args) => {
-          if (args.importer.endsWith('/plugins/index.ts'))
+          // Windows 下 importer 使用反斜杠，必须同时兼容两种分隔符
+          if (/[\\/]plugins[\\/]index\.ts$/.test(args.importer))
             return { path: args.path.slice(2), namespace: 'fixture' };
         });
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, (args) => ({
           contents: {
-            logger: `export default { info(){}, warn(){}, error(){}, debug(){} };`,
+            logger: `export default { info(){}, warn(){}, error(){}, debug(){} }; export const isDiagnosticModeActive = () => false;`,
             native: `export const getNativeStorage = () => harness.native;`,
-            policy: `export const networkFetch = () => { throw new Error('Unexpected network request'); };`,
+            policy: `export const networkFetch = () => { throw new Error('Unexpected network request'); }; export const registerNetworkSession = async (session) => session; export const resolveNativeProxyUrls = async () => [];`,
             audio: `export const readAudioMetadata = async () => ({}); export const resolveAudioTitleAndArtist = () => ({});`,
             windows: `export const closePluginWindows = async (id) => { harness.closedWindows.push(id); };`,
             network: `export const requestPluginNetwork = async () => ({ status: 200, data: {} });`,
@@ -141,7 +145,8 @@ async function fixture(t) {
       return fs.readdir(path, ...args);
     },
     async cp(source, target, ...args) {
-      if (harness.failCopy && String(target).endsWith('/staged')) throw new Error('copy failed');
+      // Windows 下 target 使用反斜杠，必须同时兼容两种分隔符
+      if (harness.failCopy && /[\\/]staged$/.test(String(target))) throw new Error('copy failed');
       return fs.cp(source, target, ...args);
     },
   };
@@ -284,7 +289,9 @@ test('refresh failure rolls back files, metadata and the previous disabled prefe
 
 test(
   'permission revoked while the process consent dialog is open prevents a late launch',
-  { skip: process.platform === 'win32' ? 'POSIX helper fixture' : false },
+  {
+    skip: process.platform === 'win32' ? 'POSIX helper fixture' : false,
+  },
   async (t) => {
     const { api, harness, pluginDirectory } = await fixture(t);
     const helper = join(pluginDirectory, 'helper.sh');

@@ -6,20 +6,38 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { MediaServer, parseRange } from '../src/main/mediaTransport/mediaServer.ts';
 
-function collect(res: http.IncomingMessage, chunkSize = 0): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+function collect(
+  res: http.IncomingMessage,
+  chunkSize = 0,
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     res.on('data', (c) => chunks.push(c));
-    res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }));
+    res.on('end', () =>
+      resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+    );
     res.on('error', reject);
   });
 }
 
-function request(port: number, urlPath: string, options: { method?: string; range?: string } = {}): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+function request(
+  port: number,
+  urlPath: string,
+  options: { method?: string; range?: string } = {},
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port, path: urlPath, method: options.method ?? 'GET', headers: options.range ? { Range: options.range } : {} }, (res) => {
-      collect(res).then(resolve, reject);
-    });
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port,
+        path: urlPath,
+        method: options.method ?? 'GET',
+        headers: options.range ? { Range: options.range } : {},
+      },
+      (res) => {
+        collect(res).then(resolve, reject);
+      },
+    );
     req.on('error', reject);
     req.end();
   });
@@ -38,7 +56,10 @@ before(async () => {
   await writeFile(filePath, data);
   server = new MediaServer({ bindHost: '127.0.0.1', log: () => {} });
   port = await server.start(0);
-  const res = server.registerResource({ source: { kind: 'file', path: filePath }, mime: 'audio/mpeg', length: data.length }, 'test-session');
+  const res = server.registerResource(
+    { source: { kind: 'file', path: filePath }, mime: 'audio/mpeg', length: data.length },
+    'test-session',
+  );
   assert.ok(res);
   token = res.token;
 });
@@ -48,9 +69,18 @@ after(async () => {
 });
 
 test('parseRange: suffix, open-ended and unsatisfiable forms', () => {
-  assert.deepEqual(parseRange('bytes=0-4', 20), { range: { start: 0, end: 4 }, unsatisfiable: false });
-  assert.deepEqual(parseRange('bytes=10-', 20), { range: { start: 10, end: 19 }, unsatisfiable: false });
-  assert.deepEqual(parseRange('bytes=-5', 20), { range: { start: 15, end: 19 }, unsatisfiable: false });
+  assert.deepEqual(parseRange('bytes=0-4', 20), {
+    range: { start: 0, end: 4 },
+    unsatisfiable: false,
+  });
+  assert.deepEqual(parseRange('bytes=10-', 20), {
+    range: { start: 10, end: 19 },
+    unsatisfiable: false,
+  });
+  assert.deepEqual(parseRange('bytes=-5', 20), {
+    range: { start: 15, end: 19 },
+    unsatisfiable: false,
+  });
   assert.deepEqual(parseRange('bytes=20-', 20), { range: null, unsatisfiable: true });
   assert.equal(parseRange('bytes=0-4', null).unsatisfiable, false);
   assert.equal(parseRange(undefined, 20).range, null);
@@ -102,9 +132,12 @@ test('unknown token is forbidden, unknown path is 404', async () => {
 });
 
 test('client abort during download cancels the stream and server stays healthy', async () => {
-  const req = http.request({ host: '127.0.0.1', port, path: `/res/${token}`, method: 'GET' }, (res) => {
-    res.on('data', () => req.destroy());
-  });
+  const req = http.request(
+    { host: '127.0.0.1', port, path: `/res/${token}`, method: 'GET' },
+    (res) => {
+      res.on('data', () => req.destroy());
+    },
+  );
   req.on('error', () => {});
   await new Promise<void>((resolve) => {
     req.flushHeaders();
@@ -120,8 +153,14 @@ test('client abort during download cancels the stream and server stays healthy',
 test('revokeSession removes all tokens for the session', async () => {
   const other = new MediaServer({ bindHost: '127.0.0.1', log: () => {} });
   const port2 = await other.start(0);
-  const r1 = other.registerResource({ source: { kind: 'file', path: filePath }, mime: 'audio/mpeg', length: data.length }, 'sess-a');
-  const r2 = other.registerResource({ source: { kind: 'file', path: filePath }, mime: 'audio/mpeg', length: data.length }, 'sess-b');
+  const r1 = other.registerResource(
+    { source: { kind: 'file', path: filePath }, mime: 'audio/mpeg', length: data.length },
+    'sess-a',
+  );
+  const r2 = other.registerResource(
+    { source: { kind: 'file', path: filePath }, mime: 'audio/mpeg', length: data.length },
+    'sess-b',
+  );
   assert.ok(r1 && r2);
   other.revokeSession('sess-a');
   assert.equal((await request(port2, `/res/${r1.token}`)).status, 403);
@@ -131,7 +170,10 @@ test('revokeSession removes all tokens for the session', async () => {
 
 test('http relay honors range even when upstream ignores Range', async () => {
   const upstream = http.createServer((_req, res) => {
-    res.writeHead(200, { 'content-length': data.length, 'content-type': 'application/octet-stream' });
+    res.writeHead(200, {
+      'content-length': data.length,
+      'content-type': 'application/octet-stream',
+    });
     res.end(data); // 忽略 Range 全量返回
   });
   await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', () => resolve()));
@@ -169,7 +211,10 @@ test('relay passes through a well-formed upstream 206', async () => {
     const m = /^bytes=(\d+)-(\d+)$/.exec((req.headers.range as string) ?? '');
     if (m) {
       const [s, e] = [Number(m[1]), Number(m[2])];
-      res.writeHead(206, { 'content-range': `bytes ${s}-${e}/${data.length}`, 'content-length': e - s + 1 });
+      res.writeHead(206, {
+        'content-range': `bytes ${s}-${e}/${data.length}`,
+        'content-length': e - s + 1,
+      });
       res.end(data.subarray(s, e + 1));
       return;
     }
@@ -183,7 +228,14 @@ test('relay passes through a well-formed upstream 206', async () => {
   const relay = new MediaServer({ bindHost: '127.0.0.1', log: () => {} });
   try {
     const relayPort = await relay.start(0);
-    const res = relay.registerResource({ source: { kind: 'http', url: `http://127.0.0.1:${addr.port}/song.mp3` }, mime: 'audio/mpeg', length: data.length }, 'relay2');
+    const res = relay.registerResource(
+      {
+        source: { kind: 'http', url: `http://127.0.0.1:${addr.port}/song.mp3` },
+        mime: 'audio/mpeg',
+        length: data.length,
+      },
+      'relay2',
+    );
     assert.ok(res);
     const out = await request(relayPort, `/res/${res.token}`, { range: 'bytes=0-1' });
     assert.equal(out.status, 206);

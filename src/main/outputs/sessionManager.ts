@@ -1,5 +1,11 @@
 /**
- * OutputSessionManager —— 宿主唯一活动输出会话。
+ * OutputSessionManager —— 输出会话的契约实现（当前仅测试使用）。
+ *
+ * 说明：
+ * - 生产环境的输出路由、纪元门（routeEpoch/trackGeneration）与后端切换逻辑
+ *   由 outputHost.ts 承担，本类未被主进程接线。
+ * - 修改输出会话语义时，请同步更新本类与 outputHost.ts，避免两套模型继续漂移；
+ *   若后续决定收敛，应把生产路由迁移到本类并删除重复实现。
  *
  * 职责（design §4、§9）：
  * - 持有 routeEpoch / trackGeneration；旧会话事件不得推动新队列。

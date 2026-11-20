@@ -3,7 +3,7 @@ import { showOpenDialogSafely } from './dialogHost';
 import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import type { PlayerController, PlayerTransitionSettingsOptions } from '../player/controller';
+import type { PlayerController, PlayerTransitionMode } from '../player/controller';
 import type { AudioEffectPlaybackOptions, DspProviderInspection } from '../../shared/audio';
 import type {
   PlayerAudioGraphParameterPatch,
@@ -20,6 +20,15 @@ import type { EmbeddedMetadataRequest } from '../../shared/embeddedMetadata';
 import { registerEmbeddedCoverProtocol } from '../player/embeddedMetadata';
 
 export type PlayerRef = { current: PlayerController | null };
+
+/** 允许透传给原生层的过渡模式白名单，与 PlayerTransitionMode 保持一致。 */
+const TRANSITION_MODES: readonly string[] = [
+  'none',
+  'gapless',
+  'fade',
+  'automix-basic',
+  'automix-pro',
+];
 
 export function registerPlayerIpc(ref: PlayerRef): void {
   registerEmbeddedCoverProtocol();
@@ -369,12 +378,20 @@ export function registerPlayerIpc(ref: PlayerRef): void {
 
   ipcRegistry.registerHandler(
     'player:set-transition-settings',
-    (_e, options: { mode?: string; fadeSecs?: number; matchTempo?: boolean } | undefined) =>
-      ref.current?.setTransitionSettings({
-        mode: options?.mode as PlayerTransitionSettingsOptions['mode'],
-        fadeSecs: options?.fadeSecs,
-        matchTempo: options?.matchTempo,
-      }) ?? null,
+    (_e, options: { mode?: string; fadeSecs?: number; matchTempo?: boolean } | undefined) => {
+      // mode 来自渲染进程，必须收敛到已知枚举后再透传 native，
+      // 避免任意字符串进入原生过渡逻辑。fadeSecs 由 controller 侧夹取。
+      const mode = TRANSITION_MODES.includes(options?.mode as PlayerTransitionMode)
+        ? (options?.mode as PlayerTransitionMode)
+        : undefined;
+      return (
+        ref.current?.setTransitionSettings({
+          mode,
+          fadeSecs: options?.fadeSecs,
+          matchTempo: options?.matchTempo,
+        }) ?? null
+      );
+    },
   );
 
   ipcRegistry.registerHandler(

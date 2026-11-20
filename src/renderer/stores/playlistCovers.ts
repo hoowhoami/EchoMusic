@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { shallowRef } from 'vue';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import {
@@ -14,11 +14,42 @@ import { toRecord } from '../../shared/object';
 import logger from '@/utils/logger';
 
 const STORAGE_KEY = 'playlist:auto-covers:v1';
+// 单账号下最多保留的封面缓存条数；超出后按最近使用顺序淘汰最旧条目。
+const MAX_COVER_ENTRIES = 200;
 
 export const usePlaylistCoversStore = defineStore('playlist-covers', () => {
-  const entries = ref<Record<string, PlaylistCoverEntry>>({});
+  const entries = shallowRef<Record<string, PlaylistCoverEntry>>({});
   let hydration: Promise<void> | undefined;
   let writes = Promise.resolve();
+  // 最近使用序号（仅内存态，不持久化）：读取和写入都会刷新；
+  // 重启后按 KV 中的键顺序重新建立，保证淘汰顺序稳定。
+  const touchOrder = new Map<string, number>();
+  let touchClock = 0;
+
+  const touch = (key: string) => {
+    touchOrder.set(key, ++touchClock);
+  };
+
+  // 按最近使用序号淘汰最旧条目，返回裁剪后的新对象。
+  const pruneEntries = (next: Record<string, PlaylistCoverEntry>) => {
+    const keys = Object.keys(next);
+    const overflow = keys.length - MAX_COVER_ENTRIES;
+    if (overflow <= 0) return next;
+    const evict = keys
+      .slice()
+      .sort((left, right) => (touchOrder.get(left) ?? 0) - (touchOrder.get(right) ?? 0))
+      .slice(0, overflow);
+    for (const key of evict) {
+      delete next[key];
+      touchOrder.delete(key);
+    }
+    return next;
+  };
+
+  const commitEntries = (next: Record<string, PlaylistCoverEntry>, touchedKey?: string) => {
+    if (touchedKey) touch(touchedKey);
+    entries.value = pruneEntries(next);
+  };
 
   function hydrate() {
     return (hydration ??= (async () => {
@@ -38,9 +69,11 @@ export const usePlaylistCoversStore = defineStore('playlist-covers', () => {
               coverUrl: entry.coverUrl,
               ...(entry.selection === 'sort' ? { selection: 'sort' as const } : {}),
             };
+            // 以持久化顺序作为初始最近使用顺序（越靠后越新）。
+            touch(key);
           }
         }
-        entries.value = { ...valid, ...entries.value };
+        entries.value = pruneEntries({ ...valid, ...entries.value });
       } catch (error) {
         logger.warn('PlaylistCovers', 'Read cover cache failed', error);
       }
@@ -50,10 +83,17 @@ export const usePlaylistCoversStore = defineStore('playlist-covers', () => {
   function coverFor(playlist: PlaylistMeta, userId: number | undefined) {
     if (playlist.hasCustomCover) return playlist.pic;
     const manualKey = manualPlaylistCoverKey(playlist, userId);
-    if (manualKey && entries.value[manualKey]) return entries.value[manualKey].coverUrl;
+    if (manualKey && entries.value[manualKey]) {
+      touch(manualKey);
+      return entries.value[manualKey].coverUrl;
+    }
     const key = playlistCoverKey(playlist, userId);
+    if (!key) return playlist.pic;
     // 版本变化时暂时沿用旧封面，完整加载后再替换。空字符串是已确认无图的结果。
-    return key ? (entries.value[key]?.coverUrl ?? playlist.pic) : playlist.pic;
+    const cached = entries.value[key];
+    if (!cached) return playlist.pic;
+    touch(key);
+    return cached.coverUrl;
   }
 
   async function updateFromPages(
@@ -85,7 +125,7 @@ export const usePlaylistCoversStore = defineStore('playlist-covers', () => {
       cached.selection === 'sort'
     )
       return;
-    entries.value = { ...entries.value, [key]: { ...entry, selection: 'sort' } };
+    commitEntries({ ...entries.value, [key]: { ...entry, selection: 'sort' } }, key);
     await persist();
   }
 
@@ -98,15 +138,20 @@ export const usePlaylistCoversStore = defineStore('playlist-covers', () => {
     if (!key) return;
     await hydrate();
     if (!isCurrent()) return;
-    entries.value = {
-      ...entries.value,
-      [key]: { listVer: playlist.listVer ?? 0, coverUrl: playlist.pic },
-    };
+    commitEntries(
+      {
+        ...entries.value,
+        [key]: { listVer: playlist.listVer ?? 0, coverUrl: playlist.pic },
+      },
+      key,
+    );
     await persist();
   }
 
   async function persist() {
-    const snapshot = JSON.parse(JSON.stringify(entries.value));
+    // entries 内条目均整体替换、从不原地修改，浅拷贝顶层即可得到稳定快照，
+    // 避免每次写入都做全量 JSON 深拷贝。
+    const snapshot = { ...entries.value };
     // 串行写入，避免不同歌单先后完成时旧快照覆盖新快照。
     writes = writes.then(async () => {
       try {

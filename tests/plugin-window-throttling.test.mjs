@@ -40,6 +40,8 @@ function fixture(platform) {
         setBackgroundThrottling: (value) => {
           this.throttled = value;
         },
+        // 插件窗口导航加固（will-navigate / 弹窗拦截）只要求可注册，不做真实拦截
+        setWindowOpenHandler: () => undefined,
         send() {},
       });
       windows.push(this);

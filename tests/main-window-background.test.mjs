@@ -191,6 +191,14 @@ async function setup({
     '../diagnostics/memory': { logMainMemory: async () => {} },
     '../windowSizing': { resolveMainWindowPlacement: () => ({ bounds: saved.windowState }) },
     '../../shared/windowing': { isWaylandWindowingBackend: () => false },
+    // devTools 只提供调试端口常量与归一化，本测试不覆盖其行为，给默认值桩即可
+    '../../shared/devTools': {
+      DEFAULT_DEVTOOLS_DEBUG_PORT: 9223,
+      MIN_DEVTOOLS_DEBUG_PORT: 1024,
+      MAX_DEVTOOLS_DEBUG_PORT: 65535,
+      normalizeDevToolsDebugPort: (value) => Number(value) || 9223,
+      parseDevToolsDebugPort: () => null,
+    },
     './state': {
       trackMainWindowState: (_win, options) => {
         stateOptions = options;

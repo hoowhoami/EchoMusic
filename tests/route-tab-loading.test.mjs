@@ -171,7 +171,8 @@ test('favorites revisions invalidate inactive data without fetching, then reload
       [
         'let videosGeneration = 0;',
         lazyFunction(source, 'resetVideos'),
-        source.match(/watch\(\n  \(\) => videoCollectionStore.revision,[\s\S]*?^\);/m)[0],
+        // 源码在 Windows 检出为 CRLF，不能用字面 \n 跨行匹配
+        source.match(/watch\(\s*\(\) => videoCollectionStore\.revision,[\s\S]*?^\);/m)[0],
         lazyFunction(source, 'loadActiveTabData'),
         source.match(/onActivated\(\(\) => \{[\s\S]*?^\}\);/m)[0],
       ].join('\n'),

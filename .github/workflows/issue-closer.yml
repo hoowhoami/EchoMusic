@@ -16,24 +16,95 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            
-            // 查询所有带有 'invalid' 标签且处于 open 状态的 Issue
-            const issues = await github.rest.issues.listForRepo({
+            // 缓冲期：invalid 标签添加满 72 小时才允许自动关闭，
+            // 给作者留出补充信息、回复或移除标签的时间，降低 AI 误判的影响。
+            const INVALID_BUFFER_MS = 72 * 60 * 60 * 1000;
+
+            // 分页查询全部带 invalid 标签且处于 open 状态的 Issue（PR 另行排除）
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
               owner,
               repo,
               state: 'open',
-              labels: 'invalid'
+              labels: 'invalid',
+              per_page: 100,
             });
 
-            for (const issue of issues.data) {
+            for (const issue of issues) {
+              if (issue.pull_request) continue;
+
+              // 查询时间线事件，定位最近一次添加 invalid 标签的时间
+              const events = await github.paginate(
+                github.rest.issues.listEventsForTimeline,
+                {
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  per_page: 100,
+                },
+              );
+              const labeled = events
+                .filter(
+                  (event) =>
+                    event.event === 'labeled' &&
+                    event.label?.name === 'invalid',
+                )
+                .pop();
+
+              // 无法确定标签时间时保守跳过，避免误关
+              if (!labeled) {
+                console.log(
+                  `Skip issue #${issue.number}: 无法确定 invalid 标签的添加时间`,
+                );
+                continue;
+              }
+
+              const labeledAt = Date.parse(labeled.created_at);
+              if (!Number.isFinite(labeledAt)) {
+                console.log(
+                  `Skip issue #${issue.number}: invalid 标签时间无效`,
+                );
+                continue;
+              }
+
+              const elapsedMs = Date.now() - labeledAt;
+              if (elapsedMs < INVALID_BUFFER_MS) {
+                const remainingHours = Math.ceil(
+                  (INVALID_BUFFER_MS - elapsedMs) / (60 * 60 * 1000),
+                );
+                console.log(
+                  `Skip issue #${issue.number}: invalid 标签未满 72 小时，还需约 ${remainingHours} 小时`,
+                );
+                continue;
+              }
+
+              // 复检：关闭前确认 Issue 仍为 open 且仍带 invalid 标签
+              const current = await github.rest.issues.get({
+                owner,
+                repo,
+                issue_number: issue.number,
+              });
+              const stillInvalid =
+                current.data.state === 'open' &&
+                current.data.labels.some(
+                  (label) =>
+                    (typeof label === 'string' ? label : label.name) ===
+                    'invalid',
+                );
+              if (!stillInvalid) {
+                console.log(
+                  `Skip issue #${issue.number}: 复检时状态或标签已变化`,
+                );
+                continue;
+              }
+
               // 发送提醒评论
               await github.rest.issues.createComment({
                 owner,
                 repo,
                 issue_number: issue.number,
                 body: `🤖 自动助手提示：
-            此 Issue 已被标记为“无效”超过一段时间，现自动关闭。
-            如果您已补充完整信息，请重新开启或提交新的 Issue，谢谢合作！`
+            此 Issue 已被标记为“无效”超过 72 小时，现自动关闭。
+            如果您已补充完整信息，请重新开启或提交新的 Issue，谢谢合作！`,
               });
 
               // 关闭 Issue
@@ -41,8 +112,8 @@ jobs:
                 owner,
                 repo,
                 issue_number: issue.number,
-                state: 'closed'
+                state: 'closed',
               });
-              
+
               console.log(`Closed issue #${issue.number}`);
             }

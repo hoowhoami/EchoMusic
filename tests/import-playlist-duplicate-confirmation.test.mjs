@@ -26,7 +26,8 @@ test('duplicate-name confirmation requires an explicit decision', () => {
   assert.match(source, /v-model="duplicatePlaylistName"/);
   assert.match(source, /你可以修改名称，或保留原名称继续创建/);
   assert.match(source, /:disabled="!duplicatePlaylistName\.trim\(\)"/);
-  assert.match(source, /finishDuplicateNameConfirm\(false\)[^>]*>取消<\/Button>/);
+  // prettier 会把 </Button> 折行成 </Button\n      >，因此允许闭合标签内部出现空白
+  assert.match(source, /finishDuplicateNameConfirm\(false\)[^>]*>取消<\/Button\s*>/);
   assert.match(source, /@click="finishDuplicateNameConfirm\(true\)"/);
   assert.match(source, /:close-on-escape="false"/);
   assert.match(source, /:close-on-interact-outside="false"/);

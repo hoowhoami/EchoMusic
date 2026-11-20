@@ -142,18 +142,23 @@ for (const platform of ['win32', 'linux', 'darwin'])
     factor = 2;
     win.innerWidth = 500;
     handlers.get('geometrychange')();
+    // geometrychange 现在经 rAF 合帧，需手动执行已排队的回调
+    frame();
     assert.equal(properties.get('--window-controls-inset'), '69px');
     left = 138;
     right = 0;
     handlers.get('geometrychange')();
+    frame();
     assert.equal(properties.get('--window-controls-left-inset'), '69px');
     assert.equal(properties.get('--window-controls-inset'), '0px');
     right = 92;
     handlers.get('geometrychange')();
+    frame();
     assert.equal(properties.get('--window-controls-left-inset'), '69px');
     assert.equal(properties.get('--window-controls-inset'), '46px');
     overlay.visible = false;
     handlers.get('geometrychange')();
+    frame();
     assert.equal(properties.get('--window-controls-inset'), '0px');
     if (platform === 'darwin') {
       assert.equal(properties.get('--window-controls-left-inset'), '40px');
@@ -169,6 +174,7 @@ for (const platform of ['win32', 'linux', 'darwin'])
     right = 138;
     overlay.visible = true;
     handlers.get('geometrychange')();
+    frame();
     assert.equal(properties.get('--window-controls-inset'), '69px');
     document.fullscreenElement = {};
     handlers.get('window:fullscreen-changed')(null, true);

@@ -70,11 +70,14 @@ test('DLNA volume keeps device percentages in SOAP commands and snapshots', asyn
     await backend.setVolume(volume);
     assert.equal((await backend.getState()).volume, volume);
   }
-  assert.deepEqual(commands, [0, 50, 80, 100].map((volume) => ({
-    InstanceID: '0',
-    Channel: 'Master',
-    DesiredVolume: String(volume),
-  })));
+  assert.deepEqual(
+    commands,
+    [0, 50, 80, 100].map((volume) => ({
+      InstanceID: '0',
+      Channel: 'Master',
+      DesiredVolume: String(volume),
+    })),
+  );
 });
 
 test('DLNA snapshots use shared state values and source switching returns position, duration, sequence', async () => {
