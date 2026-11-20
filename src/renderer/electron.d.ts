@@ -166,6 +166,8 @@ import type {
 } from '../shared/plugins';
 import type {
   StorageAppendQueueItemsPayload,
+  StorageHistoryAddListenTimePayload,
+  StorageHistoryAddListenTimeResult,
   StorageHistoryEntry,
   StorageHistoryGetEntriesPayload,
   StorageHistoryRecordPlayPayload,
@@ -778,6 +780,9 @@ export interface IElectronAPI {
     recordHistoryPlay: (
       payload: StorageHistoryRecordPlayPayload,
     ) => Promise<StorageHistoryEntry | null>;
+    addHistoryListenTime: (
+      payload: StorageHistoryAddListenTimePayload,
+    ) => Promise<StorageHistoryAddListenTimeResult>;
     removeHistoryEntries: (
       payload: StorageHistoryRemoveEntriesPayload,
     ) => Promise<StorageResetResult>;

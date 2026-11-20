@@ -111,6 +111,7 @@ export const createPlaybackManager = (
   clearPlaybackNotice: (trackId?: string | number | null) => void,
   handleOutputDeviceError?: (error: unknown) => Promise<boolean>,
   onGaplessTrackEnded?: () => void,
+  onPlaybackStopped?: () => void,
 ) => {
   const completeEmbeddedMetadata = createEmbeddedMetadataCompleter({
     read: async (seq, includeCover) => {
@@ -2191,6 +2192,8 @@ export const createPlaybackManager = (
   };
 
   const stop = () => {
+    // 停止前结算本地收听时长（currentTrackSnapshot 随后会被清空）
+    onPlaybackStopped?.();
     state.mvAudioFallbackFailureReason = '';
     fmAdvanceId++;
     pendingFmLoad = null;

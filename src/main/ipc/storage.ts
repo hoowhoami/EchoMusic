@@ -1,6 +1,7 @@
 import { ipcRegistry } from './registry';
 import type {
   StorageAppendQueueItemsPayload,
+  StorageHistoryAddListenTimePayload,
   StorageHistoryGetEntriesPayload,
   StorageHistoryRecordPlayPayload,
   StorageHistoryRemoveEntriesPayload,
@@ -85,6 +86,12 @@ export const registerStorageHandlers = () => {
   ipcRegistry.registerHandler(
     'storage:history:record-play',
     (_event, payload: StorageHistoryRecordPlayPayload) => getHistoryStorage().recordPlay(payload),
+  );
+
+  ipcRegistry.registerHandler(
+    'storage:history:add-listen-time',
+    (_event, payload: StorageHistoryAddListenTimePayload) =>
+      getHistoryStorage().addListenTime(payload),
   );
 
   ipcRegistry.registerHandler(

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { Song } from '@/models/song';
-import type { StorageHistoryEntry } from '../../shared/storage';
+import type { StorageHistoryAddListenTimeResult, StorageHistoryEntry } from '../../shared/storage';
 import { resolveSongId } from '../../shared/historyStats';
 import { withoutEmbeddedMetadata } from '../../shared/embeddedMetadata';
 import logger from '@/utils/logger';
@@ -15,6 +15,8 @@ export interface LocalHistoryEntry {
   lastPlayedAt: number;
   /** 播放次数（本地累计） */
   playCount: number;
+  /** 本地累计实听时长（ms，老数据为 0） */
+  listenedMs: number;
   /** 去重键 = `${mxid}:${lastPlayedAt}` */
   historyKey: string;
 }
@@ -33,6 +35,7 @@ const toLocalEntry = (entry: StorageHistoryEntry): LocalHistoryEntry => ({
   },
   lastPlayedAt: entry.lastPlayedAt,
   playCount: entry.playCount,
+  listenedMs: Number(entry.listenedMs) || 0,
   historyKey: entry.historyKey,
 });
 
@@ -182,6 +185,33 @@ export const useHistoryStore = defineStore('history', () => {
     applyRecordedEntry(toLocalEntry(stored), existing?.historyKey);
   };
 
+  /**
+   * 累加一段本地实听时长到历史条目。
+   * 条目不存在（被删除/被上限 prune）时存储层不会重建，这里也不新建。
+   */
+  const addListenTime = async (song: Song, listenedMs: number) => {
+    const amount = Math.round(Number(listenedMs));
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    const plain = withoutEmbeddedMetadata(song);
+    let result: StorageHistoryAddListenTimeResult | undefined;
+    try {
+      result = await window.electron?.storage?.addHistoryListenTime?.({
+        song: plain,
+        listenedMs: amount,
+      });
+    } catch (error) {
+      logger.warn('HistoryStore', 'Add listen time failed', error);
+      return;
+    }
+    if (!result?.ok || !result.updated) return;
+    const songId = resolveSongId(plain);
+    const entry = entries.value.find((item) => resolveSongId(item.song) === songId);
+    if (!entry) return;
+    // 优先采用存储层回传的权威总值，避免本地增量与并发写入漂移
+    const total = Number(result.listenedMs);
+    entry.listenedMs = Number.isFinite(total) ? total : (Number(entry.listenedMs) || 0) + amount;
+  };
+
   /** 清空所有本地播放历史（立即生效，无动画） */
   const clear = () => {
     generation += 1;
@@ -244,6 +274,7 @@ export const useHistoryStore = defineStore('history', () => {
     hydrate,
     completeMetadata,
     recordPlay,
+    addListenTime,
     clear,
     removeEntry,
     removeEntries,

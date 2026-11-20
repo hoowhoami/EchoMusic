@@ -158,6 +158,7 @@ fn ensure_schema(connection: &Connection) -> NativeResult<()> {
           history_key TEXT NOT NULL UNIQUE,
           last_played_at INTEGER NOT NULL,
           play_count INTEGER NOT NULL DEFAULT 1,
+          listened_ms INTEGER NOT NULL DEFAULT 0,
           FOREIGN KEY (song_key) REFERENCES songs(song_key) ON DELETE CASCADE
         );
 
@@ -165,6 +166,23 @@ fn ensure_schema(connection: &Connection) -> NativeResult<()> {
           ON play_history(last_played_at DESC);
         "#,
     ))
+}
+
+/// 老库补列：`CREATE TABLE IF NOT EXISTS` 不会给已存在的表加列，需幂等补列。
+/// 每次启动都会执行，列已存在时直接返回。
+fn ensure_play_history_columns(connection: &Connection) -> NativeResult<()> {
+    let has_listened_ms: i64 = map_sql(connection.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('play_history') WHERE name = 'listened_ms'",
+        [],
+        |row| row.get(0),
+    ))?;
+    if has_listened_ms == 0 {
+        map_sql(connection.execute(
+            "ALTER TABLE play_history ADD COLUMN listened_ms INTEGER NOT NULL DEFAULT 0",
+            [],
+        ))?;
+    }
+    Ok(())
 }
 
 fn parse_json(value: &str) -> NativeResult<Value> {
@@ -872,6 +890,7 @@ fn history_entry_from_row(
     history_key: String,
     last_played_at: i64,
     play_count: i64,
+    listened_ms: i64,
     payload_json: String,
 ) -> Value {
     let mut song = parse_json_fallback(&payload_json, json!({}));
@@ -882,11 +901,13 @@ fn history_entry_from_row(
             Value::Number(last_played_at.into()),
         );
         song_map.insert("playCount".to_string(), Value::Number(play_count.into()));
+        song_map.insert("listenedMs".to_string(), Value::Number(listened_ms.into()));
     }
     json!({
         "song": song,
         "lastPlayedAt": last_played_at,
         "playCount": play_count,
+        "listenedMs": listened_ms,
         "historyKey": history_key,
     })
 }
@@ -897,7 +918,7 @@ fn history_entries_json(connection: &Connection, offset: i64, limit: i64) -> Nat
     let mut stmt = map_sql(connection.prepare(
         r#"
         SELECT play_history.history_key, play_history.last_played_at,
-               play_history.play_count, songs.payload_json
+               play_history.play_count, play_history.listened_ms, songs.payload_json
         FROM play_history
         INNER JOIN songs ON songs.song_key = play_history.song_key
         ORDER BY play_history.last_played_at DESC
@@ -910,6 +931,7 @@ fn history_entries_json(connection: &Connection, offset: i64, limit: i64) -> Nat
             row.get(1)?,
             row.get(2)?,
             row.get(3)?,
+            row.get(4)?,
         ))
     }))?;
 
@@ -929,7 +951,7 @@ fn history_entry_json_by_song_key(
             .query_row(
                 r#"
                 SELECT play_history.history_key, play_history.last_played_at,
-                       play_history.play_count, songs.payload_json
+                       play_history.play_count, play_history.listened_ms, songs.payload_json
                 FROM play_history
                 INNER JOIN songs ON songs.song_key = play_history.song_key
                 WHERE play_history.song_key = ?
@@ -941,6 +963,7 @@ fn history_entry_json_by_song_key(
                         row.get(1)?,
                         row.get(2)?,
                         row.get(3)?,
+                        row.get(4)?,
                     ))
                 },
             )
@@ -991,6 +1014,7 @@ fn cleanup_orphan_songs(connection: &Connection) -> NativeResult<()> {
 pub fn initialize(database_path: String) -> NativeResult<()> {
     let connection = map_sql(Connection::open(database_path))?;
     ensure_schema(&connection)?;
+    ensure_play_history_columns(&connection)?;
     cleanup_orphan_songs(&connection)?;
     let mut guard = DATABASE
         .lock()
@@ -1436,6 +1460,45 @@ pub fn history_record_play(payload_json: String) -> NativeResult<String> {
 }
 
 #[napi]
+pub fn history_add_listen_time(payload_json: String) -> NativeResult<String> {
+    let payload = parse_payload(&payload_json)?;
+    let song = payload
+        .get("song")
+        .ok_or_else(|| err("History payload is missing song"))?;
+    // 只接受正时长；单次上限 6 小时纯属防御（正常周期结算远小于此值）
+    let listened_ms = int_prop(&payload, "listenedMs", 0).clamp(0, 6 * 60 * 60 * 1000);
+    if listened_ms == 0 {
+        return Ok(json!({ "ok": true, "updated": 0, "listenedMs": 0 }).to_string());
+    }
+    let song_key = normalize_song_key(song);
+
+    with_connection(|connection| {
+        // 不做 upsert：条目已被删除/从未记录时 updated = 0，避免「删除后复活」。
+        // RETURNING 直接带回累加后的权威总值，前端据此覆盖本地缓存，避免增量漂移。
+        let total: Option<i64> = map_sql(
+            connection
+                .query_row(
+                    r#"
+                    UPDATE play_history
+                    SET listened_ms = listened_ms + ?
+                    WHERE song_key = ?
+                    RETURNING listened_ms
+                    "#,
+                    params![listened_ms, song_key.as_str()],
+                    |row| row.get(0),
+                )
+                .optional(),
+        )?;
+        let updated = i64::from(total.is_some());
+        map_json(serde_json::to_string(&json!({
+            "ok": true,
+            "updated": updated,
+            "listenedMs": total.unwrap_or(0),
+        })))
+    })
+}
+
+#[napi]
 pub fn history_remove_entries(payload_json: String) -> NativeResult<String> {
     let payload = parse_payload(&payload_json)?;
     let keys = array_strings(payload.get("historyKeys"));
@@ -1622,10 +1685,60 @@ pub fn plugin_sqlite_backup(source_path: String, destination_path: String) -> Na
 
 #[cfg(test)]
 mod tests {
-    use super::{close, initialize, kv_apply_batch, kv_get, kv_set, plugin_sqlite_backup};
+    use super::{
+        close, history_add_listen_time, history_get_entries, history_record_play, initialize,
+        kv_apply_batch, kv_get, kv_set, plugin_sqlite_backup,
+    };
     use rusqlite::Connection;
+    use serde_json::Value;
     use std::fs;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, MutexGuard};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// 历史相关用例共用全局 DATABASE，必须串行执行避免互相 close/initialize。
+    fn test_db_lock() -> MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
+    fn temp_db_root(prefix: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "echo-sqlite-{prefix}-test-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("create test directory");
+        root
+    }
+
+    fn song_payload(mix_song_id: i64) -> String {
+        format!(
+            r#"{{"id":"{mix_song_id}","mixSongId":{mix_song_id},"name":"Test Song","artist":"Tester","hash":"hash-{mix_song_id}","duration":180}}"#
+        )
+    }
+
+    fn record_play_payload(mix_song_id: i64, played_at: i64) -> String {
+        format!(
+            r#"{{"song":{},"playedAt":{played_at},"maxEntries":1000}}"#,
+            song_payload(mix_song_id)
+        )
+    }
+
+    fn add_listen_time_payload(mix_song_id: i64, listened_ms: i64) -> String {
+        format!(
+            r#"{{"song":{},"listenedMs":{listened_ms}}}"#,
+            song_payload(mix_song_id)
+        )
+    }
+
+    fn history_entries() -> Value {
+        serde_json::from_str(&history_get_entries(None).expect("read history entries"))
+            .expect("history entries json")
+    }
 
     #[test]
     fn plugin_backup_captures_committed_wal_data() {
@@ -1668,6 +1781,7 @@ mod tests {
 
     #[test]
     fn kv_batch_sets_deletes_and_rejects_partial_mutations() {
+        let _guard = test_db_lock();
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
@@ -1715,6 +1829,144 @@ mod tests {
             None
         );
         close();
+        fs::remove_dir_all(root).expect("cleanup test directory");
+    }
+
+    #[test]
+    fn history_listen_time_accumulates_without_touching_play_count() {
+        let _guard = test_db_lock();
+        let root = temp_db_root("history-accumulate");
+        let database_path = root.join("storage.sqlite");
+        initialize(database_path.to_string_lossy().into_owned()).expect("initialize storage");
+
+        history_record_play(record_play_payload(42, 1_000)).expect("record play");
+        for expected_total in [1_000_i64, 2_000] {
+            let result: Value = serde_json::from_str(
+                &history_add_listen_time(add_listen_time_payload(42, 1_000))
+                    .expect("add listen time"),
+            )
+            .expect("add result json");
+            assert_eq!(result["updated"].as_i64(), Some(1));
+            // RETURNING 带回累加后的权威总值，前端用它覆盖本地缓存
+            assert_eq!(result["listenedMs"].as_i64(), Some(expected_total));
+        }
+
+        let entries = history_entries();
+        let entry = entries.as_array().expect("entries array")[0].clone();
+        assert_eq!(entry["listenedMs"].as_i64(), Some(2_000));
+        // 快照里发音字段与顶层字段同步
+        assert_eq!(entry["song"]["listenedMs"].as_i64(), Some(2_000));
+        assert_eq!(entry["playCount"].as_i64(), Some(1));
+
+        close();
+        fs::remove_dir_all(root).expect("cleanup test directory");
+    }
+
+    #[test]
+    fn history_listen_time_ignores_unknown_song_and_non_positive_values() {
+        let _guard = test_db_lock();
+        let root = temp_db_root("history-unknown");
+        let database_path = root.join("storage.sqlite");
+        initialize(database_path.to_string_lossy().into_owned()).expect("initialize storage");
+
+        let missing: Value = serde_json::from_str(
+            &history_add_listen_time(add_listen_time_payload(7, 5_000)).expect("add listen time"),
+        )
+        .expect("add result json");
+        assert_eq!(missing["updated"].as_i64(), Some(0));
+        assert_eq!(history_entries().as_array().expect("entries").len(), 0);
+
+        history_record_play(record_play_payload(7, 2_000)).expect("record play");
+        for listened_ms in [0_i64, -1_000] {
+            let result: Value = serde_json::from_str(
+                &history_add_listen_time(add_listen_time_payload(7, listened_ms))
+                    .expect("add listen time"),
+            )
+            .expect("add result json");
+            assert_eq!(result["updated"].as_i64(), Some(0));
+        }
+        assert_eq!(history_entries()[0]["listenedMs"].as_i64(), Some(0));
+
+        close();
+        fs::remove_dir_all(root).expect("cleanup test directory");
+    }
+
+    #[test]
+    fn history_record_play_preserves_accumulated_listen_time() {
+        let _guard = test_db_lock();
+        let root = temp_db_root("history-replay");
+        let database_path = root.join("storage.sqlite");
+        initialize(database_path.to_string_lossy().into_owned()).expect("initialize storage");
+
+        history_record_play(record_play_payload(9, 3_000)).expect("first play");
+        history_add_listen_time(add_listen_time_payload(9, 4_500)).expect("add listen time");
+        history_record_play(record_play_payload(9, 4_000)).expect("second play");
+
+        let entries = history_entries();
+        let entry = entries.as_array().expect("entries array")[0].clone();
+        assert_eq!(entry["playCount"].as_i64(), Some(2));
+        assert_eq!(entry["listenedMs"].as_i64(), Some(4_500));
+
+        close();
+        fs::remove_dir_all(root).expect("cleanup test directory");
+    }
+
+    #[test]
+    fn initialize_migrates_legacy_history_without_listened_ms_column() {
+        let _guard = test_db_lock();
+        let root = temp_db_root("history-migrate");
+        let database_path = root.join("storage.sqlite");
+
+        {
+            // 模拟旧版本数据库：play_history 没有 listened_ms 列
+            let legacy = Connection::open(&database_path).expect("open legacy database");
+            legacy
+                .execute_batch(
+                    r#"
+                    CREATE TABLE songs (
+                      song_key TEXT PRIMARY KEY,
+                      source_id TEXT,
+                      hash TEXT,
+                      title TEXT NOT NULL,
+                      artist TEXT NOT NULL DEFAULT '',
+                      album TEXT NOT NULL DEFAULT '',
+                      cover_url TEXT NOT NULL DEFAULT '',
+                      duration INTEGER NOT NULL DEFAULT 0,
+                      payload_json TEXT NOT NULL,
+                      updated_at INTEGER NOT NULL
+                    );
+                    CREATE TABLE play_history (
+                      song_key TEXT PRIMARY KEY,
+                      history_key TEXT NOT NULL UNIQUE,
+                      last_played_at INTEGER NOT NULL,
+                      play_count INTEGER NOT NULL DEFAULT 1
+                    );
+                    INSERT INTO songs (
+                      song_key, source_id, hash, title, artist, album, cover_url,
+                      duration, payload_json, updated_at
+                    ) VALUES (
+                      'mx:11', '11', 'hash-11', 'Legacy Song', 'Tester', '', '',
+                      180, '{"id":"11","mixSongId":11,"name":"Legacy Song","artist":"Tester"}', 500
+                    );
+                    INSERT INTO play_history (song_key, history_key, last_played_at, play_count)
+                    VALUES ('mx:11', '11:500', 500, 3);
+                    "#,
+                )
+                .expect("write legacy schema");
+        }
+
+        initialize(database_path.to_string_lossy().into_owned()).expect("migrate storage");
+        let entries = history_entries();
+        let entry = entries.as_array().expect("entries array")[0].clone();
+        assert_eq!(entry["playCount"].as_i64(), Some(3));
+        assert_eq!(entry["listenedMs"].as_i64(), Some(0));
+        close();
+
+        // 再次启动：补列逻辑幂等，不报错也不重置数据
+        initialize(database_path.to_string_lossy().into_owned()).expect("reopen storage");
+        assert_eq!(history_entries()[0]["listenedMs"].as_i64(), Some(0));
+        close();
+
         fs::remove_dir_all(root).expect("cleanup test directory");
     }
 }

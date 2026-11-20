@@ -126,6 +126,8 @@ export interface StorageHistoryEntry {
   lastPlayedAt: number;
   playCount: number;
   historyKey: string;
+  /** 本地累计实听毫秒（老库/老 IPC 可能缺省，按 0 处理） */
+  listenedMs?: number;
 }
 
 export interface StorageHistoryGetEntriesPayload {
@@ -137,6 +139,19 @@ export interface StorageHistoryRecordPlayPayload {
   song: StorageSong;
   playedAt?: number;
   maxEntries?: number;
+}
+
+export interface StorageHistoryAddListenTimePayload {
+  song: StorageSong;
+  listenedMs: number;
+}
+
+export interface StorageHistoryAddListenTimeResult {
+  ok: boolean;
+  /** 受影响的条目数：0 表示该歌曲已不在历史中（不重建条目） */
+  updated: number;
+  /** 累加后的权威总时长（ms）；updated 为 0 时为 0 */
+  listenedMs?: number;
 }
 
 export interface StorageHistoryRemoveEntriesPayload {

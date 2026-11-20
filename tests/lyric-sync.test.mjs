@@ -430,6 +430,7 @@ const storeProgressFixture = () => {
     isCurrentNativePlaybackContext: () => true,
     getPlaybackHasFailed: () => false,
     listeningTimeManager: { tick() {} },
+    localListenHistory: { tick() {}, flush() {}, resetPosition() {}, stop() {} },
     playbackManager: { prepareGaplessNext() {} },
     historyManager: { commitListeningHistory() {} },
     engine: { updateMediaPlaybackState() {} },

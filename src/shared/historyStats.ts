@@ -5,8 +5,8 @@
  * 统计口径完全对齐：每首歌只按「最后播放」的日期/时刻计入足迹，
  * 绝不伪造事件时间线。
  *
- * 「已记录时长」在 Next 侧取本地结算收听毫秒（listened_ms）；本项目本地
- * 历史没有该字段，按约定恒为占位值「0 分钟」，不做时长估算。
+ * 「已记录时长」取本地逐条累加的实听毫秒（listenedMs），
+ * 与 Next 的 listened_ms 结算值同口径；历史老数据无时长从 0 起算。
  */
 
 /** 计算所需的播放历史条目结构（与 renderer 的 LocalHistoryEntry 结构兼容） */
@@ -30,6 +30,8 @@ export interface HistoryStatsEntry {
   lastPlayedAt: number;
   /** 本地累计播放次数 */
   playCount: number;
+  /** 本地累计实听时长（ms，老数据缺省按 0） */
+  listenedMs?: number;
   /** 去重键 */
   historyKey: string;
 }
@@ -186,8 +188,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 export const buildHistoryStats = (entries: HistoryStatsEntry[]): HistoryStats => {
   let totalPlays = 0;
-  // 结算收听毫秒：本项目本地历史无此字段，恒为 0（时长指标卡显示占位）
-  const listenedMs = 0;
+  // 结算收听毫秒：逐条累加本地实听时长，缺省/异常值按 0 处理
+  let listenedMs = 0;
   let replayed = 0;
   let latestAt = 0;
   let oldestAt = 0;
@@ -222,6 +224,8 @@ export const buildHistoryStats = (entries: HistoryStatsEntry[]): HistoryStats =>
   for (const entry of entries) {
     const song = entry.song;
     const plays = Math.max(1, Number(entry.playCount) || 0);
+    const listened = Number(entry.listenedMs);
+    if (Number.isFinite(listened) && listened > 0) listenedMs += listened;
     const at = entry.lastPlayedAt > 0 ? entry.lastPlayedAt : 0;
     totalPlays += plays;
     if (plays > 1) replayed += 1;
@@ -275,11 +279,9 @@ export const buildHistoryStats = (entries: HistoryStatsEntry[]): HistoryStats =>
     },
     {
       label: '已记录时长',
-      // 占位口径：本地未结算收听时长（Next 为 listened_ms 结算值）
       value: listenDuration(listenedMs / 1000),
       unit: '',
-      // 本地历史无结算数据，数字恒为占位；文案明示口径，不暗示有真实时长
-      caption: '本地暂未结算收听时长',
+      caption: '本机实际播放累计',
     },
     {
       label: '常听歌手',

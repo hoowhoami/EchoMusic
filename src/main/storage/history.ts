@@ -1,4 +1,6 @@
 import type {
+  StorageHistoryAddListenTimePayload,
+  StorageHistoryAddListenTimeResult,
   StorageHistoryEntry,
   StorageHistoryGetEntriesPayload,
   StorageHistoryRecordPlayPayload,
@@ -31,6 +33,14 @@ export class HistoryStorage {
     return parseJson<StorageHistoryEntry | null>(
       getNativeStorage().historyRecordPlay(JSON.stringify(payload)),
       null,
+    );
+  }
+
+  /** 累加本地实听时长；条目不存在时返回 updated: 0，不重建条目 */
+  addListenTime(payload: StorageHistoryAddListenTimePayload): StorageHistoryAddListenTimeResult {
+    return parseJson<StorageHistoryAddListenTimeResult>(
+      getNativeStorage().historyAddListenTime(JSON.stringify(payload)),
+      { ok: false, updated: 0 },
     );
   }
 
