@@ -1028,7 +1028,6 @@ const toggleSocialFollow = async (item: SocialUser) => {
 
   const isCurrent = captureProfileScope();
   const following = item.friendAction === 'follow';
-  let pendingReleased = false;
   socialFollowPending.add(item.userId);
   try {
     let alreadyFollowed = false;
@@ -1078,8 +1077,8 @@ const toggleSocialFollow = async (item: SocialUser) => {
       socialUsers[tab] = applyConfirmedFollow(socialUsers[tab], tab, change);
     }
     item.friendAction = following ? 'unfollow' : 'follow';
-    socialFollowPending.delete(item.userId);
-    pendingReleased = true;
+    // pending 覆盖「写入 + 随后的列表刷新」整段流程：刷新期间提前释放会让用户
+    // 再次点击时发起第二次相反写入，最终状态取决于响应顺序。
     if (alreadyFollowed) toastStore.info('已关注该用户');
     else toastStore.success(following ? '关注成功' : '已取消关注');
     const refreshed = await Promise.all(
@@ -1097,7 +1096,7 @@ const toggleSocialFollow = async (item: SocialUser) => {
       getSocialErrorMessage(error, following ? '关注失败，请稍后重试' : '取消关注失败，请稍后重试'),
     );
   } finally {
-    if (isCurrent() && !pendingReleased) socialFollowPending.delete(item.userId);
+    if (isCurrent()) socialFollowPending.delete(item.userId);
   }
 };
 

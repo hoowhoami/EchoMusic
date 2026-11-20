@@ -458,7 +458,7 @@ test('old follow finally does not release a new operation for the same user', as
   assert.equal(f.view.socialFollowPending.size, 0);
 });
 
-test('follow success immediately updates every list and count before slow refreshes finish', async (t) => {
+test('follow success immediately updates every list and count, and locks the row through refreshes', async (t) => {
   const f = fixture(t),
     gate = deferred();
   await Promise.all(['follow', 'friends', 'fans'].map((tab) => f.view.loadSocialList(tab)));
@@ -472,11 +472,14 @@ test('follow success immediately updates every list and count before slow refres
   assert.equal(f.view.followCount.value, 1);
   assert.equal(f.view.friendCount.value, 1);
   assert.equal(f.view.socialUsers.friends[0].meta, '互相关注');
-  assert.equal(f.view.socialFollowPending.has('123'), false);
+  // 刷新未完成时仍处于 pending：期间重复点击必须被忽略
+  assert.equal(f.view.socialFollowPending.has('123'), true);
   gate.resolve(list()); // 上游列表暂时还未同步写操作。
   await pending;
   assert.equal(f.view.followCount.value, 1);
   assert.equal(f.view.friendCount.value, 1);
+  // 写入 + 刷新整段流程结束后才解锁
+  assert.equal(f.view.socialFollowPending.has('123'), false);
 });
 
 test('unfollow immediately removes follow and friend rows and updates the fan button despite stale responses', async (t) => {
@@ -548,28 +551,28 @@ test('already-followed response repairs the local button and list without claimi
   assert.deepEqual(f.notices, [['info', '已关注该用户']]);
 });
 
-test('an earlier refresh cannot unlock a subsequent opposite write for the same user', async (t) => {
+test('an in-flight refresh keeps the row locked against an opposite write', async (t) => {
   const f = fixture(t),
-    refresh = deferred(),
-    write = deferred();
+    refresh = deferred();
   await f.view.loadSocialList('fans');
   for (const name of ['getUserFollow', 'getUserFriends', 'getUserFans']) {
     f.api[name] = () => refresh.promise.then(() => (name === 'getUserFans' ? list(123) : list()));
   }
+  let oppositeWrites = 0;
+  f.api.deleteUserFollow = async () => {
+    oppositeWrites++;
+    return { status: 1 };
+  };
   const first = f.view.toggleSocialFollow(f.view.socialUsers.fans[0]);
   await flush();
-  f.api.deleteUserFollow = () => write.promise;
-  const second = f.view.toggleSocialFollow(f.view.socialUsers.fans[0]);
+  // 第一次写入已成功、刷新尚未结束：再次点击必须被忽略，不得发起相反写入
+  await f.view.toggleSocialFollow(f.view.socialUsers.fans[0]);
+  assert.equal(oppositeWrites, 0);
   assert.equal(f.view.socialFollowPending.has('123'), true);
   refresh.resolve(list());
   await first;
-  assert.equal(f.view.socialFollowPending.has('123'), true);
-  write.resolve({ status: 1 });
-  await second;
+  // 写入 + 刷新整段流程结束后才解锁
   assert.equal(f.view.socialFollowPending.has('123'), false);
-  assert.equal(f.view.socialUsers.fans[0].friendAction, 'follow');
-  assert.equal(f.view.followCount.value, 0);
-  assert.equal(f.view.friendCount.value, 0);
 });
 
 test('unloaded counts update immediately and failed refreshes preserve the successful relationship', async (t) => {

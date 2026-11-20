@@ -257,42 +257,34 @@ test('follow and unfollow refresh all relationship lists and filtered counts wit
   }
 });
 
-// 契约冲突待决策：本用例要求「写入 + 刷新」全程锁定 pending，而
-// profile-session-lifecycle.test.mjs 的两个既有用例（写入即解锁、旧刷新不误解锁
-// 后续写入）依赖「刷新期允许再次点击」。两者产品语义互斥，需先确定行为再改实现，
-// 因此这里先跳过，避免以测试单方面改变交互语义。见 review 2026-11-20。
-test(
-  'duplicate clicks across tabs are ignored through both the write and refresh phases',
-  { skip: '契约冲突待产品决策（见 review 2026-11-20）' },
-  async () => {
-    const f = fixture();
-    try {
-      const gate = deferred();
-      const refresh = deferred();
-      let writes = 0;
-      f.api.addUserFollow = async () => {
-        writes++;
-        await gate.promise;
-        return { status: 1 };
-      };
-      f.api.getUserFollow = () => refresh.promise;
-      const item = f.view.mapSocialUser(fan(), 0, 'fans');
-      const operation = f.view.toggleSocialFollow(item);
-      await f.view.toggleSocialFollow(item);
-      assert.equal(writes, 1);
-      gate.resolve();
-      await flush();
-      await f.view.toggleSocialFollow(item);
-      assert.equal(writes, 1);
-      assert.equal(f.view.socialFollowPending.has('123'), true);
-      refresh.resolve(list([]));
-      await operation;
-      assert.equal(f.view.socialFollowPending.size, 0);
-    } finally {
-      f.stop();
-    }
-  },
-);
+test('duplicate clicks across tabs are ignored through both the write and refresh phases', async () => {
+  const f = fixture();
+  try {
+    const gate = deferred();
+    const refresh = deferred();
+    let writes = 0;
+    f.api.addUserFollow = async () => {
+      writes++;
+      await gate.promise;
+      return { status: 1 };
+    };
+    f.api.getUserFollow = () => refresh.promise;
+    const item = f.view.mapSocialUser(fan(), 0, 'fans');
+    const operation = f.view.toggleSocialFollow(item);
+    await f.view.toggleSocialFollow(item);
+    assert.equal(writes, 1);
+    gate.resolve();
+    await flush();
+    await f.view.toggleSocialFollow(item);
+    assert.equal(writes, 1);
+    assert.equal(f.view.socialFollowPending.has('123'), true);
+    refresh.resolve(list([]));
+    await operation;
+    assert.equal(f.view.socialFollowPending.size, 0);
+  } finally {
+    f.stop();
+  }
+});
 
 test('business or transport failures preserve state and expose the upstream error', async () => {
   for (const result of ['reject', 'status-zero', 'nonzero-code']) {
