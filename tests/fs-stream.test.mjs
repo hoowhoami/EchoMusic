@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
+import { createReadStream } from 'node:fs';
 import { createRequire } from 'node:module';
 import { Readable } from 'node:stream';
 import { test } from 'node:test';
@@ -42,11 +43,33 @@ test('revoke 后迟到的 data 不会对已结算控制器 enqueue', async () =>
   assert.equal(Buffer.from((await reader.read()).value).toString(), 'first');
   controller.abort(new Error('revoked'));
   await assert.rejects(reader.read(), /revoked/);
-  // 复现 Node 22 适配器的竞态窗口：控制器结算之后源流仍有排队数据到达，
-  // 实现必须以 settled 标志忽略，而不是对已关闭控制器 enqueue。
-  source.push(Buffer.from('late'));
+  // 直接派发 data 事件，模拟已排队的 chunk 在控制器结算后到达：
+  // 缺少 settled 守卫时这里会对 errored 控制器 enqueue 并抛 ERR_INVALID_STATE。
+  assert.doesNotThrow(() => source.emit('data', Buffer.from('late')));
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(source.destroyed, true);
+});
+
+test('pre-aborted 信号下源流 open 失败不会产生未捕获异常', async () => {
+  const controller = new AbortController();
+  controller.abort(new Error('pre-aborted'));
+  const missing = fileURLToPath(new URL(`./.missing-${Date.now()}.bin`, import.meta.url));
+  const source = createReadStream(missing);
+  await assert.rejects(
+    fsReadStreamToWeb(source, controller.signal).getReader().read(),
+    /pre-aborted/,
+  );
+  // 等 open 失败的错误事件落地：若 error 监听缺失，测试进程会因未捕获异常直接失败。
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(source.destroyed, true);
+});
+
+test('源流被提前销毁时以错误结算而不是永久挂起', async () => {
+  const source = new Readable({ read() {} });
+  const reader = fsReadStreamToWeb(source, new AbortController().signal).getReader();
+  const pending = reader.read();
+  source.destroy();
+  await assert.rejects(pending, /读取流意外关闭/);
 });
 
 test('已中止的信号立即以原因结算并销毁源流', async () => {

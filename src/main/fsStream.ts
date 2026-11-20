@@ -27,20 +27,27 @@ export function fsReadStreamToWeb(
             controller.error(signal.reason);
             stream.destroy();
           });
+        // 流事件必须先于 abort 判断挂载：pre-aborted 时 destroy() 之后 open 仍可能
+        // 失败并异步 emit 'error'，没有监听会变成 uncaughtException 打崩主进程。
+        stream.on('error', (error) => settle(() => controller.error(error)));
+        stream.on('end', () => settle(() => controller.close()));
+        stream.once('close', () => {
+          signal.removeEventListener('abort', onAbort);
+          // 兜底：源流既未 end 也未 error 就被销毁（premature close），
+          // 否则消费方会永久挂起。
+          settle(() => controller.error(new Error('读取流意外关闭')));
+        });
         if (signal.aborted) {
           onAbort();
           return;
         }
         signal.addEventListener('abort', onAbort, { once: true });
-        stream.once('close', () => signal.removeEventListener('abort', onAbort));
         stream.on('data', (chunk: Buffer) => {
           if (settled) return;
           // 复制 Buffer 以脱离内存池，语义与 Node 适配器一致。
           controller.enqueue(new Uint8Array(chunk));
           if (controller.desiredSize !== null && controller.desiredSize <= 0) stream.pause();
         });
-        stream.on('end', () => settle(() => controller.close()));
-        stream.on('error', (error) => settle(() => controller.error(error)));
       },
       pull() {
         if (!settled) stream.resume();
