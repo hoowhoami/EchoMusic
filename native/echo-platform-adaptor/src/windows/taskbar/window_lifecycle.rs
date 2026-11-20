@@ -68,7 +68,7 @@ unsafe extern "system" fn window_proc(
 
 /// Must run on the HWND's UI thread before SetParent. Lives until WM_NCDESTROY,
 /// even if a layout session is stopped before Electron destroys its window.
-pub(super) unsafe fn install(hwnd: HWND) -> napi::Result<()> {
+pub(crate) unsafe fn install(hwnd: HWND) -> napi::Result<()> {
     if GetWindowThreadProcessId(hwnd, None) != GetCurrentThreadId() {
         return Err(napi::Error::from_reason(
             "Taskbar lyric lifecycle must be installed on the window's UI thread",

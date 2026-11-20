@@ -1,7 +1,7 @@
 import { BrowserWindow, Menu, nativeTheme, screen } from 'electron';
 import { join } from 'node:path';
 import { ipcRegistry } from './ipc/registry';
-import { getMainWindow, showMainWindow } from './window';
+import { getMainWindow, quitApplication, showMainWindow } from './window';
 import { getMainAppSettings, setMainAppSetting } from './storage/settings';
 import { getNativeTaskbarLyric, type NativeTaskbarLyricSession } from './native/platform';
 import {
@@ -23,6 +23,13 @@ let quitting = false;
 let layout: NativeTaskbarLayout | null = null;
 let region: ReturnType<typeof resolveTaskbarLyricRegion> = null;
 let contentWidth = 160;
+/**
+ * 可见区域的最小宽度。
+ *
+ * 歌词区可以整块收起，只剩封面（约 30 DIP）；原来的 160 是给两行歌词留的余量，
+ * 在这里会把收起态撑出一条空白。这里只挡测量中间态的 0 / 负值。
+ */
+const MIN_SHAPE_WIDTH = 24;
 let disposeSystem: (() => void) | null = null;
 let settings = { ...DEFAULT_TASKBAR_LYRIC_SETTINGS };
 let settingsLoaded = false;
@@ -53,13 +60,20 @@ function broadcastState(): void {
 let appliedShape = '';
 function applyShape(): void {
   if (!usable(win) || !region) return;
-  const width = Math.min(region.bounds.width, Math.max(160, Math.ceil(contentWidth)));
+  const width = Math.min(region.bounds.width, Math.max(MIN_SHAPE_WIDTH, Math.ceil(contentWidth)));
   const next: { x: number; y: number; width: number; height: number }[] =
     width === region.bounds.width
       ? []
       : [
           {
-            x: region.anchor === 'right' ? region.bounds.width - width : 0,
+            // 形状偏移必须与渲染层的内容对齐一致：right 贴右、center 居中、left 贴左，
+            // 否则内容会被裁在这个可见区之外。
+            x:
+              region.anchor === 'right'
+                ? region.bounds.width - width
+                : region.anchor === 'center'
+                  ? Math.round((region.bounds.width - width) / 2)
+                  : 0,
             y: 0,
             width,
             height: region.bounds.height,
@@ -226,6 +240,16 @@ async function createBar(): Promise<void> {
         label: '打开 EchoMusic',
         click: () => {
           void showMainWindow();
+        },
+      },
+      { type: 'separator' },
+      {
+        // 歌词窗口挂在任务栏上，没有关闭按钮，这里给一个出口。
+        // 走 quitApplication 而不是裸 app.quit()，让 isQuitting 先置位，
+        // 否则关闭主窗口的拦截逻辑会把退出当成「收进托盘」。
+        label: '关闭 EchoMusic',
+        click: () => {
+          quitApplication();
         },
       },
       { type: 'separator' },

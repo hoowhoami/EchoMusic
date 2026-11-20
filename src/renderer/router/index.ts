@@ -26,6 +26,12 @@ const routes: RouteRecordRaw[] = [
     meta: { skipHistory: true },
   },
   {
+    path: '/wallpaper',
+    name: 'wallpaper',
+    component: () => import('@/views/wallpaper/WallpaperPage.vue'),
+    meta: { skipHistory: true },
+  },
+  {
     path: '/main',
     component: () => import('@/layouts/MainLayout.vue'),
     children: [

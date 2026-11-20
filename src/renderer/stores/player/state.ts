@@ -13,6 +13,28 @@ import type {
 import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
 import { createSleepTimerState } from './sleepTimer';
 
+/** 续播进度，键为曲目 id；entry 说明这条进度属于哪条记录线。 */
+export interface ResumePosition {
+  position: number;
+  duration: number;
+  updatedAt: number;
+  entry: string;
+}
+
+/** 歌单续播指针：这个歌单当前听到哪一首。 */
+export interface ResumePlaylistRef {
+  id: string;
+  trackId: string;
+  updatedAt: number;
+}
+
+/** 听书续播指针：这本书当前听到哪一章；trackId 为空表示只知道它是本书。 */
+export interface ResumeBookRef {
+  albumId: string;
+  trackId: string;
+  updatedAt: number;
+}
+
 const createPlaybackIntent = (): PlaybackIntent => ({
   seq: 0,
   trackId: null,
@@ -42,6 +64,9 @@ export const createPlayerState = () => ({
   volume: DEFAULT_PLAYER_VOLUME,
   lastNonZeroVolume: DEFAULT_PLAYER_VOLUME,
   currentTime: 0,
+  resumePositions: {} as Record<string, ResumePosition>,
+  resumeBooks: [] as ResumeBookRef[],
+  resumePlaylists: [] as ResumePlaylistRef[],
   // EOF survives pause events; resuming an exhausted source must reload it.
   playbackEnded: false,
   currentTimeUpdatedAt: 0,

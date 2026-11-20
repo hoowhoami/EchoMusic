@@ -16,6 +16,8 @@ import type { PlayMode } from '../shared/playback';
 import type { PlayerRuntimeSession, PlayerSessionRestore } from '../shared/playerSession';
 import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
 import type { TaskbarLyricSettings, TaskbarLyricState } from '../shared/taskbar';
+import type { WallpaperSettings, WallpaperState } from '../shared/wallpaper';
+import type { BootInfo } from '../shared/system';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
@@ -420,6 +422,22 @@ export interface IElectronAPI {
     command: (command: NowPlayingCommand) => void;
     invokeCommand: (command: NowPlayingCommand) => Promise<boolean>;
     onCommand: (func: (command: NowPlayingCommand) => void) => () => void;
+  };
+  system: {
+    getBootInfo: () => Promise<BootInfo>;
+  };
+  wallpaper: {
+    getState: () => Promise<WallpaperState>;
+    setEnabled: (enabled: boolean) => Promise<WallpaperState>;
+    setSettings: (settings: Partial<WallpaperSettings>) => Promise<WallpaperState>;
+    setLyricRect: (rect: {
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+      dpr: number;
+    }) => Promise<null>;
+    onStateChange: (callback: (state: WallpaperState) => void) => () => void;
   };
   taskbarLyric: {
     getState: () => Promise<TaskbarLyricState>;

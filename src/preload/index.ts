@@ -7,6 +7,8 @@ import type { PlayMode } from '../shared/playback';
 import type { PlayerRuntimeSession, PlayerSessionRestore } from '../shared/playerSession';
 import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
 import type { TaskbarLyricSettings, TaskbarLyricState } from '../shared/taskbar';
+import type { WallpaperLyricRect, WallpaperSettings, WallpaperState } from '../shared/wallpaper';
+import type { BootInfo } from '../shared/system';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
@@ -380,6 +382,9 @@ contextBridge.exposeInMainWorld('electron', {
       return () => ipcRenderer.removeListener('app:open-settings', listener);
     },
   },
+  system: {
+    getBootInfo: () => ipcRenderer.invoke('system:get-boot-info') as Promise<BootInfo>,
+  },
   share: {
     copy: (text: string) => ipcRenderer.invoke('share:copy', text) as Promise<boolean>,
     readClipboard: () => ipcRenderer.invoke('share:read-clipboard') as Promise<string>,
@@ -714,6 +719,21 @@ contextBridge.exposeInMainWorld('electron', {
         func(command);
       ipcRenderer.on('now-playing:command', listener);
       return () => ipcRenderer.removeListener('now-playing:command', listener);
+    },
+  },
+  wallpaper: {
+    getState: () => invokeWithPlainPayload<WallpaperState>('wallpaper:get-state'),
+    setEnabled: (enabled: boolean) =>
+      invokeWithPlainPayload<WallpaperState>('wallpaper:set-enabled', enabled),
+    setSettings: (settings: Partial<WallpaperSettings>) =>
+      invokeWithPlainPayload<WallpaperState>('wallpaper:set-settings', settings),
+    setLyricRect: (rect: WallpaperLyricRect) =>
+      invokeWithPlainPayload<null>('wallpaper:set-lyric-rect', rect),
+    onStateChange: (callback: (state: WallpaperState) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: WallpaperState) =>
+        callback(state);
+      ipcRenderer.on('wallpaper:state', listener);
+      return () => ipcRenderer.removeListener('wallpaper:state', listener);
     },
   },
   taskbarLyric: {

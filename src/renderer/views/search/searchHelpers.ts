@@ -14,7 +14,15 @@ import type {
 import type { Song } from '@/models/song';
 
 export const SEARCH_PAGE_SIZE = 30;
-export const TAB_SEARCH_TYPES = ['song', 'special', 'album', 'author', 'lyric', 'mv'] as const;
+export const TAB_SEARCH_TYPES = [
+  'song',
+  'special',
+  'album',
+  'longaudio',
+  'author',
+  'lyric',
+  'mv',
+] as const;
 export type SearchTabType = (typeof TAB_SEARCH_TYPES)[number];
 
 export const createSearchPaginationState = (): SearchPaginationState => ({
@@ -150,6 +158,26 @@ export const getAlbumCardProps = (album: AlbumMeta): SearchAlbumCardProps => ({
     .join(' • '),
 });
 
+/**
+ * 听书在酷狗搜索接口里不是独立 type，而是专辑搜索的 category=2。
+ * 服务端只认 special/lyric/song/album/author/mv，所以这里做一次映射。
+ */
+export const resolveSearchRequest = (
+  tab: SearchTabType,
+): { type: string; category?: string } =>
+  tab === 'longaudio' ? { type: 'album', category: '2' } : { type: tab };
+
+/** 听书专辑复用专辑卡片，只把「N 首歌曲」换成「N 集」。 */
+export const getLongAudioCardProps = (album: AlbumMeta): SearchAlbumCardProps => ({
+  id: album.id,
+  name: album.name,
+  coverUrl: album.pic,
+  artist: album.singerName,
+  subtitle: [album.singerName, album.songCount ? `${album.songCount} 集` : '']
+    .filter(Boolean)
+    .join(' • '),
+});
+
 export const getArtistCardProps = (artist: ArtistMeta): SearchArtistCardProps => ({
   id: artist.id,
   name: artist.name,
@@ -181,6 +209,7 @@ export const replaceResultsByType = (
     songResults: { value: Song[] };
     playlistResults: { value: PlaylistMeta[] };
     albumResults: { value: AlbumMeta[] };
+    longaudioResults: { value: AlbumMeta[] };
     artistResults: { value: ArtistMeta[] };
     lyricResults: { value: Song[] };
     mvResults: { value: SearchMvCardProps[] };
@@ -194,8 +223,9 @@ export const replaceResultsByType = (
     target.playlistResults.value = lists.map((item) => mapPlaylistMeta(item));
     return;
   }
-  if (type === 'album') {
-    target.albumResults.value = lists.map((item) => mapAlbumMeta(item));
+  if (type === 'album' || type === 'longaudio') {
+    const bucket = type === 'album' ? target.albumResults : target.longaudioResults;
+    bucket.value = lists.map((item) => mapAlbumMeta(item));
     return;
   }
   if (type === 'lyric') {
@@ -216,6 +246,7 @@ export const appendResultsByType = (
     songResults: { value: Song[] };
     playlistResults: { value: PlaylistMeta[] };
     albumResults: { value: AlbumMeta[] };
+    longaudioResults: { value: AlbumMeta[] };
     artistResults: { value: ArtistMeta[] };
     lyricResults: { value: Song[] };
     mvResults: { value: SearchMvCardProps[] };
@@ -233,10 +264,9 @@ export const appendResultsByType = (
     );
     return;
   }
-  if (type === 'album') {
-    target.albumResults.value = target.albumResults.value.concat(
-      lists.map((item) => mapAlbumMeta(item)),
-    );
+  if (type === 'album' || type === 'longaudio') {
+    const bucket = type === 'album' ? target.albumResults : target.longaudioResults;
+    bucket.value = bucket.value.concat(lists.map((item) => mapAlbumMeta(item)));
     return;
   }
   if (type === 'lyric') {

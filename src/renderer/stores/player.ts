@@ -9,6 +9,7 @@ import logger from '@/utils/logger';
 import { normalizePlayerErrorPayload, PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
 import type { Song } from '@/models/song';
 import type { PlayerErrorPayload } from '../../shared/playerError';
+import type { NowPlayingPlaybackPayload } from '../../shared/nowPlaying';
 import {
   createPlaybackClock,
   matchesPendingSeekTarget,
@@ -25,6 +26,16 @@ import { dspProviderRestorePatch } from '../../shared/dspProviderSettings';
 import { PLAYER_SESSION_KEYS } from '../../shared/playerSession';
 
 import { createPlayerState } from './player/state';
+import {
+  bookEntryAlbumId,
+  forgetResumeBook,
+  forgetResumePosition,
+  isBookEntry,
+  registerResumeBook,
+  rememberResumePosition,
+  resolveResumeEntry,
+  resolveResumePosition,
+} from './player/resume';
 import { capturePlayerSession, restorePlayerSession } from './player/session';
 import { createSleepTimer } from './player/sleepTimer';
 import { createPlaybackManager } from './player/playback';
@@ -794,6 +805,17 @@ export const usePlayerStore = defineStore(
     // 切歌重入保护：防止极短音频 / 临近结尾 seek / 异常重复 EOF 等场景下
     // handlePlaybackEnded 在上一次切歌尚未完成时被再次触发，导致连续多次切换。
     let handlingPlaybackEnd = false;
+    let resumeSaveTimer: ReturnType<typeof setInterval> | null = null;
+    const currentResumeEntry = () =>
+      resolveResumeEntry(state, {
+        queueId:
+          state.currentSourceQueueId ??
+          playlistStore.activeQueue?.id ??
+          playlistStore.activeQueueId ??
+          null,
+        playMode: state.playMode,
+        albumId: state.currentTrackSnapshot?.albumId ?? null,
+      });
     const handlePlaybackEnded = async () => {
       if (handlingPlaybackEnd) return;
       handlingPlaybackEnd = true;
@@ -1126,6 +1148,17 @@ export const usePlayerStore = defineStore(
       state.nativeTrackSeq = null;
       state.supersededNativeTrackSeq = null;
       state.duration = targetTrack.duration || 0;
+      state.currentTime = resolveResumePosition(
+        state,
+        targetTrackId,
+        Number(targetTrack.duration) || 0,
+        resolveResumeEntry(state, {
+          queueId: activeQueue?.id ?? playlistStore.activeQueueId ?? null,
+          playMode: state.playMode,
+          albumId: targetTrack.albumId ?? null,
+        }),
+      );
+      state.currentTimeUpdatedAt = Date.now();
       state.lastError = null;
       clearPlaybackNotice();
 
@@ -1274,6 +1307,30 @@ export const usePlayerStore = defineStore(
       engine.setReferenceLufs(settingStore.volumeNormalizationLufs);
       engine.setLoopFile(false);
       engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
+      // 长内容续播：播放中定期记录进度，暂停时补记一次
+      if (!resumeSaveTimer) {
+        resumeSaveTimer = setInterval(() => {
+          if (!getPlaybackIsPlaying(state)) return;
+          const trackId = String(state.currentTrackId ?? '');
+          if (!trackId || !(state.duration > 0)) return;
+          const entry = currentResumeEntry();
+          rememberResumePosition(state, trackId, state.currentTime, state.duration, entry);
+        }, 3000);
+        onScopeDispose(() => {
+          if (resumeSaveTimer) clearInterval(resumeSaveTimer);
+          resumeSaveTimer = null;
+        });
+      }
+      watch(
+        () => getPlaybackIsPlaying(state),
+        (playing) => {
+          if (playing) return;
+          const trackId = String(state.currentTrackId ?? '');
+          if (!trackId || !(state.duration > 0)) return;
+          const entry = currentResumeEntry();
+          rememberResumePosition(state, trackId, state.currentTime, state.duration, entry);
+        },
+      );
       registerSettingWatchers();
       if (!audioDeviceListListenerRegistered) {
         audioDeviceListListenerRegistered = true;
@@ -1622,6 +1679,34 @@ export const usePlayerStore = defineStore(
       }
     };
 
+    // 只读镜像窗口用：把主窗口广播的播放快照写回本地状态，不触发任何播放动作
+    const applyNowPlayingMirror = (playback: NowPlayingPlaybackPayload | null) => {
+      if (!playback) {
+        state.currentTrackId = null;
+        state.currentTrackSnapshot = null;
+        state.duration = 0;
+        setEnginePlaybackStatus(state, 'idle', null);
+        return;
+      }
+      state.currentTrackId = playback.trackId || null;
+      state.currentTrackSnapshot = {
+        id: playback.trackId,
+        name: playback.title,
+        artist: playback.artist,
+        albumName: playback.album ?? '',
+        coverUrl: playback.coverUrl ?? '',
+        duration: playback.duration,
+        // 与主窗口派生歌词标识的方式一致（nowPlaying/sync 用 track.hash 作为 lyricHash）。
+        hash: playback.lyricHash,
+      } as unknown as Song;
+      state.currentTime = playback.currentTime;
+      state.currentTimeUpdatedAt = playback.updatedAt || Date.now();
+      state.duration = playback.duration;
+      state.playbackRate = playback.playbackRate || 1;
+      state.seekTimestamp = playback.seekTimestamp ?? 0;
+      setEnginePlaybackStatus(state, playback.isPlaying ? 'playing' : 'paused', playback.trackId);
+    };
+
     // Explicitly return state and actions to help TypeScript
     return {
       ...toRefs(state),
@@ -1691,6 +1776,8 @@ export const usePlayerStore = defineStore(
       setAutoNextSuppressed,
       onPlayerEvent: playerEvents.on,
       getPlayerEventPayload,
+      registerResumeBook: (albumId: string) => registerResumeBook(state, albumId),
+      applyNowPlayingMirror,
     };
   },
   {
@@ -1701,6 +1788,9 @@ export const usePlayerStore = defineStore(
         'playMode',
         'currentTrackId',
         'playbackRate',
+        'resumePositions',
+        'resumeBooks',
+        'resumePlaylists',
         'audioEffect',
         'equalizerGains',
       ],

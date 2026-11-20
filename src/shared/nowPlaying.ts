@@ -117,6 +117,12 @@ export interface NowPlayingAppearancePayload {
   isDark: boolean;
   accentColor: string;
   fontFamily?: string;
+  /** 歌词页皮肤（host:cover 等）；壁纸窗口据此跟随主窗口换肤。 */
+  lyricsPageProvider?: string;
+  /** 歌词页视图模式（cover/portrait/lyric/amll）。 */
+  lyricViewMode?: string;
+  /** 写真皮肤歌词是否收起；壁纸窗口据此与播放页保持一致。 */
+  portraitLyricCollapsed?: boolean;
 }
 
 export interface NowPlayingSnapshot {

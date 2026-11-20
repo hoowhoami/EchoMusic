@@ -26,6 +26,13 @@ const isMiniPlayerWindow = () => {
   );
 };
 const isMiniPlayerRoute = computed(isMiniPlayerWindow);
+// 壁纸窗口同样不加载主界面的浮层与弹窗
+const isWallpaperWindow = () => {
+  const hashPath = window.location.hash.replace(/^#/, '').split(/[?#]/)[0];
+  return route.name === 'wallpaper' || route.path === '/wallpaper' || hashPath === '/wallpaper';
+};
+const isWallpaperRoute = computed(isWallpaperWindow);
+const isOverlayWindow = computed(() => isMiniPlayerRoute.value || isWallpaperRoute.value);
 // 首屏从 loading 切到主界面时跳过根级过渡，避免 out-in "先淡出旧页 → 空档" 造成的白屏
 const suppressRootTransition = ref(false);
 const rootPageTransitionName = computed(() =>
@@ -47,7 +54,7 @@ const rootPageTransitionAppear = computed(
     pageTransitionState.appear,
 );
 const rootPageTransitionKey = computed(() => route.matched[0]?.path ?? route.fullPath);
-const player = useAppRuntime(isMiniPlayerRoute);
+const player = useAppRuntime(isMiniPlayerRoute, isWallpaperRoute);
 const lyricTransition = useLyricPageTransition();
 watch(
   () => route.name,
@@ -69,7 +76,7 @@ watch(
       </RouteErrorBoundary>
     </Transition>
   </RouterView>
-  <Teleport v-if="!isMiniPlayerRoute" to="body">
+  <Teleport v-if="!isOverlayWindow" to="body">
     <Transition
       :css="false"
       appear
@@ -86,11 +93,11 @@ watch(
       </div>
     </Transition>
   </Teleport>
-  <AuthExpiredDialog v-if="!isMiniPlayerRoute" />
-  <KugouVerificationFlow v-if="!isMiniPlayerRoute" />
-  <ToastViewport v-if="!isMiniPlayerRoute" :lyric-view-open="Boolean(player?.isLyricViewOpen)" />
-  <UpdateDialog v-if="!isMiniPlayerRoute" dismiss-label="稍后" />
-  <SettingsDialog v-if="!isMiniPlayerRoute" />
+  <AuthExpiredDialog v-if="!isOverlayWindow" />
+  <KugouVerificationFlow v-if="!isOverlayWindow" />
+  <ToastViewport v-if="!isOverlayWindow" :lyric-view-open="Boolean(player?.isLyricViewOpen)" />
+  <UpdateDialog v-if="!isOverlayWindow" dismiss-label="稍后" />
+  <SettingsDialog v-if="!isOverlayWindow" />
 </template>
 
 <style>

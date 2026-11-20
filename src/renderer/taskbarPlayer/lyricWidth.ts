@@ -11,6 +11,10 @@ export interface ContentWidthInput {
   maxWidth: number;
   /** 展开态占满可用宽度。 */
   expanded: boolean;
+  /** 收起态：只剩封面，歌词区整块让出宽度。 */
+  idle: boolean;
+  /** 居中档：播放期间把宽度锁到展开上限，换行与悬停都不再改窗口宽度。 */
+  pinned: boolean;
   /** 换行动画是否正在进行。 */
   rolling: boolean;
   /** 当前已生效的宽度。 */
@@ -18,6 +22,13 @@ export interface ContentWidthInput {
 }
 
 export const MIN_CONTENT_WIDTH = 160;
+
+/**
+ * 收起态（只剩封面）的最小宽度。
+ *
+ * 160 是给两行歌词留的余量；收起后内容只有封面，沿用 160 会留一大片空白。
+ */
+export const MIN_IDLE_WIDTH = 24;
 
 /**
  * 切行动画期间只增不减。
@@ -29,9 +40,14 @@ export const MIN_CONTENT_WIDTH = 160;
  * 只增不减而非直接冻结：变宽时立刻放行，新行才不会在升入过程中被裁。
  */
 export const resolveContentWidth = (input: ContentWidthInput): number => {
-  const target = Math.min(
-    input.maxWidth,
-    input.expanded ? input.maxWidth : Math.max(MIN_CONTENT_WIDTH, input.natural),
-  );
+  // 居中档锁宽：宽度一变，窗口形状就要重新对中，条子会整体左右挪。锁成展开上限后，
+  // 换行与悬停出控制条都只是内容在固定宽度里变化，位置不再动。
+  const base =
+    input.pinned || input.expanded
+      ? input.maxWidth
+      : input.idle
+        ? Math.max(MIN_IDLE_WIDTH, input.natural)
+        : Math.max(MIN_CONTENT_WIDTH, input.natural);
+  const target = Math.min(input.maxWidth, base);
   return input.rolling ? Math.max(input.current, target) : target;
 };

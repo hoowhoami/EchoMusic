@@ -18,6 +18,9 @@ const SettingsSectionLoading = defineComponent({
 });
 const loadSection = (loader: () => Promise<{ default: Component }>) =>
   defineAsyncComponent({ loader, loadingComponent: SettingsSectionLoading, delay: 0 });
+const WallpaperSettingsSection = loadSection(
+  () => import('./settings/components/WallpaperSettingsSection.vue'),
+);
 const WindowSettingsSection = loadSection(
   () => import('./settings/components/WindowSettingsSection.vue'),
 );
@@ -194,6 +197,24 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '专辑动态封面',
       '动态专辑封面',
       ...(currentPlatform === 'win32' || currentPlatform === 'linux' ? ['全屏按钮', '标题栏'] : []),
+    ],
+  },
+  {
+    id: 'wallpaper',
+    label: sectionTitles.wallpaper.label,
+    order: 150,
+    component: WallpaperSettingsSection,
+    visible: () => currentPlatform === 'win32',
+    searchKeywords: [
+      '动态歌词壁纸',
+      '动态壁纸',
+      '桌面壁纸',
+      '桌面背景',
+      '壁纸歌词',
+      'Wallpaper',
+      '显示器',
+      '遮挡',
+      '降帧',
     ],
   },
   {

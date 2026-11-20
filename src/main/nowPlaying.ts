@@ -311,6 +311,17 @@ const sendSnapshot = () => {
 
 export const getNowPlayingSnapshot = () => snapshot;
 
+type NowPlayingChangeListener = () => void;
+const changeListeners = new Set<NowPlayingChangeListener>();
+
+/** 订阅播放快照变化（每次 syncNowPlayingSnapshot 之后触发），返回取消订阅函数。 */
+export const onNowPlayingChange = (listener: NowPlayingChangeListener): (() => void) => {
+  changeListeners.add(listener);
+  return () => {
+    changeListeners.delete(listener);
+  };
+};
+
 const DEFAULT_WINDOW_TITLE = 'EchoMusic';
 
 /** 根据当前播放信息更新主窗口标题（任务栏/后台任务窗口显示）：歌手-歌名，无有效信息时回退 EchoMusic */
@@ -356,6 +367,9 @@ export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
               payload.appearance.accentColor || DEFAULT_NOW_PLAYING_APPEARANCE.accentColor,
             ),
             fontFamily: toOptionalString(payload.appearance.fontFamily),
+            lyricsPageProvider: toOptionalString(payload.appearance.lyricsPageProvider),
+            lyricViewMode: toOptionalString(payload.appearance.lyricViewMode),
+            portraitLyricCollapsed: payload.appearance.portraitLyricCollapsed === true,
             floatingSurfaceFrosted: payload.appearance.floatingSurfaceFrosted === true,
             colors: isPlainRecord(payload.appearance.colors)
               ? (Object.fromEntries(
@@ -375,6 +389,13 @@ export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
   sendSnapshot();
   applyWindowTitle(snapshot.playback);
   updateThumbarPlayback(snapshot.playback);
+  for (const listener of changeListeners) {
+    try {
+      listener();
+    } catch {
+      // ignore listener errors
+    }
+  }
   return snapshot;
 };
 

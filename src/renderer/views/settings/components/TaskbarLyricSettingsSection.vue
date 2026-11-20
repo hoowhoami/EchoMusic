@@ -20,13 +20,16 @@ const barSettings = ref({ ...DEFAULT_TASKBAR_LYRIC_SETTINGS });
 const barPositionOptions = [
   { label: '自动', value: 'auto' },
   { label: '左侧', value: 'left' },
+  { label: '中间', value: 'center' },
   { label: '右侧', value: 'right' },
 ];
-const barPositionDescription = computed(() =>
-  barSettings.value.position === 'auto'
-    ? '自动选择任务栏空闲的一侧'
-    : `优先使用${barSettings.value.position === 'left' ? '左侧' : '右侧'}空闲区，回退时保持${barSettings.value.position === 'left' ? '左' : '右'}对齐`,
-);
+const barPositionDescription = computed(() => {
+  const position = barSettings.value.position;
+  if (position === 'auto') return '自动选择任务栏空闲的一侧';
+  if (position === 'center') return '在任务栏空闲区正中显示';
+  const side = position === 'left' ? '左' : '右';
+  return `优先使用${side}侧空闲区，回退时保持${side}对齐`;
+});
 let alive = true;
 let receivedState = false;
 let disposeBarState: (() => void) | undefined;

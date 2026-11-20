@@ -146,3 +146,64 @@ export function getNativeTaskbarLyric(): NativeTaskbarLyric | null {
   }
   return taskbarLyric ?? null;
 }
+
+export interface NativeWallpaperOcclusion {
+  /** 屏幕上所有窗口（矩形并集）覆盖这块屏的比例。 */
+  coverage: number;
+  /** 同一批窗口盖住「歌词区域」的比例。 */
+  lyricCoverage: number;
+  fullscreen: boolean;
+  /** 窗口句柄是否还有效；桌面层重建后子窗口会被销毁。 */
+  alive: boolean;
+}
+
+export interface NativeWallpaperMonitor {
+  /** 上报歌词区域（屏幕物理像素）；宽或高传 0 表示当前没有歌词区域。 */
+  setLyricRect(x: number, y: number, width: number, height: number): void;
+  setInterval(intervalMs: number): void;
+  stop(): void;
+}
+
+export interface NativeWallpaper {
+  wallpaperAttach(handle: string): string;
+  wallpaperResize(handle: string, x: number, y: number, width: number, height: number): void;
+  wallpaperDetach(handle: string): void;
+  WallpaperMonitor: new (
+    handle: string,
+    intervalMs: number,
+    callback: (state: NativeWallpaperOcclusion) => void,
+  ) => NativeWallpaperMonitor;
+  /** 当前是否有独占全屏程序（D3D 全屏 / 演示模式）；不需要任何窗口句柄。 */
+  isExclusiveFullscreen?: () => boolean;
+}
+
+let wallpaper: NativeWallpaper | null | undefined;
+export function getNativeWallpaper(): NativeWallpaper | null {
+  if (wallpaper !== undefined) return wallpaper;
+  wallpaper = null;
+  if (process.platform !== 'win32') return null;
+  try {
+    const candidate = loadAddon();
+    if (
+      typeof candidate.wallpaperAttach !== 'function' ||
+      typeof candidate.WallpaperMonitor !== 'function'
+    )
+      throw new Error('Rebuild echo-platform-adaptor for the desktop wallpaper');
+    wallpaper = candidate as unknown as NativeWallpaper;
+  } catch (error) {
+    log.warn('[NativePlatform] Wallpaper unavailable:', error);
+  }
+  return wallpaper ?? null;
+}
+
+/** 独占全屏：只查系统通知状态，壁纸窗口不在时也能问。 */
+export function isExclusiveFullscreenActive(): boolean {
+  const native = getNativeWallpaper();
+  if (!native?.isExclusiveFullscreen) return false;
+  try {
+    return native.isExclusiveFullscreen() === true;
+  } catch (error) {
+    log.warn('[NativePlatform] 读取全屏状态失败:', error);
+    return false;
+  }
+}
