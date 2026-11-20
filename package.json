@@ -17,7 +17,7 @@
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.ts,.jsx,.tsx --fix",
     "lint:check": "eslint . --ext .vue,.js,.ts,.jsx,.tsx",
-    "test": "node --experimental-strip-types --test \"tests/**/*.test.mjs\" \"tests/**/*.test.ts\"",
+    "test": "node --experimental-strip-types --test --test-timeout=60000 \"tests/**/*.test.mjs\" \"tests/**/*.test.ts\"",
     "test:smoke": "node tests/plugin-resources-electron-smoke.mjs",
     "analyze": "ANALYZE_BUNDLE=1 vite build",
     "format": "prettier --write \"src/**/*.{vue,ts,js,json}\" \"vite.config.mts\" \"tsconfig*.json\""
