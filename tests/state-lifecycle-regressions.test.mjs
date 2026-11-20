@@ -246,6 +246,10 @@ test('login to another account does not inherit personal data from the prior acc
   assert.equal(s.store.info.extendsInfo.vip, undefined);
 });
 
+// 听歌统计快照计算是无外部依赖的纯函数模块，编译真实实现注入 store 夹具；
+// 否则 compile 产物的相对 require 会以测试目录为基准解析而失败。
+const historyStatsModule = compile('../src/shared/historyStats.ts');
+
 function historyFixture(completeSongMetadata = async (songs) => songs) {
   setActivePinia(createPinia());
   const clock = fakeTimers();
@@ -266,6 +270,7 @@ function historyFixture(completeSongMetadata = async (songs) => songs) {
     '../src/renderer/stores/historyStore.ts',
     {
       '../../shared/embeddedMetadata': embeddedTags,
+      '../../shared/historyStats': historyStatsModule,
       '@/utils/logger': logger,
       '@/services/songMetadata': { completeSongMetadata },
       '@/utils/mappers/songMetadata': { needsSongMetadata: (song) => !!song.albumAudioId },
