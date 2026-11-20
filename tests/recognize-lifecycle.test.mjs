@@ -219,6 +219,7 @@ function pageFixture(t, native) {
         useRouter: () => ({ push: (value) => calls.actions.push(['detail', value]) }),
       },
       '@/icons': {},
+      '@/components/ui/tooltip': { vTooltip: {} },
       '@/api/recognize': {
         recognizeAudio: (pcm) => {
           calls.recognition.push(pcm);

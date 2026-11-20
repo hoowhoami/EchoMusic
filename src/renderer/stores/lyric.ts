@@ -1387,11 +1387,9 @@ export const useLyricStore = defineStore('lyric', {
           const lyricData = normalizeDetailPayload(
             await getLyric(String(candidate.id), String(candidate.accesskey)),
           );
-          if (!lyricData) {
-            rememberCandidateCache(key, null, null);
-            this.candidateCacheRevision++;
-            return null;
-          }
+          // 空响应可能是上游瞬时异常，不写入永久缓存：否则一次失败会让该候选
+          // 整个会话内始终命中 null，无法重试。并发去重由 inflightCandidateDetailMap 负责。
+          if (!lyricData) return null;
 
           const parsed = parseLyricDetailPayload(lyricData);
           rememberCandidateCache(key, lyricData, parsed);
@@ -1415,12 +1413,12 @@ export const useLyricStore = defineStore('lyric', {
 
       await Promise.all(
         usableCandidates.map((candidate) =>
+          // 失败结果不写缓存：网络抖动后再次打开候选列表应能重新请求。
+          // 并发重复请求由 resolveCandidateDetail 内的 inflightCandidateDetailMap 合并。
           this.resolveCandidateDetail(candidate).catch((error) => {
             logger.warn('LyricStore', 'Resolve lyric candidate failed', error, {
               key: getLyricCandidateKey(candidate),
             });
-            rememberCandidateCache(getLyricCandidateKey(candidate), null, null);
-            this.candidateCacheRevision++;
             return null;
           }),
         ),

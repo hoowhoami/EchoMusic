@@ -301,7 +301,9 @@ export const createPluginFsApi = (
       options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['writeFile']>[3],
     ) => {
       const payload =
-        data instanceof ArrayBuffer || ArrayBuffer.isView(data) ? data : serializeForIpc(data);
+        data instanceof ArrayBuffer || ArrayBuffer.isView(data)
+          ? data
+          : serializeForIpc(data, 'ctx.fs.writeFile.data');
       if (typeof filePath !== 'string')
         return resources.request<{ file: FileRef; bytesWritten: number }>('writeFile', {
           ref: filePath,

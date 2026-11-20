@@ -24,17 +24,19 @@ test('cause 链上的错误码也能识别（Node 风格 ENOTFOUND）', () => {
 });
 
 test('HTTP 状态码分类：403/429 限流、404 索引不存在', () => {
-  const limited = classifyNetworkError(attachFetchErrorContext(new Error('请求失败 (403)'), { statusCode: 403 }));
+  const limited = classifyNetworkError(
+    attachFetchErrorContext(new Error('请求失败 (403)'), { statusCode: 403 }),
+  );
   assert.equal(limited.category, 'rate-limit');
-  const missing = classifyNetworkError(attachFetchErrorContext(new Error('请求失败 (404)'), { statusCode: 404 }));
+  const missing = classifyNetworkError(
+    attachFetchErrorContext(new Error('请求失败 (404)'), { statusCode: 404 }),
+  );
   assert.equal(missing.category, 'not-found');
   assert.equal(missing.httpStatus, 404);
 });
 
 test('超时消息（含既有中文文案）归类为连接超时', () => {
-  const detail = classifyNetworkError(
-    new Error('插件源请求超时，请检查网络或 GitHub 加速地址'),
-  );
+  const detail = classifyNetworkError(new Error('插件源请求超时，请检查网络或 GitHub 加速地址'));
   assert.equal(detail.category, 'timeout');
 });
 

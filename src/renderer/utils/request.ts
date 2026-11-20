@@ -161,6 +161,12 @@ const getKugouVerificationChallenge = (
   const bodyRecord =
     body && typeof body === 'object' ? (body as Record<string, unknown>) : undefined;
 
+  // 与 server/util/request.js 的附加逻辑对齐：上游返回 ssa-code 响应头时，
+  // server 无论请求成功（status=200）还是失败（status=502）都会把验证码写入
+  // body.ssaCode，并保留 ssa-code 响应头。因此只以验证标识是否存在判定，
+  // 不再用 body.status 推断失败——成功响应同样可能需要二次验证，
+  // 而缺少 status 字段的响应也不应被误判为挑战。
+  // 既有 error_code=20028（需要二次验证）的响应会携带 ssaCode，仍会命中此逻辑。
   // 这里只读取验证事件；服务端附加的 sid/edt 是模拟值，不是上游返回的凭证。
   const eventId =
     bodyRecord?.ssaCode ||
@@ -170,10 +176,6 @@ const getKugouVerificationChallenge = (
     '';
   const normalizedEventId = String(eventId || '').trim();
   if (!normalizedEventId) return null;
-
-  const errorCode = Number(bodyRecord?.error_code ?? 0);
-  const failed = Number(bodyRecord?.status ?? 0) === 0;
-  if (errorCode !== 20028 && !failed) return null;
 
   return {
     eventId: normalizedEventId,

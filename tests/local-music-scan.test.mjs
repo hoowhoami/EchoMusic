@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import path from 'node:path';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 
@@ -88,8 +89,11 @@ test('an empty audio folder performs no metadata reads', async () => {
 });
 test('extension filtering skips stat calls for irrelevant files and retains scan constraints', async () => {
   const stats = [];
+  // 源码使用 path.resolve/path.join 生成路径；Windows 下与 POSIX 字面量不同，按真实根路径构造目录表
+  const key = (value) => path.normalize(value);
+  const root = path.resolve('/music');
   const tree = {
-    '/music': [
+    [root]: [
       { name: 'nested', isDirectory: () => true },
       ...['a.MP3', 'notes.txt', '.hidden.mp3', 'huge.mp3', 'b.mp3'].map((name) => ({
         name,
@@ -97,16 +101,18 @@ test('extension filtering skips stat calls for irrelevant files and retains scan
         isFile: () => true,
       })),
     ],
-    '/music/nested': [{ name: 'child.mp3', isDirectory: () => false, isFile: () => true }],
+    [key(path.join(root, 'nested'))]: [
+      { name: 'child.mp3', isDirectory: () => false, isFile: () => true },
+    ],
   };
   const fs = {
-    realpath: async (path) => path,
-    readdir: async (path) => tree[path],
-    stat: async (path) => {
-      stats.push(path);
+    realpath: async (value) => value,
+    readdir: async (value) => tree[key(value)],
+    stat: async (value) => {
+      stats.push(value);
       return {
-        isDirectory: () => path === '/music',
-        size: path.endsWith('huge.mp3') ? 10000 : 10,
+        isDirectory: () => key(value) === key(root),
+        size: value.endsWith('huge.mp3') ? 10000 : 10,
         mtimeMs: 1,
       };
     },
@@ -118,8 +124,8 @@ test('extension filtering skips stat calls for irrelevant files and retains scan
     maxFileSize: 100,
     limit: 3,
   });
-  assert.equal(stats.includes('/music/notes.txt'), false);
-  assert.equal(stats.includes('/music/.hidden.mp3'), false);
+  assert.equal(stats.includes(path.join(root, 'notes.txt')), false);
+  assert.equal(stats.includes(path.join(root, '.hidden.mp3')), false);
   assert.deepEqual(
     result.files.map((file) => file.relativePath),
     ['a.MP3', 'b.mp3', 'nested/child.mp3'],

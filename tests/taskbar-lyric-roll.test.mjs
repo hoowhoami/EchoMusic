@@ -16,10 +16,10 @@ const { descriptor } = parse(source, { filename });
 const compiled = compileScript(descriptor, { id: 'taskbar-roll-test' });
 const code = transformSync(compiled.content, { loader: 'ts', format: 'cjs' }).code;
 
-const widthCode = transformSync(
-  readFileSync('src/renderer/taskbarPlayer/lyricWidth.ts', 'utf8'),
-  { loader: 'ts', format: 'cjs' },
-).code;
+const widthCode = transformSync(readFileSync('src/renderer/taskbarPlayer/lyricWidth.ts', 'utf8'), {
+  loader: 'ts',
+  format: 'cjs',
+}).code;
 const widthMod = { exports: {} };
 new Function('module', 'exports', widthCode)(widthMod, widthMod.exports);
 const { resolveContentWidth, MIN_CONTENT_WIDTH } = widthMod.exports;
@@ -89,8 +89,7 @@ function harness() {
           iconSkipForward: {},
         };
       if (name === '@iconify/vue') return { Icon: {} };
-      if (name === 'reka-ui')
-        return { SliderTrack: {}, SliderRange: {}, SliderThumb: {} };
+      if (name === 'reka-ui') return { SliderTrack: {}, SliderRange: {}, SliderThumb: {} };
       if (name === '@/components/ui/SliderRoot.vue') return { default: {} };
       if (name === './TaskbarLyricLine.vue') return { default: {} };
       if (name === '@/theme/sliders.css') return {};

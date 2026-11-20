@@ -418,6 +418,14 @@ test('settings import dialog asks before overwriting an existing account and app
       '@/utils/rendererMemoryDiagnostics': { suspendRendererMemoryDiagnosticsForRelaunch() {} },
       '@iconify/vue': { Icon: {} },
       '../constants': { sectionTitles: { experimental: { label: '实验性', icon: '' } } },
+      // 实验设置组件新增了调试端口工具导入，本测试不涉及该功能，给默认值桩
+      '../../../../shared/devTools': {
+        DEFAULT_DEVTOOLS_DEBUG_PORT: 9223,
+        MIN_DEVTOOLS_DEBUG_PORT: 1024,
+        MAX_DEVTOOLS_DEBUG_PORT: 65535,
+        normalizeDevToolsDebugPort: (value) => Number(value) || 9223,
+        parseDevToolsDebugPort: () => null,
+      },
     },
     { electron: { platform: 'win32' } },
     true,

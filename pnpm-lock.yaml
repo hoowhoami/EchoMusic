@@ -150,6 +150,9 @@ importers:
       eslint-plugin-vue:
         specifier: ^10.9.1
         version: 10.9.1(@typescript-eslint/parser@8.60.0(eslint@10.4.1(jiti@2.7.0))(typescript@5.9.3))(eslint@10.4.1(jiti@2.7.0))(vue-eslint-parser@10.4.0(eslint@10.4.1(jiti@2.7.0)))
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.1.1
       marked:
         specifier: ^18.1.0
         version: 18.1.0

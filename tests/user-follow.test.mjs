@@ -1,4 +1,5 @@
 import { userIdentity } from './helpers/user-identity.mjs';
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -88,6 +89,7 @@ function fixture() {
     '@/utils/userSession': sessionModule.exports,
     '@/utils/accountVip': vipModule.exports,
     '@/utils/userIdentity': userIdentity,
+    '@/utils/watchUserSession': userSessionWatch,
     'vue-router': { useRouter: () => ({}) },
     '@/stores/user': { useUserStore: () => user },
     '@/stores/loginDevices': { useLoginDeviceStore: () => ({}) },
@@ -103,6 +105,7 @@ function fixture() {
     '@/utils/logger': { error() {} },
     '@/api/user': api,
     '@/utils/cover': { normalizeCoverUrl: (value) => value },
+    '@/components/ui/tooltip': { vTooltip: {} },
     '@/icons': {},
     '../../shared/birthday': {},
     '../../shared/profileStats': {},

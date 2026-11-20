@@ -176,6 +176,14 @@ async function setup({ loadMiniPage = async () => {} } = {}) {
     '../diagnostics/memory': { logMainMemory: async () => {} },
     '../windowSizing': { resolveMainWindowPlacement: () => ({ bounds: saved.windowState }) },
     '../../shared/windowing': { isWaylandWindowingBackend: () => false },
+    // devTools 仅提供调试端口常量与归一化，本测试不涉及，给默认值桩
+    '../../shared/devTools': {
+      DEFAULT_DEVTOOLS_DEBUG_PORT: 9223,
+      MIN_DEVTOOLS_DEBUG_PORT: 1024,
+      MAX_DEVTOOLS_DEBUG_PORT: 65535,
+      normalizeDevToolsDebugPort: (value) => Number(value) || 9223,
+      parseDevToolsDebugPort: () => null,
+    },
     './state': { trackMainWindowState: () => ({ flush: noop, dispose: noop }) },
     './pointer': { installWindowPointerEvents: noop },
     './windowsComposition': {},

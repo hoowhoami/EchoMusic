@@ -101,7 +101,7 @@ test('M-SEARCH 响应按 USN 缓存、去重、过期', async () => {
 });
 
 test('NOTIFY ssdp:alive 收录、ssdp:byebye 移除', async () => {
-  let fakeNow = 1_000_000;
+  const fakeNow = 1_000_000;
   const events: Array<{ usn: string; location: string }> = [];
   const discovery = createSsdpDiscovery({
     now: () => fakeNow,
@@ -135,7 +135,7 @@ test('NOTIFY ssdp:alive 收录、ssdp:byebye 移除', async () => {
 });
 
 test('多网卡同一 USN 去重合并；不可信 Location 忽略', async () => {
-  let fakeNow = 1_000_000;
+  const fakeNow = 1_000_000;
   const discovery = createSsdpDiscovery({ now: () => fakeNow, log: () => {} });
   await discovery.start();
 
@@ -197,7 +197,7 @@ test('SSDP 设备把 Location 写成 0.0.0.0 时使用响应来源地址', async
 });
 
 test('超过上限后拒绝新增（防海量响应刷爆内存）', async () => {
-  let fakeNow = 1_000_000;
+  const fakeNow = 1_000_000;
   const discovery = createSsdpDiscovery({ now: () => fakeNow, log: () => {}, maxDevices: 3 });
   await discovery.start();
   for (let i = 0; i < 5; i++) {
@@ -215,7 +215,7 @@ test('超过上限后拒绝新增（防海量响应刷爆内存）', async () =>
 });
 
 test('无 USN 仅有 ST 时报文被忽略', async () => {
-  let fakeNow = 1_000_000;
+  const fakeNow = 1_000_000;
   const discovery = createSsdpDiscovery({ now: () => fakeNow, log: () => {} });
   await discovery.start();
   // SSDP 响应必须带 USN；报文中缺失则不应入库。

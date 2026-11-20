@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
-import { Readable } from 'node:stream';
 import { randomUUID } from 'node:crypto';
+import { fsReadStreamToWeb } from '../fsStream';
 import type {
   DownloadOptions,
   DownloadSnapshot,
@@ -504,12 +504,9 @@ export class DownloadEngine {
       if (r.localRef && (await this.deps.resolveSource?.(r.owner, r.localRef)) !== r.localFile)
         throw new ResourceError('GRANT_REQUIRED', '复制来源授权已失效');
       const stat = await fs.stat(r.localFile);
-      return new Response(
-        Readable.toWeb(
-          createReadStream(r.localFile, { signal: controller.signal }),
-        ) as ReadableStream,
-        { headers: { 'content-length': String(stat.size) } },
-      );
+      return new Response(fsReadStreamToWeb(createReadStream(r.localFile), controller.signal), {
+        headers: { 'content-length': String(stat.size) },
+      });
     }
     const source = this.sources.get(r.snapshot.id);
     if (!source) throw new ResourceError('SOURCE_AUTH_REQUIRED', '请重新提供下载地址');

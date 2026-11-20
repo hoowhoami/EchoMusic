@@ -646,7 +646,12 @@ where
 /// 一个只会把两次 open 继续排进 audiodg 的串行队列；取消、设备不存在、格式
 /// 不支持等永久错误同样立即返回。
 fn is_retryable_output_start_error(message: &str) -> bool {
-    message.contains("0x88890010") || message.contains("device is already in use")
+    // AUDCLNT_E_DEVICE_IN_USE 的 HRESULT 是 0x8889000A；
+    // 0x88890010 是 AUDCLNT_E_SERVICE_NOT_RUNNING，属于应立即返回的永久错误，
+    // 不能纳入重试。大小写都匹配以兼容不同格式化路径。
+    message.contains("0x8889000A")
+        || message.contains("0x8889000a")
+        || message.contains("device is already in use")
 }
 
 /// 看门狗超时的错误消息。只承载受控字段（exclusive 标志 + 启动探针快照），
@@ -936,7 +941,7 @@ mod tests {
             move || {
                 let attempt = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 Err(format!(
-                    "failed to open WASAPI shared output: device is already in use (0x88890010, attempt-{attempt})"
+                    "failed to open WASAPI shared output: device is already in use (0x8889000A, attempt-{attempt})"
                 ))
             },
             OUTPUT_START_ATTEMPTS,
@@ -954,7 +959,7 @@ mod tests {
         assert_eq!(
             error,
             format!(
-                "failed to open WASAPI shared output: device is already in use (0x88890010, attempt-{})",
+                "failed to open WASAPI shared output: device is already in use (0x8889000A, attempt-{})",
                 OUTPUT_START_ATTEMPTS
             )
         );
@@ -1026,7 +1031,7 @@ mod tests {
                 let attempt = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 if attempt < OUTPUT_START_ATTEMPTS as usize {
                     Err(format!(
-                        "failed to open WASAPI shared output: device is already in use (0x88890010, attempt-{attempt})"
+                        "failed to open WASAPI shared output: device is already in use (0x8889000A, attempt-{attempt})"
                     ))
                 } else {
                     slot.lock()
@@ -1051,11 +1056,16 @@ mod tests {
         assert!(!is_retryable_output_start_error(
             "audio output did not start within 3000 ms (exclusive=false, startup stage=initialize, last_hresult=pending)"
         ));
+        // AUDCLNT_E_DEVICE_IN_USE = 0x8889000A
         assert!(is_retryable_output_start_error(
-            "failed to open WASAPI shared output: device is already in use by another exclusive stream or driver session (0x88890010)"
+            "failed to open WASAPI shared output: device is already in use by another exclusive stream or driver session (0x8889000A)"
         ));
         assert!(!is_retryable_output_start_error(
             "failed to open WASAPI exclusive output: device rejected the exclusive PCM format (0x88890008)"
+        ));
+        // AUDCLNT_E_SERVICE_NOT_RUNNING = 0x88890010，属永久错误
+        assert!(!is_retryable_output_start_error(
+            "failed to open WASAPI shared output (0x88890010)"
         ));
         assert!(!is_retryable_output_start_error(
             "failed to resolve WASAPI output device: not found"
@@ -1063,6 +1073,21 @@ mod tests {
         assert!(!is_retryable_output_start_error(
             crate::output::OUTPUT_START_CANCELLED_MESSAGE
         ));
+    }
+
+    #[test]
+    fn output_start_budget_stays_within_blocking_command_timeout() {
+        let single = OUTPUT_START_WATCHDOG * OUTPUT_START_ATTEMPTS + OUTPUT_START_RETRY_DELAY;
+        // 单次启动预算固定为 3 s × 2 + 250 ms；改看门狗参数时必须同步评估 dispatcher 超时
+        assert_eq!(single, Duration::from_millis(6_250));
+        // 首次启动 + 失败后恢复各一轮，阻塞命令超时必须完整覆盖，
+        // 否则慢设备上命令实际能成功却先向 JS 报超时
+        assert!(
+            crate::dispatcher::CORE_BLOCKING_COMMAND_REPLY_TIMEOUT >= single * 2,
+            "blocking command timeout {:?} must cover two output start budgets {:?}",
+            crate::dispatcher::CORE_BLOCKING_COMMAND_REPLY_TIMEOUT,
+            single * 2
+        );
     }
 
     #[test]

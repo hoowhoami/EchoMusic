@@ -1,0 +1,59 @@
+name: Lint, Typecheck & Tests
+
+# PR 与主分支推送时执行代码检查与单元测试；
+# 打包发布仍由 build.yml 在 tag 推送时负责，此处不要引入打包步骤。
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# 最小权限：仅需读取仓库内容
+permissions:
+  contents: read
+
+# 同一 ref 的旧运行会被取消，避免重复占用 runner
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint, Typecheck & Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # server 是 KuGouMusicApi 子模块：部分测试直接 require 其源码模块，
+          # 不初始化子模块会以 MODULE_NOT_FOUND 失败。
+          submodules: recursive
+
+      # 与 build.yml 保持一致：仓库未声明 packageManager，固定使用 pnpm 9
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        # server 是 pnpm workspace 成员（见 pnpm-workspace.yaml），
+        # 这一步会同时安装其运行依赖；契约测试直接 require 其源码模块。
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint:check
+
+      - name: Typecheck
+        run: npx vue-tsc --noEmit
+
+      - name: Test
+        run: pnpm test

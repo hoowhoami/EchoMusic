@@ -5,6 +5,7 @@ import { computed, markRaw, reactive } from 'vue';
 import type { Component } from 'vue';
 import type { IconifyIcon } from '@iconify/types';
 import type { Song } from '@/models/song';
+import logger from '@/utils/logger';
 import { registerSongContextMenuExtension } from '@/components/music/songContextMenuExtensions';
 import {
   registerCoverFallbackResolver,
@@ -488,9 +489,35 @@ export const registerPluginCommand = (
 };
 
 export const executePluginCommand = (commandId: string, ...args: unknown[]) => {
-  const command = pluginUiRegistry.commands.find((item) => item.id === commandId);
-  if (!command) throw new Error(`插件命令不存在: ${commandId}`);
-  return command.handler(...args);
+  const matches = pluginUiRegistry.commands.filter((item) => item.id === commandId);
+  if (matches.length === 0) throw new Error(`插件命令不存在: ${commandId}`);
+  if (matches.length === 1) return matches[0].handler(...args);
+
+  // 同名命令来自不同插件时，旧实现固定取第一个，导致后注册的插件命令永远无法执行。
+  // 单参数调用方（$echo.executeCommand 等）无法提供 pluginId，这里选择最近注册者
+  // 并在日志中暴露冲突，既让后注册命令可用，也保持既有函数签名不变。
+  const latest = matches[matches.length - 1];
+  logger.warn('PluginRegistry', `插件命令 id 冲突: ${commandId}，已选择最近注册的命令`, {
+    selected: latest.pluginId,
+    candidates: matches.map((item) => item.pluginId),
+  });
+  return latest.handler(...args);
+};
+
+/**
+ * 插件上下文内按 (pluginId, id) 组合键执行命令，避免同名命令被其他插件遮蔽。
+ * 本插件未注册该 id 时回退到全局查找，保留跨插件触发命令的既有能力。
+ */
+export const executePluginCommandFromPlugin = (
+  pluginId: string,
+  commandId: string,
+  ...args: unknown[]
+) => {
+  const command = pluginUiRegistry.commands.find(
+    (item) => item.pluginId === pluginId && item.id === commandId,
+  );
+  if (command) return command.handler(...args);
+  return executePluginCommand(commandId, ...args);
 };
 
 export const getPluginPage = (pluginId: string, pageId: string) =>

@@ -29,7 +29,8 @@ const result = await build({
       name: 'unrelated-contributions',
       setup(builder) {
         builder.onResolve({ filter: /.*/ }, (args) =>
-          args.importer.endsWith('/plugins/registry.ts') && exportsByModule[args.path]
+          // importer 在 Windows 使用反斜杠，必须同时兼容 / 和 \
+          /[\\/]plugins[\\/]registry\.ts$/.test(args.importer) && exportsByModule[args.path]
             ? { path: args.path, namespace: 'stub' }
             : undefined,
         );

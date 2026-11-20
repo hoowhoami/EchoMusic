@@ -22,6 +22,13 @@ new Function(
     format: 'cjs',
   }).code,
 )(sessionModule, sessionModule.exports);
+// 统计快照计算为无外部依赖的纯函数模块，注入真实实现以响应页面 setup 的依赖。
+const historyStatsModule = { exports: {} };
+new Function(
+  'module',
+  'exports',
+  transformSync(read('../src/shared/historyStats.ts'), { loader: 'ts', format: 'cjs' }).code,
+)(historyStatsModule, historyStatsModule.exports);
 
 function fixture(t) {
   const callbacks = [],
@@ -49,6 +56,7 @@ function fixture(t) {
     },
   });
   const dependencies = {
+    '../../shared/historyStats': historyStatsModule.exports,
     vue: {
       ...vue,
       ...Object.fromEntries(

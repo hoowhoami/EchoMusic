@@ -42,10 +42,7 @@ interface FetchErrorContext {
 type ErrorWithFetchContext = Error & Partial<FetchErrorContext>;
 
 /** 给错误附加抓取上下文，供 classifyNetworkError 读取，返回原错误便于链式抛出。 */
-export const attachFetchErrorContext = (
-  error: unknown,
-  context: FetchErrorContext,
-): unknown => {
+export const attachFetchErrorContext = (error: unknown, context: FetchErrorContext): unknown => {
   if (error instanceof Error) {
     const target = error as ErrorWithFetchContext;
     if (context.statusCode !== undefined) target.statusCode = context.statusCode;

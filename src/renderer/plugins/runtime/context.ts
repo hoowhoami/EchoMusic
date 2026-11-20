@@ -18,7 +18,7 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { useLyricStore } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
-import { executePluginCommand, registerPluginCommand } from '../registry';
+import { executePluginCommandFromPlugin, registerPluginCommand } from '../registry';
 import { createKugouApi, type PluginKugouApi } from '../kugou';
 import {
   createAppearanceApi,
@@ -309,8 +309,11 @@ export const createPluginContext = (
       get: <T = unknown>(key: string) =>
         window.electron.plugins?.storage.get<T>(descriptor.id, key) ?? Promise.resolve(null),
       set: (key: string, value: unknown) =>
-        window.electron.plugins?.storage.set(descriptor.id, key, serializeForIpc(value)) ??
-        Promise.resolve(null),
+        window.electron.plugins?.storage.set(
+          descriptor.id,
+          key,
+          serializeForIpc(value, 'ctx.storage.set'),
+        ) ?? Promise.resolve(null),
       delete: (key: string) =>
         window.electron.plugins?.storage.delete(descriptor.id, key) ?? Promise.resolve(null),
     },
@@ -359,7 +362,8 @@ export const createPluginContext = (
         });
         return addDisposable(dispose);
       },
-      execute: executePluginCommand,
+      // 优先按 (pluginId, id) 执行本插件命令；未注册时再回退到全局查找。
+      execute: (id, ...args) => executePluginCommandFromPlugin(descriptor.id, id, ...args),
     },
     shortcuts: createShortcutsApi(descriptor.id, addDisposable, runPluginCallback),
     css: {
