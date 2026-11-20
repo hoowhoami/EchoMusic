@@ -156,7 +156,14 @@ async function fixture(t) {
       return {
         app,
         shell: {},
-        BrowserWindow: {},
+        // showMessageBoxSafely 会先用 BrowserWindow.getAllWindows() 找一个可见窗口
+        // 置前；缺少该方法会抛错并被 launchPluginProcess 吞成「提前返回」，
+        // 导致等待确认框的用例永久挂起。这里提供一个可见窗口使其立即放行。
+        BrowserWindow: {
+          getAllWindows: () => [
+            { isDestroyed: () => false, isVisible: () => true, isMinimized: () => false },
+          ],
+        },
         dialog: { showMessageBox: (...args) => harness.confirm(...args) },
       };
     if (id === 'fs') return wrappedFs;
@@ -287,50 +294,38 @@ test('refresh failure rolls back files, metadata and the previous disabled prefe
   assert.throws(() => api.assertPluginTcpAccess('rgb'), /未启用/);
 });
 
-test(
-  'permission revoked while the process consent dialog is open prevents a late launch',
-  {
-    // Windows 没有 POSIX 可执行文件 fixture；Linux CI 上该用例实际会卡在等待确认框
-    // （pending Promise 且事件循环已空，node 报 cancelledByParent），根因待单独排查。
-    // 本地 POSIX 环境仍会执行，便于复现。
-    skip:
-      process.platform === 'win32'
-        ? 'POSIX helper fixture'
-        : process.env.CI
-          ? 'CI 环境下等待确认框会挂起，待单独排查'
-          : false,
-  },
-  async (t) => {
-    const { api, harness, pluginDirectory } = await fixture(t);
-    const helper = join(pluginDirectory, 'helper.sh');
-    await fs.writeFile(helper, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-    let confirm;
-    let opened;
-    const waiting = new Promise((resolve) => {
-      opened = resolve;
+test('permission revoked while the process consent dialog is open prevents a late launch', async (t) => {
+  const { api, harness, pluginDirectory } = await fixture(t);
+  // 用 .exe 扩展名让用例同时适用于 Windows（白名单 .exe/.com）与 POSIX
+  // （只检查执行位）。用例在确认框阶段就会被权限撤销拦截，不会真的 spawn。
+  const helper = join(pluginDirectory, 'helper.exe');
+  await fs.writeFile(helper, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  let confirm;
+  let opened;
+  const waiting = new Promise((resolve) => {
+    opened = resolve;
+  });
+  harness.confirm = () => {
+    opened();
+    return new Promise((resolve) => {
+      confirm = resolve;
     });
-    harness.confirm = () => {
-      opened();
-      return new Promise((resolve) => {
-        confirm = resolve;
-      });
-    };
-    const launch = api.launchPluginProcess('rgb', { executable: 'helper.sh' });
-    // 若 launch 在弹框前就提前返回（例如可执行文件校验失败），await waiting 会永久
-    // 挂起且没有诊断信息；这里让提前返回立即变成可读错误。
-    await Promise.race([
-      waiting,
-      launch.then((early) => {
-        throw new Error(`launch finished before the consent dialog: ${JSON.stringify(early)}`);
-      }),
-    ]);
-    await api.setPluginEnabled('rgb', false);
-    confirm({ response: 0 });
-    const result = await launch;
-    assert.equal(result.ok, false);
-    assert.match(result.error, /权限已失效/);
-  },
-);
+  };
+  const launch = api.launchPluginProcess('rgb', { executable: 'helper.exe' });
+  // 若 launch 在弹框前就提前返回（例如可执行文件校验失败），await waiting 会永久
+  // 挂起且没有诊断信息；这里让提前返回立即变成可读错误。
+  await Promise.race([
+    waiting,
+    launch.then((early) => {
+      throw new Error(`launch finished before the consent dialog: ${JSON.stringify(early)}`);
+    }),
+  ]);
+  await api.setPluginEnabled('rgb', false);
+  confirm({ response: 0 });
+  const result = await launch;
+  assert.equal(result.ok, false);
+  assert.match(result.error, /权限已失效/);
+});
 
 const failureRecord = (extra = {}) => ({
   reason: 'activation-error',
