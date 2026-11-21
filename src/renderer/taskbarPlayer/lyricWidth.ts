@@ -22,7 +22,7 @@ export interface ContentWidthInput {
 export const MIN_CONTENT_WIDTH = 160;
 
 /**
- * 收起态（只剩封面）的最小宽度。
+ * 只显示封面时（暂停态选了封面，或播放态选了封面）的最小宽度。
  *
  * 160 是给两行歌词留的余量；收起后内容只有封面，沿用 160 会留一大片空白。
  */

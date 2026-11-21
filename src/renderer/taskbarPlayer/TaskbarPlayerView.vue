@@ -100,19 +100,52 @@ const LYRIC_COLLAPSE_MS = 300;
  * 点播放后歌词再滑回来。
  */
 const lyricsCollapsed = computed(() => !playback.value?.isPlaying);
+/** 播放中这一档要不要歌词：设置里选「封面」时播放态只剩封面。 */
+const showLyricLines = computed(() => settings.value.playingDisplay !== 'cover');
+/** 歌词是否真的在位：播放中且这一档要显示歌词。 */
+const lyricsActive = computed(() => !lyricsCollapsed.value && showLyricLines.value);
+/**
+ * 封面是否出现。
+ *
+ * 播放态看「播放时显示」，暂停态看「暂停时显示」——同一项在两状态里可以各显不显，
+ * 这也是存档从「一个封面布尔」改成两档枚举的原因。
+ */
+const coverVisible = computed(() =>
+  lyricsCollapsed.value
+    ? settings.value.pausedDisplay !== 'name'
+    : settings.value.playingDisplay !== 'lyrics',
+);
+/** 暂停态那一行「歌名·歌手」是否出现（悬停展开时另有一块 song-info，与它无关）。 */
+const nowVisible = computed(
+  () => lyricsCollapsed.value && settings.value.pausedDisplay !== 'cover',
+);
 /**
  * 歌词行只区分左右滚动方向：中间对齐时内容仍从左侧开始排，溢出方向同左对齐。
  *
  * TaskbarLyricLine 的 anchor 只有 left/right，这里收敛一次，避免把 center 传下去。
  */
-const lyricAnchor = computed<'left' | 'right'>(() => (anchor.value === 'right' ? 'right' : 'left'));
+const lyricAnchor = computed<'left' | 'center' | 'right'>(() => {
+  if (anchor.value === 'right') return 'right';
+  // 居中档里只有「封面 + 歌词」并排那一档贴左，其余（含只显示歌词）文字居中。
+  return anchor.value === 'center' && !pinned.value ? 'center' : 'left';
+});
+/**
+ * 播放中是否「封面 + 歌词」并排。
+ *
+ * 只有这一档内容宽度会随换行变化，需要贴左避免整条左右跳；
+ * 播放中只显示封面或只显示歌词时宽度是稳的（歌词档由窗口上限兜住），
+ * 按居中档正常对中即可。
+ */
+const lyricsBesideCover = computed(
+  () => lyricsActive.value && settings.value.playingDisplay === 'both',
+);
 /**
  * 居中档把窗口宽度锁在展开上限。
  *
  * 宽度变一次就要重新对中一次，而歌词每换一行宽度都会变、悬停出控制条也会变，
  * 结果就是条子一直在左右跳。锁宽后只有暂停收起（idle）才会改动宽度。
  */
-const pinned = computed(() => anchor.value === 'center' && !lyricsCollapsed.value);
+const pinned = computed(() => anchor.value === 'center' && lyricsBesideCover.value);
 /** 窗口可见宽度（= 原生给的空闲区宽度）：内容改成绝对定位后要自己算左右位置。 */
 const viewportWidth = ref(window.innerWidth);
 /**
@@ -151,15 +184,11 @@ let boxAlign: TaskbarContentAlign = 'start';
 /**
  * 窗口里还有没有东西可显示。
  *
- * 收起态放的是「歌名 · 歌手」，歌词已让出位置；如果封面和歌名又被关掉，内容块里
- * 就只剩下内边距 —— 这时把窗口报成空窗，交给主进程藏起来，别在任务栏上留一条空条。
+ * 两档设置保证每种状态至少留一样东西，所以正常情况下恒为 false；留这一层是因为
+ * 没有播放内容时歌词与歌名的文本都是空的，只剩封面图案，仍要把结果如实报给主进程。
  */
 const blanked = computed(
-  () =>
-    lyricsCollapsed.value &&
-    !expanded.value &&
-    !settings.value.showCover &&
-    !settings.value.showNowPlaying,
+  () => !expanded.value && !coverVisible.value && !lyricsActive.value && !nowVisible.value,
 );
 /**
  * 把窗口形状逐帧贴到内容块上。
@@ -214,7 +243,7 @@ const reportWidth = async () => {
   if (!element) return;
   const style = getComputedStyle(element);
   const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-  const coverWidth = settings.value.showCover
+  const coverWidth = coverVisible.value
     ? (element.querySelector('.cover')?.getBoundingClientRect().width ?? 0) +
       parseFloat(style.columnGap)
     : 0;
@@ -222,22 +251,22 @@ const reportWidth = async () => {
   // 必须在这里直接按 0 计，否则窗口收不窄。
   // 收起态歌词区让出宽度，只剩「歌名 · 歌手」这一行：量它的自然宽度，
   // 不再写死 0（那会把窗口压到只剩封面，暂停时看不到在放什么）。
-  const textWidth = lyricsCollapsed.value
-    ? settings.value.showNowPlaying
+  const textWidth = lyricsActive.value
+    ? Math.max(primaryWidth.value, secondaryWidth.value)
+    : nowVisible.value
       ? Math.ceil(nowMeasure.value?.getBoundingClientRect().width ?? 0)
-      : 0
-    : Math.max(primaryWidth.value, secondaryWidth.value);
+      : 0;
   const naturalWidth = Math.ceil(textWidth + coverWidth + padding + 8);
   width.value = resolveContentWidth({
     natural: naturalWidth,
     maxWidth: maxWidth.value,
     expanded: expanded.value,
-    idle: lyricsCollapsed.value,
+    idle: !lyricsActive.value,
     rolling: rolling || collapsing,
     current: width.value,
   });
-  // 播放态贴空闲区左端（宽度随文字向右长），暂停态那一小块居中。
-  const align: TaskbarContentAlign = lyricsCollapsed.value ? 'center' : 'start';
+  // 「封面 + 歌词」并排时贴空闲区左端（宽度随文字向右长），其余档居中。
+  const align: TaskbarContentAlign = lyricsBesideCover.value ? 'start' : 'center';
   boxAlign = align;
   // 目标宽度只用于布局，可见区域始终按实测矩形喂，补间途中也不会裁到图案。
   startBoxSync();
@@ -264,10 +293,10 @@ watch(
   },
   { immediate: true },
 );
-watch(lyricsCollapsed, (collapsed) => {
+watch(lyricsActive, (active) => {
   clearTimeout(collapseTimer);
-  collapsing = Boolean(collapsed);
-  if (!collapsed) {
+  collapsing = !active;
+  if (active) {
     void reportWidth();
     return;
   }
@@ -339,7 +368,7 @@ onUnmounted(() => {
       @focusout="focusOut"
     >
       <button
-        v-if="settings.showCover"
+        v-if="coverVisible"
         type="button"
         class="cover"
         aria-label="打开 EchoMusic"
@@ -391,8 +420,8 @@ onUnmounted(() => {
         <div class="details" :class="{ 'has-progress': playback && duration }">
           <div
             class="copy"
-            :class="{ collapsed: lyricsCollapsed }"
-            :aria-hidden="expanded || lyricsCollapsed"
+            :class="{ collapsed: !lyricsActive }"
+            :aria-hidden="expanded || !lyricsActive"
           >
             <!-- 两个钩子用来在换行动画期间冻结/解冻窗口宽度，规则见 lyricWidth.ts：
                  新文本一测量完就会把窗口收窄，而旧行还要再向上滑出 0.5s，
@@ -424,17 +453,12 @@ onUnmounted(() => {
               </div>
             </Transition>
           </div>
-          <!-- 收起态（暂停）可选显示歌名与歌手：默认关，关掉时只剩图案。 -->
-          <div v-if="lyricsCollapsed && !expanded && settings.showNowPlaying" class="now">
+          <!-- 暂停态按「暂停时显示」决定要不要这一行（悬停展开时由 song-info 顶替）。 -->
+          <div v-if="nowVisible && !expanded" class="now">
             <span class="now-title">{{ title }}</span>
             <span v-if="playback?.artist" class="now-artist">{{ playback.artist }}</span>
           </div>
-          <span
-            v-if="settings.showNowPlaying"
-            ref="nowMeasure"
-            class="now-measure"
-            aria-hidden="true"
-          >
+          <span v-if="nowVisible" ref="nowMeasure" class="now-measure" aria-hidden="true">
             {{ title }}{{ playback?.artist ? ' · ' + playback.artist : '' }}
           </span>
           <div class="song-info" :aria-hidden="!expanded">

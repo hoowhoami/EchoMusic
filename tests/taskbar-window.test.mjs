@@ -391,14 +391,36 @@ test('settings persist, clamp malformed inputs, and all mutations reject foreign
   const f = setup();
   const set = f.handlers.get('taskbar-player:set-settings');
   assert.throws(() => set({ sender: { id: 999 } }, { maxWidth: 200 }), /sender/);
-  const s = set({ sender: { id: 1 } }, { maxWidth: Infinity, fontSize: 999, showCover: false });
+  const s = set(
+    { sender: { id: 1 } },
+    { maxWidth: Infinity, fontSize: 999, playingDisplay: 'cover' },
+  );
   assert.equal(s.settings.maxWidth, 400);
   assert.equal(s.settings.fontSize, 22);
-  assert.equal(f.settings.taskbarLyric.showCover, false);
+  assert.equal(f.settings.taskbarLyric.playingDisplay, 'cover');
   assert.throws(
     () => f.handlers.get('taskbar-player:set-enabled')({ sender: { id: 1 } }, 'yes'),
     /state/,
   );
+});
+test('legacy display booleans migrate to the two display enums', () => {
+  const normalize = shared.normalizeTaskbarLyricSettings;
+  // 升级前的默认：封面开、暂停歌名关 —— 播放态是「封面 + 歌词」，暂停态只剩封面。
+  const before = normalize({ showCover: true, showNowPlaying: false });
+  assert.equal(before.playingDisplay, 'both');
+  assert.equal(before.pausedDisplay, 'cover');
+  // 旧版本里关掉封面：播放态只剩歌词，暂停态只剩「歌名·歌手」。
+  const noCover = normalize({ showCover: false, showNowPlaying: true });
+  assert.equal(noCover.playingDisplay, 'lyrics');
+  assert.equal(noCover.pausedDisplay, 'name');
+  // 新字段合法时优先，旧字段不再参与折算。
+  const mixed = normalize({ showCover: false, playingDisplay: 'cover', pausedDisplay: 'name' });
+  assert.equal(mixed.playingDisplay, 'cover');
+  assert.equal(mixed.pausedDisplay, 'name');
+  // 全新安装没有旧字段，直接取新默认（两者 / 两者）。
+  const fresh = normalize({});
+  assert.equal(fresh.playingDisplay, 'both');
+  assert.equal(fresh.pausedDisplay, 'both');
 });
 test('redisplay requests a fresh native layout even if the existing window is enabled', async () => {
   const f = setup();

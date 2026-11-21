@@ -64,7 +64,8 @@ function harness() {
       if (name === '../../shared/taskbar')
         return {
           DEFAULT_TASKBAR_LYRIC_SETTINGS: {
-            showCover: true,
+            playingDisplay: 'both',
+            pausedDisplay: 'both',
             showTranslation: false,
             wordByWord: false,
             fontSize: 14,
@@ -121,8 +122,8 @@ function harness() {
   });
   let rafBusy = false;
   const state = module.exports.default.setup({}, { expose() {} });
-  // 关掉封面，天然宽度就只取决于文本（natural = ceil(text + 8)）。
-  state.settings.value.showCover = false;
+  // 播放态只留歌词（不带封面），天然宽度就只取决于文本（natural = ceil(text + 8)）。
+  state.settings.value.playingDisplay = 'lyrics';
   // 这三个用例只验换行动画的宽度冻结，不验「暂停收起」；保持播放态免得落进 idle。
   state.playback.value = { isPlaying: true };
   state.maxWidth.value = 800;

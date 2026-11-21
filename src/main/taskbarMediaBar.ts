@@ -58,7 +58,9 @@ function loadSettings(): void {
   settings = getMainAppSettings().taskbarLyric;
   settingsLoaded = true;
 }
-const blankNow = () => blanked && !settings.showCover && !settings.showNowPlaying;
+// 渲染层的 blanked 已经把「播放态关掉歌词又没封面」这类情形算进去了，
+// 这里再按设置判一次会和播放态的新规则打架，留下一条空窗。
+const blankNow = () => blanked;
 const usable = (value: BrowserWindow | null): value is BrowserWindow =>
   Boolean(value && !destroyedNativeWindows.has(value) && !value.isDestroyed());
 const state = () => ({

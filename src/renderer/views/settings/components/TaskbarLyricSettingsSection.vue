@@ -30,6 +30,23 @@ const barPositionDescription = computed(() => {
   const side = position === 'left' ? '左' : '右';
   return `优先使用${side}侧空闲区，回退时保持${side}对齐`;
 });
+/**
+ * 显示内容用三选一，不用三个开关。
+ *
+ * 封面 / 歌词 / 并排本来就互斥，开关能关到「一个都不剩」，任务栏上就留一条空条；
+ * 三档写法顺手把这个空档堵住，也让「同一项在播放和暂停里各显不显」能分开存。
+ */
+const playingDisplayOptions = [
+  { label: '封面', value: 'cover' },
+  { label: '歌词', value: 'lyrics' },
+  { label: '两者', value: 'both' },
+];
+/** 暂停态没有可滚动的歌词，第三档换成「歌名·歌手」，同样是三选一。 */
+const pausedDisplayOptions = [
+  { label: '封面', value: 'cover' },
+  { label: '歌名·歌手', value: 'name' },
+  { label: '两者', value: 'both' },
+];
 let alive = true;
 let receivedState = false;
 let disposeBarState: (() => void) | undefined;
@@ -176,33 +193,46 @@ const setBarSettings = async (patch: Partial<TaskbarLyricSettings>) => {
         />
       </div>
       <div class="settings-item">
-        <h3 class="font-semibold">显示封面</h3>
-        <Switch
-          :model-value="barSettings.showCover"
-          @update:model-value="setBarSettings({ showCover: Boolean($event) })"
+        <h3 class="font-semibold">播放时显示</h3>
+        <Select
+          class="shrink-0 w-45"
+          aria-label="播放时显示"
+          :model-value="barSettings.playingDisplay"
+          :options="playingDisplayOptions"
+          @update:model-value="
+            setBarSettings({ playingDisplay: $event as TaskbarLyricSettings['playingDisplay'] })
+          "
         />
       </div>
       <div class="settings-item">
-        <h3 class="font-semibold">暂停时显示歌名与歌手</h3>
-        <Switch
-          :model-value="barSettings.showNowPlaying"
-          @update:model-value="setBarSettings({ showNowPlaying: Boolean($event) })"
+        <h3 class="font-semibold">暂停时显示</h3>
+        <Select
+          class="shrink-0 w-45"
+          aria-label="暂停时显示"
+          :model-value="barSettings.pausedDisplay"
+          :options="pausedDisplayOptions"
+          @update:model-value="
+            setBarSettings({ pausedDisplay: $event as TaskbarLyricSettings['pausedDisplay'] })
+          "
         />
       </div>
-      <div class="settings-item">
-        <h3 class="font-semibold">显示翻译</h3>
-        <Switch
-          :model-value="barSettings.showTranslation"
-          @update:model-value="setBarSettings({ showTranslation: Boolean($event) })"
-        />
-      </div>
-      <div class="settings-item">
-        <h3 class="font-semibold">逐字高亮</h3>
-        <Switch
-          :model-value="barSettings.wordByWord"
-          @update:model-value="setBarSettings({ wordByWord: Boolean($event) })"
-        />
-      </div>
+      <!-- 播放态只留封面时没有歌词可翻、也没有字可高亮，这两项跟着收起来。 -->
+      <template v-if="barSettings.playingDisplay !== 'cover'">
+        <div class="settings-item">
+          <h3 class="font-semibold">显示翻译</h3>
+          <Switch
+            :model-value="barSettings.showTranslation"
+            @update:model-value="setBarSettings({ showTranslation: Boolean($event) })"
+          />
+        </div>
+        <div class="settings-item">
+          <h3 class="font-semibold">逐字高亮</h3>
+          <Switch
+            :model-value="barSettings.wordByWord"
+            @update:model-value="setBarSettings({ wordByWord: Boolean($event) })"
+          />
+        </div>
+      </template>
     </template>
   </SettingsSectionShell>
 </template>
