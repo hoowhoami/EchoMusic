@@ -237,7 +237,6 @@ const initializePlayer = () => {
   hostResizeObserver = new ResizeObserver(() => requestFrame());
   hostResizeObserver.observe(host);
   window.addEventListener('resize', handleWindowResize);
-  lastFrameTime = performance.now();
   requestFrame();
 };
 
