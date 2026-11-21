@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { useSettingStore, type LyricPageAppearanceMode } from '@/stores/setting';
+import { useSettingStore } from '@/stores/setting';
+import { normalizeLyricPageAppearanceMode } from '../../../../shared/lyricPageAppearance';
 import { useLyricStore } from '@/stores/lyric';
 import { useLyricColorPicker } from '@/composables/useLyricColorPicker';
 import Select from '@/components/ui/Select.vue';
@@ -80,12 +81,12 @@ const appearanceModes = [
         </p>
       </div>
       <Select
-        :model-value="settingStore.lyricPageAppearanceMode"
+        :model-value="normalizeLyricPageAppearanceMode(settingStore.lyricPageAppearanceMode)"
         :options="appearanceModes"
         aria-label="歌词页外观模式"
         class="w-36 shrink-0"
         @update:model-value="
-          settingStore.lyricPageAppearanceMode = $event as LyricPageAppearanceMode
+          settingStore.lyricPageAppearanceMode = normalizeLyricPageAppearanceMode($event)
         "
       />
     </div>

@@ -327,14 +327,16 @@ const resolvedTextColor = computed(() =>
   ),
 );
 // 歌词字体继承与颜色 CSS 变量的组装规则见 amll/hostStyle.ts。
-// 深色档保持 core 白字默认（未配置时不下发变量）；浅色档必须显式下发深色文字。
-const playerAreaStyle = computed(() =>
-  buildAmllHostStyle(
+// 深色档保持 core 白字默认（未配置时不下发变量）；浅色档必须显式下发深色文字，
+// 并下发深色 hover 高亮（core 默认白色 6% hover 在浅底不可见）。
+const playerAreaStyle = computed(() => ({
+  ...buildAmllHostStyle(
     settingStore.buildLyricFontFamily(),
     settings.value.textColor || (lyricIsDark.value ? '' : AMLL_TEXT_COLOR_FALLBACK_LIGHT),
     resolvedTextColor.value,
   ),
-);
+  ...(lyricIsDark.value ? {} : { '--amll-lp-hover-bg-color': 'rgba(0, 0, 0, 0.06)' }),
+}));
 </script>
 
 <template>
@@ -446,6 +448,9 @@ const playerAreaStyle = computed(() =>
 .amll-engine-host {
   width: 100%;
   height: 100%;
+  /* core 歌词用 mix-blend-mode: plus-lighter，锁定混合作用域在引擎内部，
+   * 避免宿主堆叠上下文变化时浅色档歌词被整体加亮而消失 */
+  isolation: isolate;
 }
 
 @media (max-width: 768px) {

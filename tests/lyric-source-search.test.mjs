@@ -1,5 +1,6 @@
 import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
+import { LYRIC_PAGE_INK, resolveLyricPageIsDark } from '../src/shared/lyricPageAppearance.ts';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
@@ -60,13 +61,11 @@ function storeFixture(api = {}, resolvePluginLyric = async () => null) {
     './theme': { useThemeStore: () => ({}) },
 
     './setting': {
-      resolveLyricPageIsDark: (mode, appIsDark) =>
-        mode === 'follow' ? appIsDark : mode !== 'light',
+      resolveLyricPageIsDark,
 
       useSettingStore: () => ({ lyricPageAppearanceMode: 'dark' }),
 
-
-      LYRIC_PAGE_INK: '#1a1d22',
+      LYRIC_PAGE_INK,
     },
     '../../shared/lyricOffset': offset,
     '../../shared/embeddedMetadata': embeddedTags,

@@ -15,7 +15,10 @@ import {
   type LyricSkinConfigAmll,
 } from './config';
 import { useLyricPageIsDark } from '../composables/useLyricAppearance';
-import { LYRIC_COLOR_PRESETS, getLyricCoverDynamicOption } from '@/composables/useLyricColorPicker';
+import {
+  lyricColorPresetsFor,
+  getLyricCoverDynamicOption,
+} from '@/composables/useLyricColorPicker';
 
 const { settings, patch } = useLyricSkin<LyricSkinConfigAmll>(
   HOST_SKIN_KEYS.amll,
@@ -192,7 +195,7 @@ const restoreDefaults = () => patch({ ...LYRIC_SKIN_AMLL_DEFAULTS });
     :open="isTextColorOpen"
     title="选择歌词颜色"
     :value="settings.textColor || amllTextFallback"
-    :presets="LYRIC_COLOR_PRESETS"
+    :presets="lyricColorPresetsFor(lyricIsDark)"
     :dynamic-option="getLyricCoverDynamicOption()"
     @update:open="(open: boolean) => !open && (isTextColorOpen = false)"
     @confirm="applyTextColor"

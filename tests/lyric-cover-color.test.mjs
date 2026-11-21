@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import { normalizeAccent } from '../src/shared/accentPalette.ts';
+import { LYRIC_PAGE_INK, resolveLyricPageIsDark } from '../src/shared/lyricPageAppearance.ts';
 
 const theme = { coverColor: '#0071e3', isDark: true };
 const setting = { lyricPageAppearanceMode: 'dark' };
@@ -19,10 +20,9 @@ new Function('require', 'module', 'exports', code)(
     if (id === './theme') return { useThemeStore: () => theme };
     if (id === './setting')
       return {
-        resolveLyricPageIsDark: (mode, appIsDark) =>
-          mode === 'follow' ? appIsDark : mode !== 'light',
+        resolveLyricPageIsDark,
         useSettingStore: () => setting,
-        LYRIC_PAGE_INK: '#1a1d22',
+        LYRIC_PAGE_INK,
       };
     return {};
   },
@@ -90,6 +90,20 @@ test('follow mode tracks the main program theme for cover normalization', (t) =>
     normalizeAccent('#ff0000', false),
   );
   assert.equal(store.getters.effectiveUnplayedColor({ unplayedColor: '' }), '#1a1d22');
+});
+
+test('played color default follows the appearance mode for readability', (t) => {
+  t.after(resetFixtures);
+  // 深色档保持品牌绿
+  setting.lyricPageAppearanceMode = 'dark';
+  assert.equal(store.getters.effectivePlayedColor({ playedColor: '' }), '#31cfa1');
+  // 浅色档回退等色相加深绿：#31cfa1 对浅背景对比度仅 ~1.8:1，且已在
+  // normalizeAccent 浅色亮度带内（normalize 对它无调整效果），需显式加深常量
+  setting.lyricPageAppearanceMode = 'light';
+  const played = store.getters.effectivePlayedColor({ playedColor: '' });
+  assert.equal(played, '#0e8f66');
+  // 手动指定的已播色不受外观分档影响
+  assert.equal(store.getters.effectivePlayedColor({ playedColor: '#123456' }), '#123456');
 });
 
 test('unknown appearance mode falls back to the dark default', (t) => {

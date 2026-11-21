@@ -163,24 +163,26 @@ const isBlurBackgroundRhythmEnabled = computed(
 const fluidBackgroundReady = ref(false);
 
 // 歌词页分档配色：深色档保持历史值，浅色档为封面提亮浅调风格的配套中性色
+const LYRIC_PAGE_PALETTES = {
+  dark: {
+    blurBase: '#000000', // 模糊封面底色
+    fallbackBg: LYRIC_PAGE_INK, // 无封面主色时的兜底背景
+    pluginBg: '#0a0f0e', // 插件皮肤页背景
+    pluginFallbackBg: '#171718', // 插件皮肤页文字可读性计算的参考背景
+    blurOverlay: 'rgba(0, 0, 0, 0.5)', // 模糊封面压暗遮罩
+    dimOverlay: 'black', // 写真/封面兜底压暗遮罩
+  },
+  light: {
+    blurBase: '#ffffff',
+    fallbackBg: '#f5f5f7',
+    pluginBg: '#f6f6f6',
+    pluginFallbackBg: '#f6f6f6',
+    blurOverlay: 'rgba(255, 255, 255, 0.55)',
+    dimOverlay: 'white',
+  },
+} as const;
 const lyricPalette = computed(() =>
-  lyricIsDark.value
-    ? {
-        blurBase: '#000000', // 模糊封面底色
-        fallbackBg: LYRIC_PAGE_INK, // 无封面主色时的兜底背景
-        pluginBg: '#0a0f0e', // 插件皮肤页背景
-        pluginFallbackBg: '#171718', // 插件皮肤页文字可读性计算的参考背景
-        blurOverlay: 'rgba(0, 0, 0, 0.5)', // 模糊封面压暗遮罩
-        dimOverlay: 'black', // 写真/封面兜底压暗遮罩
-      }
-    : {
-        blurBase: '#ffffff',
-        fallbackBg: '#f5f5f7',
-        pluginBg: '#f6f6f6',
-        pluginFallbackBg: '#f6f6f6',
-        blurOverlay: 'rgba(255, 255, 255, 0.55)',
-        dimOverlay: 'white',
-      },
+  lyricIsDark.value ? LYRIC_PAGE_PALETTES.dark : LYRIC_PAGE_PALETTES.light,
 );
 
 // 背景样式

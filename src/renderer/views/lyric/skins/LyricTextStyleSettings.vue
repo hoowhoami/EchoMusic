@@ -11,8 +11,12 @@ import {
   resolveLyricSkinColor,
   type LyricTextStyleConfig,
 } from './config';
-import { LYRIC_COLOR_PRESETS, getLyricCoverDynamicOption } from '@/composables/useLyricColorPicker';
+import {
+  lyricColorPresetsFor,
+  getLyricCoverDynamicOption,
+} from '@/composables/useLyricColorPicker';
 import { useLyricStore } from '@/stores/lyric';
+import { useLyricPageIsDark } from '../composables/useLyricAppearance';
 
 /**
  * 单个皮肤内置的歌词文本样式设置（字号 / 字重 / 已播未播颜色）。
@@ -25,6 +29,7 @@ const { settings, patch } = useLyricSkin<LyricTextStyleConfig>(
   LYRIC_TEXT_STYLE_DEFAULTS,
 );
 const lyricStore = useLyricStore();
+const lyricIsDark = useLyricPageIsDark();
 
 const fontScaleLabel = computed(() => `${Math.round(settings.value.fontScale * 100)}%`);
 const fontWeightLabel = computed(() => `W${LYRIC_FONT_WEIGHTS[settings.value.fontWeightIndex]}`);
@@ -142,7 +147,7 @@ const restoreDefaults = () =>
     :open="pickerOpen"
     :title="activeTitle"
     :value="activeValue"
-    :presets="LYRIC_COLOR_PRESETS"
+    :presets="lyricColorPresetsFor(lyricIsDark)"
     :dynamic-option="getLyricCoverDynamicOption()"
     @update:open="(open: boolean) => !open && closePicker()"
     @confirm="applyColor"

@@ -111,17 +111,11 @@ const toImpulseResponseFilePayload = (file: SpatialAudioEffectEntry): SpatialAud
   vpfPath: file.vpfPath,
 });
 
-/** 歌词页外观模式：深色 / 浅色 / 跟随主程序。 */
-export type LyricPageAppearanceMode = 'dark' | 'light' | 'follow';
-
-/** 纯函数解析：歌词页外观模式 → 是否深色（跟随档取主程序当前深浅态；脏值守卫回退深色）。 */
-export const resolveLyricPageIsDark = (
-  mode: LyricPageAppearanceMode,
-  appIsDark: boolean,
-): boolean => (mode === 'follow' ? appIsDark : mode !== 'light');
-
-/** 浅色歌词页的墨色锚点：浅档深色文字与深色元素统一取值（与深色兜底背景同源）。 */
-export const LYRIC_PAGE_INK = '#1a1d22';
+/** 歌词页外观模式的类型、纯解析函数与墨色锚点定义在 shared 纯模块，此处转发导出
+ * 便于 store 消费方沿用单一导入面（tests 直接 import shared 真实现）。 */
+import type { LyricPageAppearanceMode } from '../../shared/lyricPageAppearance';
+export type { LyricPageAppearanceMode };
+export { resolveLyricPageIsDark, LYRIC_PAGE_INK } from '../../shared/lyricPageAppearance';
 
 export const useSettingStore = defineStore('setting', {
   state: () => ({

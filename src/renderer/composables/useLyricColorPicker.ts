@@ -24,6 +24,10 @@ export const LYRIC_COLOR_PRESETS = [
   '#ffffff',
 ];
 
+/** 按歌词页外观分档返回预设：浅色页剔除纯白预设，避免用户选到白字白底。 */
+export const lyricColorPresetsFor = (isDark: boolean): string[] =>
+  isDark ? LYRIC_COLOR_PRESETS : LYRIC_COLOR_PRESETS.filter((color) => color !== '#ffffff');
+
 type LyricColorField = 'playedColor' | 'unplayedColor';
 
 /** 独立导出：取歌词页外观下的封面取色选项，供各皮肤设置复用。 */
@@ -48,12 +52,12 @@ export const useLyricColorPicker = () => {
 
   const activeValue = computed(() => {
     if (!activeField.value) return DEFAULT_LYRIC_PLAYED_COLOR;
+    // 默认值随歌词页外观分档：浅色页已播回退加深绿、未播回退深色文字
     return (
       lyricStore[activeField.value] ||
       (activeField.value === 'playedColor'
-        ? DEFAULT_LYRIC_PLAYED_COLOR
-        : // 未播放色默认值随歌词页外观分档（浅色页回退深色文字）
-          lyricStore.effectiveUnplayedColor)
+        ? lyricStore.effectivePlayedColor
+        : lyricStore.effectiveUnplayedColor)
     );
   });
 
@@ -98,7 +102,8 @@ export const useLyricColorPicker = () => {
     activeTitle,
     isOpen,
     dynamicOption,
-    presets: LYRIC_COLOR_PRESETS,
+    // 预设随歌词页外观分档（浅色页剔除纯白）
+    presets: computed(() => lyricColorPresetsFor(currentLyricPageIsDark())),
     open,
     close,
     apply,

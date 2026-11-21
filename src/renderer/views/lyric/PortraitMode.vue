@@ -32,9 +32,15 @@ const currentTrackLyricHash = computed(() =>
 const coverUrl = computed(() => currentTrack.value?.coverUrl);
 const lyricIsDark = useLyricPageIsDark();
 const { backgroundColor } = useLyricBackground(coverUrl, lyricIsDark);
-const fallbackBg = 'var(--lyric-page-bg)';
-const blurOverlayColor = 'var(--lyric-blur-overlay-bg)';
-const dimOverlayColor = 'var(--lyric-dim-overlay-bg)';
+const fallbackBg = 'var(--lyric-page-bg, #1a1d22)';
+const blurOverlayColor = 'var(--lyric-blur-overlay-bg, rgba(0, 0, 0, 0.5))';
+const dimOverlayColor = 'var(--lyric-dim-overlay-bg, black)';
+// 写真遮罩不透明度：浅色档深字落在普遍偏暗的写真相册上不可读，
+// 遮罩（白色提亮）需要保留下限，避免用户把 backdropOpacity 调到 100 后完全无遮罩
+const dimOverlayOpacity = computed(() => {
+  const userOpacity = 1 - settings.value.backdropOpacity / 100;
+  return lyricIsDark.value ? userOpacity : Math.max(0.4, userOpacity);
+});
 const displayCoverUrl = computed(() => {
   void coverFallbackRevision.value;
   return resolveCoverDisplayUrl(coverUrl.value, 400, { scope: 'lyric-background' });
@@ -372,7 +378,7 @@ defineExpose({
     <div
       v-if="hasVisiblePortrait || showCoverFallback"
       class="portrait-overlay"
-      :style="{ opacity: 1 - settings.backdropOpacity / 100, background: dimOverlayColor }"
+      :style="{ opacity: dimOverlayOpacity, background: dimOverlayColor }"
     ></div>
 
     <!-- 歌词区域 -->

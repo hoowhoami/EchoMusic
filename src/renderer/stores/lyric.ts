@@ -612,6 +612,9 @@ const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
 
 // 播放页歌词默认颜色
 export const DEFAULT_LYRIC_PLAYED_COLOR = '#31cfa1';
+/** 浅色歌词页的默认已播放色：品牌绿等色相加深（#31cfa1 对浅背景对比度仅 ~1.8:1，
+ * normalizeAccent 的浅色带 [0.42,0.55] 对它无调整效果，需显式加深常量）。 */
+const DEFAULT_LYRIC_PLAYED_COLOR_LIGHT = '#0e8f66';
 const DEFAULT_LYRIC_UNPLAYED_COLOR = '#ffffff';
 /** 浅色歌词页的默认未播放色：深色文字保证浅背景可读。 */
 const DEFAULT_LYRIC_UNPLAYED_COLOR_LIGHT = LYRIC_PAGE_INK;
@@ -1073,7 +1076,10 @@ export const useLyricStore = defineStore('lyric', {
       return normalizeGlobalLyricOffsetMs(this.globalTimeOffsetMs) + this.currentTrackTimeOffset;
     },
     effectivePlayedColor: (state) =>
-      resolveLyricColor(state.playedColor, DEFAULT_LYRIC_PLAYED_COLOR),
+      resolveLyricColor(
+        state.playedColor,
+        currentLyricPageIsDark() ? DEFAULT_LYRIC_PLAYED_COLOR : DEFAULT_LYRIC_PLAYED_COLOR_LIGHT,
+      ),
     effectiveUnplayedColor: (state) =>
       resolveLyricColor(
         state.unplayedColor,
