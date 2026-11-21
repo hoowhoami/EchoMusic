@@ -16,6 +16,7 @@
     "build:linux": "cd server && npm install --omit=dev && cd .. && vue-tsc --noEmit && vite build && electron-builder --linux",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.ts,.jsx,.tsx --fix",
+    "test": "node --test tests/wallpaper-frame-policy.test.mjs tests/player-resume-scope.test.mjs tests/wallpaper-display-ids.test.mjs tests/taskbar-lyric-roll.test.mjs tests/playback-transition-settings.test.mjs tests/appearance-snapshot.test.mjs tests/detail-page-lifecycle.test.mjs tests/taskbar-window.test.mjs",
     "analyze": "ANALYZE_BUNDLE=1 vite build",
     "format": "prettier --write \"src/**/*.{vue,ts,js,json}\" \"vite.config.mts\" \"tsconfig*.json\""
   },
@@ -58,6 +59,7 @@
     "@vue/devtools-api": "^8.2.1",
     "@vue/eslint-config-prettier": "^10.2.0",
     "@vue/eslint-config-typescript": "^14.7.0",
+    "@vue/server-renderer": "3.5.43",
     "@vueuse/core": "^14.3.0",
     "@webgpu/types": "^0.1.72",
     "autoprefixer": "^10.5.0",
