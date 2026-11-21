@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, toRaw } from 'vue';
+import { isProxy, isRef, ref, toRaw, unref } from 'vue';
 import type { Song } from '@/models/song';
 import type { StorageHistoryAddListenTimeResult, StorageHistoryEntry } from '../../shared/storage';
 import { resolveSongId } from '../../shared/historyStats';
@@ -40,6 +40,24 @@ const toLocalEntry = (entry: StorageHistoryEntry): LocalHistoryEntry => ({
 });
 
 // 歌曲唯一 ID 的解析统一走 shared/historyStats 的 resolveSongId（与统计口径一致）
+
+/**
+ * 递归解除响应式包装。snapshot 的嵌套字段（artists/singers/relateGoods 等）会被
+ * spread 重建路径深度代理后存进 raw target，单层 toRaw 解不干净；IPC 结构化克隆
+ * 拒绝任何 Proxy 节点（"An object could not be cloned"），必须整棵树都还原成普通对象。
+ */
+const deepToRaw = <T>(value: T): T => {
+  let raw: unknown = value;
+  if (isRef(raw)) raw = unref(raw);
+  if (isProxy(raw)) raw = toRaw(raw);
+  if (Array.isArray(raw)) return raw.map((item) => deepToRaw(item)) as unknown as T;
+  if (raw && typeof raw === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(raw)) out[key] = deepToRaw(item);
+    return out as T;
+  }
+  return raw as T;
+};
 
 const upsertEntryAtTop = (
   current: LocalHistoryEntry[],
@@ -179,8 +197,8 @@ export const useHistoryStore = defineStore('history', () => {
 
   /** 记录一次播放，由 player 在 play 事件触发时调用 */
   const recordPlay = async (song: Song) => {
-    // 与 addListenTime 同理：先解掉可能的响应式 Proxy，避免 IPC 结构化克隆失败
-    song = withoutEmbeddedMetadata(toRaw(song));
+    // 与 addListenTime 同理：先整树解除响应式 Proxy，避免 IPC 结构化克隆失败
+    song = withoutEmbeddedMetadata(deepToRaw(song));
     const requestGeneration = generation;
     if (!hydrated.value) await hydrate();
     if (requestGeneration !== generation) return;
@@ -211,10 +229,11 @@ export const useHistoryStore = defineStore('history', () => {
   const addListenTime = async (song: Song, listenedMs: number) => {
     const amount = Math.round(Number(listenedMs));
     if (!Number.isFinite(amount) || amount <= 0) return;
-    // snapshot 顶层常带响应式 Proxy：内嵌元数据补全等路径会用普通字面量重建 snapshot，
-    // 丢失 markRaw 标记后从 reactive state 读出的顶层即 Proxy，IPC 结构化克隆会拒绝
-    // （"An object could not be cloned"），异常被上层吞掉导致时长静默丢失；先解掉包装再落库
-    const plain = withoutEmbeddedMetadata(toRaw(song));
+    // snapshot 顶层与嵌套字段都可能带响应式 Proxy（内嵌元数据补全等路径会用普通字面量
+    // 重建 snapshot，从 reactive state 读出即 Proxy，且 spread 时嵌套字段也被深度代理），
+    // IPC 结构化克隆拒绝 Proxy（"An object could not be cloned"），异常被上层吞掉导致
+    // 时长静默丢失；整树解除包装后再落库
+    const plain = withoutEmbeddedMetadata(deepToRaw(song));
     let result: StorageHistoryAddListenTimeResult | undefined;
     try {
       result = await window.electron?.storage?.addHistoryListenTime?.({
