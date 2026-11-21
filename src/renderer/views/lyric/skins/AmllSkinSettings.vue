@@ -8,12 +8,17 @@ import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import { useLyricSkin } from '../composables/useLyricSkin';
 import {
   AMLL_TEXT_COLOR_FALLBACK,
+  AMLL_TEXT_COLOR_FALLBACK_LIGHT,
   HOST_SKIN_KEYS,
   LYRIC_SKIN_AMLL_DEFAULTS,
   resolveLyricSkinColor,
   type LyricSkinConfigAmll,
 } from './config';
-import { LYRIC_COLOR_PRESETS, getLyricCoverDynamicOption } from '@/composables/useLyricColorPicker';
+import { useLyricPageIsDark } from '../composables/useLyricAppearance';
+import {
+  lyricColorPresetsFor,
+  getLyricCoverDynamicOption,
+} from '@/composables/useLyricColorPicker';
 
 const { settings, patch } = useLyricSkin<LyricSkinConfigAmll>(
   HOST_SKIN_KEYS.amll,
@@ -35,8 +40,12 @@ const patches = {
   wordFadeWidth: (value: number) => patch({ wordFadeWidth: clamp(value, 0.05, 1) }),
 };
 
+const lyricIsDark = useLyricPageIsDark();
+const amllTextFallback = computed(() =>
+  lyricIsDark.value ? AMLL_TEXT_COLOR_FALLBACK : AMLL_TEXT_COLOR_FALLBACK_LIGHT,
+);
 const effectiveTextColor = computed(() =>
-  resolveLyricSkinColor(settings.value.textColor, AMLL_TEXT_COLOR_FALLBACK),
+  resolveLyricSkinColor(settings.value.textColor, amllTextFallback.value),
 );
 const isTextColorOpen = ref(false);
 const openTextColor = () => {
@@ -185,8 +194,8 @@ const restoreDefaults = () => patch({ ...LYRIC_SKIN_AMLL_DEFAULTS });
   <ColorPickerDialog
     :open="isTextColorOpen"
     title="选择歌词颜色"
-    :value="settings.textColor || AMLL_TEXT_COLOR_FALLBACK"
-    :presets="LYRIC_COLOR_PRESETS"
+    :value="settings.textColor || amllTextFallback"
+    :presets="lyricColorPresetsFor(lyricIsDark)"
     :dynamic-option="getLyricCoverDynamicOption()"
     @update:open="(open: boolean) => !open && (isTextColorOpen = false)"
     @confirm="applyTextColor"

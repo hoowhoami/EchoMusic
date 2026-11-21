@@ -21,7 +21,8 @@ const root = resolve('.');
 const fixture = {};
 const stubs = {
   '@/stores/player': 'export const usePlayerStore = () => fixture.controls.player;',
-  '@/stores/setting': 'export const useSettingStore = () => fixture.settings;',
+  '@/stores/setting':
+    'export const useSettingStore = () => fixture.settings; export const LYRIC_PAGE_INK = "#1a1d22"; export const resolveLyricPageIsDark = (mode, appIsDark) => (mode === "follow" ? appIsDark : mode !== "light");',
   '@/stores/lyric':
     'export const useLyricStore = () => fixture.lyric; export const LYRIC_COVER_COLOR_VALUE = "__cover__";',
   '@/stores/toast': 'export const useToastStore = () => fixture.toast;',
@@ -169,6 +170,7 @@ function setupFixture(t) {
     lyricsPageProvider: 'host',
     effectiveWindowBackground: {},
     lyricOffsetStep: 0.5,
+    lyricPageAppearanceMode: 'dark',
   });
   fixture.lyric = reactive({
     lines: [],
@@ -187,7 +189,7 @@ function setupFixture(t) {
     },
   });
   fixture.toast = { warning: (value) => calls.push(['warning', value]), success() {} };
-  fixture.theme = reactive({ accentColor: '#00cc65' });
+  fixture.theme = reactive({ accentColor: '#00cc65', isDark: true });
   const player = reactive({
     currentTime: 2,
     duration: 120,

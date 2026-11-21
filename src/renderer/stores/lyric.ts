@@ -6,6 +6,7 @@ import type { Song } from '@/models/song';
 import { resolvePluginLyric } from '@/plugins/lyrics';
 import { convertLyricLinesForDisplay } from '@/services/opencc';
 import { useThemeStore } from './theme';
+import { LYRIC_PAGE_INK, resolveLyricPageIsDark, useSettingStore } from './setting';
 import { normalizeGlobalLyricOffsetMs, normalizeLyricOffsetMs } from '../../shared/lyricOffset';
 import { resolveMaskedMetadata } from '../../shared/embeddedMetadata';
 import {
@@ -611,14 +612,25 @@ const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
 
 // 播放页歌词默认颜色
 export const DEFAULT_LYRIC_PLAYED_COLOR = '#31cfa1';
-export const DEFAULT_LYRIC_UNPLAYED_COLOR = '#ffffff';
+/** 浅色歌词页的默认已播放色：品牌绿等色相加深（#31cfa1 对浅背景对比度仅 ~1.8:1，
+ * normalizeAccent 的浅色带 [0.42,0.55] 对它无调整效果，需显式加深常量）。 */
+const DEFAULT_LYRIC_PLAYED_COLOR_LIGHT = '#0e8f66';
+const DEFAULT_LYRIC_UNPLAYED_COLOR = '#ffffff';
+/** 浅色歌词页的默认未播放色：深色文字保证浅背景可读。 */
+const DEFAULT_LYRIC_UNPLAYED_COLOR_LIGHT = LYRIC_PAGE_INK;
 export const LYRIC_COVER_COLOR_VALUE = '__cover__';
+
+/** 歌词页当前是否深色（外观模式设置 + 主程序主题共同决定）。供取色器等场景复用。 */
+export const currentLyricPageIsDark = (): boolean => {
+  const settingStore = useSettingStore();
+  const themeStore = useThemeStore();
+  return resolveLyricPageIsDark(settingStore.lyricPageAppearanceMode, themeStore.isDark);
+};
 
 const resolveLyricColor = (value: string, fallback: string): string => {
   if (value === LYRIC_COVER_COLOR_VALUE) {
     const themeStore = useThemeStore();
-    // Lyrics have a dark backdrop regardless of the application theme.
-    return getNormalizedAccent(themeStore.coverColor || DEFAULT_ACCENT, true);
+    return getNormalizedAccent(themeStore.coverColor || DEFAULT_ACCENT, currentLyricPageIsDark());
   }
   return value || fallback;
 };
@@ -1064,9 +1076,17 @@ export const useLyricStore = defineStore('lyric', {
       return normalizeGlobalLyricOffsetMs(this.globalTimeOffsetMs) + this.currentTrackTimeOffset;
     },
     effectivePlayedColor: (state) =>
-      resolveLyricColor(state.playedColor, DEFAULT_LYRIC_PLAYED_COLOR),
+      resolveLyricColor(
+        state.playedColor,
+        currentLyricPageIsDark() ? DEFAULT_LYRIC_PLAYED_COLOR : DEFAULT_LYRIC_PLAYED_COLOR_LIGHT,
+      ),
     effectiveUnplayedColor: (state) =>
-      resolveLyricColor(state.unplayedColor, DEFAULT_LYRIC_UNPLAYED_COLOR),
+      resolveLyricColor(
+        state.unplayedColor,
+        currentLyricPageIsDark()
+          ? DEFAULT_LYRIC_UNPLAYED_COLOR
+          : DEFAULT_LYRIC_UNPLAYED_COLOR_LIGHT,
+      ),
     // 兼容旧代码
     secondaryEnabled: (state) => state.wantTranslation || state.wantRomanization,
     canShowSecondary: (state) => state.hasTranslation || state.hasRomanization,

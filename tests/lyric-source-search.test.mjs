@@ -1,5 +1,6 @@
 import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
+import { LYRIC_PAGE_INK, resolveLyricPageIsDark } from '../src/shared/lyricPageAppearance.ts';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
@@ -58,6 +59,14 @@ function storeFixture(api = {}, resolvePluginLyric = async () => null) {
     '@/plugins/lyrics': { resolvePluginLyric },
     '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
     './theme': { useThemeStore: () => ({}) },
+
+    './setting': {
+      resolveLyricPageIsDark,
+
+      useSettingStore: () => ({ lyricPageAppearanceMode: 'dark' }),
+
+      LYRIC_PAGE_INK,
+    },
     '../../shared/lyricOffset': offset,
     '../../shared/embeddedMetadata': embeddedTags,
     '../../shared/opencc': opencc,
