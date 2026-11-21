@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, toRaw } from 'vue';
 import type { Song } from '@/models/song';
 import type { StorageHistoryAddListenTimeResult, StorageHistoryEntry } from '../../shared/storage';
 import { resolveSongId } from '../../shared/historyStats';
@@ -179,7 +179,8 @@ export const useHistoryStore = defineStore('history', () => {
 
   /** 记录一次播放，由 player 在 play 事件触发时调用 */
   const recordPlay = async (song: Song) => {
-    song = withoutEmbeddedMetadata(song);
+    // 与 addListenTime 同理：先解掉可能的响应式 Proxy，避免 IPC 结构化克隆失败
+    song = withoutEmbeddedMetadata(toRaw(song));
     const requestGeneration = generation;
     if (!hydrated.value) await hydrate();
     if (requestGeneration !== generation) return;
@@ -210,7 +211,10 @@ export const useHistoryStore = defineStore('history', () => {
   const addListenTime = async (song: Song, listenedMs: number) => {
     const amount = Math.round(Number(listenedMs));
     if (!Number.isFinite(amount) || amount <= 0) return;
-    const plain = withoutEmbeddedMetadata(song);
+    // snapshot 顶层常带响应式 Proxy：内嵌元数据补全等路径会用普通字面量重建 snapshot，
+    // 丢失 markRaw 标记后从 reactive state 读出的顶层即 Proxy，IPC 结构化克隆会拒绝
+    // （"An object could not be cloned"），异常被上层吞掉导致时长静默丢失；先解掉包装再落库
+    const plain = withoutEmbeddedMetadata(toRaw(song));
     let result: StorageHistoryAddListenTimeResult | undefined;
     try {
       result = await window.electron?.storage?.addHistoryListenTime?.({
