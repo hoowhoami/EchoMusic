@@ -13,10 +13,12 @@ import { isLyricLineFiltered } from '@/utils/lyricFilter';
 import { useLyricSkin } from './composables/useLyricSkin';
 import {
   AMLL_TEXT_COLOR_FALLBACK,
+  AMLL_TEXT_COLOR_FALLBACK_LIGHT,
   HOST_SKIN_KEYS,
   LYRIC_SKIN_AMLL_DEFAULTS,
   resolveLyricSkinColor,
 } from './skins/config';
+import { useLyricPageIsDark } from './composables/useLyricAppearance';
 import { buildAmllLyricLines } from './amll/convertLyrics';
 import { buildAmllHostStyle } from './amll/hostStyle';
 import { afterPaint } from '@/utils/afterPaint';
@@ -317,14 +319,19 @@ watch(
   },
 );
 
+const lyricIsDark = useLyricPageIsDark();
 const resolvedTextColor = computed(() =>
-  resolveLyricSkinColor(settings.value.textColor, AMLL_TEXT_COLOR_FALLBACK),
+  resolveLyricSkinColor(
+    settings.value.textColor,
+    lyricIsDark.value ? AMLL_TEXT_COLOR_FALLBACK : AMLL_TEXT_COLOR_FALLBACK_LIGHT,
+  ),
 );
 // 歌词字体继承与颜色 CSS 变量的组装规则见 amll/hostStyle.ts。
+// 深色档保持 core 白字默认（未配置时不下发变量）；浅色档必须显式下发深色文字。
 const playerAreaStyle = computed(() =>
   buildAmllHostStyle(
     settingStore.buildLyricFontFamily(),
-    settings.value.textColor,
+    settings.value.textColor || (lyricIsDark.value ? '' : AMLL_TEXT_COLOR_FALLBACK_LIGHT),
     resolvedTextColor.value,
   ),
 );

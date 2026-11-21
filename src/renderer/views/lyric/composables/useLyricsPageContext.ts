@@ -4,6 +4,7 @@ import type { usePlayerControls } from '@/composables/usePlayerControls';
 import { useLyricStore } from '@/stores/lyric';
 import type { AudioQualityValue, AudioEffectValue, PlayMode } from '@/types';
 import { createLyricTimeline } from '@/composables/useLyricTimeline';
+import { useLyricPageIsDark } from './useLyricAppearance';
 
 export type LyricsPagePanel =
   | 'queue'
@@ -26,6 +27,7 @@ export function useLyricsPageContext(
 ) {
   const { player, playlist, currentTrack, currentPlaybackQueue } = controls;
   const lyric = useLyricStore();
+  const lyricIsDark = useLyricPageIsDark();
   const timeline = createLyricTimeline();
   const favoriteBusy = ref(false);
   let disposed = false;
@@ -82,6 +84,8 @@ export function useLyricsPageContext(
       isCloudSource: controls.isResolvedCloudSource.value,
       hasCloudSource: controls.hasCloudAudioSourceOption.value,
       titlebar: titlebar.value,
+      /** 歌词页当前是否深色（外观模式设置 + 主程序主题共同决定）。 */
+      isDark: lyricIsDark.value,
       lyrics: {
         lines: lyric.displayLines,
         currentIndex: lyric.currentIndex,

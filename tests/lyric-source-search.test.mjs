@@ -58,6 +58,16 @@ function storeFixture(api = {}, resolvePluginLyric = async () => null) {
     '@/plugins/lyrics': { resolvePluginLyric },
     '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
     './theme': { useThemeStore: () => ({}) },
+
+    './setting': {
+      resolveLyricPageIsDark: (mode, appIsDark) =>
+        mode === 'follow' ? appIsDark : mode !== 'light',
+
+      useSettingStore: () => ({ lyricPageAppearanceMode: 'dark' }),
+
+
+      LYRIC_PAGE_INK: '#1a1d22',
+    },
     '../../shared/lyricOffset': offset,
     '../../shared/embeddedMetadata': embeddedTags,
     '../../shared/opencc': opencc,

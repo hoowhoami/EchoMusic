@@ -42,6 +42,15 @@ const { useLyricStore } = compile('../src/renderer/stores/lyric.ts', {
   '@/plugins/lyrics': {},
   '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
   './theme': {},
+
+  './setting': {
+    resolveLyricPageIsDark: (mode, appIsDark) => (mode === 'follow' ? appIsDark : mode !== 'light'),
+
+    useSettingStore: () => ({ lyricPageAppearanceMode: 'dark' }),
+
+
+    LYRIC_PAGE_INK: '#1a1d22',
+  },
   '../../shared/lyricOffset': offset,
   '../../shared/embeddedMetadata': embeddedTags,
   '../../shared/opencc': opencc,

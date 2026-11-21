@@ -205,6 +205,16 @@ function store(service) {
     '@/plugins/lyrics': {},
     '@/services/opencc': service,
     './theme': {},
+
+    './setting': {
+      resolveLyricPageIsDark: (mode, appIsDark) =>
+        mode === 'follow' ? appIsDark : mode !== 'light',
+
+      useSettingStore: () => ({ lyricPageAppearanceMode: 'dark' }),
+
+
+      LYRIC_PAGE_INK: '#1a1d22',
+    },
     '../../shared/lyricOffset': offset,
     '../../shared/embeddedMetadata': embeddedTags,
     '../../shared/opencc': opencc,
