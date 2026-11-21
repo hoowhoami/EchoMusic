@@ -543,6 +543,15 @@ export const registerPluginHandlers = (context: IpcContext) => {
     ): { ok: boolean; error?: string } =>
       closePluginWebSocketForPlugin(pluginId, payload, event.sender),
   );
+  // 插件数据库写入成功后，把「这个插件的库变了」广播给所有窗口。
+  // 同一个插件可能在多个窗口里各跑一份实例，插件可据此互相同步自己的状态。
+  const notifyPluginSqliteChanged = (pluginId: string, databaseId: string): void => {
+    const payload = { pluginId, databaseId };
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.isDestroyed()) continue;
+      window.webContents.send('plugins:sqlite:changed', payload);
+    }
+  };
   ipcRegistry.registerHandler(
     'plugins:sqlite:open',
     (_event, pluginId: string, options?: PluginSqliteOpenOptions): PluginSqliteOpenResult =>
@@ -550,8 +559,11 @@ export const registerPluginHandlers = (context: IpcContext) => {
   );
   ipcRegistry.registerHandler(
     'plugins:sqlite:exec',
-    (_event, pluginId: string, databaseId: string, sql: string): PluginSqliteExecResult =>
-      execPluginSqliteForPlugin(pluginId, databaseId, sql),
+    (_event, pluginId: string, databaseId: string, sql: string): PluginSqliteExecResult => {
+      const result = execPluginSqliteForPlugin(pluginId, databaseId, sql);
+      if (result.ok) notifyPluginSqliteChanged(pluginId, databaseId);
+      return result;
+    },
   );
   ipcRegistry.registerHandler(
     'plugins:sqlite:run',
@@ -561,7 +573,11 @@ export const registerPluginHandlers = (context: IpcContext) => {
       databaseId: string,
       sql: string,
       params?: PluginSqliteParams,
-    ): PluginSqliteRunResult => runPluginSqliteForPlugin(pluginId, databaseId, sql, params),
+    ): PluginSqliteRunResult => {
+      const result = runPluginSqliteForPlugin(pluginId, databaseId, sql, params);
+      if (result.ok) notifyPluginSqliteChanged(pluginId, databaseId);
+      return result;
+    },
   );
   ipcRegistry.registerHandler(
     'plugins:sqlite:all',
@@ -592,7 +608,11 @@ export const registerPluginHandlers = (context: IpcContext) => {
       pluginId: string,
       databaseId: string,
       statements: PluginSqliteStatement[],
-    ): PluginSqliteExecResult => transactionPluginSqliteForPlugin(pluginId, databaseId, statements),
+    ): PluginSqliteExecResult => {
+      const result = transactionPluginSqliteForPlugin(pluginId, databaseId, statements);
+      if (result.ok) notifyPluginSqliteChanged(pluginId, databaseId);
+      return result;
+    },
   );
   ipcRegistry.registerHandler(
     'plugins:sqlite:close',

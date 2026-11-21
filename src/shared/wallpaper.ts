@@ -13,10 +13,12 @@ export type WallpaperContentMode = 'follow' | 'lyric';
 
 /** 「仅歌词」画面的质感参数：压暗层与浮尘粒子。 */
 export interface WallpaperTextureSettings {
-  /** 压暗的起点：离屏幕中心的归一化距离。 */
-  edgeStart: number;
-  /** 贴边压黑的浓度。 */
-  edgeDarkness: number;
+  /** 屏幕中心的不透明度（0~1），就是画面上的实际浓度，默认 0.15。 */
+  centerDim: number;
+  /** 屏幕边缘的不透明度（0~1），默认 0.85。 */
+  edgeDim: number;
+  /** 中心到边缘的过渡曲线（0~1）：越小越平，越大则中间变化小、靠边变暗快。 */
+  curve: number;
   /** 浮尘粒子的数量系数（1 = 默认）。 */
   particleDensity: number;
   /** 浮尘粒子的尺寸系数（1 = 默认）。 */
@@ -30,8 +32,9 @@ export interface WallpaperTextureSettings {
 }
 
 export const DEFAULT_WALLPAPER_TEXTURE: WallpaperTextureSettings = {
-  edgeStart: 0.5,
-  edgeDarkness: 0.5,
+  centerDim: 0.15,
+  edgeDim: 0.85,
+  curve: 0.5,
   particleDensity: 1,
   particleSize: 1,
   dimEnabled: true,
@@ -49,12 +52,12 @@ export interface WallpaperPalette {
   dim: string;
   /** 浮尘粒子的颜色。 */
   particle: string;
-  /** 歌词颜色；空字符串表示跟随播放页皮肤。 */
+  /** 歌词颜色；每套配色都给具体色值，不靠空字符串回退到播放页皮肤。 */
   lyric: string;
 }
 
 export const WALLPAPER_PALETTES: WallpaperPalette[] = [
-  { key: 'ink', label: '墨黑', dim: '#000000', particle: '#ffffff', lyric: '' },
+  { key: 'ink', label: '墨黑', dim: '#000000', particle: '#ffffff', lyric: '#ffffff' },
   { key: 'warm', label: '暖褐', dim: '#190802', particle: '#ffc48d', lyric: '#ff9d4a' },
   { key: 'ocean', label: '深海', dim: '#020c15', particle: '#9cc4ff', lyric: '#5f9bff' },
   { key: 'dusk', label: '暮紫', dim: '#110318', particle: '#c6a4ff', lyric: '#9d63ff' },
@@ -115,6 +118,27 @@ export const getWallpaperFramePreset = (
   WALLPAPER_FRAME_PRESETS.find((item) => item.key === DEFAULT_WALLPAPER_FRAME_PROFILE) ??
   WALLPAPER_FRAME_PRESETS[0];
 
+/**
+ * 把持久化的屏幕 id 收敛到「当前真实存在的屏幕」上。
+ *
+ * Electron 在 Windows 上的 Display.id 并不稳定：换缩放、重挂、驱动更新、重启都可能换号。
+ * 旧配置里留下的号一旦全部失效，设置页每块屏的开关都会判成关，主进程又回落到主屏接着画，
+ * 看上去就是「开关全关着，壁纸还在动」。所以两边都先过一遍这里：交集为空时落回主屏。
+ */
+export const pickDisplayIds = (
+  ids: readonly string[] | undefined,
+  available: readonly string[],
+  fallback: string,
+): string[] => {
+  const alive = new Set(available);
+  const kept: string[] = [];
+  for (const id of ids ?? []) {
+    if (typeof id !== 'string' || !alive.has(id) || kept.includes(id)) continue;
+    kept.push(id);
+  }
+  return kept.length > 0 ? kept : [fallback];
+};
+
 export interface WallpaperSettings {
   /** 目标显示器 id（Electron Display.id 的字符串形式）；首次启动会落成主屏 id。 */
   displayIds: string[];
@@ -138,10 +162,6 @@ export const DEFAULT_WALLPAPER_SETTINGS: WallpaperSettings = {
 };
 
 /** 可供选择的显示器。 */
-/**
- * 系统桌面壁纸。url 是 data URL（可能为空：读不到文件或壁纸是纯色），
- * style 是 Windows 的铺法，用于在页面里按同样方式铺开。
- */
 
 export interface WallpaperDisplay {
   id: string;
@@ -152,7 +172,6 @@ export interface WallpaperDisplay {
   primary: boolean;
 }
 
-/** 主进程回给渲染层的壁纸运行状态。 */
 /** 歌词区域在壁纸窗口里的位置（CSS 像素，相对窗口左上角）。 */
 export interface WallpaperLyricRect {
   left: number;
@@ -163,13 +182,13 @@ export interface WallpaperLyricRect {
   dpr: number;
 }
 
+/** 主进程回给渲染层的壁纸运行状态。 */
 export interface WallpaperState {
   enabled: boolean;
   supported: boolean;
   attached: boolean;
   activeDisplayIds: string[];
   coverage: number;
-  fullscreen: boolean;
   /** 当前生效的帧率；0 表示暂停绘制。 */
   frameRate: number;
   /** 当前策略原因，便于渲染层决定是否冻结动画。 */
@@ -190,10 +209,31 @@ const clampDecimal = (value: unknown, fallback: number, min: number, max: number
 const normalizeTexture = (
   input: Partial<WallpaperTextureSettings> | null | undefined,
 ): WallpaperTextureSettings => {
-  const raw = (input ?? {}) as Partial<WallpaperTextureSettings>;
+  const raw = (input ?? {}) as Partial<WallpaperTextureSettings> & {
+    // 旧版字段：只在迁移老配置时用，读出来立刻换算成新口径。
+    edgeStart?: number;
+    edgeDarkness?: number;
+  };
+  const legacy = typeof raw.edgeDarkness === 'number' || typeof raw.edgeStart === 'number';
+  // 旧版中心压暗是「滑块值 × 0.3」的映射，这里反算回真实浓度；旧版压黑范围与曲线同义。
+  const centerDim = legacy
+    ? clampDecimal(
+        typeof raw.centerDim === 'number'
+          ? raw.centerDim * 0.3
+          : DEFAULT_WALLPAPER_TEXTURE.centerDim,
+        DEFAULT_WALLPAPER_TEXTURE.centerDim,
+        0,
+        1,
+      )
+    : clampDecimal(raw.centerDim, DEFAULT_WALLPAPER_TEXTURE.centerDim, 0, 1);
   return {
-    edgeStart: clampDecimal(raw.edgeStart, DEFAULT_WALLPAPER_TEXTURE.edgeStart, 0, 1),
-    edgeDarkness: clampDecimal(raw.edgeDarkness, DEFAULT_WALLPAPER_TEXTURE.edgeDarkness, 0, 1),
+    centerDim,
+    edgeDim: legacy
+      ? clampDecimal(raw.edgeDarkness, DEFAULT_WALLPAPER_TEXTURE.edgeDim, 0, 1)
+      : clampDecimal(raw.edgeDim, DEFAULT_WALLPAPER_TEXTURE.edgeDim, 0, 1),
+    curve: legacy
+      ? clampDecimal(raw.edgeStart, DEFAULT_WALLPAPER_TEXTURE.curve, 0, 1)
+      : clampDecimal(raw.curve, DEFAULT_WALLPAPER_TEXTURE.curve, 0, 1),
     particleDensity: clampDecimal(
       raw.particleDensity,
       DEFAULT_WALLPAPER_TEXTURE.particleDensity,

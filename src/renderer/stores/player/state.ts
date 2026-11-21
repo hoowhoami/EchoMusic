@@ -23,7 +23,7 @@ export interface ResumePosition {
   title?: string;
 }
 
-/** 详情页续播条目：kind 决定它属于哪个桶（有声/长专 / 专辑 / 歌手 / 歌单）。 */
+/** 详情页续播条目：kind 决定它属于哪个桶（有声 / 专辑 / 歌手 / 歌单）。 */
 export interface ResumeScopeRef {
   kind: 'audiobook' | 'album' | 'artist' | 'playlist';
   id: string;
@@ -38,6 +38,12 @@ export interface ResumeScopeRef {
   routeId?: string;
   /** 歌单桶专用：路由上的 type（user / special / album）。 */
   routeType?: string;
+}
+
+/** 这次起播由哪个详情页认领；null 表示不是详情页点播，进度只记单曲线。 */
+export interface ResumeClaim {
+  kind: ResumeScopeRef['kind'];
+  id: string;
 }
 
 const createPlaybackIntent = (): PlaybackIntent => ({
@@ -71,8 +77,10 @@ export const createPlayerState = () => ({
   currentTime: 0,
   /** 续播进度：曲目 id → 记录线（entry）→ 进度；同一首在不同卡上各记各的。 */
   resumePositions: {} as Record<string, Record<string, ResumePosition>>,
-  /** 详情页续播桶：有声/长专 / 专辑 / 歌单 / 歌手各 20 条，顺序即 LRU。 */
+  /** 详情页续播桶：有声 / 专辑 / 歌单 / 歌手各 20 条，顺序即 LRU。 */
   resumeScopes: [] as ResumeScopeRef[],
+  /** 当前这次起播的认领来源；不持久化，换队列/换入口时会重设。 */
+  resumeClaim: null as ResumeClaim | null,
   // EOF survives pause events; resuming an exhausted source must reload it.
   playbackEnded: false,
   currentTimeUpdatedAt: 0,

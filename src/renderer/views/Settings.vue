@@ -262,6 +262,13 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '定位后自动续播',
       '定位上次播放',
       '自动续播',
+      '续播卡',
+      '续播卡总开关',
+      '搜索卡',
+      '详情卡',
+      '提示卡',
+      '提示卡停留时间',
+      '续播牌堆',
       '默认音质',
       '智能兼容模式',
       '云盘文件',
@@ -882,13 +889,6 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
         <template #footer>
           <Button
             class="settings-button"
-            variant="outline"
-            size="default"
-            @click="showConfirmClear = false"
-            >取消</Button
-          >
-          <Button
-            class="settings-button"
             variant="danger"
             size="default"
             @click="
@@ -896,6 +896,13 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
               showConfirmClear = false;
             "
             >确认清除</Button
+          >
+          <Button
+            class="settings-button"
+            variant="outline"
+            size="default"
+            @click="showConfirmClear = false"
+            >取消</Button
           >
         </template>
       </Dialog>

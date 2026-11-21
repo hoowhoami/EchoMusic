@@ -165,7 +165,8 @@ export interface NativeWallpaperMonitor {
 }
 
 export interface NativeWallpaper {
-  wallpaperAttach(handle: string): string;
+  /** 挂到桌面层（WorkerW）。返回值没有意义：失败会直接抛错。 */
+  wallpaperAttach(handle: string): void;
   wallpaperResize(handle: string, x: number, y: number, width: number, height: number): void;
   wallpaperDetach(handle: string): void;
   WallpaperMonitor: new (

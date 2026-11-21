@@ -72,7 +72,6 @@ const {
   toggleFavorite,
   playModeLabel,
   playModeIcon,
-  toggleDesktopLyric,
   resolveNumericId,
   goToComments,
   hasCurrentTrackMv,
@@ -97,12 +96,8 @@ const overlayToggles = useOverlayToggles();
 const desktopSurfaceActive = computed(
   () => overlayToggles.wallpaperEnabled.value || desktopLyricStore.settings.enabled,
 );
-const desktopSurfaceHint = computed(() => {
-  if (overlayToggles.desktopSurfaceLocked.value) return '刚切换过，请稍候';
-  if (overlayToggles.wallpaperEnabled.value) return '关闭动态歌词壁纸';
-  if (desktopLyricStore.settings.enabled) return '切换到动态歌词壁纸';
-  return '开启桌面歌词';
-});
+// 桌面层按钮不再一按即关：点开就是一个两项菜单，当前开着的那项由菜单里的颜色标出。
+const desktopSurfaceHint = computed(() => overlayToggles.desktopSurfaceHint.value);
 
 const isPlaybackLoading = computed(() => player.playbackIsLoading);
 
@@ -372,27 +367,28 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'desktop-lyric',
     // 桌面歌词与动态壁纸合成一个按钮：图标和提示跟着当前形态走。
-    title: overlayToggles.wallpaperEnabled.value ? '动态歌词壁纸' : '桌面歌词',
-    icon: (overlayToggles.wallpaperEnabled.value ? iconImage : iconTypography) as IconifyIcon,
-    tooltip: desktopSurfaceHint.value,
+    title:
+      overlayToggles.desktopSurfaceIconKind.value === 'wallpaper' ? '动态歌词壁纸' : '桌面歌词',
+    icon: (overlayToggles.desktopSurfaceIconKind.value === 'wallpaper'
+      ? iconImage
+      : iconTypography) as IconifyIcon,
+    // 菜单开着时传空串：Button 把空串当作「这次不弹提示」，传 undefined 会回落标题又冒出来。
+    tooltip: overlayToggles.desktopSurfaceMenu.open ? '' : desktopSurfaceHint.value,
     defaultPlacement: 'right',
     order: 50,
     visible: true,
     active: desktopSurfaceActive.value,
     badge: desktopSurfaceActive.value ? 'ON' : 'OFF',
-    badgeTitle: overlayToggles.wallpaperEnabled.value ? '动态歌词壁纸' : '桌面歌词',
+    badgeTitle:
+      overlayToggles.desktopSurfaceIconKind.value === 'wallpaper' ? '动态歌词壁纸' : '桌面歌词',
     badgeDefaultVisible: settingStore.showDesktopLyricStatus,
-    onClick: () => void overlayToggles.cycleDesktopSurface(),
+    onClick: () => overlayToggles.openDesktopSurfaceMenu(),
   },
   {
     id: 'taskbar-lyric',
     title: '任务栏歌词',
     icon: iconLayoutBottombar as IconifyIcon,
-    tooltip: overlayToggles.taskbarLocked.value
-      ? '刚切换过，请稍候'
-      : overlayToggles.taskbarEnabled.value
-        ? '关闭任务栏歌词'
-        : '开启任务栏歌词',
+    tooltip: overlayToggles.taskbarEnabled.value ? '关闭任务栏歌词' : '开启任务栏歌词',
     defaultPlacement: 'right',
     order: 51,
     visible: overlayToggles.supported,
@@ -447,6 +443,10 @@ const centerPlayerBarActions = computed(() => renderedPlayerBarActions.value.cen
 const rightPlayerBarActions = computed(() => renderedPlayerBarActions.value.right);
 
 const overflowPlayerBarActions = computed(() => renderedPlayerBarActions.value.overflow);
+
+/** 按钮提示：空串表示这次不弹（菜单开着等场景），其余回落标题。 */
+const actionTooltip = (item: { tooltip?: string; title?: string }) =>
+  item.tooltip === '' ? '' : item.tooltip || item.title;
 
 const activatePlayerBarAction = (item: ResolvedPlayerBarAction) => {
   if (item.disabled) return;
@@ -686,7 +686,7 @@ onUnmounted(() => {
                     'is-favorite': item.key === 'favorite' && item.active,
                   }"
                   :disabled="item.disabled"
-                  :tooltip="item.tooltip || item.title"
+                  :tooltip="actionTooltip(item)"
                   :aria-label="item.tooltip || item.title"
                   @click="activatePlayerBarAction(item)"
                 >
@@ -746,7 +746,7 @@ onUnmounted(() => {
                   },
                 ]"
                 :disabled="item.disabled && item.id !== 'play-toggle'"
-                :tooltip="item.tooltip || item.title"
+                :tooltip="actionTooltip(item)"
                 :aria-label="item.tooltip || item.title"
                 :aria-busy="item.id === 'play-toggle' ? isPlaybackLoading : undefined"
                 @click="activatePlayerBarAction(item)"
@@ -804,7 +804,7 @@ onUnmounted(() => {
                 'is-favorite': item.key === 'favorite' && item.active,
               }"
               :disabled="item.disabled"
-              :tooltip="item.tooltip || item.title"
+              :tooltip="actionTooltip(item)"
               :aria-label="item.tooltip || item.title"
               @click="activatePlayerBarAction(item)"
             >

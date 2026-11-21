@@ -102,30 +102,31 @@ test('parent-driven opening and closing do not echo updates', async (t) => {
 
 test('confirmation closes once and ignores another callback after close', (t) => {
   const s = fixture(t, { open: true });
-  s.click(1);
-  s.click(1);
+  // 主操作在左、取消在右：确认是第 0 个按钮。
+  s.click(0);
+  s.click(0);
   assert.deepEqual(s.events, [['open', false], ['confirm']]);
 });
 
 test('disabled and loading confirmations cannot emit destructive actions', async (t) => {
   const s = fixture(t, { open: true, disabled: true });
-  s.click(1);
+  s.click(0);
   assert.deepEqual(s.events, []);
   s.props.disabled = false;
   s.props.confirmLoading = true;
   await vue.nextTick();
-  s.click(1);
+  s.click(0);
   assert.deepEqual(s.events, []);
   s.props.confirmLoading = false;
   s.props.confirmDisabled = true;
   await vue.nextTick();
-  s.click(1);
+  s.click(0);
   assert.deepEqual(s.events, []);
 });
 
 test('cancel emits once while passive dismissal does not masquerade as cancel', (t) => {
   const s = fixture(t, { open: true });
-  s.click(0);
-  s.click(0);
+  s.click(1);
+  s.click(1);
   assert.deepEqual(s.events, [['open', false], ['cancel']]);
 });

@@ -130,7 +130,7 @@ unsafe fn find_host() -> Option<HWND> {
     Some(progman)
 }
 
-/// 把窗口挂到桌面层。返回是否成功挂到了 WorkerW（而非 Progman 兜底）。
+/// 把窗口挂到桌面层。找不到宿主窗口时直接抛错，调用方按失败处理（重试/销毁窗口）。
 #[napi]
 pub fn wallpaper_attach(handle: String) -> napi::Result<()> {
     let child = parse_handle(&handle)?;

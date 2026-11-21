@@ -134,6 +134,7 @@ import type {
   PluginSetSafeModeResult,
   PluginSqliteCloseResult,
   PluginSqliteDeleteResult,
+  PluginSqliteChangedEvent,
   PluginSqliteExecResult,
   PluginSqliteListResult,
   PluginSqliteOpenOptions,
@@ -742,7 +743,9 @@ contextBridge.exposeInMainWorld('electron', {
       invokeWithPlainPayload<TaskbarLyricState>('taskbar-player:set-enabled', enabled),
     setSettings: (settings: Partial<TaskbarLyricSettings>) =>
       invokeWithPlainPayload<TaskbarLyricState>('taskbar-player:set-settings', settings),
-    setContentWidth: (width: number) => ipcRenderer.send('taskbar-player:content-width', width),
+    setContentWidth: (width: number, align?: 'start' | 'center', left?: number) =>
+      ipcRenderer.send('taskbar-player:content-width', { width, align, left }),
+    setBlank: (blank: boolean) => ipcRenderer.send('taskbar-player:content-blank', blank),
     showMain: () => ipcRenderer.send('taskbar-player:show-main'),
     onStateChange: (callback: (state: TaskbarLyricState) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: TaskbarLyricState) =>
@@ -1717,6 +1720,18 @@ contextBridge.exposeInMainWorld('electron', {
           pluginId,
           name,
         ) as Promise<PluginSqliteDeleteResult>,
+      // 监听任意窗口里本插件数据库的写入：插件可据此在自己的多个窗口之间同步状态。
+      onChanged: (listener: (event: PluginSqliteChangedEvent) => void) => {
+        const wrapped = (_event: Electron.IpcRendererEvent, payload: PluginSqliteChangedEvent) => {
+          if (!payload || typeof payload !== 'object') return;
+          listener({
+            pluginId: String(payload.pluginId || ''),
+            databaseId: String(payload.databaseId || ''),
+          });
+        };
+        ipcRenderer.on('plugins:sqlite:changed', wrapped);
+        return () => ipcRenderer.removeListener('plugins:sqlite:changed', wrapped);
+      },
     },
     storage: {
       get: <T = unknown>(pluginId: string, key: string) =>

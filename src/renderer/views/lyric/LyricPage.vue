@@ -6,14 +6,11 @@ const props = defineProps<{
   presentation?: 'host' | 'wallpaper';
   /** 壁纸「仅歌词」模式：背景压成半透明黑，歌词直接浮在桌面壁纸上。 */
   clearBackground?: boolean;
-  /** 壁纸「仅歌词」：是否叠加压暗层（对应壁纸设置里的布纹压暗开关，关掉就完全不压黑）。 */
-  dimWallpaper?: boolean;
   /** 壁纸窗口使用：写真皮肤的歌词收起状态由播放页决定。 */
   portraitCollapsed?: boolean;
   /** 壁纸配色自带的歌词颜色；空值表示跟随皮肤设置。 */
   lyricColor?: string;
 }>();
-const isWallpaper = computed(() => props.presentation === 'wallpaper');
 
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue';
 import { usePlayerStore } from '@/stores/player';
@@ -68,6 +65,8 @@ import {
   iconRefreshCw,
   iconCopy,
 } from '@/icons';
+
+const isWallpaper = computed(() => props.presentation === 'wallpaper');
 
 const barrageRef = ref<InstanceType<typeof BarrageLayer> | null>(null);
 
@@ -286,10 +285,17 @@ const openPanel = async (panel: LyricsPagePanel) => {
       break;
   }
 };
-const pageContext = useLyricsPageContext(controls, titlebar, openPanel, closePanels, {
-  enabled: barrageEnabled,
-  send: (content: string) => barrageRef.value?.onSent(content),
-});
+const pageContext = useLyricsPageContext(
+  controls,
+  titlebar,
+  openPanel,
+  closePanels,
+  {
+    enabled: barrageEnabled,
+    send: (content: string) => barrageRef.value?.onSent(content),
+  },
+  { wallpaper: isWallpaper, clearBackground: isClearWallpaper },
+);
 watch(pluginPage, (next, previous) => {
   // The host skin drawer owns the switch and must remain open for further selections.
   if (next !== previous) closePlaybackPanels();
@@ -464,7 +470,6 @@ onUnmounted(() => {
       'is-portrait': isBuiltinSkin && viewMode === 'portrait',
       'is-plugin-page': !!pluginPage,
       'is-clear-wallpaper': isWallpaper && props.clearBackground,
-      'is-texture-dim': isWallpaper && props.clearBackground && props.dimWallpaper !== false,
     }"
     :style="pageStyle"
     @mousemove="handlePageMouseMove"
@@ -1206,18 +1211,8 @@ onUnmounted(() => {
   text-shadow: 0 1px 10px rgb(0 0 0 / 45%);
 }
 
-/* 压暗层：歌词所在的中部约 50%，越往屏幕四周越暗。
-   与布纹压暗是同一组效果，关掉布纹压暗时这里也不再压黑，桌面原样露出来。 */
-.lyric-page.is-clear-wallpaper.is-texture-dim,
-.lyric-page.is-clear-wallpaper.is-texture-dim.is-portrait {
-  background: radial-gradient(
-    120% 90% at 50% 50%,
-    rgb(0 0 0 / 55%) 0%,
-    rgb(0 0 0 / 62%) 42%,
-    rgb(0 0 0 / 82%) 78%,
-    rgb(0 0 0 / 94%) 100%
-  );
-}
+/* 压暗只有一层：壁纸页的 WallpaperDim 画布层，参数来自壁纸设置（布纹压暗），
+   这里不再叠加写死的 CSS 渐变，否则两层压暗只有一层可调。 */
 
 .lyric-page.is-clear-wallpaper .lyric-background {
   display: none;

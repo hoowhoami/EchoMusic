@@ -41,7 +41,14 @@ function harness(highRefreshRate = false) {
     lastAppliedTimeMs: NaN,
     openingLayoutPending: false,
   };
-  const start = runInNewContext(`${loopSource}\nrequestFrame;`, context);
+  // 组件依赖页面冻结判定与帧预算表：前者跟随 document.hidden，后者在 harness 里等价于直接向 rAF 要帧。
+  // 两个桩必须一起塞进同一段源码里求值，否则函数体会在外部作用域解析标识符而拿不到 context。
+  const harnessSource = `${loopSource}
+const isPageFrozen = () => document.hidden === true;
+const scheduleDrawFrame = (_key, draw) => requestAnimationFrame(draw);
+const cancelScheduledFrame = () => {};
+requestFrame;`;
+  const start = runInNewContext(harnessSource, context);
   return {
     updates,
     timelineUpdates,

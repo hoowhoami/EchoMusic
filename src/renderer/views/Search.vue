@@ -26,6 +26,11 @@ import type { ArtistMeta } from '@/models/artist';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import { RESUME_SCOPE_LABEL, resumeRecordForScope } from '@/stores/player/resume';
+import {
+  RESUME_LOCATE_FAILED_TEXT,
+  navigateResumeTarget,
+  requestResumeHintPlay,
+} from '@/utils/resumeHint';
 import { formatDuration } from '@/utils/format';
 import { resolvePlaylistRoute } from '@/utils/playlistRoute';
 import type { ResumeCardKind, ResumeEntryCard } from './search/resumeCard';
@@ -572,7 +577,7 @@ onBeforeUnmount(() => {
   detachScrollTarget();
 });
 
-// 搜索页右上角「上次播放」：只查本地续播桶，按 有声/长专 > 歌单 > 歌手 > 专辑 排
+// 搜索页右上角「上次播放」：只查本地续播桶，按 有声 > 歌单 > 歌手 > 专辑 排
 const RESUME_CARD_ORDER: ResumeCardKind[] = ['audiobook', 'playlist', 'artist', 'album'];
 
 // 只比文字，忽略标点与空白：「夜的·命名术」也算命中「夜的命名术」
@@ -581,20 +586,23 @@ const normalizeName = (value: string) =>
 
 type ResumeScopeItem = (typeof playerStore.resumeScopes)[number];
 
-// 参与匹配的文字：桶名（有声/长专/专辑/歌单/歌手名）＋ 桶里记的那一首的标题
-// （有声/长专的章节名＝专辑/歌单里的歌曲名，所以同样参与匹配）
+// 参与匹配的文字：桶名（有声/专辑/歌单/歌手名）＋ 桶里记的那一首的标题
+// （有声的章节名＝专辑/歌单里的歌曲名，所以同样参与匹配）
 const resumeTexts = (scope: ResumeScopeItem): string[] => {
   const record = resumeRecordForScope(playerStore.$state, scope);
   return [scope.name ?? '', record?.title ?? ''].map((text) => text.trim()).filter(Boolean);
 };
 
 const resumeEntries = computed<ResumeEntryCard[]>(() => {
+  // 设置里关掉了续播卡或搜索页续播牌堆，就一张都不摆
+  if (!settingStore.resumeHintEnabled || !settingStore.resumeHintDeckEnabled) return [];
   const keyword = normalizeName(currentSearchKeyword.value.trim());
   if (!hasSearched.value || !keyword) return [];
   // 双向包含：关键词含文字（关键词更长）或文字含关键词（带后缀/前后缀）都算命中；桶名与章节名同等对待
   const matched = playerStore.resumeScopes.filter((scope) => {
-    // 只打开过详情页、一次都没播放过的空桶不上卡片
-    if (!scope.trackId) return false;
+    // 没播放过的桶不建卡：卡片代表「上次听到这里」，只有真正写进进度（position > 0）的才算
+    const record = resumeRecordForScope(playerStore.$state, scope);
+    if (!record || !(record.position > 0)) return false;
     return resumeTexts(scope).some((text) => {
       const normalized = normalizeName(text);
       return !!normalized && (normalized.includes(keyword) || keyword.includes(normalized));
@@ -602,12 +610,8 @@ const resumeEntries = computed<ResumeEntryCard[]>(() => {
   });
   const cards = matched.map<ResumeEntryCard>((scope) => {
     const record = resumeRecordForScope(playerStore.$state, scope);
-    const where = record && record.position > 0 ? formatDuration(record.position) : '';
-    const hint = where
-      ? record?.title
-        ? `${record.title} · ${where}`
-        : `上次听到 ${where}`
-      : '还没播放过';
+    const where = formatDuration(record?.position ?? 0);
+    const hint = record?.title ? `${record.title} · ${where}` : `上次听到 ${where}`;
     return {
       key: `${scope.kind}:${scope.id}`,
       kind: scope.kind,
@@ -632,45 +636,59 @@ const resumeEntries = computed<ResumeEntryCard[]>(() => {
   };
   const tierMap = new Map(matched.map((scope) => [`${scope.kind}:${scope.id}`, tierOf(scope)]));
   const tier = (key: string): number => tierMap.get(key) ?? 2;
-  // 同档内：时间越新越靠前（最上面），同一时刻再按 有声/长专 > 歌单 > 歌手 > 专辑 兜底
+  // 同档内：时间越新越靠前（最上面），同一时刻再按 有声 > 歌单 > 歌手 > 专辑 兜底
   const rank = (kind: ResumeCardKind): number => RESUME_CARD_ORDER.indexOf(kind);
   return cards.sort(
     (a, b) => tier(a.key) - tier(b.key) || b.updatedAt - a.updatedAt || rank(a.kind) - rank(b.kind),
   );
 });
 
-const openResumeEntry = (entry: ResumeEntryCard) => {
-  const locate = { locate: 'resume' };
-  if (entry.kind === 'audiobook') {
-    void router.push({
-      name: 'album-detail',
-      params: { id: entry.id },
-      query: { ...locate, category: '2' },
-    });
-    return;
-  }
-  if (entry.kind === 'album') {
-    void router.push({ name: 'album-detail', params: { id: entry.id }, query: locate });
-    return;
-  }
-  if (entry.kind === 'playlist') {
+const openResumeEntry = async (entry: ResumeEntryCard) => {
+  // 统一走「续播请求」：落地页收到就自己滚到那一集、高亮、按设置起播
+  requestResumeHintPlay(entry.key);
+  const id = String(entry.id);
+  let reached = false;
+  if (entry.kind === 'audiobook' || entry.kind === 'album') {
+    reached = await navigateResumeTarget(
+      router,
+      {
+        name: 'album-detail',
+        params: { id },
+        query: entry.kind === 'audiobook' ? { category: '2' } : {},
+      },
+      'album-detail',
+      id,
+    );
+  } else if (entry.kind === 'playlist') {
     // 桶里记的是歌单自己的 id，路由要的是 collection 串：桶上存过就直接用，没存过再按用户歌单列表反查
     const target = entry.routeId
       ? { id: entry.routeId, type: entry.routeType ?? null }
       : resolvePlaylistRoute(entry.id, playlistStore.userPlaylists, userStore.info?.userid);
-    void router.push({
-      name: 'playlist-detail',
-      params: { id: target.id },
-      query: target.type ? { ...locate, type: target.type } : locate,
-    });
-    return;
+    reached = await navigateResumeTarget(
+      router,
+      {
+        name: 'playlist-detail',
+        params: { id: target.id },
+        query: target.type ? { type: target.type } : {},
+      },
+      'playlist-detail',
+      String(target.id),
+    );
+  } else {
+    reached = await navigateResumeTarget(
+      router,
+      { name: 'artist-detail', params: { id } },
+      'artist-detail',
+      id,
+    );
   }
-  void router.push({ name: 'artist-detail', params: { id: entry.id }, query: locate });
+  if (!reached) toastStore.warning(RESUME_LOCATE_FAILED_TEXT);
 };
 
 // 续播卡右键删除：把这条记录从续播桶里摘掉（下一次写盘就没了）
 const removeResumeEntry = (entry: ResumeEntryCard) => {
   playerStore.forgetResumeScope(entry.kind, entry.id);
+  toastStore.actionCompleted('已移除续播记录');
 };
 </script>
 
@@ -682,7 +700,7 @@ const removeResumeEntry = (entry: ResumeEntryCard) => {
         :has-searched="hasSearched"
         :keyword="currentSearchKeyword"
         :show-pinned-tabs="showPinnedTabs"
-        :tabs="['单曲', '歌单', '专辑', '有声/长专', '歌手', '歌词', 'MV']"
+        :tabs="['单曲', '歌单', '专辑', '有声', '歌手', '歌词', 'MV']"
         :resume-entries="resumeEntries"
         @update:active-tab-index="selectSearchTab"
         @open-resume="openResumeEntry"

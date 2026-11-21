@@ -148,6 +148,20 @@ async function setup({
     '../windowBackgroundThrottling': throttling,
     './windowBackgroundThrottling': throttling,
     'node:os': { release: () => '25.0.0' },
+    // 窗口模块开始读 devtools 调试端口配置，测试里给默认值即可。
+    '../../shared/devTools': {
+      DEFAULT_DEVTOOLS_DEBUG_PORT: 9223,
+      MIN_DEVTOOLS_DEBUG_PORT: 1024,
+      MAX_DEVTOOLS_DEBUG_PORT: 65535,
+      parseDevToolsDebugPort: () => null,
+      normalizeDevToolsDebugPort: (value) => Number(value) || 9223,
+    },
+    '../shared/devTools': {
+      DEFAULT_DEVTOOLS_DEBUG_PORT: 9223,
+      parseDevToolsDebugPort: () => null,
+      normalizeDevToolsDebugPort: (value) => Number(value) || 9223,
+    },
+
     path: { join },
     electron: {
       ipcMain: new EventEmitter(),
@@ -570,6 +584,20 @@ test('plugin host show-on-top explicitly raises and waits for main window presen
   const modules = {
     electron: {},
     'node:os': { release: () => '25.0.0' },
+    // 窗口模块开始读 devtools 调试端口配置，测试里给默认值即可。
+    '../../shared/devTools': {
+      DEFAULT_DEVTOOLS_DEBUG_PORT: 9223,
+      MIN_DEVTOOLS_DEBUG_PORT: 1024,
+      MAX_DEVTOOLS_DEBUG_PORT: 65535,
+      parseDevToolsDebugPort: () => null,
+      normalizeDevToolsDebugPort: (value) => Number(value) || 9223,
+    },
+    '../shared/devTools': {
+      DEFAULT_DEVTOOLS_DEBUG_PORT: 9223,
+      parseDevToolsDebugPort: () => null,
+      normalizeDevToolsDebugPort: (value) => Number(value) || 9223,
+    },
+
     './registry': {
       ipcRegistry: {
         registerHandler: (name, handler) => handlers.set(name, handler),

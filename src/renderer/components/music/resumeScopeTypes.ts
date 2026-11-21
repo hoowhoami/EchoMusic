@@ -9,6 +9,8 @@ export interface ResumeRow {
   name: string;
   cover: string;
   hint: string;
+  /** 完整章节名（hint 可能被裁成「第 19 集」），搜索时用它兜住章节名命中。 */
+  searchText: string;
   position: number;
   duration: number;
   updatedAt: number;

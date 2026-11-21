@@ -8,6 +8,7 @@ import Checkbox from '@/components/ui/Checkbox.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import { useToastStore } from '@/stores/toast';
 import { iconHeart, iconList, iconMusic } from '@/icons';
+import { isAllSelected, isKeySelected, toggleAllKeys, toggleKey } from '@/utils/cardBatchSelection';
 
 interface CardBatchItem {
   key: string;
@@ -19,7 +20,7 @@ interface CardBatchItem {
 interface Props {
   open?: boolean;
   items: CardBatchItem[];
-  /** 类型名：歌手 / 用户 / 专辑 / 有声/长专 / 视频，用于空态与提示文案。 */
+  /** 类型名：歌手 / 用户 / 专辑 / 有声 / 视频，用于空态与提示文案。 */
   label: string;
   /** 批量动作名：取消关注 / 取消收藏，用于按钮与提示文案。 */
   actionLabel: string;
@@ -37,21 +38,20 @@ const selectedKeys = ref<string[]>([]);
 const busy = ref(false);
 
 const selectedCount = computed(() => selectedKeys.value.length);
-const allSelected = computed(
-  () => props.items.length > 0 && selectedKeys.value.length === props.items.length,
-);
-const isSelected = (item: CardBatchItem) => selectedKeys.value.includes(item.key);
+const allSelected = computed(() => isAllSelected(selectedKeys.value, props.items.length));
+const isSelected = (item: CardBatchItem) => isKeySelected(selectedKeys.value, item.key);
 
 const toggleRow = (item: CardBatchItem) => {
   if (busy.value) return;
-  selectedKeys.value = isSelected(item)
-    ? selectedKeys.value.filter((key) => key !== item.key)
-    : [...selectedKeys.value, item.key];
+  selectedKeys.value = toggleKey(selectedKeys.value, item.key);
 };
 
 const toggleAll = () => {
   if (busy.value) return;
-  selectedKeys.value = allSelected.value ? [] : props.items.map((item) => item.key);
+  selectedKeys.value = toggleAllKeys(
+    selectedKeys.value,
+    props.items.map((item) => item.key),
+  );
 };
 
 const close = () => {

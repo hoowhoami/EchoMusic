@@ -1,29 +1,8 @@
-import { readonly, ref, type Ref } from 'vue';
+import { computed, reactive, readonly, ref } from 'vue';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 
-/** 桌面层开关的最短切换间隔：建/拆窗口都有成本，连点会把还没走完的操作叠上去。 */
-const SWITCH_INTERVAL_MS = 2000;
-
-interface SwitchLock {
-  locked: Readonly<Ref<boolean>>;
-  tryLock: () => boolean;
-}
-
-const createSwitchLock = (intervalMs: number): SwitchLock => {
-  const locked = ref(false);
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const tryLock = () => {
-    if (locked.value) return false;
-    locked.value = true;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      locked.value = false;
-      timer = null;
-    }, intervalMs);
-    return true;
-  };
-  return { locked: readonly(locked), tryLock };
-};
+/** 桌面层按钮上两种形态的标识。 */
+export type DesktopSurfaceKind = 'lyric' | 'wallpaper';
 
 /**
  * 播放条 / 歌词页上的桌面层快捷开关。
@@ -34,8 +13,10 @@ const createSwitchLock = (intervalMs: number): SwitchLock => {
 const supported = window.electron?.platform === 'win32';
 const taskbarEnabled = ref(false);
 const wallpaperEnabled = ref(false);
-const desktopSurfaceLock = createSwitchLock(SWITCH_INTERVAL_MS);
-const taskbarLock = createSwitchLock(SWITCH_INTERVAL_MS);
+/** 上一次用过的桌面层形态：都关着时按钮上的图案还留在这一种。 */
+const lastSurface = ref<DesktopSurfaceKind>('lyric');
+/** 桌面层按钮弹出的两项菜单：位置取按钮本身的位置。 */
+const desktopSurfaceMenu = reactive({ open: false, x: 0, y: 0 });
 let started = false;
 
 const applyTaskbar = (state: { enabled?: boolean } | null | undefined) => {
@@ -45,11 +26,13 @@ const applyTaskbar = (state: { enabled?: boolean } | null | undefined) => {
 const applyWallpaper = (state: { enabled?: boolean } | null | undefined) => {
   wallpaperEnabled.value = Boolean(state && state.enabled);
   // 壁纸占住桌面层时主进程会关掉桌面歌词，这里同步本地标志，按钮才不会显示错形态。
-  if (wallpaperEnabled.value) useDesktopLyricStore().setLocal({ enabled: false });
+  if (wallpaperEnabled.value) {
+    lastSurface.value = 'wallpaper';
+    useDesktopLyricStore().setLocal({ enabled: false });
+  }
 };
 
 const toggleTaskbar = async () => {
-  if (!taskbarLock.tryLock()) return;
   const api = window.electron?.taskbarLyric;
   if (!api) return;
   applyTaskbar(await api.setEnabled(!taskbarEnabled.value));
@@ -61,24 +44,87 @@ const toggleWallpaper = async () => {
   applyWallpaper(await api.setEnabled(!wallpaperEnabled.value));
 };
 
-/**
- * 桌面歌词与动态壁纸是同一个位置的两种形态，互斥：关 → 桌面歌词 → 动态壁纸 → 关。
- * 切到壁纸时先关桌面歌词，主进程那边也会再做一次互斥，这里只是让顺序确定。
- */
-const cycleDesktopSurface = async () => {
-  if (!desktopSurfaceLock.tryLock()) return;
-  const desktopLyric = useDesktopLyricStore();
-  if (wallpaperEnabled.value) {
-    await toggleWallpaper();
-    return;
-  }
-  if (desktopLyric.settings.enabled) {
-    await desktopLyric.setEnabled(false);
-    await toggleWallpaper();
-    return;
-  }
-  await desktopLyric.setEnabled(true);
+/** 当前开着的形态；两种都关着时是 null。 */
+const desktopSurfaceCurrent = computed<DesktopSurfaceKind | null>(() => {
+  if (wallpaperEnabled.value) return 'wallpaper';
+  if (useDesktopLyricStore().settings.enabled) return 'lyric';
+  return null;
+});
+
+/** 按钮上的图案：开着显示开的那个，关着显示上次用过的那个。 */
+const desktopSurfaceIconKind = computed<DesktopSurfaceKind>(
+  () => desktopSurfaceCurrent.value ?? lastSurface.value,
+);
+
+const desktopSurfaceActive = computed(() => desktopSurfaceCurrent.value !== null);
+
+/** 菜单里的两项，enabled 的那项就是当前开着的形态。 */
+const desktopSurfaceItems = computed(() => [
+  {
+    key: 'lyric' as DesktopSurfaceKind,
+    label: '桌面歌词',
+    enabled: desktopSurfaceCurrent.value === 'lyric',
+  },
+  {
+    key: 'wallpaper' as DesktopSurfaceKind,
+    label: '动态歌词壁纸',
+    enabled: desktopSurfaceCurrent.value === 'wallpaper',
+  },
+]);
+
+/** 上一次收起菜单的时刻：外部点击会先收起菜单再触发按钮的 click，用它区分「再点一次收回」。 */
+let closedAt = 0;
+const closeDesktopSurfaceMenu = () => {
+  desktopSurfaceMenu.open = false;
+  closedAt = Date.now();
 };
+
+/** 点按钮弹出菜单，菜单开着时再点一次就收起来；拿不到按钮位置时退回右下角。 */
+const openDesktopSurfaceMenu = () => {
+  if (desktopSurfaceMenu.open) {
+    closeDesktopSurfaceMenu();
+    return;
+  }
+  // 菜单开着时点按钮：指针按下的瞬间已经被外部点击监听收起了，这里不要又弹回来。
+  if (Date.now() - closedAt < 300) return;
+  // 鼠标点击会把按钮设为 activeElement，用它当锚点，省得把事件从动作表一路传进来。
+  const rect = (document.activeElement as HTMLElement | null)?.getBoundingClientRect();
+  desktopSurfaceMenu.x = rect ? Math.round(rect.left) : Math.round(window.innerWidth - 200);
+  desktopSurfaceMenu.y = rect ? Math.round(rect.top) : Math.round(window.innerHeight - 120);
+  desktopSurfaceMenu.open = true;
+};
+
+/**
+ * 点菜单里的一项：点已开的那项就是关掉，点另一项就是切过去。
+ * 两种形态互斥，切过去之前先把另一种关掉。
+ */
+const setDesktopSurface = async (kind: DesktopSurfaceKind) => {
+  const desktopLyric = useDesktopLyricStore();
+  const lyricOn = desktopLyric.settings.enabled;
+  const wallpaperOn = wallpaperEnabled.value;
+  if (kind === 'lyric') {
+    if (lyricOn) {
+      await desktopLyric.setEnabled(false);
+    } else {
+      if (wallpaperOn) await toggleWallpaper();
+      lastSurface.value = 'lyric';
+      await desktopLyric.setEnabled(true);
+    }
+  } else if (wallpaperOn) {
+    await toggleWallpaper();
+  } else {
+    if (lyricOn) await desktopLyric.setEnabled(false);
+    lastSurface.value = 'wallpaper';
+    await toggleWallpaper();
+  }
+  closeDesktopSurfaceMenu();
+};
+
+/** 按钮上的提示文案按动作说：开着说关什么，关着说开什么。 */
+const desktopSurfaceHint = computed(() => {
+  const name = desktopSurfaceIconKind.value === 'wallpaper' ? '动态歌词壁纸' : '桌面歌词';
+  return (desktopSurfaceCurrent.value ? '关闭' : '开启') + name;
+});
 
 export function useOverlayToggles() {
   if (!started && supported) {
@@ -101,8 +147,14 @@ export function useOverlayToggles() {
     wallpaperEnabled: readonly(wallpaperEnabled),
     toggleTaskbar,
     toggleWallpaper,
-    cycleDesktopSurface,
-    desktopSurfaceLocked: desktopSurfaceLock.locked,
-    taskbarLocked: taskbarLock.locked,
+    desktopSurfaceMenu: readonly(desktopSurfaceMenu),
+    desktopSurfaceItems,
+    desktopSurfaceCurrent,
+    desktopSurfaceIconKind,
+    desktopSurfaceActive,
+    desktopSurfaceHint,
+    openDesktopSurfaceMenu,
+    closeDesktopSurfaceMenu,
+    setDesktopSurface,
   };
 }

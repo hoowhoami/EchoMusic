@@ -13,6 +13,7 @@ import { iconPlayerPlay } from '@/icons';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { audioQualityOptions, sectionTitles } from '../constants';
 import { calculateNormalizationGainDb } from '../../../../shared/loudness';
+import { RESUME_HINT_MAX_SECS, RESUME_HINT_MIN_SECS } from '@/utils/resumeHint';
 import {
   MAX_FADE_CROSS_SECS,
   TRACK_TRANSITION_OPTIONS,
@@ -34,10 +35,19 @@ const availableAudioQualityOptions = computed(() =>
 );
 // 描述跟着开关状态走：文案说的就是当前实际会发生的事
 const resumePlayOnLocateHint = computed(() =>
-  settingStore.resumeAutoPlayOnLocate
-    ? '详情页定位后从上次的位置接着播放，从续播卡或历史进入同理'
-    : '详情页只定位到那一行，不播放，从续播卡或历史进入同理',
+  settingStore.resumeAutoPlayOnLocate ? '定位到会话后自动播放' : '仅定位到会话，不播放',
 );
+
+// 续播卡停留时长：3~60 秒，超范围直接夹回来，空输入回默认 10
+const resumeHintVisibleInput = computed({
+  get: () => String(settingStore.resumeHintVisibleSecs ?? 10),
+  set: (value: string | number) => {
+    const parsed = Number.parseInt(String(value).trim(), 10);
+    settingStore.resumeHintVisibleSecs = Number.isNaN(parsed)
+      ? 10
+      : Math.max(RESUME_HINT_MIN_SECS, Math.min(parsed, RESUME_HINT_MAX_SECS));
+  },
+});
 
 const defaultAudioQuality = computed(() =>
   clampPreferredAudioQuality(settingStore.defaultAudioQuality, settingStore.viperQualityEnabled),
@@ -137,6 +147,54 @@ const volumeNormalizationStatus = computed(() => {
       </div>
       <Switch v-model="settingStore.resumeAutoPlayOnLocate" />
     </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">续播卡</h3>
+        <p class="text-sm text-text-secondary">快捷的续播入口</p>
+      </div>
+      <Switch v-model="settingStore.resumeHintEnabled" />
+    </div>
+    <template v-if="settingStore.resumeHintEnabled">
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">搜索卡</h3>
+          <p class="text-sm text-text-secondary">搜索词命中关键词，提示跳转继续播放</p>
+        </div>
+        <Switch v-model="settingStore.resumeHintDeckEnabled" />
+      </div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">详情卡</h3>
+          <p class="text-sm text-text-secondary">直接进入专辑、歌手等详情页时，提示已有续播记录</p>
+        </div>
+        <Switch v-model="settingStore.resumeHintPageEnabled" />
+      </div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">提示卡</h3>
+          <p class="text-sm text-text-secondary">播放时会话命中关键词，提示跳转继续播放</p>
+        </div>
+        <Switch v-model="settingStore.resumeHintPopupEnabled" />
+      </div>
+      <template v-if="settingStore.resumeHintPopupEnabled">
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">提示卡停留时间</h3>
+            <p class="text-sm text-text-secondary">提示卡贴出后多久消失</p>
+          </div>
+          <InputNumber
+            class="w-24 shrink-0"
+            :model-value="resumeHintVisibleInput"
+            :min="RESUME_HINT_MIN_SECS"
+            :max="RESUME_HINT_MAX_SECS"
+            :step="1"
+            suffix="秒"
+            @update:model-value="resumeHintVisibleInput = $event"
+          />
+        </div>
+      </template>
+    </template>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

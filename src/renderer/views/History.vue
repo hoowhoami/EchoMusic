@@ -171,22 +171,22 @@ const RESUME_KINDS: ResumeKind[] = ['album', 'audiobook', 'artist', 'playlist'];
 const RESUME_TAB_META: Record<ResumeKind, { label: string; description: string; unit: string }> = {
   album: {
     label: '专辑',
-    description: '记录在专辑页听到的进度，随时回到上次那一首。',
-    unit: '个专辑',
+    description: '记录专辑页的播放进度，一点即回。',
+    unit: '张专辑',
   },
   audiobook: {
-    label: '有声/长专',
-    description: '记录在有声/长专页听到的章节，点开即续。',
-    unit: '本有声/长专',
+    label: '有声',
+    description: '记录有声页的播放进度，一点即回。',
+    unit: '张有声',
   },
   artist: {
     label: '歌手',
-    description: '记录在歌手页播放过的歌曲，一键回到上次的位置。',
+    description: '记录歌手页的播放进度，一点即回。',
     unit: '位歌手',
   },
   playlist: {
     label: '歌单',
-    description: '记录在歌单页听到的进度，点开即续。',
+    description: '记录歌单页的播放进度，一点即回。',
     unit: '个歌单',
   },
 };
@@ -934,7 +934,7 @@ onUnmounted(() => {
                   </TabsTrigger>
                   <TabsTrigger value="audiobook">
                     <span class="badge-label">
-                      有声/长专 <Badge :count="resumeCounts.audiobook" />
+                      有声 <Badge :count="resumeCounts.audiobook" />
                     </span>
                   </TabsTrigger>
                   <TabsTrigger value="artist">
@@ -1052,14 +1052,18 @@ onUnmounted(() => {
           </TabsContent>
 
           <TabsContent value="album" class="px-6">
-            <ResumeScopeTable ref="albumTableRef" kind="album" :searchQuery="resumeQueries.album" />
+            <ResumeScopeTable
+              ref="albumTableRef"
+              kind="album"
+              :search-query="resumeQueries.album"
+            />
           </TabsContent>
 
           <TabsContent value="audiobook" class="px-6">
             <ResumeScopeTable
               ref="audiobookTableRef"
               kind="audiobook"
-              :searchQuery="resumeQueries.audiobook"
+              :search-query="resumeQueries.audiobook"
             />
           </TabsContent>
 
@@ -1067,7 +1071,7 @@ onUnmounted(() => {
             <ResumeScopeTable
               ref="artistTableRef"
               kind="artist"
-              :searchQuery="resumeQueries.artist"
+              :search-query="resumeQueries.artist"
             />
           </TabsContent>
 
@@ -1075,7 +1079,7 @@ onUnmounted(() => {
             <ResumeScopeTable
               ref="playlistTableRef"
               kind="playlist"
-              :searchQuery="resumeQueries.playlist"
+              :search-query="resumeQueries.playlist"
             />
           </TabsContent>
 

@@ -25,6 +25,7 @@ import {
   DEFAULT_WALLPAPER_SETTINGS,
   getWallpaperFramePreset,
   normalizeWallpaperSettings,
+  pickDisplayIds,
   type WallpaperDisplay,
   type WallpaperLyricRect,
   type WallpaperSettings,
@@ -38,6 +39,8 @@ let quitting = false;
 let settings: WallpaperSettings = { ...DEFAULT_WALLPAPER_SETTINGS };
 let settingsLoaded = false;
 let lastPolicy: WallpaperFramePolicy | null = null;
+// 系统睡眠期间不绘制：这里自己藏窗口，别让 hide 监听把它又显示回来。
+let suspended = false;
 let busy: Promise<void> | null = null;
 let disposeNowPlaying: (() => void) | null = null;
 
@@ -47,9 +50,11 @@ const loadSettings = () => {
   const saved = getMainAppSettings();
   enabled = saved.wallpaperEnabled === true;
   settings = normalizeWallpaperSettings(saved.wallpaper);
-  // 没指定过屏幕（首次启动或旧配置）时只勾选主屏幕，其余屏幕留给用户自己开。
-  if (settings.displayIds.length === 0) {
-    settings = { ...settings, displayIds: [String(screen.getPrimaryDisplay().id)] };
+  // Windows 上的 Display.id 会随缩放、重挂、驱动更新、重启换号。名字里留着的旧号一旦全部失效，
+  // 设置页会把每块屏都判成「关」，而壁纸其实回落到主屏还在画 —— 先收敛到现存的屏幕上。
+  const displayIds = pruneDisplayIds(settings.displayIds);
+  if (displayIds.join(',') !== settings.displayIds.join(',')) {
+    settings = { ...settings, displayIds };
     setMainAppSetting('wallpaper', settings);
   }
 };
@@ -64,9 +69,18 @@ const runExclusive = <T>(task: () => Promise<T>): Promise<T> => {
   return next;
 };
 
+// 显示器列表只在 display-* 事件里失效：state() 是热路径（播放中每次策略重算都会走），
+// 每次都调 getAllDisplays() 是白花的主进程调用。
+let displayCache: WallpaperDisplay[] | null = null;
+
+const invalidateDisplayCache = () => {
+  displayCache = null;
+};
+
 const listDisplays = (): WallpaperDisplay[] => {
+  if (displayCache) return displayCache;
   const primary = screen.getPrimaryDisplay();
-  return screen.getAllDisplays().map((display) => ({
+  displayCache = screen.getAllDisplays().map((display) => ({
     id: String(display.id),
     label: display.label || `显示器 ${display.id}`,
     width: display.size.width,
@@ -74,7 +88,21 @@ const listDisplays = (): WallpaperDisplay[] => {
     scaleFactor: display.scaleFactor,
     primary: display.id === primary.id,
   }));
+  return displayCache;
 };
+
+/**
+ * 把持久化的屏幕 id 收敛到当前真实存在的屏幕上（空集回落主屏）。
+ *
+ * 收敛到一处：读配置、改配置、插拔屏幕三条路径都过一遍，否则名单会越攒越多，
+ * 界面上勾不上的屏幕和主进程还在画的屏幕就对不上了。
+ */
+const pruneDisplayIds = (ids: readonly string[]): string[] =>
+  pickDisplayIds(
+    ids,
+    listDisplays().map((display) => display.id),
+    String(screen.getPrimaryDisplay().id),
+  );
 
 const activeDisplayIds = (): string[] => Array.from(surfaces.keys());
 
@@ -95,7 +123,6 @@ const state = (): WallpaperState => {
     activeDisplayIds: activeDisplayIds(),
     // 每块屏各算各的档位，这里报第一块屏的状态给设置页展示。
     coverage: surface?.coverage ?? 0,
-    fullscreen: fullscreenSuppressed,
     frameRate: surface?.policy?.frameRate ?? lastPolicy?.frameRate ?? 0,
     reason: surface?.policy?.reason ?? lastPolicy?.reason ?? 'disabled',
     displays: listDisplays(),
@@ -134,6 +161,7 @@ const isPlayingNow = (): boolean => {
 
 /** 应用省电策略：每块屏各算自己的档位，状态没变就不重复下发。 */
 const applyPolicy = () => {
+  let changed = false;
   if (!surfaces.size) {
     lastPolicy = {
       frameRate: 0,
@@ -174,6 +202,7 @@ const applyPolicy = () => {
     ) {
       continue;
     }
+    changed = true;
     surface.applied = {
       frameRate: policy.frameRate,
       visible: policy.visible,
@@ -194,12 +223,24 @@ const applyPolicy = () => {
     }
     if (!policy.visible && surface.win.isVisible()) surface.win.hide();
   }
-  lastPolicy = representative()?.policy ?? {
+  // lastPolicy 只是「代表屏」那份：多屏时用它给设置页兜底展示，真正的每屏策略看 surface.policy。
+  const nextLast = representative()?.policy ?? {
     frameRate: 0,
     visible: false,
     reason: enabled ? 'detached' : 'disabled',
   };
-  broadcastState();
+  if (
+    !lastPolicy ||
+    lastPolicy.frameRate !== nextLast.frameRate ||
+    lastPolicy.visible !== nextLast.visible ||
+    lastPolicy.reason !== nextLast.reason
+  ) {
+    changed = true;
+  }
+  lastPolicy = nextLast;
+  // 播放进度每 120ms 一跳都会走到这里：档位没变就不广播，
+  // 否则设置页与每个壁纸窗口都被约 8Hz 的状态包拖着重渲染。
+  if (changed) broadcastState();
 };
 
 /**
@@ -246,7 +287,6 @@ const handleOcclusion = (event: WallpaperOcclusionEvent) => {
   if (!surface) return;
   surface.coverage = event.coverage;
   surface.lyricCoverage = event.lyricCoverage;
-  surface.fullscreen = event.fullscreen;
   applyPolicy();
 };
 
@@ -262,12 +302,15 @@ const watchSurface = (surface: WallpaperSurface) => {
     // 主动销毁时 surfaces 里已经不是它了，不用管。
     if (surfaces.get(id) !== surface) return;
     surfaces.delete(id);
-    if (!enabled || quitting) return;
+    // 睡眠时是主动销毁的，别在现场重建，等唤醒后统一建。
+    if (!enabled || quitting || suspended) return;
     void runExclusive(rebuild).catch((error) => log.error('[Wallpaper] 重建失败:', error));
   });
   surface.win.on('hide', () => {
     if (surface.win.isDestroyed()) return;
     if (!surface.policy?.visible) return;
+    // 睡眠时是自己藏的，不是系统把桌面层收起来了：别把 hide 又撤销掉。
+    if (suspended) return;
     // 不该隐藏却隐藏了（系统收起了桌面层），重新显示并按宿主坐标摆正。
     surface.win.showInactive();
     placeWallpaperSurface(surface);
@@ -288,13 +331,9 @@ const handleSurfaceLost = (displayId: string) => {
   const surface = surfaces.get(displayId);
   if (!surface) return;
   surfaces.delete(displayId);
-  try {
-    surface.monitor?.stop();
-  } catch (error) {
-    log.warn('[Wallpaper] 停止遮挡监控失败:', error);
-  }
-  surface.monitor = null;
-  surface.attached = false;
+  // 窗口可能还活着（Explorer 只是把它藏了起来）：一并销毁。只摘记录不销毁的话，
+  // 会留下一个没人管、也不在 surfaces 里的僵尸窗口。
+  destroyWallpaperSurface(surface);
   // 「窗口没了」只有在它本来就该开着的时候才值得重建：开关被关掉，或者这块屏
   // 已经从设置里取消勾选，就只是把这条记录摘掉，不重启。
   if (!enabled || quitting) return;
@@ -317,6 +356,45 @@ const handleSurfaceLost = (displayId: string) => {
   void runExclusive(rebuild).catch((error) => log.error('[Wallpaper] 重建失败:', error));
 };
 
+// 桌面层（Progman/WorkerW）没就绪时挂载会失败——典型场景是 Explorer 刚重启。
+// 设置页承诺「稍后会自动重试」，这里按指数退避重试，和 lossGuard 一起兜住反复失败。
+const mountRetries = new Map<string, { attempts: number; timer: ReturnType<typeof setTimeout> }>();
+const MAX_MOUNT_RETRIES = 5;
+const MOUNT_RETRY_BASE_MS = 1_000;
+const MOUNT_RETRY_MAX_MS = 30_000;
+
+const clearMountRetry = (displayId: string) => {
+  const retry = mountRetries.get(displayId);
+  if (!retry) return;
+  clearTimeout(retry.timer);
+  mountRetries.delete(displayId);
+};
+
+const scheduleMountRetry = (displayId: string) => {
+  if (!enabled || quitting) return;
+  const previous = mountRetries.get(displayId);
+  const attempts = (previous?.attempts ?? 0) + 1;
+  if (previous) clearTimeout(previous.timer);
+  if (attempts > MAX_MOUNT_RETRIES) {
+    mountRetries.delete(displayId);
+    log.warn('[Wallpaper] 桌面层多次未就绪，暂停自动重试', displayId);
+    return;
+  }
+  const delay = Math.min(MOUNT_RETRY_BASE_MS * 2 ** (attempts - 1), MOUNT_RETRY_MAX_MS);
+  log.info('[Wallpaper] 桌面层还没准备好，' + delay + 'ms 后重试挂载', displayId);
+  const timer = setTimeout(() => {
+    mountRetries.delete(displayId);
+    if (!enabled || quitting) return;
+    void runExclusive(rebuild).catch((error) => log.error('[Wallpaper] 重试挂载失败:', error));
+  }, delay);
+  mountRetries.set(displayId, { attempts, timer });
+};
+
+const clearMountRetries = () => {
+  for (const retry of mountRetries.values()) clearTimeout(retry.timer);
+  mountRetries.clear();
+};
+
 const createSurfacesFor = async (displays: Display[]) => {
   const targets: Display[] = [];
   for (const display of displays) {
@@ -335,14 +413,20 @@ const createSurfacesFor = async (displays: Display[]) => {
       createWallpaperSurface(display, handleOcclusion, () => handleSurfaceLost(String(display.id))),
     ),
   );
-  for (const surface of created) {
-    if (!surface) continue;
+  for (const [index, surface] of created.entries()) {
+    if (!surface) {
+      const displayId = targets[index] ? String(targets[index].id) : '';
+      if (displayId) scheduleMountRetry(displayId);
+      continue;
+    }
+    clearMountRetry(surface.displayId);
     surfaces.set(surface.displayId, surface);
     watchSurface(surface);
   }
 };
 
 const destroyAll = () => {
+  clearMountRetries();
   for (const surface of surfaces.values()) destroyWallpaperSurface(surface);
   surfaces.clear();
   lastPolicy = null;
@@ -385,6 +469,12 @@ const releaseDesktopLyric = async () => {
 
 export const setWallpaperEnabled = (value: boolean): Promise<void> => {
   loadSettings();
+  // 非 Windows（或原生模块没编译出来）永远建不出窗口：直接拒绝启用，
+  // 否则会把 enabled=true 写进设置，下次启动再失败一次，界面还显示「已开启」。
+  if (value && getNativeWallpaper() === null) {
+    log.warn('[Wallpaper] 当前平台不支持桌面壁纸，忽略启用请求');
+    return Promise.resolve();
+  }
   if (enabled === value) {
     if (!value) return Promise.resolve();
     startFullscreenWatch();
@@ -412,8 +502,16 @@ export const updateWallpaperSettings = (patch: Partial<WallpaperSettings>): Wall
   // 改了设置说明用户又想看到壁纸了，把「反复消失」的计数清掉重来。
   lossGuard.clear();
   loadSettings();
-  const next = normalizeWallpaperSettings({ ...settings, ...patch });
-  const displaysChanged = next.displayIds.join(',') !== settings.displayIds.join(',');
+  // texture 必须深合并：只改一个滑块时整体替换会把其余键重置成默认值。
+  const next = normalizeWallpaperSettings({
+    ...settings,
+    ...patch,
+    texture: { ...settings.texture, ...(patch.texture ?? {}) },
+  });
+  // 界面传下来的名单里也可能夹着已拔掉的屏幕，落库前先收敛。
+  const displayIds = pruneDisplayIds(next.displayIds);
+  next.displayIds = displayIds;
+  const displaysChanged = displayIds.join(',') !== settings.displayIds.join(',');
   settings = next;
   setMainAppSetting('wallpaper', next);
   if (!displaysChanged) {
@@ -438,6 +536,7 @@ export const restoreWallpaper = (): void => {
 
 export const cleanupWallpaper = (): void => {
   quitting = true;
+  clearMountRetries();
   stopFullscreenWatch();
   setDesktopLyricExclusionHook(null);
   disposeNowPlaying?.();
@@ -503,8 +602,10 @@ export const registerWallpaperHandlers = (): void => {
     surface.lyricRect =
       width > 0 && height > 0
         ? {
-            x: Math.round(surface.rect.x + Number(rect.left) * dpr),
-            y: Math.round(surface.rect.y + Number(rect.top) * dpr),
+            // surface.nativeRect 是屏幕物理像素，渲染层给的是「窗口内 CSS 像素 × dpr」，
+            // 两边同单位才能相加；混用会让副屏（DIP 原点不为 0）的遮挡区域整体偏移。
+            x: Math.round(surface.nativeRect.x + Number(rect.left) * dpr),
+            y: Math.round(surface.nativeRect.y + Number(rect.top) * dpr),
             width,
             height,
           }
@@ -521,12 +622,20 @@ export const registerWallpaperHandlers = (): void => {
   void app.whenReady().then(() => {
     // 显示器增删/缩放变化时按当前设置重挂一遍。
     const onChange = () => {
+      invalidateDisplayCache();
+      // 拔掉的屏幕要让出名单，插上的屏幕才能被勾上；收敛后落库，界面按同一份名单显示。
+      const displayIds = pruneDisplayIds(settings.displayIds);
+      if (displayIds.join(',') !== settings.displayIds.join(',')) {
+        settings = { ...settings, displayIds };
+        setMainAppSetting('wallpaper', settings);
+      }
       if (!enabled) return;
       void runExclusive(rebuild).catch((error) => log.error('[Wallpaper] 重建失败:', error));
     };
     screen.on('display-added', onChange);
     screen.on('display-removed', onChange);
     screen.on('display-metrics-changed', (_event, display) => {
+      invalidateDisplayCache();
       if (!enabled) return;
       const surface = surfaces.get(String(display.id));
       // 任务栏显示/隐藏、换分辨率、改缩放都会触发，矩形没变就什么都不做。
@@ -534,15 +643,19 @@ export const registerWallpaperHandlers = (): void => {
       resizeWallpaperSurface(surface, display);
       broadcastState();
     });
-    // 睡眠时不绘制；唤醒后重新判断遮挡。
+    // 睡眠时把桌面层销毁掉：挂着的窗口在睡眠期间没意义，也省一份渲染。
+    // suspended 先置位，避免销毁触发 closed 回调时把窗口又建回来。
     powerMonitor.on('suspend', () => {
-      for (const surface of surfaces.values()) {
-        if (!surface.win.isDestroyed()) surface.win.hide();
-      }
+      suspended = true;
+      destroyAll();
+      broadcastState();
     });
+    // 唤醒后按当前设置整批重建，并重新判断遮挡。
     powerMonitor.on('resume', () => {
+      suspended = false;
       lastPolicy = null;
-      applyPolicy();
+      if (!enabled || quitting) return;
+      void runExclusive(rebuild).catch((error) => log.error('[Wallpaper] 唤醒后重建失败:', error));
     });
   });
 };

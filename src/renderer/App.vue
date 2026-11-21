@@ -7,7 +7,6 @@ import { useLyricPageTransition } from '@/composables/useLyricPageTransition';
 import { loadLyricPage } from '@/views/lyric/loaders';
 import { pageTransitionState } from '@/plugins/runtime/theme';
 import { useAppRuntime } from '@/app/useAppRuntime';
-import AudiobookResumePromptDialog from '@/components/music/AudiobookResumePromptDialog.vue';
 const AuthExpiredDialog = defineAsyncComponent(
   () => import('@/components/app/AuthExpiredDialog.vue'),
 );
@@ -18,6 +17,10 @@ const UpdateDialog = defineAsyncComponent(() => import('@/components/app/UpdateD
 // Settings 主文件体量大（1474 行 + 全部 section 常量），与其余 Dialog 一致异步化，
 // 避免被同步打进首屏 entry chunk
 const SettingsDialog = defineAsyncComponent(() => import('@/components/app/SettingsDialog.vue'));
+// 桌面层按钮的两项菜单：挂在 App 上，播放条与歌词页共用一个
+const DesktopSurfaceMenu = defineAsyncComponent(
+  () => import('@/components/music/DesktopSurfaceMenu.vue'),
+);
 const LyricView = defineAsyncComponent(loadLyricPage);
 const route = useRoute();
 const isMiniPlayerWindow = () => {
@@ -99,7 +102,7 @@ watch(
   <ToastViewport v-if="!isOverlayWindow" :lyric-view-open="Boolean(player?.isLyricViewOpen)" />
   <UpdateDialog v-if="!isOverlayWindow" dismiss-label="稍后" />
   <SettingsDialog v-if="!isOverlayWindow" />
-  <AudiobookResumePromptDialog v-if="!isOverlayWindow" />
+  <DesktopSurfaceMenu v-if="!isOverlayWindow" />
 </template>
 
 <style>

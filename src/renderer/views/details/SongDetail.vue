@@ -1289,25 +1289,7 @@ const loadCurrentResource = async () => {
   await fetchComments(true);
 };
 
-// 有声/长专桶不认「点进来就算」：回桶里定位上次播放的那一章，不把指针改成这首；
-// 专辑桶可以改，播放这首歌就自然把指针挪过来
-const jumpToResumeBucket = (): boolean => {
-  const albumId = String(songAlbumId.value ?? '');
-  if (!albumId) return false;
-  const scope = playerStore.resumeScopes.find(
-    (entry) => entry.id === albumId && entry.kind === 'audiobook',
-  );
-  if (!scope) return false;
-  void router.replace({
-    name: 'album-detail',
-    params: { id: albumId },
-    query: { locate: 'resume', category: '2' },
-  });
-  return true;
-};
-
 onMounted(async () => {
-  if (jumpToResumeBucket()) return;
   setupCommentLoadMoreObserver();
   await loadCurrentResource();
   loadActiveCommentTab();

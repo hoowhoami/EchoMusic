@@ -62,6 +62,11 @@ export type DesktopLyricWindowState = {
   height: number;
   x?: number;
   y?: number;
+  /** 窗口所在显示器的标识，按它把位置映射回同一块屏。 */
+  displayId?: string;
+  /** 位置在该显示器工作区内的归一化比例（0~1）：换缩放、换分辨率后仍指向同一个角落。 */
+  ratioX?: number;
+  ratioY?: number;
 };
 
 export type DesktopLyricPersistedSettings = DesktopLyricSettings & {

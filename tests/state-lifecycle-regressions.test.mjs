@@ -30,7 +30,16 @@ function compile(file, mocks = {}, window = {}) {
   const mod = { exports: {} };
   new Function('require', 'module', 'exports', 'window', 'setTimeout', 'clearTimeout', code)(
     (name) =>
-      name in mocks ? mocks[name] : name === 'pinia' ? pinia : name === 'vue' ? vue : require(name),
+      name in mocks
+        ? mocks[name]
+        : name === 'pinia'
+          ? pinia
+          : name === 'vue'
+            ? vue
+            : // 续播/历史模块会读这个上限，直接给常量，别真去加载渲染层模块。
+              name === '@/utils/historyLimits'
+              ? { HISTORY_MAX_ENTRIES: 500 }
+              : require(name),
     mod,
     mod.exports,
     window,

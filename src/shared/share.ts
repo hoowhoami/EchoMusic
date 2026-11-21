@@ -9,7 +9,7 @@ export interface ShareTarget {
   type: ShareResourceType;
   id: string;
   title?: string;
-  /** 仅用于分享文案里的称呼（例如「有声/长专」），不参与链接生成与解析。 */
+  /** 仅用于分享文案里的称呼（例如「有声」），不参与链接生成与解析。 */
   label?: string;
   sharer?: string;
   query?: ShareTargetQuery;

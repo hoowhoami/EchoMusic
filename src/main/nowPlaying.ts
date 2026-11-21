@@ -352,6 +352,10 @@ const applyWindowTitle = (playback: NowPlayingPlaybackPayload | null | undefined
   }
 };
 
+/** 快照里没有的字段直接省掉，避免下游拿到一堆值为 undefined 的键。 */
+const omitUndefined = <T extends Record<string, unknown>>(value: T): T =>
+  Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
+
 export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
   if (!payload || typeof payload !== 'object') return snapshot;
   snapshot = {
@@ -361,7 +365,7 @@ export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
     appearance:
       payload.appearance === undefined
         ? snapshot.appearance
-        : {
+        : omitUndefined({
             isDark: Boolean(payload.appearance.isDark),
             accentColor: String(
               payload.appearance.accentColor || DEFAULT_NOW_PLAYING_APPEARANCE.accentColor,
@@ -369,7 +373,10 @@ export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
             fontFamily: toOptionalString(payload.appearance.fontFamily),
             lyricsPageProvider: toOptionalString(payload.appearance.lyricsPageProvider),
             lyricViewMode: toOptionalString(payload.appearance.lyricViewMode),
-            portraitLyricCollapsed: payload.appearance.portraitLyricCollapsed === true,
+            // 没传就别占一个 false 键，否则主窗口快照会多出「用户没设置过」的字段。
+            ...(typeof payload.appearance.portraitLyricCollapsed === 'boolean'
+              ? { portraitLyricCollapsed: payload.appearance.portraitLyricCollapsed }
+              : {}),
             floatingSurfaceFrosted: payload.appearance.floatingSurfaceFrosted === true,
             colors: isPlainRecord(payload.appearance.colors)
               ? (Object.fromEntries(
@@ -383,7 +390,7 @@ export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
                   ),
                 ) as Record<string, string>)
               : undefined,
-          },
+          }),
     updatedAt: Date.now(),
   };
   sendSnapshot();

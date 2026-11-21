@@ -66,8 +66,8 @@ const setFrameProfile = (value: number) => {
   if (!preset) return;
   void setSettings({ frameProfile: preset.key });
 };
-// 「仅歌词」画面质感的可调参数：密度、浓度、压黑范围与粒子数量/大小
-type TextureNumericKey = 'edgeStart' | 'edgeDarkness' | 'particleDensity' | 'particleSize';
+// 「仅歌词」画面质感的可调参数：中心压暗、边缘压暗、压暗曲线与粒子数量/大小
+type TextureNumericKey = 'centerDim' | 'edgeDim' | 'curve' | 'particleDensity' | 'particleSize';
 
 type TextureKnob = {
   key: TextureNumericKey;
@@ -82,20 +82,30 @@ type TextureKnob = {
 
 const textureKnobs: TextureKnob[] = [
   {
-    key: 'edgeStart',
+    key: 'centerDim',
     group: 'dim',
-    label: '压黑范围',
-    hint: '从屏幕中心往外多少开始压黑，越小压黑越靠内',
+    label: '中心压暗',
+    hint: '屏幕中心压到多暗，按实际效果直读',
     min: 0,
     max: 100,
     step: 1,
     unit: 'percent',
   },
   {
-    key: 'edgeDarkness',
+    key: 'edgeDim',
     group: 'dim',
-    label: '压黑暗度',
-    hint: '贴近屏幕边缘时最深能压到多黑',
+    label: '边缘压暗',
+    hint: '贴到屏幕边缘时压到多暗',
+    min: 0,
+    max: 100,
+    step: 1,
+    unit: 'percent',
+  },
+  {
+    key: 'curve',
+    group: 'dim',
+    label: '压暗曲线',
+    hint: '越小越平；越大则中间几乎不变、靠边才迅速变暗',
     min: 0,
     max: 100,
     step: 1,
@@ -125,8 +135,9 @@ const textureKnobs: TextureKnob[] = [
 
 // 界面上按百分比/像素显示，存进设置里的仍是原始单位
 const KNOB_SCALE: Record<string, number> = {
-  edgeStart: 100,
-  edgeDarkness: 100,
+  centerDim: 100,
+  edgeDim: 100,
+  curve: 100,
   particleDensity: 100,
   particleSize: 100,
 };
@@ -175,8 +186,9 @@ const canResetTexture = computed(() => {
   if (current.passthroughEnabled !== defaults.passthroughEnabled) return true;
   if (
     current.dimEnabled &&
-    (!nearSlider(current.edgeStart, defaults.edgeStart) ||
-      !nearSlider(current.edgeDarkness, defaults.edgeDarkness))
+    (!nearSlider(current.centerDim, defaults.centerDim) ||
+      !nearSlider(current.edgeDim, defaults.edgeDim) ||
+      !nearSlider(current.curve, defaults.curve))
   ) {
     return true;
   }
@@ -194,8 +206,9 @@ const resetTexture = () => {
   const defaults = DEFAULT_WALLPAPER_TEXTURE;
   const next: WallpaperTextureSettings = { ...current };
   if (current.dimEnabled) {
-    next.edgeStart = defaults.edgeStart;
-    next.edgeDarkness = defaults.edgeDarkness;
+    next.centerDim = defaults.centerDim;
+    next.edgeDim = defaults.edgeDim;
+    next.curve = defaults.curve;
   }
   if (current.particleEnabled) {
     next.particleDensity = defaults.particleDensity;
@@ -209,7 +222,16 @@ let alive = true;
 let receivedState = false;
 let disposeState: (() => void) | undefined;
 
-const displayIds = computed(() => settings.value.displayIds);
+// 持久化的名单里可能留着已经不存在的屏幕（换缩放、重挂、重启都会换号）。
+// 界面只认当前真实存在的屏幕：否则每块屏都会判成「关」，而壁纸其实还在画。
+// 名单整体失效时按主屏算 —— 壁纸的回落行为也是主屏，界面必须和它一致。
+const displayIds = computed(() => {
+  const alive = new Set(displays.value.map((display) => display.id));
+  const selected = (settings.value.displayIds ?? []).filter((id) => alive.has(id));
+  if (selected.length > 0) return selected;
+  const primary = displays.value.find((display) => display.primary);
+  return primary ? [primary.id] : [];
+});
 // 只有一块屏幕时按屏开关没有任何含义，整块不渲染（不是置灰）。
 const multiDisplay = computed(() => displays.value.length > 1);
 // 每一项换行都要解释清楚，否则用户只能靠猜。
@@ -295,9 +317,13 @@ const setSettings = async (patch: Partial<WallpaperSettings>) => {
   }
 };
 const toggleDisplay = (id: string, value: boolean) => {
-  const current = settings.value.displayIds ?? [];
-  const next = value ? [...current, id] : current.filter((item) => item !== id);
-  // 至少保留一个显示器，否则壁纸无处可画
+  // 基数必须是「当前真实存在的选中屏」，不能拿持久化名单：
+  // 那份名单里混着失效 id，按它 append 只会越点越长，永远勾不上。
+  const current = displayIds.value;
+  const next = value
+    ? [...current.filter((item) => item !== id), id]
+    : current.filter((item) => item !== id);
+  // 至少保留一块屏幕，否则壁纸无处可画
   if (next.length === 0) return;
   void setSettings({ displayIds: next });
 };
@@ -430,10 +456,22 @@ const displayLabel = (display: WallpaperState['displays'][number]) =>
             恢复默认
           </Button>
         </div>
+        <!-- 壁纸穿透是独立开关：不依赖压暗，压暗关掉时它照样决定桌面透不透 -->
+        <div class="settings-item">
+          <div class="min-w-0 flex-1 space-y-1">
+            <h3 class="font-semibold">壁纸穿透</h3>
+            <p class="text-sm text-text-secondary">开启时露出桌面壁纸，关闭只显示当前配色的底色</p>
+          </div>
+          <Switch
+            aria-label="壁纸穿透"
+            :model-value="currentTexture.passthroughEnabled"
+            @update:model-value="setTextureFlag('passthroughEnabled', Boolean($event))"
+          />
+        </div>
         <div class="settings-item">
           <div class="min-w-0 flex-1 space-y-1">
             <h3 class="font-semibold">压暗</h3>
-            <p class="text-sm text-text-secondary">画面中间浅、四周黑，越靠屏幕边缘越暗</p>
+            <p class="text-sm text-text-secondary">画面中间浅、四周暗，越靠屏幕边缘越暗</p>
           </div>
           <Switch
             aria-label="压暗"
@@ -460,18 +498,6 @@ const displayLabel = (display: WallpaperState['displays'][number]) =>
             />
           </div>
         </template>
-        <!-- 壁纸穿透只在压暗打开时才有意义：没压暗就不存在"要不要透出壁纸"的选择 -->
-        <div v-if="currentTexture.dimEnabled" class="settings-item">
-          <div class="min-w-0 flex-1 space-y-1">
-            <h3 class="font-semibold">壁纸穿透</h3>
-            <p class="text-sm text-text-secondary">开启时露出桌面壁纸，关闭只显示当前配色的底色</p>
-          </div>
-          <Switch
-            aria-label="壁纸穿透"
-            :model-value="currentTexture.passthroughEnabled"
-            @update:model-value="setTextureFlag('passthroughEnabled', Boolean($event))"
-          />
-        </div>
         <div class="settings-item">
           <div class="min-w-0 flex-1 space-y-1">
             <h3 class="font-semibold">浮尘粒子</h3>

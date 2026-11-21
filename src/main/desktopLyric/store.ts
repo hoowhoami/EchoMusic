@@ -234,6 +234,15 @@ export function getDesktopLyricWindowState(): DesktopLyricWindowState {
     ),
     ...(typeof state.x === 'number' ? { x: state.x } : {}),
     ...(typeof state.y === 'number' ? { y: state.y } : {}),
+    ...(typeof state.displayId === 'string' && state.displayId
+      ? { displayId: state.displayId }
+      : {}),
+    ...(typeof state.ratioX === 'number' && Number.isFinite(state.ratioX)
+      ? { ratioX: state.ratioX }
+      : {}),
+    ...(typeof state.ratioY === 'number' && Number.isFinite(state.ratioY)
+      ? { ratioY: state.ratioY }
+      : {}),
   };
 }
 
@@ -290,6 +299,10 @@ export function resolveInitialBounds() {
   const savedState = getDesktopLyricWindowState();
   const width = savedState.width || defaultWidth;
   const height = savedState.height || defaultHeight;
+  // 位置带过所在屏与归一化比例时先按当前坐标系换算：缩放、分辨率变化后原始 DIP
+  // 坐标会指向别的屏（主屏 100%→150% 时 DIP 空间缩半，副屏刚好顶上来）。
+  const remapped = remapSavedPosition(savedState, width, height);
+  if (remapped) return constrainBoundsToDisplay(remapped);
   const x = savedState.x;
   const y = savedState.y;
 
@@ -319,9 +332,58 @@ export function resolveInitialBounds() {
   return constrainBoundsToDisplay({ width, height, x, y });
 }
 
+/** 按标识找显示器；显示器重挂后 id 会变，找不到时退回原来的「按中心点选屏」逻辑。 */
+const findDisplayById = (id?: string): ReturnType<typeof screen.getPrimaryDisplay> | null => {
+  if (!id) return null;
+  return screen.getAllDisplays().find((display) => String(display.id) === id) ?? null;
+};
+
+/**
+ * 把保存时的位置还原到当前坐标系。位置是按所在屏工作区归一化存的：主屏从 100% 切到
+ * 150% 后 DIP 空间直接缩半，原始 x/y 会落到下面那块屏上，必须按比例换算回来。
+ */
+const remapSavedPosition = (
+  state: DesktopLyricWindowState,
+  width: number,
+  height: number,
+): DesktopLyricWindowState | null => {
+  if (typeof state.ratioX !== 'number' || typeof state.ratioY !== 'number') return null;
+  const display = findDisplayById(state.displayId);
+  if (!display) return null;
+  const area = display.workArea;
+  return {
+    width,
+    height,
+    x: Math.round(area.x + state.ratioX * area.width),
+    y: Math.round(area.y + state.ratioY * area.height),
+  };
+};
+
+/** 存位置时一并记下所在屏与归一化比例，供下次按当前缩放还原。 */
+const resolvePositionAnchor = (
+  bounds: DesktopLyricWindowState,
+): Pick<DesktopLyricWindowState, 'displayId' | 'ratioX' | 'ratioY'> => {
+  if (typeof bounds.x !== 'number' || typeof bounds.y !== 'number') return {};
+  const display = screen.getDisplayMatching({
+    x: Math.round(bounds.x),
+    y: Math.round(bounds.y),
+    width: Math.max(1, Math.round(bounds.width)),
+    height: Math.max(1, Math.round(bounds.height)),
+  });
+  if (!display) return {};
+  const area = display.workArea;
+  const clampRatio = (value: number) => Math.min(1, Math.max(0, value));
+  return {
+    displayId: String(display.id),
+    ratioX: clampRatio((bounds.x - area.x) / Math.max(1, area.width)),
+    ratioY: clampRatio((bounds.y - area.y) / Math.max(1, area.height)),
+  };
+};
+
 export function persistDesktopLyricWindowState(bounds: DesktopLyricWindowState) {
   patchDesktopLyricPersistedSettings({
     windowState: {
+      ...resolvePositionAnchor(bounds),
       width: Math.round(bounds.width),
       height: Math.round(bounds.height),
       ...(typeof bounds.x === 'number' ? { x: Math.round(bounds.x) } : {}),

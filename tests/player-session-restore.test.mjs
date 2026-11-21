@@ -345,6 +345,31 @@ test('real player-store init restores the transient queue before publishing meta
       buildMediaMeta: (track) => ({ title: track.name }),
     },
     './playlist/helpers': { toRawSong: (track) => track },
+    // 续播只在这条链路上记账，恢复流程用不到，给最小空壳。
+    './player/resume': {
+      resolveResumeEntry: () => 'single',
+      resolveResumePosition: () => 0,
+      resumeRecordForScope: () => undefined,
+      resumeRecordOfTrack: () => undefined,
+      rememberResumePosition: () => {},
+      forgetResumeScope: () => {},
+      registerResumeScope: () => {},
+      adoptTrackIntoScope: () => {},
+      dedupeAlbumAudiobookScopes: () => {},
+      pruneEmptyScopes: () => {},
+      pruneResumeAgainstHistory: () => {},
+      pruneUnreferenced: () => {},
+      dropTrack: () => {},
+      upgradeLegacyPositions: () => {},
+      lineOf: () => undefined,
+      newestLineOf: () => undefined,
+      RESUME_SCOPE_LABEL: {
+        audiobook: '有声',
+        album: '专辑',
+        artist: '歌手',
+        playlist: '歌单',
+      },
+    },
   };
   const { usePlayerStore } = compile('../src/renderer/stores/player.ts', mocks, {
     electron: {

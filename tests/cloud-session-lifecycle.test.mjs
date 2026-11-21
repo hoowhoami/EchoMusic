@@ -83,6 +83,11 @@ function render(t, kind, deps, runtime = {}, props = {}) {
   const module = { exports: {} };
   const dependencies = {
     ...deps,
+    // 列表页多了「双击 tab 回顶」，测试里不需要真实的滚动容器。
+    '@/composables/useTabDoubleClickTop': {
+      useTabDoubleClickTop: () => ({ onTabPointerDown() {}, onTabDoubleClick() {} }),
+    },
+
     vue: {
       ...vue,
       ...Object.fromEntries(

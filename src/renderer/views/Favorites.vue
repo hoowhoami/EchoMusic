@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { watchUserSession } from '@/utils/watchUserSession';
 
+import { useRouter } from 'vue-router';
 import { useRouteTabs } from '@/composables/useRouteTabs';
 import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
@@ -58,6 +59,7 @@ import { useScrollContainer } from '@/composables/usePageScroll';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { iconCurrentLocation, iconHeart, iconList, iconPlay, iconArrowsSort } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
+import { requestResumeHintPlay } from '@/utils/resumeHint';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 const playlistStore = usePlaylistStore();
@@ -69,6 +71,7 @@ const playlistCoversStore = usePlaylistCoversStore();
 void playlistCoversStore.hydrate();
 const toastStore = useToastStore();
 const themeStore = useThemeStore();
+const router = useRouter();
 
 const isLoggedIn = computed(() => userStore.isLoggedIn);
 const currentUserKey = computed(() =>
@@ -218,7 +221,7 @@ const CARD_TAB_LABELS: Record<CardTab, string> = {
   singers: '歌手',
   users: '用户',
   albums: '专辑',
-  audiobooks: '有声/长专',
+  audiobooks: '有声',
   videos: '视频',
 };
 const CARD_TAB_ACTIONS: Record<CardTab, string> = {
@@ -238,7 +241,7 @@ const activeCardTab = computed<CardTab | null>(() =>
   CARD_TABS.includes(activeTab.value as CardTab) ? (activeTab.value as CardTab) : null,
 );
 
-// 歌手 / 用户 / 视频没有关注或收藏时间字段，收藏时间排序只对专辑与有声/长专开放
+// 歌手 / 用户 / 视频没有关注或收藏时间字段，收藏时间排序只对专辑与有声开放
 const cardTimeSortEnabled = computed(
   () => activeTab.value === 'albums' || activeTab.value === 'audiobooks',
 );
@@ -431,7 +434,8 @@ const favoritedAlbums = computed(() =>
   playlistStore.userPlaylists.filter((playlist) => playlist.source === 2),
 );
 
-// 收藏列表接口不返回专辑类别，只能按专辑 ID 回查：'2' 是有声/长专，其余按音乐专辑处理
+// 收藏列表接口不返回专辑类别，只能按专辑 ID 回查：只有明确的 '2' 才算有声，
+// '1'、'0'（混合）和查不到的都按音乐专辑
 const albumCategories = ref<Record<string, '1' | '2'>>({});
 const albumCategoriesLoading = ref(false);
 let albumCategoriesGeneration = 0;
@@ -440,6 +444,8 @@ type AlbumLike = { listCreateListid?: unknown; id?: unknown };
 
 const albumCategoryKey = (album: AlbumLike) => String(album.listCreateListid ?? album.id);
 
+// 只有明确的 '2' 才归有声：还没回查到、接口不可用、值为 '1' 或 '0'（混合）都按音乐专辑，
+// 宁可让有声留在专辑 tab，也不把普通专辑错塞进有声 tab
 const isAudiobookAlbum = (album: AlbumLike) =>
   albumCategories.value[albumCategoryKey(album)] === '2';
 
@@ -461,7 +467,7 @@ const fetchMissingAlbumCategories = async () => {
     for (const id of ids) next[id] = categories.get(id) === '2' ? '2' : '1';
     albumCategories.value = next;
   } catch {
-    // 回查失败时保持「按音乐专辑处理」，不阻塞收藏列表展示
+    // 回查失败时类别保持未知，收藏页按音乐专辑展示，不阻塞列表
   } finally {
     if (generation === albumCategoriesGeneration) albumCategoriesLoading.value = false;
   }
@@ -504,7 +510,7 @@ const albumCards = computed(() =>
   })),
 );
 
-// ========== 有声/长专 Tab ==========
+// ========== 有声 Tab ==========
 const audiobookSearchQuery = ref('');
 
 const filteredAudiobookAlbums = computed(() => {
@@ -699,6 +705,22 @@ const activeCardItems = computed(() => {
   return tab ? cardListFor(tab) : [];
 });
 
+// 点卡片进详情页时顺手发一条续播请求：这张卡有续播记录就滚到上次那集，播不播听「定位后自动续播」。
+// 没有记录就不发，免得留下一条没人认领的请求
+const openCardWithResume = (kind: 'album' | 'audiobook' | 'artist', id: string | number) => {
+  const hasRecord = playerStore.resumeScopes.some(
+    (scope) => scope.kind === kind && String(scope.id) === String(id),
+  );
+  if (hasRecord) requestResumeHintPlay(`${kind}:${String(id)}`);
+};
+
+// 「用户」tab 里没有用户主页这个东西，ArtistCard 的 isSinger=false 分支自己不跳转：
+// 统一送进歌手详情（同一个 id 空间），和歌手卡一样顺带看一眼有没有续播记录
+const openUserCard = (id: string | number) => {
+  openCardWithResume('artist', id);
+  void router.push({ name: 'artist-detail', params: { id } });
+};
+
 const flashedCardKey = ref('');
 let flashCardTimer = 0;
 
@@ -741,7 +763,7 @@ const locateActiveCard = () => {
           keywords.some((keyword) => card.name.toLowerCase().includes(keyword)),
         );
   if (index < 0) {
-    toastStore.actionFailed('定位当前播放');
+    toastStore.info('当前播放不在我最喜爱里');
     return;
   }
   cardGridFor(tab)?.scrollToIndex?.(index, 'smooth');
@@ -798,7 +820,11 @@ const confirmCardBatch = async (keys: string[]): Promise<number> => {
       } else if (tab === 'albums' || tab === 'audiobooks') {
         if (!(await playlistStore.unfavoriteAlbum(key))) failed += 1;
       } else {
-        await videoCollectionStore.toggle(key);
+        // 收藏页里的卡片本该都已收藏，仍先确认一次：toggle 对未收藏的视频会反向收藏。
+        await videoCollectionStore.ensureLoaded();
+        if (videoCollectionStore.isCollected(key)) {
+          await videoCollectionStore.toggle(key);
+        }
       }
     } catch {
       failed += 1;
@@ -962,7 +988,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
           <template #details>
             <div class="contents">
               <div class="text-[13px] font-semibold text-text-secondary">
-                集中管理收藏的歌曲、歌手、用户、专辑、有声书与视频。
+                集中管理收藏的歌曲、歌手、用户、专辑、有声与视频。
               </div>
               <div
                 class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
@@ -972,10 +998,9 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                   <span>{{ songs.length }} 首歌曲</span>
                 </div>
                 <span v-if="followedSingers.length > 0">{{ followedSingers.length }} 位歌手</span>
+                <span v-if="userCards.length > 0">{{ userCards.length }} 位用户</span>
                 <span v-if="musicAlbums.length > 0">{{ musicAlbums.length }} 张专辑</span>
-                <span v-if="audiobookAlbums.length > 0">
-                  {{ audiobookAlbums.length }} 张有声/长专
-                </span>
+                <span v-if="audiobookAlbums.length > 0"> {{ audiobookAlbums.length }} 张有声 </span>
                 <span v-if="videos.length > 0">{{ videos.length }} 个视频</span>
               </div>
             </div>
@@ -1075,7 +1100,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                     </TabsTrigger>
                     <TabsTrigger value="audiobooks">
                       <span class="badge-label"
-                        >有声/长专
+                        >有声
                         <Badge v-if="audiobookAlbums.length > 0" :count="audiobookAlbums.length"
                       /></span>
                     </TabsTrigger>
@@ -1139,7 +1164,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                     <SongSearchInput
                       v-else-if="activeTab === 'audiobooks'"
                       v-model="audiobookSearchQuery"
-                      placeholder="搜索有声/长专..."
+                      placeholder="搜索有声..."
                       :disabled="activeCardItems.length === 0"
                     />
                     <SongSearchInput
@@ -1236,6 +1261,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                   <div
                     class="favorites-card"
                     :class="{ 'is-flash': flashedCardKey === String(item.id) }"
+                    @click.capture="openCardWithResume('artist', item.id)"
                   >
                     <ArtistCard v-bind="item" />
                   </div>
@@ -1264,6 +1290,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                   <div
                     class="favorites-card"
                     :class="{ 'is-flash': flashedCardKey === String(item.id) }"
+                    @click.capture="openUserCard(item.id)"
                   >
                     <ArtistCard v-bind="item" />
                   </div>
@@ -1292,6 +1319,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                   <div
                     class="favorites-card"
                     :class="{ 'is-flash': flashedCardKey === String(item.id) }"
+                    @click.capture="openCardWithResume('album', item.id)"
                   >
                     <AlbumCard v-bind="item" />
                   </div>
@@ -1299,7 +1327,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
               </VirtualGrid>
             </TabsContent>
 
-            <!-- 有声/长专 -->
+            <!-- 有声 -->
             <TabsContent value="audiobooks" class="px-6 pt-4">
               <VirtualGrid
                 ref="audiobookGridRef"
@@ -1313,13 +1341,14 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                 :overscan="3"
                 :paddingBottom="20"
                 :stateMinHeight="320"
-                emptyText="暂无收藏有声/长专"
+                emptyText="暂无收藏有声"
                 keyField="id"
               >
                 <template #default="{ item }">
                   <div
                     class="favorites-card"
                     :class="{ 'is-flash': flashedCardKey === String(item.id) }"
+                    @click.capture="openCardWithResume('audiobook', item.id)"
                   >
                     <AlbumCard v-bind="item" />
                   </div>

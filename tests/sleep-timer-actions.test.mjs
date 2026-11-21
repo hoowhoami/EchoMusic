@@ -4,7 +4,11 @@ import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 
 // Compile the IPC registration with stubbed dependencies. No system command is run.
-const source = readFileSync(new URL('../src/main/ipc/window.ts', import.meta.url), 'utf8');
+// 工作区按 .gitattributes 存成 CRLF，下面按 \n 定位切片，先统一成 LF。
+const source = readFileSync(new URL('../src/main/ipc/window.ts', import.meta.url), 'utf8').replace(
+  /\r\n/g,
+  '\n',
+);
 const start = source.indexOf("  ipcRegistry.registerHandler(\n    'sleep-timer:execute-action'");
 const end = source.indexOf('  // Subscribe once', start);
 assert.ok(start >= 0 && end > start);

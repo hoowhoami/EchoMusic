@@ -1807,19 +1807,19 @@ onUnmounted(() => {
       </div>
       <template #footer>
         <Button
-          variant="outline"
-          size="default"
-          :disabled="isSavingProfile"
-          @click="showProfileEditor = false"
-          >取消</Button
-        >
-        <Button
           variant="primary"
           size="default"
           :loading="isSavingProfile"
           :disabled="profileSignatureOverLimit"
           @click="saveProfile"
           >保存修改</Button
+        >
+        <Button
+          variant="outline"
+          size="default"
+          :disabled="isSavingProfile"
+          @click="showProfileEditor = false"
+          >取消</Button
         >
       </template>
     </Dialog>

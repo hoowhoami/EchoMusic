@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Drawer from '@/components/ui/Drawer.vue';
 import DrawerHeader from '@/components/ui/DrawerHeader.vue';
@@ -15,7 +15,7 @@ import { iconHeart, iconHeartFilled, iconList, iconMusic, iconTrash } from '@/ic
 interface Props {
   open?: boolean;
   rows: ResumeRow[];
-  /** 类型名：专辑 / 有声书 / 歌手 / 歌单，用于标题与提示文案。 */
+  /** 类型名：专辑 / 有声 / 歌手 / 歌单，用于标题与提示文案。 */
   label: string;
   favoriteAdd: string;
   favoriteRemove: string;
@@ -37,6 +37,7 @@ const showRemoveDialog = ref(false);
 const selectedRows = computed(() =>
   props.rows.filter((row) => selectedKeys.value.includes(row.key)),
 );
+const selectedCount = computed(() => selectedRows.value.length);
 const allSelected = computed(
   () => props.rows.length > 0 && props.rows.every((row) => selectedKeys.value.includes(row.key)),
 );
@@ -64,6 +65,23 @@ const close = () => {
   reset();
   open.value = false;
 };
+
+// 行数据变化（别处删了、搜索词变了）后，把已经消失的行从选中集合里剔掉，
+// 免得计数说 3 条、实际只删到 2 条。
+watch(
+  () => props.rows,
+  (rows) => {
+    const alive = new Set(rows.map((row) => row.key));
+    if (selectedKeys.value.some((key) => !alive.has(key))) {
+      selectedKeys.value = selectedKeys.value.filter((key) => alive.has(key));
+    }
+  },
+);
+
+// 点遮罩 / 按 Esc 也会改 open，清理不能只挂在头部关闭按钮上。
+watch(open, (value) => {
+  if (!value) reset();
+});
 
 /** 批量收藏/取消收藏：只处理状态跟目标不一致的行，已经是对的就跳过。 */
 const batchFavorite = async (next: boolean) => {
@@ -126,7 +144,7 @@ const confirmRemove = () => {
           @update:model-value="toggleAll"
         />
         <span class="resume-batch-count" aria-live="polite">
-          {{ selectedKeys.length }}/{{ rows.length }}
+          {{ selectedCount }}/{{ rows.length }}
         </span>
       </label>
     </div>
@@ -169,28 +187,28 @@ const confirmRemove = () => {
     <div class="resume-batch-footer">
       <div class="resume-batch-actions">
         <Button
-          variant="ghost"
+          variant="secondary"
           size="default"
-          :disabled="busy || selectedKeys.length === 0"
+          :disabled="busy || selectedCount === 0"
           @click="batchFavorite(true)"
         >
-          <Icon :icon="iconHeartFilled" width="16" height="16" />
+          <Icon :icon="iconHeartFilled" width="16" height="16" class="resume-batch-fav-icon" />
           {{ favoriteAdd }}
         </Button>
         <Button
-          variant="ghost"
+          variant="secondary"
           size="default"
-          :disabled="busy || selectedKeys.length === 0"
+          :disabled="busy || selectedCount === 0"
           @click="batchFavorite(false)"
         >
-          <Icon :icon="iconHeart" width="16" height="16" />
+          <Icon :icon="iconHeart" width="16" height="16" class="resume-batch-fav-icon" />
           {{ favoriteRemove }}
         </Button>
         <Button
           variant="danger"
           size="default"
           class="resume-batch-danger"
-          :disabled="busy || selectedKeys.length === 0"
+          :disabled="busy || selectedCount === 0"
           @click="showRemoveDialog = true"
         >
           <Icon :icon="iconTrash" width="16" height="16" />
@@ -202,7 +220,7 @@ const confirmRemove = () => {
     <Dialog
       v-model:open="showRemoveDialog"
       title="删除"
-      :description="`确认删除选中的 ${selectedKeys.length} 条？此操作不可撤销。`"
+      :description="`确认删除选中的 ${selectedCount} 条？此操作不可撤销。`"
     >
       <template #footer>
         <div class="flex justify-end gap-3">
@@ -371,5 +389,10 @@ const confirmRemove = () => {
 
 .resume-batch-danger {
   margin-left: auto;
+}
+
+/* 收藏 / 取消收藏两颗爱心都用红色，和续播表里的爱心同一套配色。 */
+.resume-batch-fav-icon {
+  color: #ef4444;
 }
 </style>

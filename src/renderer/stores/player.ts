@@ -28,8 +28,6 @@ import { PLAYER_SESSION_KEYS } from '../../shared/playerSession';
 import { createPlayerState } from './player/state';
 import type { ResumeScopeKind, ResumeScopeMeta } from './player/resume';
 import {
-  adoptTrackIntoScope,
-  claimResumeScope,
   dedupeAlbumAudiobookScopes,
   forgetResumeScope,
   pruneEmptyScopes,
@@ -37,6 +35,7 @@ import {
   registerResumeScope,
   rememberResumePosition,
   resolveResumeEntry,
+  resumeRecordForScope,
   resolveResumePosition,
 } from './player/resume';
 import { capturePlayerSession, restorePlayerSession } from './player/session';
@@ -811,21 +810,9 @@ export const usePlayerStore = defineStore(
     // handlePlaybackEnded 在上一次切歌尚未完成时被再次触发，导致连续多次切换。
     let handlingPlaybackEnd = false;
     let resumeSaveTimer: ReturnType<typeof setInterval> | null = null;
-    // 记录线归属：只有「正在播的这首歌所在的列表就是那个队列」时才按队列算，
-    // 否则单曲播放会沿用上次打开过的有声/长专/专辑页队列，把单曲顶到那条记录线上。
-    const resolveAttributionQueueId = (): string | null => {
-      const queueId = String(state.currentSourceQueueId ?? '').trim();
-      if (!queueId) return null;
-      const queueSongs = playlistStore.getQueueById(queueId)?.songs ?? [];
-      const playing = state.currentPlaylist ?? [];
-      if (playing.length === 0 || queueSongs.length !== playing.length) return null;
-      return playing.every((song, index) => String(song.id) === String(queueSongs[index]?.id))
-        ? queueId
-        : null;
-    };
+    // 记录线归属由起播时的认领决定（详情页点播 vs 其它入口），这里不再按队列前缀猜。
     const currentResumeEntry = () =>
       resolveResumeEntry(state, {
-        queueId: resolveAttributionQueueId(),
         playMode: state.playMode,
         albumId: state.currentTrackSnapshot?.albumId ?? null,
         trackId: state.currentTrackId ?? null,
@@ -1167,7 +1154,6 @@ export const usePlayerStore = defineStore(
         targetTrackId,
         Number(targetTrack.duration) || 0,
         resolveResumeEntry(state, {
-          queueId: activeQueue?.id ?? playlistStore.activeQueueId ?? null,
           playMode: state.playMode,
           albumId: targetTrack.albumId ?? null,
         }),
@@ -1188,6 +1174,36 @@ export const usePlayerStore = defineStore(
 
     const init = async () => {
       const initialRequestSeq = state.playbackRequestSeq;
+      // 长内容续播：播放中每秒记录一次进度，暂停时补记一次。
+      // 必须放在第一个 await 之前注册：await 之后 Vue 已经没有活动 effect scope，
+      // 那时再调 onScopeDispose 会静默失效，定时器与 watch 都收不回来。
+      if (!resumeSaveTimer) {
+        resumeSaveTimer = setInterval(() => {
+          if (!getPlaybackIsPlaying(state)) return;
+          const trackId = String(state.currentTrackId ?? '');
+          if (!trackId || !(state.duration > 0)) return;
+          const entry = currentResumeEntry();
+          rememberResumePosition(state, trackId, state.currentTime, state.duration, entry, {
+            title: state.currentTrackSnapshot?.title ?? state.currentTrackSnapshot?.name,
+          });
+        }, 1000);
+        onScopeDispose(() => {
+          if (resumeSaveTimer) clearInterval(resumeSaveTimer);
+          resumeSaveTimer = null;
+        });
+        watch(
+          () => getPlaybackIsPlaying(state),
+          (playing) => {
+            if (playing) return;
+            const trackId = String(state.currentTrackId ?? '');
+            if (!trackId || !(state.duration > 0)) return;
+            const entry = currentResumeEntry();
+            rememberResumePosition(state, trackId, state.currentTime, state.duration, entry, {
+              title: state.currentTrackSnapshot?.title ?? state.currentTrackSnapshot?.name,
+            });
+          },
+        );
+      }
       // 只打开过、从没播放过的空桶不要留在续播卡里
       pruneEmptyScopes(state);
       let recoveredLiveSession = false;
@@ -1323,34 +1339,6 @@ export const usePlayerStore = defineStore(
       engine.setReferenceLufs(settingStore.volumeNormalizationLufs);
       engine.setLoopFile(false);
       engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
-      // 长内容续播：播放中定期记录进度，暂停时补记一次
-      if (!resumeSaveTimer) {
-        resumeSaveTimer = setInterval(() => {
-          if (!getPlaybackIsPlaying(state)) return;
-          const trackId = String(state.currentTrackId ?? '');
-          if (!trackId || !(state.duration > 0)) return;
-          const entry = currentResumeEntry();
-          rememberResumePosition(state, trackId, state.currentTime, state.duration, entry, {
-            title: state.currentTrackSnapshot?.title ?? state.currentTrackSnapshot?.name,
-          });
-        }, 3000);
-        onScopeDispose(() => {
-          if (resumeSaveTimer) clearInterval(resumeSaveTimer);
-          resumeSaveTimer = null;
-        });
-      }
-      watch(
-        () => getPlaybackIsPlaying(state),
-        (playing) => {
-          if (playing) return;
-          const trackId = String(state.currentTrackId ?? '');
-          if (!trackId || !(state.duration > 0)) return;
-          const entry = currentResumeEntry();
-          rememberResumePosition(state, trackId, state.currentTime, state.duration, entry, {
-            title: state.currentTrackSnapshot?.title ?? state.currentTrackSnapshot?.name,
-          });
-        },
-      );
       registerSettingWatchers();
       if (!audioDeviceListListenerRegistered) {
         audioDeviceListListenerRegistered = true;
@@ -1796,19 +1784,23 @@ export const usePlayerStore = defineStore(
       setAutoNextSuppressed,
       onPlayerEvent: playerEvents.on,
       getPlayerEventPayload,
-      adoptResumeScope: (
-        kind: ResumeScopeKind,
-        id: string,
-        song?: { id?: string | number | null; albumId?: string | number | null } | null,
-      ) => adoptTrackIntoScope(state, kind, id, song ?? state.currentTrackSnapshot ?? null),
       registerResumeScope: (kind: ResumeScopeKind, id: string, meta?: ResumeScopeMeta) =>
         registerResumeScope(state, kind, id, meta),
       forgetResumeScope: (kind: ResumeScopeKind, id: string) => forgetResumeScope(state, kind, id),
+      // 传给外部（PlaybackPlayerLike）时参数放宽成可选，内部再收敛成桶键
+      resumeRecordForScope: (scope: {
+        kind?: string;
+        id?: string | number | null;
+        trackId?: string | number | null;
+      }) =>
+        resumeRecordForScope(state, {
+          kind: (scope.kind ?? 'audiobook') as ResumeScopeKind,
+          id: String(scope.id ?? ''),
+          trackId: String(scope.trackId ?? ''),
+        }),
       pruneResumeAgainstHistory: (trackIds: string[]) =>
         pruneResumeAgainstHistory(state, new Set(trackIds)),
       dedupeAlbumAudiobookScopes: () => dedupeAlbumAudiobookScopes(state),
-      claimResumeScope: (kind: ResumeScopeKind, id: string, trackId: string) =>
-        claimResumeScope(state, kind, id, trackId),
       applyNowPlayingMirror,
     };
   },

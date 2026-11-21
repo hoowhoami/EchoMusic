@@ -20,10 +20,13 @@ export interface WallpaperSurface {
   lyricRect: { x: number; y: number; width: number; height: number } | null;
   /** 这块屏当前的省电档位；每块屏各算各的。 */
   policy: WallpaperFramePolicy | null;
-  fullscreen: boolean;
   attached: boolean;
-  /** 这个窗口在该显示器上应占的屏幕矩形（屏幕坐标）。 */
+  /** 这个窗口在该显示器上应占的屏幕矩形（DIP，Electron 口径）。 */
   rect: { x: number; y: number; width: number; height: number };
+  /** 同一矩形的屏幕物理像素版本（原生 SetWindowPos 口径）。 */
+  nativeRect: { x: number; y: number; width: number; height: number };
+  /** 这块屏的缩放系数，用于把渲染层上报的 CSS 像素换算成物理像素。 */
+  scaleFactor: number;
   /** 已经下发给这个窗口的省电策略；新建窗口从这里开始是空，必须补下发一次。 */
   applied: { frameRate: number; visible: boolean; reason: WallpaperFramePolicy['reason'] } | null;
 }
@@ -32,7 +35,6 @@ export interface WallpaperOcclusionEvent {
   displayId: string;
   coverage: number;
   lyricCoverage: number;
-  fullscreen: boolean;
 }
 
 /** BrowserWindow 的原生句柄统一转成十进制字符串，与 native 侧的解析保持一致。 */
@@ -52,6 +54,33 @@ const displayBounds = (display: Display) => ({
   width: Math.max(1, Math.round(display.bounds.width)),
   height: Math.max(1, Math.round(display.workArea.y + display.workArea.height - display.bounds.y)),
 });
+
+/** 显示器缩放系数；异常值（0/NaN）按 1 处理，否则原生侧会摆出 0 尺寸的窗口。 */
+const scaleOf = (display: Display): number =>
+  Number.isFinite(display.scaleFactor) && display.scaleFactor > 0 ? display.scaleFactor : 1;
+
+/**
+ * 同一个矩形换算成屏幕物理像素。原生侧（SetWindowPos）按物理像素摆放，Electron 的
+ * display.bounds / BrowserWindow 构造参数全是 DIP，两边不能混用：150% 缩放的
+ * 2880×1620 屏按 DIP 摆出去只盖住 1920×1080，桌面会露 1/3。
+ */
+export const displayPhysicalBounds = (display: Display) => {
+  const bounds = displayBounds(display);
+  const scale = scaleOf(display);
+  // 原点不能乘本屏缩放：DIP 坐标是各屏首尾相接的，原点里已经含有别的屏按别的缩放
+  // 折算出的偏移（主屏 150%、副屏 100% 上下排列时，副屏 DIP 原点 y=720 乘 1 得 720，
+  // 而它的物理原点在 1080），乘出来整块窗口就偏了。交给 Electron 的 DIP→物理换算。
+  const origin = screen.dipToScreenPoint({
+    x: Math.round(bounds.x),
+    y: Math.round(bounds.y),
+  });
+  return {
+    x: Math.round(origin.x),
+    y: Math.round(origin.y),
+    width: Math.max(1, Math.round(bounds.width * scale)),
+    height: Math.max(1, Math.round(bounds.height * scale)),
+  };
+};
 
 /** 目标矩形是否已经就是这个尺寸（任务栏显示/隐藏、改分辨率都会走到这里）。 */
 export const surfaceMatchesDisplay = (surface: WallpaperSurface, display: Display): boolean => {
@@ -96,6 +125,7 @@ export const createWallpaperSurface = async (
     return null;
   }
   const bounds = displayBounds(display);
+  const nativeRect = displayPhysicalBounds(display);
   const candidate = new BrowserWindow({
     ...bounds,
     title: 'EchoMusic 桌面壁纸',
@@ -123,6 +153,9 @@ export const createWallpaperSurface = async (
       nodeIntegration: false,
       sandbox: false,
       spellcheck: false,
+      // 壁纸窗口要加载插件的 file:// 页面与插件本地服务，与主窗口保持一致，否则 iframe 被同源策略拦下、页面根本不加载。
+      webSecurity: false,
+      allowRunningInsecureContent: true,
       backgroundThrottling: true,
       zoomFactor: 1,
       disableDialogs: true,
@@ -139,9 +172,10 @@ export const createWallpaperSurface = async (
     lyricCoverage: 0,
     lyricRect: null,
     policy: null,
-    fullscreen: false,
     attached: false,
     rect: bounds,
+    nativeRect,
+    scaleFactor: scaleOf(display),
     applied: null,
   };
   // 监听要在 loadURL 之前挂上：ready-to-show 可能就在加载过程中触发，晚了就漏掉。
@@ -161,7 +195,7 @@ export const createWallpaperSurface = async (
   try {
     const handle = nativeHandle(candidate);
     native.wallpaperAttach(handle);
-    native.wallpaperResize(handle, bounds.x, bounds.y, bounds.width, bounds.height);
+    native.wallpaperResize(handle, nativeRect.x, nativeRect.y, nativeRect.width, nativeRect.height);
     surface.attached = true;
     log.info(
       '[Wallpaper] 已挂载到显示器 ' +
@@ -185,13 +219,11 @@ export const createWallpaperSurface = async (
       }
       surface.coverage = state.coverage;
       surface.lyricCoverage = state.lyricCoverage ?? 0;
-      surface.fullscreen = state.fullscreen;
       onOcclusion({
         displayId: surface.displayId,
         coverage: state.coverage,
         // 旧原生模块没有这个字段时按 0 处理：宁可满帧，也不要误降帧。
         lyricCoverage: state.lyricCoverage ?? 0,
-        fullscreen: state.fullscreen,
       });
     });
   } catch (error) {
@@ -212,7 +244,7 @@ export const placeWallpaperSurface = (surface: WallpaperSurface): void => {
   const native = getNativeWallpaper();
   if (!native) return;
   try {
-    const { x, y, width, height } = surface.rect;
+    const { x, y, width, height } = surface.nativeRect;
     native.wallpaperResize(nativeHandle(surface.win), x, y, width, height);
   } catch (error) {
     log.warn('[Wallpaper] 摆放窗口失败:', error);
@@ -227,6 +259,12 @@ export const resizeWallpaperSurface = (surface: WallpaperSurface, display: Displ
   if (surface.win.isDestroyed()) return;
   const bounds = displayBounds(display);
   surface.rect = bounds;
+  surface.nativeRect = displayPhysicalBounds(display);
+  surface.scaleFactor = scaleOf(display);
+  // 换分辨率/缩放/任务栏显隐之后，「相对窗口」的布局没有变，渲染层不会主动重报，
+  // 旧的歌词屏幕矩形就不再成立：先作废，让渲染层按新几何再报一次。
+  surface.lyricRect = null;
+  surface.monitor?.setLyricRect(0, 0, 0, 0);
   if (!surface.attached) {
     // 还没挂到桌面层时它就是普通顶层窗口，交给 Electron 摆。
     surface.win.setBounds(bounds);

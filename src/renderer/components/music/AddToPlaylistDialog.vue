@@ -346,21 +346,21 @@ const orderedPlaylists = computed(() => {
         </div>
         <Button
           type="button"
-          variant="outline"
-          size="default"
-          :disabled="busy"
-          @click="open = false"
-        >
-          取消
-        </Button>
-        <Button
-          type="button"
           size="default"
           :loading="busy"
           :disabled="loading || disabled || selectedIds.size === 0 || songs.length === 0"
           @click="submit(failedIds.length > 0)"
         >
           {{ failedIds.length > 0 ? '重试失败项' : `添加到 ${selectedIds.size} 个${targetNoun}` }}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="default"
+          :disabled="busy"
+          @click="open = false"
+        >
+          取消
         </Button>
       </div>
     </template>

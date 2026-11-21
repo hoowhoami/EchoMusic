@@ -5,6 +5,7 @@ import { connectWallpaperSync } from '@/wallpaper/sync';
 import { portraitLyricCollapsed } from '@/views/lyric/portraitCollapseState';
 import { setPageFrozen } from '@/utils/pageFreeze';
 import { setRenderFrameRate } from '@/utils/frameBudget';
+import { pluginRuntimeState } from '@/plugins/runtime';
 import WallpaperDim from './WallpaperDim.vue';
 import { hexColor, mixColor, parseHexColor } from './hexColor';
 import WallpaperParticles from './WallpaperParticles.vue';
@@ -41,7 +42,7 @@ const baseColor = computed(() => {
 });
 // 配色自带的歌词颜色只在「仅歌词」时生效；「跟随播放页」必须与播放页完全一致。
 const lyricColor = computed(() =>
-  settings.value.contentMode === 'lyric' ? palette.value.lyric || undefined : undefined,
+  settings.value.contentMode === 'lyric' ? palette.value.lyric : undefined,
 );
 // 壁纸看不见的时候整页冻结：停掉浮尘的绘制循环、歌词的逐帧刷新和全部 CSS 动画，
 // 合成器没有新帧可画。三种情况 —— 桌面被整块盖住（全屏 / 最大化应用，窗口已被
@@ -52,9 +53,8 @@ const frozen = computed(() => {
   if (!reason || reason === 'disabled' || reason === 'detached') return true;
   // 歌词区域被窗口盖住大半：画面冻在原地，等窗口挪开再续上。
   if (reason === 'covered') return true;
-  if (reason === 'paused') {
-    return settings.value.pauseBehavior === 'freeze' || settings.value.pauseBehavior === 'hide';
-  }
+  // 暂停：两种情况都要冻住 —— 'freeze' 是要把画面停在最后一句，'hide' 是窗口本就隐藏。
+  if (reason === 'paused') return true;
   return false;
 });
 
@@ -107,6 +107,13 @@ const reportLyricRegion = () => {
 let disposeState: (() => void) | null = null;
 let disposeSync: (() => void) | null = null;
 
+// 主进程改过窗口尺寸（换分辨率、换屏、缩放变化）后，之前上报的屏幕坐标全部失效，
+// 而布局本身可能没变、去重键照样命中，所以要清掉去重键强制重报一次。
+const handleWindowResize = () => {
+  lastLyricRegion = '';
+  reportLyricRegion();
+};
+
 // 壁纸窗口是桌面层上的一层画面：html/body/#app 必须透明，
 // 否则「仅歌词」的样式再透也透不出桌面。与桌面歌词、Mini 播放器同一套做法。
 const WALLPAPER_WINDOW_CLASS = 'desktop-wallpaper-window';
@@ -115,11 +122,70 @@ const setWindowClass = (present: boolean) => {
   for (const node of nodes) node?.classList.toggle(WALLPAPER_WINDOW_CLASS, present);
 };
 
+// ===== 插件歌词回退契约 =====
+// 壁纸窗口同时会加载皮肤插件（例如 3D 歌词页）。插件只有在能自己画出歌词时才回
+// 'echomusic:wallpaper-lyrics' 且 detail.available === true；宿主收到声明才隐藏自带歌词。
+// 没声明、声明 false、或者 3 秒内没回应，都退回宿主自带歌词，避免出现「一片空白」。
+const PLUGIN_MODE_EVENT = 'echomusic:wallpaper-mode';
+const PLUGIN_LYRICS_EVENT = 'echomusic:wallpaper-lyrics';
+const PLUGIN_LYRICS_TIMEOUT = 3000;
+const pluginLyrics = ref(false);
+let pluginLyricsTimer: ReturnType<typeof setTimeout> | null = null;
+// 用 body 类名而不是内联样式：插件自己的样式表也按这个类名让位。
+const setPluginLyrics = (present: boolean) => {
+  pluginLyrics.value = present;
+  document.body.classList.toggle('wallpaper-plugin-lyrics', present);
+};
+const clearPluginLyricsTimer = () => {
+  if (!pluginLyricsTimer) return;
+  clearTimeout(pluginLyricsTimer);
+  pluginLyricsTimer = null;
+};
+// 插件回话：只有明确声明 available 为真才接管歌词。
+const handlePluginLyrics = (event: Event) => {
+  const detail = (event as CustomEvent<{ available?: boolean }>).detail;
+  if (detail?.available !== true) {
+    clearPluginLyricsTimer();
+    setPluginLyrics(false);
+    return;
+  }
+  clearPluginLyricsTimer();
+  setPluginLyrics(true);
+};
+// 每次切换内容模式都重新询问插件；超时按「插件没有歌词」处理。
+const requestPluginLyrics = () => {
+  clearPluginLyricsTimer();
+  setPluginLyrics(false);
+  window.dispatchEvent(
+    new CustomEvent(PLUGIN_MODE_EVENT, { detail: { mode: settings.value.contentMode } }),
+  );
+  pluginLyricsTimer = setTimeout(() => {
+    pluginLyricsTimer = null;
+    setPluginLyrics(false);
+  }, PLUGIN_LYRICS_TIMEOUT);
+};
+
+// 模式变化后重新询问一次插件。
+watch(
+  () => settings.value.contentMode,
+  () => requestPluginLyrics(),
+);
+
+// 插件运行时跟着开关重建后，之前那次问话的答复就作废了：插件被停用不会有人回话，
+// 宿主不能一直等着它，必须先把歌词还给自己再重新问一次。
+watch(
+  () => pluginRuntimeState.records.filter((record) => record.status === 'active').length,
+  () => requestPluginLyrics(),
+);
+
 onMounted(async () => {
   setWindowClass(true);
+  window.addEventListener(PLUGIN_LYRICS_EVENT, handlePluginLyrics);
+  requestPluginLyrics();
   disposeSync = connectWallpaperSync();
   reportLyricRegion();
   lyricRegionTimer = setInterval(reportLyricRegion, 1000);
+  window.addEventListener('resize', handleWindowResize);
   try {
     state.value = await window.electron.wallpaper.getState();
   } catch {
@@ -131,6 +197,10 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener('resize', handleWindowResize);
+  window.removeEventListener(PLUGIN_LYRICS_EVENT, handlePluginLyrics);
+  clearPluginLyricsTimer();
+  document.body.classList.remove('wallpaper-plugin-lyrics');
   if (lyricRegionTimer) clearInterval(lyricRegionTimer);
   lyricRegionTimer = null;
   setPageFrozen(false);
@@ -148,7 +218,6 @@ onUnmounted(() => {
     <LyricPage
       presentation="wallpaper"
       :clear-background="settings.contentMode === 'lyric'"
-      :dim-wallpaper="texture.dimEnabled"
       :portrait-collapsed="portraitLyricCollapsed"
       :lyric-color="lyricColor"
     />
@@ -163,8 +232,9 @@ onUnmounted(() => {
       ></div>
       <WallpaperDim
         v-if="texture.dimEnabled"
-        :edge-start="texture.edgeStart"
-        :edge-darkness="texture.edgeDarkness"
+        :center-dim="texture.centerDim"
+        :edge-dim="texture.edgeDim"
+        :curve="texture.curve"
         :color="palette.dim"
       />
       <WallpaperParticles
@@ -203,6 +273,11 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+/* 歌词页：压在底色层（1290）与压暗层（1295）之上，壁纸里只有歌词是内容。 */
+.wallpaper-root :deep(.lyric-page) {
+  z-index: 1300;
+}
+
 /* 兜底：歌词页里所有可操作元素在壁纸中不显示 */
 .wallpaper-root :deep(button),
 .wallpaper-root :deep([role='button']),
@@ -212,6 +287,11 @@ onUnmounted(() => {
 .wallpaper-root :deep(select),
 .wallpaper-root :deep(.no-drag) {
   display: none !important;
+}
+
+/* 插件（皮肤）声明自己能画歌词时才隐藏宿主自己的歌词页；否则宿主歌词始终在。 */
+body.wallpaper-plugin-lyrics .lyric-page {
+  visibility: hidden !important;
 }
 </style>
 

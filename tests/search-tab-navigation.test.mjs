@@ -77,6 +77,30 @@ const setup = async (query = { q: 'love' }) => {
         '@/stores/setting': { useSettingStore: () => ({ addToSearchHistory() {} }) },
         '@/stores/playlist': { usePlaylistStore: () => ({}) },
         '@/stores/player': { usePlayerStore: () => ({}) },
+        '@/stores/user': { useUserStore: () => ({ info: { userid: '' } }) },
+        '@/stores/toast': {
+          useToastStore: () => ({ info() {}, success() {}, warning() {}, error() {} }),
+        },
+        // 续播卡与搜索页新增的依赖：测试只关心 tab 状态机，这里给最小实现
+        '@/stores/player/resume': {
+          RESUME_SCOPE_LABEL: {
+            audiobook: '有声',
+            album: '专辑',
+            artist: '歌手',
+            playlist: '歌单',
+          },
+          resumeRecordForScope: () => undefined,
+        },
+        '@/utils/format': { formatDuration: () => '00:00' },
+        '@/utils/playlistRoute': { resolvePlaylistRoute: () => ({ id: '', type: null }) },
+        '@/utils/playback': { replaceQueueAndPlay: async () => true },
+        '@/utils/songList': {
+          filterSongsByQuery: (list) => list,
+          sortSongs: (list) => list,
+        },
+        '@/composables/useTabDoubleClickTop': {
+          useTabDoubleClickTop: () => ({ onTabPointerDown() {}, onTabDoubleClick() {} }),
+        },
         '@/composables/usePageScroll': { useScrollContainer: () => vue.ref(null) },
         './search/searchHelpers': helpers,
         '@/composables/useRouteTabs': { useRouteTabs },
@@ -103,7 +127,12 @@ for (const [index, tab] of helpers.TAB_SEARCH_TYPES.entries()) {
     view = s.mount();
     await flush();
     assert.equal(view.activeTabIndex.value, index);
-    assert.deepEqual(s.calls.at(-1), { keyword: 'love', type: tab, page: 1 });
+    // 有声在接口层是 album + category=2，按 resolveSearchRequest 的映射校验
+    assert.deepEqual(s.calls.at(-1), {
+      keyword: 'love',
+      type: helpers.resolveSearchRequest(tab).type,
+      page: 1,
+    });
     view.stop();
     // Tab switching replaces the search entry instead of inserting extra history entries.
     await navigateHistory(s.router, -1);

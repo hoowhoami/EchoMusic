@@ -46,10 +46,13 @@ export function favoriteAlbum(id: string | number, name: string, singerId?: numb
   });
 }
 
-/** 专辑内容类别：'1' 音乐专辑，'2' 有声/长专 */
+/** 专辑内容类别：'1' 音乐专辑，'2' 有声 */
 export type AlbumCategory = '1' | '2';
 
 const ALBUM_CATEGORY_CHUNK = 50;
+
+/** 服务端子模块未带 /album/batch 时只提示一次，之后全部按音乐专辑处理 */
+let batchEndpointMissing = false;
 
 /**
  * 取消收藏专辑
@@ -62,7 +65,8 @@ export function unfavoriteAlbum(listid: string | number) {
 
 /**
  * 批量回查专辑内容类别（收藏列表接口不返回类别）
- * 返回 专辑 ID → 类别；查不到的 ID 不在映射里，调用方按音乐专辑处理
+ * 返回 专辑 ID → 类别；查不到的 ID 不在映射里，调用方按音乐专辑处理。
+ * 服务端还没升级到带 /album/batch 的子模块时静默降级，不影响收藏页展示。
  */
 export async function getAlbumCategories(
   ids: (string | number)[],
@@ -72,19 +76,27 @@ export async function getAlbumCategories(
 
   for (let start = 0; start < uniqueIds.length; start += ALBUM_CATEGORY_CHUNK) {
     const chunk = uniqueIds.slice(start, start + ALBUM_CATEGORY_CHUNK);
-    const res = await request.get('/album/batch', {
-      params: { ids: chunk.join(',') },
-      skipKugouVerification: true,
-    });
-    const list = Array.isArray(res?.data)
-      ? res.data
-      : Array.isArray(res?.data?.data)
-        ? res.data.data
-        : [];
-    for (const item of list as Array<Record<string, unknown>>) {
-      const id = String(item?.album_id ?? '');
-      const category = String(item?.category ?? '');
-      if (id && (category === '1' || category === '2')) categories.set(id, category);
+    try {
+      const res = await request.get('/album/batch', {
+        params: { ids: chunk.join(',') },
+        skipKugouVerification: true,
+      });
+      const list = Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res?.data?.data)
+          ? res.data.data
+          : [];
+      for (const item of list as Array<Record<string, unknown>>) {
+        const id = String(item?.album_id ?? '');
+        const category = String(item?.category ?? '');
+        if (id && (category === '1' || category === '2')) categories.set(id, category);
+      }
+    } catch (error) {
+      if (!batchEndpointMissing) {
+        batchEndpointMissing = true;
+        console.warn('[album] 批量类别接口不可用，专辑暂按音乐专辑处理', error);
+      }
+      break;
     }
   }
 

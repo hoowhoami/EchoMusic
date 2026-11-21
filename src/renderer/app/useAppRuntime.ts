@@ -11,6 +11,11 @@ import { normalizeQuality } from '@/stores/player/utils';
 import { setupStartupPluginUpdateCheck } from '@/stores/pluginUpdates';
 import { registerContentBlacklistIntegration } from '@/services/contentBlacklistIntegration';
 import { installWindowFrame } from '@/utils/windowFrame';
+import {
+  RESUME_HINT_MAX_SECS,
+  RESUME_HINT_MIN_SECS,
+  setResumeHintConfig,
+} from '@/utils/resumeHint';
 import { setOpenThemesHandler } from '@/theme/registry';
 import { settingsDialogOpen } from '@/composables/useSettingsDialog';
 import { createAppLifetime } from './lifetime';
@@ -83,6 +88,15 @@ export function useAppRuntime(
       void refreshPlugins({ miniPlayer: true });
       return;
     }
+    if (isWallpaperRoute?.value) {
+      // 壁纸窗口只是桌面层上的一张画面：不初始化播放引擎、不抢播放状态、
+      // 不发布歌词与进度、不碰托盘/更新检查/剪贴板分享。
+      // 只保留主题变量与插件运行时 —— 插件歌词页要按主窗口的皮肤渲染。
+      appearance.start();
+      appearance.apply();
+      void refreshPlugins();
+      return;
+    }
 
     // Listen before restoring the persisted system color mode.
     appearance.start();
@@ -132,6 +146,33 @@ export function useAppRuntime(
     };
     pruneResumeWithHistory();
     activePlayer.dedupeAlbumAudiobookScopes();
+
+    // 续播卡的三个开关与停留时长跟着设置走：设置页一改，下一次弹卡立即生效
+    const syncResumeHintConfig = () => {
+      const secs = Math.max(
+        RESUME_HINT_MIN_SECS,
+        Math.min(Number(settings.resumeHintVisibleSecs) || 10, RESUME_HINT_MAX_SECS),
+      );
+      const enabled = settings.resumeHintEnabled !== false;
+      setResumeHintConfig({
+        enabled,
+        popup: enabled && settings.resumeHintPopupEnabled !== false,
+        page: enabled && settings.resumeHintPageEnabled !== false,
+        visibleMs: secs * 1000,
+      });
+    };
+    syncResumeHintConfig();
+    lifetime.add(
+      watch(
+        [
+          () => settings.resumeHintEnabled,
+          () => settings.resumeHintPopupEnabled,
+          () => settings.resumeHintPageEnabled,
+          () => settings.resumeHintVisibleSecs,
+        ],
+        syncResumeHintConfig,
+      ),
+    );
     lifetime.add(
       watch(
         [() => historyStore.entries.length, () => historyStore.playRecordVersion],

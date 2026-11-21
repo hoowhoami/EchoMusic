@@ -66,6 +66,9 @@ function setup(t, { mini = false, hydration, desktopSync, autoPlay = false } = {
     currentTrackId: 'song',
     isPlaying: false,
     playMode: 'list',
+    // 启动时会按历史裁剪续播记录，这里只验证调用发生。
+    pruneResumeAgainstHistory: (ids) => events.push('resume.prune'),
+    dedupeAlbumAudiobookScopes: () => {},
     volume: 50,
     init: async () => {
       events.push('player.init');
@@ -99,7 +102,14 @@ function setup(t, { mini = false, hydration, desktopSync, autoPlay = false } = {
         hydratePersonalFmPreferences: record('fm.hydrate'),
       }),
     },
-    '@/stores/historyStore': { useHistoryStore: () => ({ hydrate: record('history.hydrate') }) },
+    '@/stores/historyStore': {
+      useHistoryStore: () => ({
+        hydrate: record('history.hydrate'),
+        // 启动时要按历史裁剪续播记录，这里给空历史。
+        entries: [],
+        playRecordVersion: 0,
+      }),
+    },
     '@/stores/user': {
       useUserStore: () => ({ isLoggedIn: true, fetchUserInfoOnce: record('user.fetch') }),
     },

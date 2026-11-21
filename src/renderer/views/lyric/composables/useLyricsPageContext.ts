@@ -23,6 +23,12 @@ export function useLyricsPageContext(
     enabled: WritableComputedRef<boolean>;
     send: (content: string) => void;
   },
+  // 壁纸窗口里的歌词页：插件皮肤自绘背景，需要知道现在是不是壁纸、是不是「仅歌词」，
+  // 否则会铺一层不透明底色把系统桌面壁纸盖住。
+  view: {
+    wallpaper: ComputedRef<boolean>;
+    clearBackground: ComputedRef<boolean>;
+  } = { wallpaper: computed(() => false), clearBackground: computed(() => false) },
 ) {
   const { player, playlist, currentTrack, currentPlaybackQueue } = controls;
   const lyric = useLyricStore();
@@ -82,6 +88,10 @@ export function useLyricsPageContext(
       isCloudSource: controls.isResolvedCloudSource.value,
       hasCloudSource: controls.hasCloudAudioSourceOption.value,
       titlebar: titlebar.value,
+      view: {
+        wallpaper: view.wallpaper.value,
+        clearBackground: view.clearBackground.value,
+      },
       lyrics: {
         lines: lyric.displayLines,
         currentIndex: lyric.currentIndex,

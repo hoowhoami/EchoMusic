@@ -1,19 +1,24 @@
-import type { PlayerState, ResumePosition } from './state';
+import type { PlayerState, ResumeClaim, ResumePosition } from './state';
 import type { PlayMode } from '../../types';
 import { HISTORY_MAX_ENTRIES } from '@/utils/historyLimits';
 
-/** 超过 30 秒的内容才记进度：太短的片段记了也没意义。 */
+/**
+ * 续播的准入只看时长：任何超过 30 秒的内容都记进度（太短的片段记了也没意义），
+ * 不区分「长音频」与普通歌曲 —— 普通歌曲记在单曲线（single）上，从专辑/歌手/歌单/
+ * 有声详情页起播的记在对应的桶线（album:1 / artist:1 / playlist:1 / audiobook:1）上。
+ * 同一首在不同线各记各的，起播时只读当前这条线。
+ */
 export const RESUME_MIN_DURATION_SEC = 30;
 /** 接着播时往回倒 3 秒，免得正好卡在上一句结尾。 */
 export const RESUME_REWIND_SEC = 3;
-/** 每种详情页（有声/长专、专辑、歌手、歌单）最多记多少个：跟播放历史共用同一份容量上限。 */
+/** 每种详情页（有声、专辑、歌手、歌单）最多记多少个：跟播放历史共用同一份容量上限。 */
 export const RESUME_MAX_PER_KIND = HISTORY_MAX_ENTRIES;
 
 export const RESUME_SINGLE_ENTRY = 'single';
 
 export type ResumeScopeKind = 'audiobook' | 'album' | 'artist' | 'playlist';
 
-/** 同一次播放命中多个桶时的优先级：有声/长专 > 歌手 > 专辑 > 歌单。 */
+/** 同一次播放命中多个桶时的优先级：有声 > 歌手 > 专辑 > 歌单。 */
 export const RESUME_SCOPE_PRIORITY: ResumeScopeKind[] = [
   'audiobook',
   'artist',
@@ -22,16 +27,18 @@ export const RESUME_SCOPE_PRIORITY: ResumeScopeKind[] = [
 ];
 
 export const RESUME_SCOPE_LABEL: Record<ResumeScopeKind, string> = {
-  audiobook: '有声/长专',
+  audiobook: '有声',
   album: '专辑',
   artist: '歌手',
   playlist: '歌单',
 };
 
-export type ResumeState = Pick<PlayerState, 'resumePositions' | 'resumeScopes'>;
+export type ResumeState = Pick<PlayerState, 'resumePositions' | 'resumeScopes'> & {
+  /** 当前起播的认领来源；缺省等于没有认领（单曲线）。 */
+  resumeClaim?: ResumeClaim | null;
+};
 
 export interface ResumeEntryContext {
-  queueId?: string | null;
   playMode?: PlayMode;
   albumId?: string | number | null;
   trackId?: string | number | null;
@@ -50,11 +57,6 @@ const toKey = (value: unknown): string => String(value ?? '').trim();
 const touch = (): number => Date.now();
 
 const scopeEntry = (kind: ResumeScopeKind, id: string): string => `${kind}:${id}`;
-
-export const isScopeEntry = (entry: string): boolean => {
-  const parsed = parseScopeEntry(entry);
-  return parsed !== null;
-};
 
 export const parseScopeEntry = (entry: string): { kind: ResumeScopeKind; id: string } | null => {
   const text = toKey(entry);
@@ -107,35 +109,7 @@ const findScope = (
 ): PlayerState['resumeScopes'][number] | null =>
   state.resumeScopes.find((scope) => scope.kind === kind && scope.id === id) ?? null;
 
-/** 队列对应的详情页作用域（歌单 / 专辑 / 歌手）：桶已存在，或这个详情页刚被打开过（元数据已寄存）才算。 */
-const resolveQueueScope = (
-  state: ResumeState,
-  queueId: unknown,
-): { kind: ResumeScopeKind; id: string } | null => {
-  const key = toKey(queueId);
-  if (!key) return null;
-  const pick = (
-    kind: ResumeScopeKind,
-    id: string,
-  ): { kind: ResumeScopeKind; id: string } | null => {
-    if (!id) return null;
-    const known = findScope(state, kind, id) !== null || readMeta(metaKey(kind, id)) !== undefined;
-    return known ? { kind, id } : null;
-  };
-  if (key.startsWith('queue:album:')) {
-    const id = key.slice('queue:album:'.length).trim();
-    if (!id) return null;
-    return pick('audiobook', id) ?? pick('album', id);
-  }
-  if (key.startsWith('queue:artist:'))
-    return pick('artist', key.slice('queue:artist:'.length).trim());
-  if (key.startsWith('queue:playlist:'))
-    return pick('playlist', key.slice('queue:playlist:'.length).trim());
-  return null;
-};
-
-/** 这次播放算在哪条记录线上：正在播的列表自己就是一个详情页时优先算它，否则按专辑回落到专辑桶，最后才是单曲。 */
-/** 队列是这一页的还不够，正在播的这首必须真的属于它：有声/长专章节、专辑曲目的 albumId 就是它。 */
+/** 认领来的这首必须真的属于那个详情页：有声章节、专辑曲目的 albumId 就是它。 */
 const scopeOwnsTrack = (
   scope: { kind: ResumeScopeKind; id: string },
   albumId: unknown,
@@ -147,14 +121,17 @@ const scopeOwnsTrack = (
 };
 
 export const resolveResumeEntry = (state: ResumeState, context: ResumeEntryContext): string => {
-  if (context.playMode !== 'random') {
-    const queueScope = resolveQueueScope(state, context.queueId);
-    if (queueScope && scopeOwnsTrack(queueScope, context.albumId)) {
-      return scopeEntry(queueScope.kind, queueScope.id);
-    }
+  // 随机播放不认领任何桶：乱序跳着听不构成「在听这张专辑 / 这本书」。
+  if (context.playMode === 'random') return RESUME_SINGLE_ENTRY;
+  // 只有详情页点播会带认领标记（queueOptions.resumeScope）：搜索、收藏、歌词搜索、
+  // 歌词行双击、推荐、历史这些入口不带，哪怕这一首恰好属于某本书，也一律记单曲线，
+  // 否则卡片上原来的章节名会被顶掉。
+  const claim = state.resumeClaim ?? null;
+  if (claim && scopeOwnsTrack(claim, context.albumId)) {
+    return scopeEntry(claim.kind, claim.id);
   }
-  // 已经由某个桶认领的曲目（先播后进详情页时会认领）继续留在那个桶里，
-  // 否则下次保存又会退回单曲，桶里那条记录就成了没人维护的孤儿。
+  // 已经由某个桶认领的曲目（详情页整张连播的下一首）继续留在那个桶里，
+  // 否则自动连播会退回单曲线，桶里那条记录就成了没人维护的孤儿。
   const ownerTrackId = toKey(context.trackId);
   if (ownerTrackId) {
     const owner = state.resumeScopes.find(
@@ -162,8 +139,6 @@ export const resolveResumeEntry = (state: ResumeState, context: ResumeEntryConte
     );
     if (owner) return scopeEntry(owner.kind, owner.id);
   }
-  // 只有「详情页自己的播放队列」才拥有桶：单曲播放（搜索、收藏、歌词搜索、歌词行双击…）一律记为单曲，
-  // 哪怕这一首恰好属于某本书/某张专辑，也不能认领那个桶的记录线，否则卡片上原来的章节名会被顶掉。
   return RESUME_SINGLE_ENTRY;
 };
 
@@ -368,6 +343,11 @@ export const forgetResumeScope = (state: ResumeState, kind: ResumeScopeKind, id:
   if (index < 0) return;
   const [removed] = state.resumeScopes.splice(index, 1);
   if (removed?.trackId) dropLine(state, removed.trackId, scopeEntry(kind, key));
+  // 正好在播这本/这张时，把认领一起撤掉：否则每秒一次的写入会照旧认领这个桶，
+  // 一秒后把它原地重建回来，用户的删除看起来等于没生效。
+  if (state.resumeClaim && state.resumeClaim.kind === kind && toKey(state.resumeClaim.id) === key) {
+    state.resumeClaim = null;
+  }
   pruneUnreferenced(state);
 };
 
@@ -377,22 +357,6 @@ export const findResumeScope = (
   kind: ResumeScopeKind,
   id: string,
 ): PlayerState['resumeScopes'][number] | null => findScope(state, kind, toKey(id));
-
-/** 一张专辑命中的所有桶（有声/长专 / 专辑），按优先级排好；用于单曲跳桶。 */
-export const findResumeScopesForAlbum = (
-  state: ResumeState,
-  albumId: string,
-): PlayerState['resumeScopes'] => {
-  const key = toKey(albumId);
-  if (!key) return [];
-  const kinds: ResumeScopeKind[] = ['audiobook', 'album'];
-  const hits: PlayerState['resumeScopes'] = [];
-  kinds.forEach((kind) => {
-    const scope = findScope(state, kind, key);
-    if (scope) hits.push(scope);
-  });
-  return hits;
-};
 
 /** 起播位置：只读本条记录线，接着它上次的位置（往回倒几秒）；别的线记的进度既不用也不动。 */
 export const resolveResumePosition = (
@@ -460,9 +424,10 @@ export const rememberResumePosition = (
 
   const parsed = parseScopeEntry(entry);
   if (parsed) {
-    // 一本书只会是「专辑」或「有声/长专」之一：同 id 出现另一种桶就清掉，避免一张书两张续播卡。
-    if (parsed.kind === 'album' || parsed.kind === 'audiobook') {
-      const siblingKind = parsed.kind === 'album' ? 'audiobook' : 'album';
+    // 单向：有声桶出现时清掉同 id 的专辑桶（一本书不该有两张续播卡）；
+    // 反过来不清 —— 专辑可能整张在听，不能因为它顺带被记一次就抹掉有声进度。
+    if (parsed.kind === 'audiobook') {
+      const siblingKind = 'album';
       for (let index = state.resumeScopes.length - 1; index >= 0; index -= 1) {
         const sibling = state.resumeScopes[index];
         if (sibling && sibling.kind === siblingKind && sibling.id === parsed.id) {
@@ -502,42 +467,6 @@ export const rememberResumePosition = (
 };
 
 /**
- * 「先播了、再进详情页」也算：进页面时如果正在播的这一首属于本页，就把它认领到本页的记录线上。
- * 专辑 / 有声/长专要求这一首的 albumId 就是本页 id，歌手页不设限。
- */
-export const adoptTrackIntoScope = (
-  state: ResumeState,
-  kind: ResumeScopeKind,
-  id: string,
-  track: { id?: string | number | null; albumId?: string | number | null } | null | undefined,
-): boolean => {
-  const scopeId = toKey(id);
-  const trackId = toKey(track?.id);
-  if (!scopeId || !trackId || !RESUME_SCOPE_PRIORITY.includes(kind)) return false;
-  if (!scopeOwnsTrack({ kind, id: scopeId }, track?.albumId)) return false;
-  // 这条曲目最近写过的线（单曲线也算）：把它整份搬进本页这条线，别处那条线保持原样。
-  const record = newestLineOf(state, trackId);
-  if (!record || !(record.position >= 1)) return false;
-  const entry = scopeEntry(kind, scopeId);
-  if (entryKey(record.entry) === entry) return false;
-  rememberResumePosition(state, trackId, record.position, record.duration, entry, {
-    title: record.title,
-  });
-  return true;
-};
-
-export const forgetResumePosition = (state: ResumeState, trackId: string): void => {
-  const key = toKey(trackId);
-  if (!key) return;
-  upgradeLegacyPositions(state);
-  dropTrack(state, key);
-  state.resumeScopes.forEach((scope) => {
-    if (scope.trackId === key) scope.trackId = '';
-  });
-  pruneUnreferenced(state);
-};
-
-/**
  * 续播记录跟播放历史共用一份容量：历史里已经没有的曲目，它的进度记录和对应的桶一起清掉。
  * 历史被淘汰（超过上限）、手动删除、清空历史、刷新页面重新水合之后都会调用。
  */
@@ -559,7 +488,7 @@ export const pruneResumeAgainstHistory = (
   pruneEmptyScopes(state);
 };
 
-/** 一本书只会是「专辑」或「有声/长专」之一：同 id 出现两个桶时，只留记录线还对得上的那个（否则留较新）。 */
+/** 一本书只会是「专辑」或「有声」之一：同 id 出现两个桶时，只留记录线还对得上的那个（否则留较新）。 */
 export const dedupeAlbumAudiobookScopes = (state: ResumeState): void => {
   const byId = new Map<string, PlayerState['resumeScopes']>();
   for (const scope of state.resumeScopes) {
@@ -586,43 +515,6 @@ export const dedupeAlbumAudiobookScopes = (state: ResumeState): void => {
       if (index >= 0) state.resumeScopes.splice(index, 1);
     }
   }
-  pruneUnreferenced(state);
-};
-
-/** 把某个桶的「当前那一首」直接改成指定曲目（点「否」时认领当前这首，进度往后记到这张卡）。 */
-export const claimResumeScope = (
-  state: ResumeState,
-  kind: ResumeScopeKind,
-  id: string,
-  trackId: string,
-): void => {
-  const scopeId = toKey(id);
-  const key = toKey(trackId);
-  if (!scopeId || !key || !RESUME_SCOPE_PRIORITY.includes(kind)) return;
-  upgradeLegacyPositions(state);
-  const scope = state.resumeScopes.find((item) => item.kind === kind && item.id === scopeId);
-  if (!scope) return;
-  const entry = scopeEntry(kind, scopeId);
-  if (scope.trackId && scope.trackId !== key) {
-    // 只撤掉本桶在这首曲子上的那条线，别的卡在这首上的进度不动
-    dropLine(state, scope.trackId, entry);
-  }
-  scope.trackId = key;
-  scope.updatedAt = touch();
-  // 认领后先种一条占位进度：真正的进度要等播放推进才写入，期间 pruneEmptyScopes
-  // 会把这种「只有指针、没有记录」的桶当空桶清掉。占位 position=1 让它活到真进度落地。
-  const existing = lineOf(state, key, entry);
-  if (!existing) {
-    const fallback = newestLineOf(state, key);
-    linesOf(state, key)[entry] = {
-      position: 1,
-      duration: fallback?.duration ?? 0,
-      updatedAt: touch(),
-      entry,
-      ...(fallback?.title ? { title: fallback.title } : {}),
-    };
-  }
-  moveToFront(state, scope);
   pruneUnreferenced(state);
 };
 

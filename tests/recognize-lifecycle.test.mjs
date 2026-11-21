@@ -219,6 +219,8 @@ function pageFixture(t, native) {
         useRouter: () => ({ push: (value) => calls.actions.push(['detail', value]) }),
       },
       '@/icons': {},
+      // 页面用上了 tooltip 指令，测试里给个空实现。
+      '@/components/ui/tooltip': { vTooltip: {} },
       '@/api/recognize': {
         recognizeAudio: (pcm) => {
           calls.recognition.push(pcm);

@@ -50,6 +50,8 @@ function setup({
   let timerId = 0;
   let clockNow = 1_000_000;
   const logs = [];
+  const menus = [];
+  const quits = [];
   const intervals = new Set();
   let isBarAvailable;
   const windows = [],
@@ -165,7 +167,12 @@ function setup({
     {
       electron: {
         BrowserWindow: Window,
-        Menu: { buildFromTemplate: () => ({ popup() {} }) },
+        Menu: {
+          buildFromTemplate: (template) => {
+            menus.push(template);
+            return { popup() {} };
+          },
+        },
         nativeTheme: theme,
         screen,
       },
@@ -176,7 +183,11 @@ function setup({
           registerListener: (key, fn) => listeners.set(key, fn),
         },
       },
-      './window': { getMainWindow: () => main, showMainWindow() {} },
+      './window': {
+        getMainWindow: () => main,
+        showMainWindow() {},
+        quitApplication: () => quits.push(true),
+      },
       './storage/settings': {
         getMainAppSettings: () => settings,
         setMainAppSetting: (key, value) => (settings[key] = value),
@@ -250,6 +261,8 @@ function setup({
     },
     runScheduled,
     logs,
+    menus,
+    quits,
     // 心跳是常驻定时器，与一次性任务队列分开驱动。
     runHeartbeat: (ticks = 1) => {
       for (let i = 0; i < ticks; i += 1) {
@@ -516,10 +529,7 @@ test('the lyric is a taskbar child window, so bounds stay relative to the bar', 
 
   // 区域坐标非有限时回退到另一侧，两侧都不可信才隐藏。
   const broken = { x: NaN, y: 0, width: 400, height: 48 };
-  const fallback = shared.resolveTaskbarLyricRegion(
-    { ...layout(), left: broken },
-    settings,
-  );
+  const fallback = shared.resolveTaskbarLyricRegion({ ...layout(), left: broken }, settings);
   assert.equal(fallback.anchor, 'right');
   assert.equal(
     shared.resolveTaskbarLyricRegion({ ...layout(), left: broken, right: broken }, settings),
@@ -632,5 +642,19 @@ test('left and right preferences keep distinct alignment even when only one safe
   f.listeners.get('taskbar-player:content-width')({ sender: { id: win.webContents.id } }, 180);
   assert.equal(win.shape[0].x, 220);
   assert.equal(win.shape[0].width, 180);
+  f.api.cleanupTaskbarPlayer();
+});
+test('右键菜单给出退出应用的出口，走 quitApplication 而不是裸 app.quit()', async () => {
+  const f = setup();
+  await f.api.setTaskbarPlayerEnabled(true);
+  const win = f.windows[0];
+  f.sessions[0].emit();
+  win.webContents.emit('context-menu');
+  assert.equal(f.menus.length, 1);
+  const labels = f.menus[0].filter((item) => item.type !== 'separator').map((item) => item.label);
+  // 模板数组来自 vm 上下文，跨 realm 不能用 deepEqual，拼串比较
+  assert.equal(labels.join('|'), '打开 EchoMusic|关闭 EchoMusic|关闭任务栏歌词');
+  f.menus[0].find((item) => item.label === '关闭 EchoMusic').click();
+  assert.deepEqual(f.quits, [true]);
   f.api.cleanupTaskbarPlayer();
 });

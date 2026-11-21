@@ -1,9 +1,14 @@
+/** 任务栏歌词窗口在空闲区里的对齐方式：播放态贴左端，暂停态那一小块居中。 */
+export type TaskbarContentAlign = 'start' | 'center';
+
 export interface TaskbarLyricSettings {
   position: 'auto' | 'left' | 'center' | 'right';
   maxWidth: number;
   fontSize: number;
   fontFamily: string;
   showCover: boolean;
+  /** 暂停收起时是否显示「歌名 · 歌手」这一行；关掉时收起态只剩图案。 */
+  showNowPlaying: boolean;
   showTranslation: boolean;
   wordByWord: boolean;
 }
@@ -14,6 +19,8 @@ export const DEFAULT_TASKBAR_LYRIC_SETTINGS: TaskbarLyricSettings = {
   fontSize: 14,
   fontFamily: 'follow',
   showCover: true,
+  // 默认关：收起态只留图案，想要「暂停时还能瞄一眼在放什么」再打开。
+  showNowPlaying: false,
   showTranslation: true,
   wordByWord: true,
 };
@@ -39,6 +46,8 @@ export function normalizeTaskbarLyricSettings(input: unknown = {}): TaskbarLyric
         ? value.fontFamily.trim()
         : defaults.fontFamily,
     showCover: typeof value.showCover === 'boolean' ? value.showCover : defaults.showCover,
+    showNowPlaying:
+      typeof value.showNowPlaying === 'boolean' ? value.showNowPlaying : defaults.showNowPlaying,
     showTranslation:
       typeof value.showTranslation === 'boolean' ? value.showTranslation : defaults.showTranslation,
     wordByWord: typeof value.wordByWord === 'boolean' ? value.wordByWord : defaults.wordByWord,

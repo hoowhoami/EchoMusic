@@ -143,8 +143,18 @@ export const useSettingStore = defineStore('setting', {
     hideMenuBarInBackground: false,
     playbackQueueMode: 'context' as 'context' | 'single',
     autoPlayOnLaunch: false,
-    /** 有声/长专详情页「定位上次播放」后是否自动续播（高亮结束再起播）。 */
+    /** 有声详情页「定位上次播放」后是否自动续播（高亮结束再起播）。 */
     resumeAutoPlayOnLocate: false,
+    /** 续播卡总开关：关掉后提示卡、详情页卡、搜索页牌堆都不再出现 */
+    resumeHintEnabled: true,
+    /** 播放时自动弹出的续播提示卡 */
+    resumeHintPopupEnabled: true,
+    /** 详情页常驻的续播卡 */
+    resumeHintPageEnabled: true,
+    /** 搜索页的续播牌堆 */
+    resumeHintDeckEnabled: true,
+    /** 续播卡贴多久自己收走（秒） */
+    resumeHintVisibleSecs: 10,
     volumeFade: true,
     volumeFadeTime: 1000,
     /** 歌曲过渡设置：无缝 / 淡入淡出 / 智能混音基础 / 智能混音进阶 / 关闭。 */

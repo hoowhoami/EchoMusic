@@ -15,8 +15,9 @@ const PRESS_SEQUENCE_MS = 500;
  * 模板：<TabsList @pointerdown="onTabPointerDown" @dblclick="onTabDoubleClick">
  */
 export function useTabDoubleClickTop(getPageScroll: () => PageScrollHandle | null) {
-  let lastPressAt = 0;
-  let pressedWasActive = false;
+  // 记住「上一次按下的是哪个 tab、按下时它有没有选中」：换到别的 tab 上要重新判定，
+  // 否则在 A（已选中）双击后 500ms 内去双击 B（未选中）也会被当成回顶。
+  let press: { tab: HTMLElement; wasActive: boolean; at: number } | null = null;
 
   const readTab = (event: Event) =>
     (event.target as HTMLElement | null)?.closest<HTMLElement>('[role="tab"]') ?? null;
@@ -29,17 +30,22 @@ export function useTabDoubleClickTop(getPageScroll: () => PageScrollHandle | nul
     const trigger = readTab(event);
     if (!trigger) return;
     const now = Date.now();
-    if (now - lastPressAt > PRESS_SEQUENCE_MS) {
-      pressedWasActive = isTabActive(trigger);
-    }
-    lastPressAt = now;
+    // 同一个 tab 的第二次按下：沿用第一次按下的选中态（那时还没被这次点击切换）
+    const previous = press;
+    const sameSequence =
+      previous !== null && previous.tab === trigger && now - previous.at <= PRESS_SEQUENCE_MS;
+    press = {
+      tab: trigger,
+      wasActive: sameSequence ? previous.wasActive : isTabActive(trigger),
+      at: now,
+    };
   };
 
   const onTabDoubleClick = (event: MouseEvent) => {
     const trigger = readTab(event);
-    const wasActive = pressedWasActive;
-    pressedWasActive = false;
-    if (!trigger || !wasActive) return;
+    const pressed = press;
+    press = null;
+    if (!trigger || !pressed || pressed.tab !== trigger || !pressed.wasActive) return;
     const pageScroll = getPageScroll();
     if (!pageScroll) {
       // 不静默失败：ref 没挂上必须留下痕迹

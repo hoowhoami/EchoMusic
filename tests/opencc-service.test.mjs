@@ -319,6 +319,7 @@ async function syncFixture(t, service, targets = ['nowPlaying', 'miniPlayer', 'd
     '@/stores/toast': { useToastStore: () => ({ success() {} }) },
     '@/desktopLyric/store': { useDesktopLyricStore: () => desktop },
     './store': { useDesktopLyricStore: () => desktop },
+    '@/views/lyric/portraitCollapseState': { portraitLyricCollapsed: vue.ref(false) },
     '@/utils/shortcuts': {},
     '@/utils/lruMap': lruMap,
     '@/utils/playbackQueuePresentation': { getPlaybackQueuePresentation: () => ({ title: '' }) },

@@ -656,6 +656,8 @@ test('Favorites refreshes account-bound tabs after same-user relogin', async () 
     'userStore',
     'resetFollowed',
     'resetVideos',
+    'albumCategoriesGeneration',
+    'albumCategories',
     'refreshFavorites',
     'loadActiveTabData',
     code,
@@ -666,6 +668,8 @@ test('Favorites refreshes account-bound tabs after same-user relogin', async () 
     userStore,
     () => events.push('followed'),
     () => events.push('videos'),
+    0,
+    { value: {} },
     () => events.push('favorites'),
     () => events.push('active'),
   );
@@ -708,15 +712,22 @@ for (const raw of [[], null]) {
 test('queue persistence excludes current-reader payloads from replace, append and reorder', () => {
   const previousWindow = globalThis.window;
   const writes = [];
-  globalThis.window = { electron: { storage: {
-    replacePlaybackQueue: (payload) => writes.push(payload.queue.songs),
-    appendPlaybackQueueItems: (payload) => writes.push(payload.songs),
-    reorderPlaybackQueueItems: (payload) => writes.push(payload.songs),
-  } } };
+  globalThis.window = {
+    electron: {
+      storage: {
+        replacePlaybackQueue: (payload) => writes.push(payload.queue.songs),
+        appendPlaybackQueueItems: (payload) => writes.push(payload.songs),
+        reorderPlaybackQueueItems: (payload) => writes.push(payload.songs),
+      },
+    },
+  };
   try {
     const { store } = setup();
     store.playbackStorageReady = true;
-    const current = { ...track(7), embeddedMetadata: { title: 'Native title', lyric: 'Native lyrics' } };
+    const current = {
+      ...track(7),
+      embeddedMetadata: { title: 'Native title', lyric: 'Native lyrics' },
+    };
     const queue = helpers.buildPlaybackQueueState({ queueId: 'runtime-test' }, []);
     queue.songs = [current];
     store.persistQueueToStorage(queue);

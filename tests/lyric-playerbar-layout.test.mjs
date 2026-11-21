@@ -66,6 +66,18 @@ function fixture(t, hasBarrage = true, surface = 'lyric') {
     '@/composables/useDeferredSeek': { useDeferredSeek: () => ({}) },
     '@/composables/usePlaybackProgressStatus': { usePlaybackProgressStatus: () => ({}) },
     '@/utils/kugouVerification': { kugouVerificationState: verification },
+    // 桌面层按钮改成单键开关后要读这些状态。
+    '@/composables/useOverlayToggles': {
+      useOverlayToggles: () => ({
+        wallpaperEnabled: vue.ref(false),
+        taskbarEnabled: vue.ref(false),
+        taskbarLocked: vue.ref(false),
+        desktopSurfaceLocked: vue.ref(false),
+        desktopSurfaceHint: vue.ref('打开桌面歌词'),
+        supported: true,
+        toggleDesktopSurface: () => {},
+      }),
+    },
   }).default;
   const view = scope.run(() => component.setup({}, { emit() {}, expose() {} }));
   view.actionCapacity.value = { left: 20, center: 20, right: 20 };

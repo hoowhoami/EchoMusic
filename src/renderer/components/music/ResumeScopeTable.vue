@@ -11,6 +11,7 @@ import Dialog from '@/components/ui/Dialog.vue';
 import ResumeBatchDrawer from '@/components/music/ResumeBatchDrawer.vue';
 import ContextMenuPanel from '@/components/music/ContextMenuPanel.vue';
 import { copyShareTarget, createShareTarget } from '@/utils/share';
+import { requestResumeHintPlay } from '@/utils/resumeHint';
 import type { ShareTarget } from '../../../shared/share';
 import type { ResumeKind, ResumeRow } from '@/components/music/resumeScopeTypes';
 import { followArtist, unfollowArtist } from '@/api/artist';
@@ -36,7 +37,7 @@ const props = defineProps<{ kind: ResumeKind; searchQuery?: string }>();
 
 const KIND_LABEL: Record<ResumeKind, string> = {
   album: '专辑',
-  audiobook: '有声/长专',
+  audiobook: '有声',
   artist: '歌手',
   playlist: '歌单',
 };
@@ -46,8 +47,8 @@ const GRID_TEMPLATE = '40px 58px minmax(0, 1fr) 40px 142px 104px 96px';
 const EMPTY_TEXT: Record<ResumeKind, { title: string; caption: string }> = {
   album: { title: '暂无专辑续播', caption: '在专辑页播放过的内容会展示在这里' },
   audiobook: {
-    title: '暂无有声/长专续播',
-    caption: '在有声/长专页播放过的内容会展示在这里',
+    title: '暂无有声续播',
+    caption: '在有声页播放过的内容会展示在这里',
   },
   artist: {
     title: '暂无歌手续播',
@@ -65,7 +66,7 @@ const playlistStore = usePlaylistStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
 
-/** 有声/长专章节名里带「第 19 集」这种集数时只留集数，其余照抄章节名。 */
+/** 有声章节名里带「第 19 集」这种集数时只留集数，其余照抄章节名。 */
 const EPISODE_PATTERN = /第\s*[0-9零一二三四五六七八九十百千]+\s*[集节章回]/;
 
 const buildHint = (title: string, kind: ResumeKind): string => {
@@ -91,6 +92,7 @@ const rows = computed<ResumeRow[]>(() =>
         name: scope.name || '未命名',
         cover: scope.cover ?? '',
         hint: buildHint(record.title ?? '', props.kind),
+        searchText: record.title ?? '',
         position: record.position,
         duration: record.duration,
         updatedAt: scope.updatedAt || record.updatedAt,
@@ -144,7 +146,9 @@ const normalizeKeyword = (value: string): string => value.toLowerCase().replace(
 const matchesKeyword = (row: ResumeRow, keyword: string): boolean => {
   const target = normalizeKeyword(keyword);
   if (!target) return true;
-  return [row.name, row.hint].some((text) => normalizeKeyword(text).includes(target));
+  return [row.name, row.searchText, row.hint].some((text) =>
+    normalizeKeyword(text).includes(target),
+  );
 };
 
 const filteredRows = computed<ResumeRow[]>(() =>
@@ -210,7 +214,7 @@ const togglingKey = ref<string | null>(null);
 
 /**
  * 点下去就按意图先上色的临时状态：真正的收藏数据要等接口（收藏专辑/歌单还要整份重拉用户歌单）回来才变。
- * 歌手那条本来就是本地改状态所以即时，专辑/有声/长专/歌单慢就慢在这里。
+ * 歌手那条本来就是本地改状态所以即时，专辑/有声/歌单慢就慢在这里。
  */
 const favoriteOverrides = reactive(new Map<string, boolean>());
 
@@ -244,7 +248,7 @@ const isRequestSuccessful = (payload: unknown): boolean => {
   return record.status === 1 || record.code === 200 || record.error_code === 0;
 };
 
-/** 收藏/关注的叫法：歌手叫关注，专辑、有声/长专、歌单叫收藏。 */
+/** 收藏/关注的叫法：歌手叫关注，专辑、有声、歌单叫收藏。 */
 const favoriteText = computed(() => {
   if (props.kind === 'artist') return { add: '关注', remove: '取消关注' };
   return { add: '收藏', remove: '取消收藏' };
@@ -312,10 +316,6 @@ const openBatch = () => {
   showBatchDrawer.value = true;
 };
 
-const closeBatch = () => {
-  showBatchDrawer.value = false;
-};
-
 const removeRows = (targets: ResumeRow[]) => {
   targets.forEach((row) => playerStore.forgetResumeScope(props.kind, row.id));
 };
@@ -328,7 +328,7 @@ const confirmClear = () => {
   const targets = rows.value.slice();
   removeRows(targets);
   showClearDialog.value = false;
-  toastStore.actionCompleted('已清空播放历史');
+  toastStore.actionCompleted(`已清空${KIND_LABEL[props.kind]}续播记录`);
 };
 
 /** 定位当前播放：只滚到那一行，不闪不跳（本来就已经高亮着）。 */
@@ -339,36 +339,33 @@ const locateCurrent = () => {
     ? rootRef.value?.querySelector<HTMLElement>(`[data-resume-key="${row.key}"]`)
     : null;
   if (!element) {
-    toastStore.info('当前播放不在本列表');
+    toastStore.info(row ? '这条记录被当前搜索条件过滤掉了' : '当前播放不在本列表');
     return;
   }
   element.scrollIntoView({ block: 'center', behavior: 'smooth' });
 };
 
-defineExpose({ openBatch, closeBatch, locateCurrent, openClearDialog });
 const openRow = (row: ResumeRow) => {
+  // 统一走「续播请求」：落地页收到就自己滚到那一行、高亮，播不播看「定位后自动续播」
+  requestResumeHintPlay(row.key);
   if (props.kind === 'playlist') {
     // 桶里记的是歌单自己的 id，路由要的是 collection 串，得先换算再加 type
     const target = resolvePlaylistTarget(row);
     void router.push({
       name: 'playlist-detail',
       params: { id: target.id },
-      query: target.type ? { locate: 'resume', type: target.type } : { locate: 'resume' },
+      query: target.type ? { type: target.type } : {},
     });
     return;
   }
   if (props.kind === 'artist') {
-    void router.push({
-      name: 'artist-detail',
-      params: { id: row.id },
-      query: { locate: 'resume' },
-    });
+    void router.push({ name: 'artist-detail', params: { id: row.id } });
     return;
   }
   void router.push({
     name: 'album-detail',
     params: { id: row.id },
-    query: props.kind === 'audiobook' ? { category: '2', locate: 'resume' } : { locate: 'resume' },
+    query: props.kind === 'audiobook' ? { category: '2' } : {},
   });
 };
 
@@ -401,8 +398,8 @@ const handleContextMenuAction = (action: () => void | Promise<void>) => {
 };
 
 /**
- * 分享目标：歌单要换成 collection 串；有声/长专仍是专辑，只是带上 category=2。
- * label 只影响文案里的称呼（专辑/有声/长专/歌手/歌单），链接类型不变。
+ * 分享目标：歌单要换成 collection 串；有声仍是专辑，只是带上 category=2。
+ * label 只影响文案里的称呼（专辑/有声/歌手/歌单），链接类型不变。
  */
 const createResumeShareTarget = (row: ResumeRow): ShareTarget | null => {
   const label = KIND_LABEL[props.kind];
@@ -428,7 +425,11 @@ const ctxToggleFavorite = () => {
 
 const ctxRemoveFromHistory = () => {
   const row = contextMenuRow.value;
-  if (row) removeRows([row]);
+  contextMenuRow.value = null;
+  contextMenuOpen.value = false;
+  if (!row) return;
+  removeRows([row]);
+  toastStore.actionCompleted('已移除续播记录');
 };
 
 const ctxShare = async () => {
@@ -482,6 +483,9 @@ const emptyState = computed(() => {
   if (rows.value.length > 0) return { title: '没有匹配的续播记录', caption: '换个关键词再试试' };
   return emptyText.value;
 });
+
+// 父组件（播放历史页）通过 ref 调这三个入口
+defineExpose({ openBatch, locateCurrent, openClearDialog });
 </script>
 
 <template>
@@ -532,14 +536,14 @@ const emptyState = computed(() => {
       <li v-for="(row, index) in filteredRows" :key="row.key">
         <div
           class="resume-scope-row"
-          role="button"
           tabindex="0"
+          :aria-label="row.name"
           :data-resume-key="row.key"
           :style="{ gridTemplateColumns: GRID_TEMPLATE }"
           @contextmenu.prevent="openContextMenu($event, row)"
           @click="openRow(row)"
-          @keydown.enter.prevent="openRow(row)"
-          @keydown.space.prevent="openRow(row)"
+          @keydown.enter.self.prevent="openRow(row)"
+          @keydown.space.self.prevent="openRow(row)"
         >
           <span class="resume-col-index">{{ index + 1 }}</span>
           <span class="resume-cover">
@@ -647,8 +651,8 @@ const emptyState = computed(() => {
 
     <Dialog
       v-model:open="showClearDialog"
-      title="清空历史"
-      :description="`确认清空全部播放历史？此操作不可撤销。`"
+      :title="`清空${KIND_LABEL[kind]}续播`"
+      :description="`确认清空${KIND_LABEL[kind]}的全部续播记录？此操作不可撤销。`"
     >
       <template #footer>
         <div class="flex justify-end gap-3">

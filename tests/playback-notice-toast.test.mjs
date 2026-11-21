@@ -175,13 +175,18 @@ test('toast deduplication keeps identical reasons for different tracks distinct'
   const f = fixture(t);
   f.fail();
   await vue.nextTick();
+  assert.deepEqual(
+    f.toast.items.map((item) => item.title),
+    ['播放失败 · 测试歌曲'],
+  );
+  const firstId = f.toast.items[0].id;
   f.state.playbackRequestSeq++;
   f.state.currentTrackSnapshot = { id: 'b', name: '下一首歌曲' };
   f.fail({ trackId: 'b' });
   await vue.nextTick();
-  assert.deepEqual(
-    f.toast.items.map((item) => item.title),
-    ['播放失败 · 测试歌曲', '播放失败 · 下一首歌曲'],
-  );
-  assert.ok(f.toast.items.every((item) => item.count === 1));
+  // 提示改成「新提示顶替旧的」，所以只断言：换了一首就重新弹一条新提示，不会被合并成 ×N。
+  assert.equal(f.toast.items.length, 1);
+  assert.equal(f.toast.items[0].title, '播放失败 · 下一首歌曲');
+  assert.notEqual(f.toast.items[0].id, firstId);
+  assert.equal(f.toast.items[0].count, 1);
 });

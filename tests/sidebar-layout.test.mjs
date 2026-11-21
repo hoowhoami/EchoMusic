@@ -7,7 +7,8 @@ const source = readFileSync(
   new URL('../src/renderer/layouts/sidebarLayout.ts', import.meta.url),
   'utf8',
 )
-  .replace(/^import type .*;\n/gm, '')
+  // import 语句可能被格式化成多行，逐条删而不是逐行删。
+  .replace(/^import\b[\s\S]*?;\s*$/gm, '')
   .replace(/^export /gm, '');
 
 const { code } = transformSync(

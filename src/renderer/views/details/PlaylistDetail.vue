@@ -19,6 +19,12 @@ import {
 } from 'vue';
 import { useRoute } from 'vue-router';
 import { useRouteId } from '@/composables/useRouteId';
+import {
+  dismissResumeHint,
+  resumeHintRequest,
+  showPageResumeHint,
+  takeResumeHintRequest,
+} from '@/utils/resumeHint';
 import { getPlaylistDetail, getPlaylistTracks, getPlaylistTracksNew } from '@/api/playlist';
 import { resolveOwnedPlaylistListId } from '@/utils/playlistTrackSource';
 import { orderByPlaylistPosition } from '@/utils/playlistOrder';
@@ -591,11 +597,10 @@ onActivated(() => {
   // 失败后的空页面也会被缓存；返回时重新加载，已有内容和进行中的请求继续复用。
   if (!playlist.value && !loading.value) void fetchData();
   if (disposed) return;
-  relocateFromQuery();
-  if (songs.value.length > 0 && !loading.value) adoptPlayingTrack();
-  // 每次回到这一页，只要有上次听到的记录就在靶心弹一次；带 locate 进来会直接定位，不弹
+  const fromRequest = consumeLocateRequest();
+  // 每次回到这一页，只要有上次听到的记录就在靶心弹一次；带着续播请求进来会直接定位，不弹
   locateHintShownOnce = false;
-  if (String(route.query.locate ?? '') !== 'resume' && bucketTarget.value) {
+  if (!fromRequest && bucketTarget.value) {
     void nextTick(() => {
       if (locateHintShownOnce) return;
       locateHintShownOnce = true;
@@ -728,6 +733,7 @@ const handleSongDoubleTapPlay = async (song: Song) => {
       title: playlist.value?.name || '歌单',
       subtitle: playlist.value?.nickname || playlist.value?.list_create_username || '',
       type: 'playlist',
+      resumeScope: { kind: 'playlist', id: String(playlist.value?.id ?? getPlaylistId()) } as const,
     },
   );
 };
@@ -847,6 +853,7 @@ const handlePlayAll = async () => {
     title: playlist.value?.name || '歌单',
     subtitle: playlist.value?.nickname || playlist.value?.list_create_username || '',
     type: 'playlist' as const,
+    resumeScope: { kind: 'playlist', id: String(playlist.value?.id ?? getPlaylistId()) } as const,
   };
   const playRequest = replaceQueueAndPlay(
     playlistStore,
@@ -933,35 +940,82 @@ const bucketTarget = computed(() => {
   return { trackId, position: record.position };
 });
 
-// 「先播了、再进这一页」也要记，但只认「此刻就在这一页、而且真的在播放」：
-// 暂停着、或者以前播过，都不算数。归属只认「这一首确实在本歌单的歌曲表里」——
-// 队列靠不住：在别处播单曲时 currentSourceQueueId 会沿用上次的 queue:playlist:<id>，
-// 拿队列判断会把不属于本歌单的歌认领进来。
-const adoptPlayingTrack = () => {
-  if (!isActive.value || !playerStore.isPlaying) return;
-  const song = playerStore.currentTrackSnapshot;
-  if (!song) return;
-  const playlistId = resumeScopeId.value;
-  if (!playlistId) return;
-  const inList = songs.value.some((item) => String(item.id) === String(song.id));
-  if (!inList) return;
-  // 从搜索/历史等单曲播放进来的，不认领（用户要求）
-  const record = resumeRecordOfTrack(playerStore.$state, String(song.id));
-  if (record?.entry === 'single') return;
-  playerStore.adoptResumeScope('playlist', playlistId, song);
+// 只有「在本页点了这一页的曲目播放」才建卡（认领走 playTrack 的 resumeScope）。
+// 播放中进入详情页、或者回到这一页时，不再把正在播的歌自动认领进来。
+
+// 进这一页就把「这一页的续播卡」贴出来（常驻）：有个 position > 0 的记录才贴，
+// 退出页面、或者开始播记录里那一集（不管从哪儿点的）时才收。
+const pageResumeHintKey = computed(() => {
+  const scope = bucketScope.value;
+  return scope && bucketTarget.value ? scope.kind + ':' + scope.id : '';
+});
+
+// 页面会被 RouteKeepAlive 缓存住，缓存的页面照样会收到播放状态变化：
+// 只有本页在前台时才允许收掉提示卡，否则会把别的页面刚弹出来的那些卡一起收掉。
+const dismissPageResumeHint = () => {
+  if (isActive.value) dismissResumeHint();
 };
 
-// 停在这一页时，用户点了播放/换了曲目也要认领；离开页面或暂停都不认。
-// 歌曲表是异步加载的，等它到齐了要再判一次。
+const showPageResumeHintNow = () => {
+  const scope = bucketScope.value;
+  const target = bucketTarget.value;
+  if (!scope || !target) {
+    dismissPageResumeHint();
+    return;
+  }
+  // 正在接着播的就是记录里那一集：这一页没什么可提示的了，不贴
+  const playingThisOne =
+    playerStore.isPlaying && String(playerStore.currentTrackId ?? '') === String(target.trackId);
+  if (playingThisOne) {
+    dismissPageResumeHint();
+    return;
+  }
+  showPageResumeHint({
+    kind: scope.kind,
+    id: scope.id,
+    scopeName: scope.name,
+    cover: scope.cover,
+    recordTitle: resumeRecordForScope(playerStore.$state, scope)?.title ?? '',
+    recordPosition: target.position,
+    trackId: target.trackId,
+    sameTrack: String(playerStore.currentTrackId ?? '') === String(target.trackId),
+  });
+};
+
 watch(
-  [
-    () => playerStore.currentTrackId,
-    () => playerStore.isPlaying,
-    isActive,
-    () => songs.value.length,
-  ],
+  pageResumeHintKey,
+  (key) => {
+    if (key) showPageResumeHintNow();
+    else dismissPageResumeHint();
+  },
+  { immediate: true },
+);
+
+// 离开这一页就收卡；回来时有记录会重新贴
+watch(isActive, (value) => {
+  if (!value) dismissResumeHint();
+});
+
+// 缓存页面重新激活时补一次：上面那个 watch 只在离开时收卡，回来 key 没变不会再贴
+onActivated(() => {
+  if (pageResumeHintKey.value) showPageResumeHintNow();
+});
+onBeforeUnmount(() => dismissPageResumeHint());
+
+// 这一页一开始播放就收卡：点卡续播、双击某一集、播放全部、自动连播都算
+watch(
+  () => [playerStore.currentTrackId, playerStore.isPlaying] as const,
   () => {
-    adoptPlayingTrack();
+    if (playerStore.isPlaying) dismissPageResumeHint();
+  },
+);
+
+// 卡上点了「续播」：交给本页的定位 + 续播流程（滚到那一集、高亮、从记录位置播）
+watch(
+  () => resumeHintRequest.token,
+  () => {
+    if (!isActive.value) return;
+    if (takeResumeHintRequest(pageResumeHintKey.value)) void handleLocate();
   },
 );
 
@@ -1100,6 +1154,7 @@ const forgetResumeScopeOf = (trackId: string) => {
   playerStore.forgetResumeScope(scope.kind, scope.id);
 };
 
+// play: true = 续播卡点的；false = 别的入口过来的，只定位不播；不传 = 页面上的「定位」按钮
 const handleLocate = async () => {
   // 页面被 RouteKeepAlive 缓存着也会收到路由变化，不在这一页就不该动手
   if (!isCurrentRoute()) return;
@@ -1132,27 +1187,30 @@ const handleLocate = async () => {
   // 没有进度记录就只滚不播；正在播这一首也不用重来
   if (!targetEntry) return;
   if (isCurrentTrack && playerStore.isPlaying) return;
-  // 要不要真的播，听「跳转后自动播放」开关
+  // 要不要真的播，听「定位后自动续播」开关
   if (!settingStore.resumeAutoPlayOnLocate) return;
   const targetSong = songs.value.find((song) => String(song.id) === targetId);
   if (targetSong) scheduleResumePlay(targetSong, targetEntry.position);
 };
 
-// 从搜索页卡片跳过来时落地即定位
-let pendingLocateFromQuery = String(route.query.locate ?? '') === 'resume';
 // 气泡每次进入只弹一次，别被分页加载反复触发
 let locateHintShownOnce = false;
+
+// 点了续播卡过来时只会留下一条续播请求：列表就绪、这一页的卡认得出自己就认领一次
+const consumeLocateRequest = (): boolean => {
+  if (!isActive.value) return false;
+  if (loading.value || songs.value.length === 0) return false;
+  if (!takeResumeHintRequest(pageResumeHintKey.value)) return false;
+  void handleLocate();
+  return true;
+};
+
 // 等歌曲列表真正就绪（不被 loading 挡住）再定位，否则虚拟列表还没有行可以滚
 watch(
   [() => songs.value.length, loading],
   ([length, isLoading]) => {
     if (length === 0 || isLoading) return;
-    if (pendingLocateFromQuery) {
-      pendingLocateFromQuery = false;
-      void handleLocate();
-      return;
-    }
-    adoptPlayingTrack();
+    if (consumeLocateRequest()) return;
     void nextTick(() => {
       if (!bucketTarget.value || locateHintShownOnce) return;
       locateHintShownOnce = true;
@@ -1162,19 +1220,10 @@ watch(
   { immediate: true },
 );
 
-// 页面被路由缓存复用同一实例时，挂载期的 pendingLocateFromQuery 只消费一次；
-// 再次带着 locate=resume 进入要重新定位并续播
-const relocateFromQuery = () => {
-  if (!isCurrentRoute()) return;
-  if (String(route.query.locate ?? '') !== 'resume') return;
-  if (songs.value.length > 0 && !loading.value) {
-    void handleLocate();
-    return;
-  }
-  pendingLocateFromQuery = true;
-};
-
-watch(() => route.query.locate, relocateFromQuery);
+// 请求可能比这一页的续播桶晚到：key 一就绪再认领一次
+watch(pageResumeHintKey, () => {
+  consumeLocateRequest();
+});
 
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
@@ -1418,6 +1467,7 @@ watch(
                   title: playlist?.name || '歌单',
                   subtitle: playlist?.nickname || playlist?.list_create_username || '',
                   type: 'playlist',
+                  resumeScope: { kind: 'playlist', id: String(playlist?.id ?? getPlaylistId()) },
                 }"
                 :queueFilteredInvalidCount="playlistFilteredInvalidCount"
                 :enableDefaultDoubleTapPlay="true"

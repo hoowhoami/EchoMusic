@@ -17,6 +17,7 @@ import { computed, watch, ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { PopoverRoot, PopoverAnchor, PopoverPortal, PopoverContent } from 'reka-ui';
 import SearchDiscovery from '@/views/search/components/SearchDiscovery.vue';
+import ResumeHintCard from './ResumeHintCard.vue';
 import { extractHotCategories } from '@/views/search/searchHelpers';
 import type { SearchHotCategory } from '@/views/search/types';
 import { getSearchSuggest, getSearchDefault, getSearchHot } from '@/api/search';
@@ -822,6 +823,8 @@ onUnmounted(() => {
           </PopoverContent>
         </PopoverPortal>
       </PopoverRoot>
+      <!-- 有声续播提示：贴在搜索框右下角，10 秒自己收起，不拦播放 -->
+      <ResumeHintCard :anchor="searchContainerRef" />
     </div>
 
     <div

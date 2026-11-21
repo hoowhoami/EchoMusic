@@ -42,6 +42,19 @@ export function connectWallpaperSync(): () => void {
     lyricStore.hasRomanization = Boolean(lyric.hasRomanization);
     lyricStore.tips = lyric.tips ?? '';
     lyricStore.isLoading = Boolean(lyric.isLoading);
+    // 译/音译/文字转换与歌词偏移也要镜像：少一样，壁纸里的歌词就和主界面不一致
+    // （没有译文、或者整体错开半拍）。
+    lyricStore.wantTranslation = Boolean(lyric.wantTranslation);
+    lyricStore.wantRomanization = Boolean(lyric.wantRomanization);
+    lyricStore.textConversionMode = lyric.textConversionMode;
+    lyricStore.lyricSyncWarning = lyric.syncWarning === true;
+    // 快照给的是主窗口叠加后的「有效偏移」；壁纸窗口不跑全局校准，直接存成该曲的单曲偏移，
+    // 重复收到同一快照也只是覆盖同一个值，不会叠加。
+    const offsetHash = lyric.trackId ?? '';
+    const offsetMs = Math.round(Number(lyric.timeOffset) || 0);
+    if (offsetHash && lyricStore.timeOffsetMap[offsetHash] !== offsetMs) {
+      lyricStore.timeOffsetMap[offsetHash] = offsetMs;
+    }
   };
 
   // 先订阅再取基线，两步之间播出的快照不会丢。

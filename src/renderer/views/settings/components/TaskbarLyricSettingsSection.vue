@@ -183,6 +183,13 @@ const setBarSettings = async (patch: Partial<TaskbarLyricSettings>) => {
         />
       </div>
       <div class="settings-item">
+        <h3 class="font-semibold">暂停时显示歌名与歌手</h3>
+        <Switch
+          :model-value="barSettings.showNowPlaying"
+          @update:model-value="setBarSettings({ showNowPlaying: Boolean($event) })"
+        />
+      </div>
+      <div class="settings-item">
         <h3 class="font-semibold">显示翻译</h3>
         <Switch
           :model-value="barSettings.showTranslation"

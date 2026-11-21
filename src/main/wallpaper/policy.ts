@@ -62,19 +62,22 @@ export const resolveWallpaperFrame = (input: WallpaperFrameInput): WallpaperFram
   // 被挡住多少，看的是「歌词区域」这一块：有歌词区域就只用它，
   // 没有（背景/视频模式）才退回整块屏的覆盖率。
   const coverRatio = input.lyricRegionKnown ? input.lyricCoverage : input.coverage;
-  // 歌词区域被挡住大半：画面冻在原地，窗口挪开后自动续上。
-  // 这里不隐藏窗口——用户看到的是「壁纸不动了」，而不是「壁纸没了」。
-  const pauseRatio =
-    input.previousReason === 'covered' ? WALLPAPER_PAUSE_EXIT_RATIO : WALLPAPER_PAUSE_RATIO;
-  if (coverRatio >= pauseRatio) {
-    return { frameRate: 0, visible: true, reason: 'covered' };
-  }
+  // 「暂停」先于「被挡住」判定：pauseBehavior==='hide' 说的是「没在放歌就把壁纸藏起来」，
+  // 这个语义与「有没有被窗口盖住」无关。反过来先判遮挡的话，暂停+被盖住会一直冻着、
+  // 永远不会隐藏，与设置项的说明相反。
   if (!input.playing) {
     if (input.pauseBehavior === 'hide') {
       return { frameRate: 0, visible: false, reason: 'paused' };
     }
     // 暂停且保留画面：画面本来就不动，整页冻结即可，不需要「极慢刷新」兜底。
     return { frameRate: 0, visible: true, reason: 'paused' };
+  }
+  // 歌词区域被挡住大半：画面冻在原地，窗口挪开后自动续上。
+  // 这里不隐藏窗口——用户看到的是「壁纸不动了」，而不是「壁纸没了」。
+  const pauseRatio =
+    input.previousReason === 'covered' ? WALLPAPER_PAUSE_EXIT_RATIO : WALLPAPER_PAUSE_RATIO;
+  if (coverRatio >= pauseRatio) {
+    return { frameRate: 0, visible: true, reason: 'covered' };
   }
   // 歌词被挡住：只降到遮挡档，不停画——挡住它的窗口随时会挪开。
   const occludedRatio =

@@ -129,6 +129,7 @@ import type {
   PluginSetSafeModeResult,
   PluginSqliteCloseResult,
   PluginSqliteDeleteResult,
+  PluginSqliteChangedEvent,
   PluginSqliteExecResult,
   PluginSqliteListResult,
   PluginSqliteOpenOptions,
@@ -443,7 +444,8 @@ export interface IElectronAPI {
     getState: () => Promise<TaskbarLyricState>;
     setEnabled: (enabled: boolean) => Promise<TaskbarLyricState>;
     setSettings: (settings: Partial<TaskbarLyricSettings>) => Promise<TaskbarLyricState>;
-    setContentWidth: (width: number) => void;
+    setContentWidth: (width: number, align?: 'start' | 'center', left?: number) => void;
+    setBlank: (blank: boolean) => void;
     showMain: () => void;
     onStateChange: (callback: (state: TaskbarLyricState) => void) => () => void;
   };
@@ -761,6 +763,8 @@ export interface IElectronAPI {
       close: (pluginId: string, databaseId: string) => Promise<PluginSqliteCloseResult>;
       list: (pluginId: string) => Promise<PluginSqliteListResult>;
       delete: (pluginId: string, name?: string) => Promise<PluginSqliteDeleteResult>;
+      // 订阅任意窗口里本插件数据库的写入；返回退订函数。
+      onChanged: (listener: (event: PluginSqliteChangedEvent) => void) => () => void;
     };
     storage: {
       get: <T = unknown>(pluginId: string, key: string) => Promise<T | null>;

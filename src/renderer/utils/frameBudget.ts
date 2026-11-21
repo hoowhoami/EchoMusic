@@ -3,7 +3,7 @@
  *
  * 主进程的 webContents.setFrameRate() 只对离屏渲染生效，对挂在桌面层的普通窗口
  * 完全不起作用，所以「省电档」里的目标帧率只能落在页面侧：各个自绘循环在真正
- * 画之前问一句 shouldDrawFrame()，超出预算的帧直接跳过，合成器就不会有新帧。
+ * 下一帧交给 scheduleDrawFrame() 安排：没到点先等着，到点才向合成器要帧。
  *
  * 预算由壁纸窗口按策略下发（0 = 不限）。每个循环各自计数，避免多个循环互相
  * 抢配额把其中一路饿死；主窗口从不设置预算，永远是 0，行为不受影响。
@@ -17,20 +17,6 @@ export const setRenderFrameRate = (fps: number): void => {
   budgetFps = next;
   // 换档后立刻放行一帧，避免刚解冻时画面卡到下一个周期。
   lastDrawAt.clear();
-};
-
-export const getRenderFrameRate = (): number => budgetFps;
-
-/**
- * 这一帧该不该画。key 用来区分不同的绘制循环，各自独立计时。
- * 留 10% 余量：rAF 的间隔不是整点，硬等满一个周期会白白丢到下一个 16.7ms。
- */
-export const shouldDrawFrame = (key: string, now = performance.now()): boolean => {
-  if (budgetFps <= 0) return true;
-  const last = lastDrawAt.get(key) ?? 0;
-  if (now - last < (1000 / budgetFps) * 0.9) return false;
-  lastDrawAt.set(key, now);
-  return true;
 };
 
 export interface FrameHandle {

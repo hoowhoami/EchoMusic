@@ -6,6 +6,7 @@ import { buildFontFamily } from '../../shared/font';
 import {
   DEFAULT_TASKBAR_LYRIC_SETTINGS,
   normalizeTaskbarLyricSettings,
+  type TaskbarContentAlign,
   type TaskbarLyricState,
 } from '../../shared/taskbar';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
@@ -38,6 +39,8 @@ const primaryWidth = ref(0);
 const secondaryWidth = ref(0);
 const coverFailed = ref('');
 const root = ref<HTMLElement>();
+/** 收起态那行「歌名 · 歌手」的隐藏量具：绝对定位、不参与布局，只为量出自然宽度。 */
+const nowMeasure = ref<HTMLElement>();
 const FALLBACK_FONT_FAMILY = '"Segoe UI", "Microsoft YaHei", sans-serif';
 const resolveFontFamily = () => {
   const name = settings.value.fontFamily || 'follow';
@@ -110,6 +113,23 @@ const lyricAnchor = computed<'left' | 'right'>(() => (anchor.value === 'right' ?
  * 结果就是条子一直在左右跳。锁宽后只有暂停收起（idle）才会改动宽度。
  */
 const pinned = computed(() => anchor.value === 'center' && !lyricsCollapsed.value);
+/** 窗口可见宽度（= 原生给的空闲区宽度）：内容改成绝对定位后要自己算左右位置。 */
+const viewportWidth = ref(window.innerWidth);
+/**
+ * 内容框左沿。居中档播放时贴左、暂停时居中，右对齐档贴右；左对齐档恒为 0。
+ *
+ * 只有左沿参与补间（见样式里的 transition），宽度仍和原生窗口形状同步瞬间变化，
+ * 于是暂停时图案是「滑」到中间的，而不是整体瞬移。
+ */
+const contentLeft = computed(() => {
+  const slack = viewportWidth.value - width.value;
+  if (anchor.value === 'right') return Math.max(0, slack);
+  if (anchor.value === 'center' && !pinned.value) return Math.max(0, Math.round(slack / 2));
+  return 0;
+});
+const syncViewportWidth = () => {
+  viewportWidth.value = window.innerWidth;
+};
 let hoverLeaveTimer: ReturnType<typeof setTimeout> | undefined;
 const setHovered = (value: boolean) => {
   clearTimeout(hoverLeaveTimer);
@@ -123,7 +143,49 @@ const command = (value: NowPlayingCommand) => {
   if (playback.value) window.electron?.nowPlaying.command(value);
 };
 const showMain = () => window.electron?.taskbarLyric?.showMain();
-let lastWidth = 0;
+/** 内容块补间时长（与 .content 的 width/left 过渡一致）加一点余量。 */
+const BOX_SYNC_MS = 320;
+let boxSyncFrame = 0;
+let boxSyncUntil = 0;
+let boxAlign: TaskbarContentAlign = 'start';
+/**
+ * 窗口里还有没有东西可显示。
+ *
+ * 收起态放的是「歌名 · 歌手」，歌词已让出位置；如果封面和歌名又被关掉，内容块里
+ * 就只剩下内边距 —— 这时把窗口报成空窗，交给主进程藏起来，别在任务栏上留一条空条。
+ */
+const blanked = computed(
+  () =>
+    lyricsCollapsed.value &&
+    !expanded.value &&
+    !settings.value.showCover &&
+    !settings.value.showNowPlaying,
+);
+/**
+ * 把窗口形状逐帧贴到内容块上。
+ *
+ * 播放↔暂停时图案是滑过去的：只把最终宽度交给主进程，可见区会先一步缩到终点，
+ * 图案在过渡途中被裁在旧区域里，看上去就是「窗口先到位、图案后到」。
+ * 这里用 rAF 采样内容块的实测矩形，一路喂到补间结束。
+ */
+const sendContentBox = () => {
+  const element = root.value;
+  if (!element) return;
+  const rect = element.getBoundingClientRect();
+  window.electron?.taskbarLyric?.setContentWidth(rect.width, boxAlign, Math.round(rect.x));
+};
+const startBoxSync = () => {
+  boxSyncUntil = Date.now() + BOX_SYNC_MS;
+  if (boxSyncFrame) return;
+  const step = () => {
+    boxSyncFrame = 0;
+    if (!alive) return;
+    sendContentBox();
+    if (Date.now() >= boxSyncUntil) return;
+    boxSyncFrame = requestAnimationFrame(step);
+  };
+  boxSyncFrame = requestAnimationFrame(step);
+};
 let alive = true;
 let receivedState = false;
 let disposeState: (() => void) | undefined;
@@ -158,20 +220,27 @@ const reportWidth = async () => {
     : 0;
   // 收起态歌词已经让出位置，但两行的实测宽度还停在收起前的值，
   // 必须在这里直接按 0 计，否则窗口收不窄。
-  const textWidth = lyricsCollapsed.value ? 0 : Math.max(primaryWidth.value, secondaryWidth.value);
+  // 收起态歌词区让出宽度，只剩「歌名 · 歌手」这一行：量它的自然宽度，
+  // 不再写死 0（那会把窗口压到只剩封面，暂停时看不到在放什么）。
+  const textWidth = lyricsCollapsed.value
+    ? settings.value.showNowPlaying
+      ? Math.ceil(nowMeasure.value?.getBoundingClientRect().width ?? 0)
+      : 0
+    : Math.max(primaryWidth.value, secondaryWidth.value);
   const naturalWidth = Math.ceil(textWidth + coverWidth + padding + 8);
   width.value = resolveContentWidth({
     natural: naturalWidth,
     maxWidth: maxWidth.value,
     expanded: expanded.value,
     idle: lyricsCollapsed.value,
-    pinned: pinned.value,
     rolling: rolling || collapsing,
     current: width.value,
   });
-  if (lastWidth === width.value) return;
-  lastWidth = width.value;
-  window.electron?.taskbarLyric?.setContentWidth(width.value);
+  // 播放态贴空闲区左端（宽度随文字向右长），暂停态那一小块居中。
+  const align: TaskbarContentAlign = lyricsCollapsed.value ? 'center' : 'start';
+  boxAlign = align;
+  // 目标宽度只用于布局，可见区域始终按实测矩形喂，补间途中也不会裁到图案。
+  startBoxSync();
 };
 /**
  * 换行动画结束：这时旧行已经滑出，才可以把宽度收到新行的尺寸。
@@ -186,6 +255,15 @@ const finishRoll = () => {
 };
 // settings 由 normalizeTaskbarLyricSettings 整体替换，其余源为标量 ref，无需 deep 遍历
 watch([expanded, maxWidth, primaryWidth, secondaryWidth, settings, pinned], reportWidth);
+// 空窗与宽度走两条通道：宽度靠 rAF 逐帧贴（窗口藏起来后 rAF 会停），
+// 空窗标记必须一翻转就送到主进程，否则藏下去就再也没机会叫醒它。
+watch(
+  blanked,
+  (value) => {
+    window.electron?.taskbarLyric?.setBlank?.(value);
+  },
+  { immediate: true },
+);
 watch(lyricsCollapsed, (collapsed) => {
   clearTimeout(collapseTimer);
   collapsing = Boolean(collapsed);
@@ -209,8 +287,7 @@ const stateListener = (raw: unknown) => {
   const value = raw as TaskbarLyricState;
   receivedState = true;
   dark.value = Boolean(value.isDark);
-  anchor.value =
-    value.anchor === 'right' ? 'right' : value.anchor === 'center' ? 'center' : 'left';
+  anchor.value = value.anchor === 'right' ? 'right' : value.anchor === 'center' ? 'center' : 'left';
   maxWidth.value = Number(value.maxWidth) || 400;
   settings.value = normalizeTaskbarLyricSettings(value.settings);
 };
@@ -220,6 +297,7 @@ onMounted(async () => {
     error.value = '连接不可用，请重新打开任务栏歌词';
     return;
   }
+  window.addEventListener('resize', syncViewportWidth);
   disposeState = api.onStateChange(stateListener);
   try {
     const value = await api.getState();
@@ -231,6 +309,9 @@ onMounted(async () => {
 });
 onUnmounted(() => {
   alive = false;
+  if (boxSyncFrame) cancelAnimationFrame(boxSyncFrame);
+  boxSyncFrame = 0;
+  window.removeEventListener('resize', syncViewportWidth);
   clearTimeout(hoverLeaveTimer);
   clearTimeout(collapseTimer);
   disposeState?.();
@@ -253,7 +334,7 @@ onUnmounted(() => {
       tabindex="0"
       :aria-label="primary"
       :class="{ expanded }"
-      :style="{ width: `${width}px` }"
+      :style="{ width: `${width}px`, left: `${contentLeft}px` }"
       @focusin="focused = ($event.target as HTMLElement).matches(':focus-visible')"
       @focusout="focusOut"
     >
@@ -343,6 +424,19 @@ onUnmounted(() => {
               </div>
             </Transition>
           </div>
+          <!-- 收起态（暂停）可选显示歌名与歌手：默认关，关掉时只剩图案。 -->
+          <div v-if="lyricsCollapsed && !expanded && settings.showNowPlaying" class="now">
+            <span class="now-title">{{ title }}</span>
+            <span v-if="playback?.artist" class="now-artist">{{ playback.artist }}</span>
+          </div>
+          <span
+            v-if="settings.showNowPlaying"
+            ref="nowMeasure"
+            class="now-measure"
+            aria-hidden="true"
+          >
+            {{ title }}{{ playback?.artist ? ' · ' + playback.artist : '' }}
+          </span>
           <div class="song-info" :aria-hidden="!expanded">
             <div class="song-title" :title="title">{{ title }}</div>
             <div class="song-artist" :title="playback?.artist">{{ playback?.artist }}</div>
@@ -389,6 +483,7 @@ body,
   box-sizing: border-box;
 }
 .taskbar {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -406,6 +501,7 @@ body,
 /* 居中档锁宽后窗口不再随内容收缩，内容从窗口左沿开始排：
    宽度不变就不需要对中，换行与悬停都不会再把整条挪走。 */
 .taskbar.center.pinned {
+  /* 内容已绝对定位，这里只为保底：位置由 .content 的 left 决定。 */
   justify-content: flex-start;
 }
 /* 控制条仍按原样从 0 展开（悬停时把歌词向右让开），
@@ -418,17 +514,23 @@ body,
   text-align: right;
 }
 .content {
-  position: relative;
+  position: absolute;
+  top: 4px;
   display: flex;
   align-items: center;
   gap: 4px;
   height: calc(100% - 8px);
   padding: 0 4px;
+  /* 播放↔暂停时图案从窗口左沿滑到中间，宽度一起补间；
+     窗口形状由 reportWidth 逐帧贴上来（见 startBoxSync），三者同时到位。 */
   min-width: 0;
   border-radius: 8px;
   background: transparent;
   pointer-events: none;
-  transition: background-color 180ms ease;
+  transition:
+    width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    left 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 180ms ease;
 }
 .content.expanded {
   background: color-mix(in srgb, var(--fg) 5%, transparent);
@@ -475,6 +577,42 @@ body,
 .copy.collapsed {
   max-width: 0;
   opacity: 0;
+}
+/* 收起态那一行歌名：绝对定位铺满详情区并垂直居中。
+   不能用普通流——同级的 .copy 即使收起（max-width: 0）仍占满高度，
+   歌名会被顶到容器底部之外。 */
+.now {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.now-title,
+.now-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.now-artist {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.now-artist::before {
+  content: ' · ';
+}
+/* 量具：绝对定位 + max-content，天然宽度不受父级可见宽度裁剪。 */
+.now-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  white-space: nowrap;
+  visibility: hidden;
+  pointer-events: none;
 }
 /* 换行动画作用在整块歌词上，而不是每一行各自动画。
    两行放进同一个满高容器里滚动，裁切也只在这一层做——若每行各自在
