@@ -78,6 +78,7 @@ let lastAppliedTimeMs = Number.NaN;
 let openingOverlay: HTMLElement | null = null;
 let openingLayoutPending = true;
 let openingFrames = 0;
+let hostResizeObserver: ResizeObserver | null = null;
 let cancelInitialization: (() => void) | undefined;
 
 const rafLoop = (timestamp: number) => {
@@ -171,6 +172,10 @@ const handleVisibilityChange = () => {
   }
 };
 
+// 窗口尺寸是歌词字号（vw/vh）与窄视口阈值的输入；
+// 容器被 max-width 限制时宿主尺寸可能不变，仍需跟随窗口推帧刷新布局。
+const handleWindowResize = () => requestFrame();
+
 const handleLineClick = (event: Event) => {
   const lineEvent = event as LyricLineMouseEvent;
   // Core forwards native click detail, so the second click identifies a double-click
@@ -228,7 +233,12 @@ const initializePlayer = () => {
   else player.pause();
   playerRef.value = player;
   document.addEventListener('visibilitychange', handleVisibilityChange);
-  lastFrameTime = performance.now();
+  // 暂停时没有常驻 rAF，而引擎内部的 ResizeObserver 只会把新布局写入弹簧目标，
+  // 不推帧就不会应用到 DOM，导致暂停状态调整窗口后歌词间距 / 缩放停留在旧值。
+  // 这里监听宿主尺寸变化唤醒一帧收敛窗口，弹簧到位后循环自行停止。
+  hostResizeObserver = new ResizeObserver(() => requestFrame());
+  hostResizeObserver.observe(host);
+  window.addEventListener('resize', handleWindowResize);
   requestFrame();
 };
 
@@ -246,6 +256,9 @@ onMounted(() => {
 onUnmounted(() => {
   cancelInitialization?.();
   document.removeEventListener('visibilitychange', handleVisibilityChange);
+  window.removeEventListener('resize', handleWindowResize);
+  hostResizeObserver?.disconnect();
+  hostResizeObserver = null;
   if (rafId !== null) cancelAnimationFrame(rafId);
   rafId = null;
   const player = playerRef.value;
