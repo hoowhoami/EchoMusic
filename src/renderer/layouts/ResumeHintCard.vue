@@ -3,16 +3,20 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import ResumeDeck from '@/components/music/ResumeDeck.vue';
 import { usePlayerStore } from '@/stores/player';
+import { usePlaylistStore } from '@/stores/playlist';
 import {
   RESUME_LOCATE_FAILED_TEXT,
   dismissResumeHint,
+  maybeShowResumeHint,
   dropResumeHintCard,
   navigateResumeTarget,
+  refreshResumeHintCards,
   requestResumeHintPlay,
   resumeHintRequest,
   resumeHintState,
   setResumeHintHeld,
   type ResumeHintCard,
+  type ResumeScopeLike,
 } from '@/utils/resumeHint';
 import { useToastStore } from '@/stores/toast';
 import type { ResumeEntryCard } from '@/views/search/resumeCard';
@@ -26,6 +30,26 @@ const props = defineProps<{
 const route = useRoute();
 const router = useRouter();
 const playerStore = usePlayerStore();
+const playlistStore = usePlaylistStore();
+
+/** 详情页自己会接管常驻卡，浮层卡在这些页面上让位 */
+const DETAIL_ROUTE_NAMES = new Set([
+  'album-detail',
+  'artist-detail',
+  'playlist-detail',
+  'song-detail',
+  'mv-detail',
+]);
+/** 进入这些页面才弹提示卡：页面本身有歌曲列表，卡指过去的歌就在眼前 */
+const HINT_ROUTE_NAMES = new Set([
+  'recommend-songs',
+  'free-listen',
+  'ranking',
+  'history',
+  'favorites',
+  'cloud',
+  'purchased',
+]);
 const toastStore = useToastStore();
 
 /** 卡宽：与搜索页牌堆同一尺寸 */
@@ -65,6 +89,8 @@ let lockedSpot: { left: number; top: number } | null = null;
 const ready = ref(false);
 let stableSpot: { left: number; top: number } | null = null;
 let revealTimer = 0;
+/** 从详情页离开时补判一次用什么卡，避免跟常驻卡的收卡顺序打架 */
+let enterTimer = 0;
 
 /** 后面几张卡往左错开的总宽 */
 const spread = computed(() => Math.max(0, resumeHintState.cards.length - 1) * FAN_STEP);
@@ -274,11 +300,57 @@ const startFollow = (rescan = false) => {
   followFrame = window.requestAnimationFrame(followLoop);
 };
 
+/**
+ * 卡片挂着的时候每秒把桶里的最新进度读回来。
+ * 只更新数字/曲名，不换 token：换 token 会整块重挂，卡会闪一下、收起计时也会重来。
+ */
+const REFRESH_INTERVAL_MS = 1000;
+let refreshTimer = 0;
+const stopRefresh = () => {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer);
+    refreshTimer = 0;
+  }
+};
+/**
+ * 读卡片该显示的进度：
+ * - 卡指的就是正在播的这一首 → 直接用播放器的当前时间，数字每秒都在走；
+ * - 否则读存储里那条记录（存储 3 秒才写一次，切走的歌就停在最后记下的位置）。
+ */
+const readCardRecord = (scope: ResumeScopeLike) => {
+  const kind = String(scope.kind ?? '');
+  const id = String(scope.id ?? '');
+  const owned = (playerStore.resumeScopes ?? []).find(
+    (item) => String(item.kind) === kind && String(item.id) === id,
+  );
+  const stored = playerStore.resumeRecordForScope(owned ?? scope);
+  const ownerTrack = String(owned?.trackId ?? '');
+  const playingThisOne =
+    ownerTrack !== '' && ownerTrack === String(playerStore.currentTrackId ?? '');
+  if (!playingThisOne || !playerStore.isPlaying) return stored;
+  return {
+    position: Number(playerStore.currentTime) || 0,
+    title: String(playerStore.currentTrackSnapshot?.name ?? stored?.title ?? ''),
+  };
+};
+
+const startRefresh = () => {
+  stopRefresh();
+  refreshTimer = window.setInterval(() => {
+    refreshResumeHintCards(readCardRecord);
+  }, REFRESH_INTERVAL_MS);
+};
+
 watch(
   () => resumeHintState.open,
   (open) => {
-    if (open) startFollow(true);
-    else stopFollow();
+    if (open) {
+      startFollow(true);
+      startRefresh();
+    } else {
+      stopFollow();
+      stopRefresh();
+    }
   },
   { immediate: true },
 );
@@ -291,14 +363,42 @@ watch(
   },
 );
 
-// 换页面就收掉浮层那张卡：它挂在布局层，不跟着页面销毁，留着会飘到新页面上。
-// 同页切 tab 只有 query 变、path 不变，不收；详情页常驻卡跟页面走，也不在这里收。
+// 换页面：浮层卡挂在布局层，不跟着页面销毁，得自己决定去留。
+// - 详情页自己有常驻卡，让位；没在播就没必要留；
+// - 只有列表页（HINT_ROUTE_NAMES）才算「进入页面」：这一首命中某个桶就弹一张提示卡，
+//   命中不了就收掉，别让过时的卡飘到新页面上；
+// - 设置、主题、插件这些没有歌曲列表的页面不弹，卡指过去的歌在那儿也没处看。
+// 同页切 tab 只有 query 变、path 不变，这里不跑。
+const syncHintForCurrentPage = () => {
+  if (!resumeHintState.persistent) {
+    const name = String(route.name ?? '');
+    if (DETAIL_ROUTE_NAMES.has(name) || !HINT_ROUTE_NAMES.has(name) || !playerStore.isPlaying) {
+      if (resumeHintState.open) dismissResumeHint();
+      return;
+    }
+    const shown = maybeShowResumeHint(
+      playerStore.currentTrackSnapshot,
+      playerStore.resumeScopes ?? [],
+      (scope) => playerStore.resumeRecordForScope(scope),
+      { queueId: String(playlistStore.activeQueueId ?? '') },
+    );
+    if (!shown && resumeHintState.open) dismissResumeHint();
+    return;
+  }
+  // 还挂着详情页的常驻卡：从详情页离开时那边会先把卡收掉，
+  // 但同一拍里谁先跑不确定 → 下一拍再判一次，落回普通页就该补一张提示卡
+  enterTimer = window.setTimeout(() => {
+    enterTimer = 0;
+    if (resumeHintState.persistent) return;
+    syncHintForCurrentPage();
+  }, 0);
+};
 watch(
   () => route.path,
   () => {
     // 换页面了：新页面重新定位一次
     lockedSpot = null;
-    if (resumeHintState.open && !resumeHintState.persistent) dismissResumeHint();
+    syncHintForCurrentPage();
   },
 );
 
@@ -310,7 +410,11 @@ watch(ready, (value) => {
   deckRef.value?.replay();
 });
 
-onBeforeUnmount(stopFollow);
+onBeforeUnmount(() => {
+  stopFollow();
+  stopRefresh();
+  if (enterTimer) window.clearTimeout(enterTimer);
+});
 
 /** 牌堆要的数据形状；第二行文案与搜索页那张卡同一套 */
 const deckEntries = computed<ResumeEntryCard[]>(() =>
@@ -341,8 +445,10 @@ const openCard = async (entry: ResumeEntryCard) => {
   if (!card) return;
   requestResumeHintPlay(card.key);
   const token = resumeHintRequest.token;
+  // dismiss 会一并清掉常驻标记，所以先存一份，用来决定要不要走「定位失败」兜底
+  const wasPersistent = resumeHintState.persistent;
   dismissResumeHint();
-  if (resumeHintState.persistent) {
+  if (wasPersistent) {
     // 常驻卡不跳页：页面在这段时间里认领了请求才算定位开始，没人认领就是没起播
     window.setTimeout(() => {
       if (resumeHintRequest.consumed !== token) {
@@ -394,6 +500,20 @@ const onListChange = (open: boolean) => {
   listExpanded.value = open;
   setResumeHintHeld(open);
 };
+
+/*
+ * 卡片是「token 一变就整块重建」的：牌堆重挂之后自带的列表是收起的，
+ * 但 listExpanded 是这个组件上的 ref，不会跟着重挂复位。
+ * 一旦留在 true，壳就永远带着 is-list（pointer-events: none）——卡片看着在，
+ * 单击、双击、右键全落到下面的页面上，等于点不动。
+ */
+watch(
+  () => [resumeHintState.open, resumeHintState.token] as const,
+  () => {
+    listExpanded.value = false;
+    setResumeHintHeld(false);
+  },
+);
 </script>
 
 <template>

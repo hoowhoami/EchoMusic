@@ -420,8 +420,26 @@ onBeforeUnmount(() => {
   while (deckEnterAnims.length) deckEnterAnims.pop()?.cancel();
 });
 
-// 单击跳转要等一个窗口，双击才能把这个待执行的跳转取消掉
-const CLICK_WINDOW = 220;
+// 单击跳转要等一个窗口，双击才能把这个待执行的跳转取消掉。
+// 取 350ms：介于「点了就走」和系统双击间隔（Windows 默认 500ms）之间，
+// 慢一点的双击不至于掉成两次单击，单击也不至于明显发木。
+const CLICK_WINDOW = 350;
+// 浏览器只在同一个元素上发 dblclick，卡片一挪位就发不出来；
+// 这里自己按「同一张卡 + 时间窗」再判一次，双击才不会漏成单击。
+let lastPickAt = 0;
+let lastPickKey = '';
+const takeRepeatPick = (key: string): boolean => {
+  const now = performance.now();
+  const repeat = key !== '' && key === lastPickKey && now - lastPickAt <= CLICK_WINDOW;
+  if (repeat) {
+    lastPickAt = 0;
+    lastPickKey = '';
+  } else {
+    lastPickAt = now;
+    lastPickKey = key;
+  }
+  return repeat;
+};
 let clickTimer: ReturnType<typeof setTimeout> | null = null;
 const clearPendingClick = () => {
   if (clickTimer) {
@@ -638,15 +656,22 @@ const pickCard = (index: number) => {
   // 删除区还开着：这一下点击只负责还原，不跳转、不展开
   if (revealedKey.value !== null) {
     revealedKey.value = null;
+    lastPickAt = 0;
+    lastPickKey = '';
     return;
   }
   const shown = ordered.value.length;
   if (shown === 0) return;
+  const entry = ordered.value[index];
+  if (!entry) return;
+  // 同一张卡在双击窗口里被点了第二下：当成「展开/收起」，不跳转
+  if (takeRepeatPick(entry.key)) {
+    if (listOpen.value || index === 0) toggleCardList();
+    return;
+  }
   // 列表已经展开：点哪一行就打开哪一条；等单击窗过去，
   // 这样双击这一行才能改成“收起”，而不会先跳走
   if (listOpen.value) {
-    const entry = ordered.value[index];
-    if (!entry) return;
     clearPendingClick();
     clickTimer = setTimeout(() => {
       clickTimer = null;
@@ -843,14 +868,12 @@ const toggleCardList = () => {
   listOpen.value = true;
 };
 
-// 双击：卡叠里双击最上面那张 → 展开；列表里双击任意一行 → 收起（不跳转）
-const onCardDblClick = (index: number) => {
+// 浏览器自己的 dblclick 只当兜底：展开/收起已经由 pickCard 的「同一张卡第二下」做过了，
+// 这里再 toggle 会和它抵消，所以只取消待执行的单击跳转。
+const onCardDblClick = () => {
   clearPendingClick();
-  if (listOpen.value) {
-    listOpen.value = false;
-    return;
-  }
-  if (index === 0) toggleCardList();
+  lastPickAt = 0;
+  lastPickKey = '';
 };
 
 // 点空白：只有点在卡片上才算操作卡片，其余（卡片缝、面板空白、占位）都收起
@@ -1059,7 +1082,7 @@ defineExpose({
           :list-mode="listOpen"
           tooltip
           @click="pickCard(index)"
-          @dblclick.prevent="onCardDblClick(index)"
+          @dblclick.prevent="onCardDblClick"
           @contextmenu.prevent="onCardContextMenu(index, entry)"
         >
           <span v-if="deletable" class="resume-card-delete" @click.stop="removeCard(index, entry)"

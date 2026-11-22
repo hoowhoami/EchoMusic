@@ -41,7 +41,7 @@ export const setResumeHintConfig = (patch: Partial<ResumeHintConfig>): void => {
     hintConfig.visibleMs = Math.max(1000, Math.round(patch.visibleMs));
   }
   // 计时中改了时长：按新值重新计时
-  if (resumeHintState.open && !resumeHintState.persistent && hideTimer) {
+  if (resumeHintState.open && !resumeHintState.persistent && !held && hideTimer) {
     clearHideTimer();
     hideTimer = setTimeout(dismissResumeHint, hintConfig.visibleMs);
   }
@@ -127,6 +127,9 @@ export const resumeHintState = reactive<ResumeHintState>({
 });
 
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
+// 竖列表「按住」状态：值为没变时不去碰 hideTimer，否则卡片组件每次开卡都会把
+// 刚设好的自动收起计时（过场卡 1.5s、播放卡 10s）清掉，卡就永远挂在屏幕上
+let held = false;
 
 const clearHideTimer = () => {
   if (hideTimer) {
@@ -151,11 +154,17 @@ const applyCards = (cards: ResumeHintCard[]): void => {
 
 export const dismissResumeHint = (): void => {
   clearHideTimer();
+  held = false;
   resumeHintState.open = false;
+  // 常驻标记跟着卡一起收：详情页的常驻卡关掉后不能再挡播放卡，否则「点播放弹卡」会永久失效
+  resumeHintState.persistent = false;
 };
 
 /** 展示计时的暂停/恢复：竖列表展开着的时候不能让它自己消失。 */
-export const setResumeHintHeld = (held: boolean): void => {
+export const setResumeHintHeld = (next: boolean): void => {
+  // 状态没变就是「重申一遍」：不能顺手 clearHideTimer，否则刚设好的收起计时被白白清掉
+  if (next === held) return;
+  held = next;
   clearHideTimer();
   if (held || !resumeHintState.open || resumeHintState.persistent) return;
   hideTimer = setTimeout(dismissResumeHint, hintConfig.visibleMs);
@@ -171,6 +180,32 @@ export const dropResumeHintCard = (key: string): void => {
     return;
   }
   setResumeHintHeld(false);
+};
+
+/**
+ * 卡片挂着的时候回读一次进度：进度是真的一直在走的，卡上的数字不能停在弹出那一刻。
+ * 只改数字和曲名，不换 token、不碰收起计时 —— 换 token 会整块重挂，卡会闪、计时也会重来。
+ */
+export const refreshResumeHintCards = (
+  readRecord?: (scope: ResumeScopeLike) => ResumeRecordLike | undefined,
+): void => {
+  if (!readRecord || !resumeHintState.open) return;
+  for (const card of resumeHintState.cards) {
+    const record = readRecord({ kind: card.kind, id: card.scopeId });
+    const position = Math.floor(Number(record?.position ?? 0));
+    if (position > 0 && position !== card.recordPosition) card.recordPosition = position;
+    const title = String(record?.title ?? '');
+    if (title && title !== card.recordTitle) card.recordTitle = title;
+  }
+  // 首张卡还镜像在那几个单值字段上（详情页定位要用），跟着一起更新
+  const first = resumeHintState.cards[0];
+  if (!first) return;
+  if (resumeHintState.recordPosition !== first.recordPosition) {
+    resumeHintState.recordPosition = first.recordPosition;
+  }
+  if (resumeHintState.recordTitle !== first.recordTitle) {
+    resumeHintState.recordTitle = first.recordTitle;
+  }
 };
 
 const cardOf = (
@@ -269,9 +304,10 @@ export const maybeShowResumeHint = (
 
   if (cards.length === 0) return 0;
 
-  // 连着再触发一次就是「顶替」：旧卡先收掉、新的再出来（token 变一下让组件重新挂载），
+  // 新卡顶替旧卡：token 变一下让组件重新挂载，旧的一摞收掉、新的一摞出来。
   // 用户能明显看到提示又出现了；静默忽略会让他以为没生效。
   clearHideTimer();
+  held = false;
   resumeHintState.token += 1;
   applyCards(cards);
   resumeHintState.persistent = false;
@@ -338,6 +374,9 @@ export const navigateResumeTarget = async (
   return route.name === expectedName && String(route.params?.id ?? '') === String(expectedId);
 };
 
+/** 过场卡露多久：卡片自己要先等 500ms 才上屏，再留一点看的时间，最后 180ms 淡出 */
+export const PLAYING_HINT_LINGER_MS = 1500;
+
 export interface PageResumeHintInput {
   kind: ResumeHintKind;
   id: string;
@@ -348,6 +387,8 @@ export interface PageResumeHintInput {
   trackId?: string | number | null;
   /** 现在正在播的就是记录里那一集 */
   sameTrack?: boolean;
+  /** 只露一下就走：进页面时正在播的就是这一页那一首，用这个当过场卡 */
+  lingerMs?: number;
 }
 
 /**
@@ -361,6 +402,7 @@ export const showPageResumeHint = (input: PageResumeHintInput): void => {
   const position = Number(input.recordPosition ?? 0);
   if (!id || !(position > 0)) return;
   clearHideTimer();
+  held = false;
   resumeHintState.token += 1;
   applyCards([
     {
@@ -377,4 +419,13 @@ export const showPageResumeHint = (input: PageResumeHintInput): void => {
   ]);
   resumeHintState.persistent = true;
   resumeHintState.open = true;
+  const lingerMs = Number(input.lingerMs ?? 0);
+  if (lingerMs > 0) {
+    // 过场卡：到点自己收，别在几个详情页之间留下一串常驻卡
+    const token = resumeHintState.token;
+    hideTimer = setTimeout(() => {
+      if (resumeHintState.token !== token) return;
+      dismissResumeHint();
+    }, lingerMs);
+  }
 };

@@ -2,19 +2,8 @@
 import { useRouteTabs } from '@/composables/useRouteTabs';
 import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
-import { hideElementTooltip, showElementTooltip } from '@/components/ui/tooltip';
-import { createLocateFeedback } from '@/utils/locateFeedback';
 defineOptions({ name: 'album-detail' });
-import {
-  ref,
-  shallowRef,
-  onMounted,
-  onActivated,
-  onBeforeUnmount,
-  computed,
-  watch,
-  nextTick,
-} from 'vue';
+import { ref, shallowRef, onMounted, onActivated, onBeforeUnmount, computed, watch } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
 
 import { useRoute, useRouter } from 'vue-router';
@@ -53,6 +42,7 @@ import { usePlayerStore } from '@/stores/player';
 import { resumeRecordForScope } from '@/stores/player/resume';
 import {
   dismissResumeHint,
+  PLAYING_HINT_LINGER_MS,
   resumeHintRequest,
   showPageResumeHint,
   takeResumeHintRequest,
@@ -670,13 +660,10 @@ const showPageResumeHintNow = () => {
     dismissPageResumeHint();
     return;
   }
-  // 正在接着播的就是记录里那一集：这一页没什么可提示的了，不贴
+  // 正在接着播的就是记录里那一集：卡照样露一下（跳进来时能看到「上次听到这里」），
+  // 但只当过场，动画放完自己收，不当常驻卡
   const playingThisOne =
     playerStore.isPlaying && String(playerStore.currentTrackId ?? '') === String(target.trackId);
-  if (playingThisOne) {
-    dismissPageResumeHint();
-    return;
-  }
   showPageResumeHint({
     kind: scope.kind,
     id: scope.id,
@@ -686,6 +673,7 @@ const showPageResumeHintNow = () => {
     recordPosition: target.position,
     trackId: target.trackId,
     sameTrack: String(playerStore.currentTrackId ?? '') === String(target.trackId),
+    lingerMs: playingThisOne ? PLAYING_HINT_LINGER_MS : 0,
   });
 };
 
@@ -722,12 +710,9 @@ watch(
   () => resumeHintRequest.token,
   () => {
     if (!isActive.value) return;
-    if (takeResumeHintRequest(pageResumeHintKey.value)) void handleLocate();
+    if (takeResumeHintRequest(pageResumeHintKey.value)) void handleLocate(true);
   },
 );
-
-// 有上次听到的记录就定位它；没有记录才退回「定位当前播放」
-const locateTooltip = computed(() => (resumeTarget.value ? '定位上次听到' : '定位当前播放'));
 
 // 与 SongList 的目标行高亮时长保持一致，高亮结束再续播
 const RESUME_PLAY_DELAY_MS = 1800;
@@ -780,38 +765,9 @@ const scheduleResumePlay = (song: Song, resumeAt = 0) => {
   }, RESUME_PLAY_DELAY_MS);
 };
 
-// 同一个按钮 3 秒内只认第一下：不重复定位、不重复高亮、不叠提示
-
-const locateFeedback = createLocateFeedback();
-
+// 同一个按钮 3 秒内只认第一下：不重复定位、不重复高亮
 const LOCATE_COOLDOWN_MS = 3000;
 let lastLocateAt = 0;
-
-// 进入页面时若这里已有上次播放记录，主动把定位按钮的提示弹出来一次
-const locateAnchorRef = ref<HTMLElement | null>(null);
-const LOCATE_HINT_MS = 2400;
-let locateHintTimer: number | null = null;
-
-const locateHintElement = (): HTMLElement | null =>
-  locateAnchorRef.value?.querySelector<HTMLElement>('button') ?? null;
-
-const hideLocateHint = () => {
-  if (locateHintTimer !== null) {
-    window.clearTimeout(locateHintTimer);
-    locateHintTimer = null;
-  }
-  hideElementTooltip(locateHintElement());
-};
-
-const showLocateHint = () => {
-  const element = locateHintElement();
-  if (!element || !showElementTooltip(element, 400)) return;
-  if (locateHintTimer !== null) window.clearTimeout(locateHintTimer);
-  locateHintTimer = window.setTimeout(() => {
-    locateHintTimer = null;
-    hideElementTooltip(element);
-  }, LOCATE_HINT_MS);
-};
 
 // 列表是虚拟滚动的：数据刚到时会还没测量出行位置，多试几次才能真的滚到位。
 // 3 秒窗口只用来判定「不在列表里」；曲目确实在列表里、只是列表还没测量好时多等一会儿，
@@ -867,15 +823,15 @@ const forgetResumeScopeOf = (trackId: string) => {
   playerStore.forgetResumeScope(scope.kind, scope.id);
 };
 
-// play: true = 续播卡点的；false = 别的入口过来的，只定位不播；不传 = 页面上的「定位」按钮
-const handleLocate = async () => {
+// fromResumeCard: true = 续播卡点名要那一首（带进度续播）；false = 页面上的「定位」按钮
+const handleLocate = async (fromResumeCard = false) => {
   if (!isCurrentRoute()) return;
   const now = Date.now();
   if (now - lastLocateAt < LOCATE_COOLDOWN_MS) return;
   lastLocateAt = now;
-  // 定位对象是「上次听到的那一首」：播放器放的是别的歌也照样滚过去
-  const targetId = resumeTarget.value?.trackId ?? String(playerStore.currentTrackId ?? '');
-  hideLocateHint();
+  // 定位按钮只认当前播放；续播卡点进来时才用卡上记的那一首
+  const bucketEntry = fromResumeCard ? resumeTarget.value : null;
+  const targetId = bucketEntry?.trackId ?? String(playerStore.currentTrackId ?? '');
   clearResumePlayTimer();
   // 既没记录、也没在播：没有定位对象，页面停最上方
   if (!targetId) return;
@@ -886,8 +842,11 @@ const handleLocate = async () => {
   const reached = await revealSongRow(targetId);
   if (!reached) {
     // 列表加载完了、总数里真的没有这一首（下架/被删）：提示一句、删掉这条记录，页面停最上方
-    if (songsAllLoaded.value && !songs.value.some((song) => String(song.id) === targetId)) {
-      locateFeedback.show('上次听到的曲目不在本页列表了');
+    if (
+      bucketEntry &&
+      songsAllLoaded.value &&
+      !songs.value.some((song) => String(song.id) === targetId)
+    ) {
       forgetResumeScopeOf(targetId);
     }
     return;
@@ -895,7 +854,7 @@ const handleLocate = async () => {
   const isCurrentTrack = String(playerStore.currentTrackId ?? '') === targetId;
   // 当前播放那一行本来就有高亮；滚过去的是别的行，就闪一下让人看见
   if (!isCurrentTrack) songListRef.value?.flashSong?.(targetId);
-  const targetEntry = resumeTarget.value;
+  const targetEntry = bucketEntry;
   // 没有进度记录就只滚不播；正在播这一首也不用重来
   if (!targetEntry) return;
   if (isCurrentTrack && playerStore.isPlaying) return;
@@ -905,15 +864,12 @@ const handleLocate = async () => {
   if (targetSong) scheduleResumePlay(targetSong, targetEntry.position);
 };
 
-// 气泡每次进入只弹一次，别被分页加载反复触发
-let locateHintShownOnce = false;
-
 // 点了续播卡过来时只会留下一条续播请求：列表就绪、这一页的卡认得出自己就认领一次
 const consumeLocateRequest = (): boolean => {
   if (!isActive.value) return false;
   if (loadingSongs.value || songs.value.length === 0) return false;
   if (!takeResumeHintRequest(pageResumeHintKey.value)) return false;
-  void handleLocate();
+  void handleLocate(true);
   return true;
 };
 
@@ -922,12 +878,7 @@ watch(
   [() => songs.value.length, loadingSongs],
   ([length, isLoading]) => {
     if (length === 0 || isLoading) return;
-    if (consumeLocateRequest()) return;
-    void nextTick(() => {
-      if (!resumeTarget.value || locateHintShownOnce) return;
-      locateHintShownOnce = true;
-      showLocateHint();
-    });
+    consumeLocateRequest();
   },
   { immediate: true },
 );
@@ -939,16 +890,7 @@ watch(pageResumeHintKey, () => {
 
 onActivated(() => {
   if (disposed) return;
-  const fromRequest = consumeLocateRequest();
-  // 每次回到这一页，只要有上次听到的记录就在靶心弹一次；带着续播请求进来会直接定位，不弹
-  locateHintShownOnce = false;
-  if (!fromRequest && resumeTarget.value) {
-    void nextTick(() => {
-      if (locateHintShownOnce) return;
-      locateHintShownOnce = true;
-      showLocateHint();
-    });
-  }
+  consumeLocateRequest();
 });
 
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
@@ -1106,13 +1048,13 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
                   <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
                     <SongSearchInput v-model="searchQuery" />
-                    <span ref="locateAnchorRef" class="inline-flex">
+                    <span class="inline-flex">
                       <Button
                         variant="unstyled"
                         size="icon"
                         @click="handleLocate()"
                         class="action-icon song-locate-btn"
-                        :tooltip="locateTooltip"
+                        tooltip="定位当前播放"
                       >
                         <Icon :icon="iconCurrentLocation" width="18" height="18" />
                       </Button>

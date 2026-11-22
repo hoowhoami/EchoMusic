@@ -348,6 +348,28 @@ test('续播请求不再区分入口：一律走同一个请求，播不播看�
   assert.equal(hint.requestResumeHintLocate, undefined, '只定位那个入口已经删掉');
 });
 
+test('卡挂着的时候回读进度：数字跟着走，但不换 token、不重置收起计时', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  hint.setResumeHintConfig({ enabled: true, popup: true, visibleMs: 10000 });
+  hint.maybeShowResumeHint({ id: 2, albumId: 600 }, [scopeOf(600, 9)], () => ({
+    position: 442,
+    title: '第一章',
+  }));
+  assert.equal(hint.resumeHintState.open, true);
+  const token = hint.resumeHintState.token;
+  assert.equal(hint.resumeHintState.cards[0].recordPosition, 442);
+
+  hint.refreshResumeHintCards(() => ({ position: 505, title: '第二章' }));
+  assert.equal(hint.resumeHintState.cards[0].recordPosition, 505, '卡片数字要跟着存储走');
+  assert.equal(hint.resumeHintState.cards[0].recordTitle, '第二章', '章节名也跟着换');
+  assert.equal(hint.resumeHintState.recordPosition, 505, '首张卡的镜像字段同步');
+  assert.equal(hint.resumeHintState.token, token, '刷新不能换 token，否则卡片会整块重挂');
+
+  t.mock.timers.tick(10000);
+  assert.equal(hint.resumeHintState.open, false, '收起计时还是原来那一次，没被刷新重置');
+  hint.setResumeHintConfig({ enabled: true });
+});
+
 test('总开关关掉后整个续播卡都不生效，已经贴着的也收走', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   hint.setResumeHintConfig({ enabled: false });

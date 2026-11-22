@@ -14,6 +14,7 @@ import {
   partitionTitlebarActions,
 } from '@/plugins/titlebar';
 import { computed, watch, ref, onMounted, onUnmounted, nextTick } from 'vue';
+import type { ComponentPublicInstance } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { PopoverRoot, PopoverAnchor, PopoverPortal, PopoverContent } from 'reka-ui';
 import SearchDiscovery from '@/views/search/components/SearchDiscovery.vue';
@@ -56,7 +57,13 @@ const canGoForward = ref(false);
 const isSearchFocused = ref(false);
 const searchQuery = ref('');
 const searchInputRef = ref<HTMLInputElement | null>(null);
-const searchContainerRef = ref<HTMLElement | null>(null);
+// PopoverAnchor 用 as-child 时会把子节点整个克隆过去，reka-ui 在克隆时抹掉了子元素的 ref，
+// 挂在 div 上的 ref 永远拿不到元素；改取组件实例的 $el，位置不变、引用稳定。
+const searchAnchorRef = ref<ComponentPublicInstance | null>(null);
+const searchContainerRef = computed<HTMLElement | null>(() => {
+  const el = searchAnchorRef.value?.$el;
+  return el instanceof HTMLElement ? el : null;
+});
 const searchPanelRef = ref<HTMLElement | null>(null);
 const hotSearchCategories = ref<SearchHotCategory[]>([]);
 const isLoadingHot = ref(false);
@@ -644,10 +651,11 @@ onUnmounted(() => {
       <!-- 输入框保持紧凑，发现面板独立展开并传送到顶层。 -->
       <PopoverRoot :open="isSearchFocused" @update:open="!$event && collapseSearch()">
         <PopoverAnchor
+          ref="searchAnchorRef"
           as-child
           :reference="searchQuery.trim() ? undefined : titlebarRef || undefined"
         >
-          <div ref="searchContainerRef" class="tb-search">
+          <div class="tb-search">
             <div class="tb-search-input-wrap">
               <Button
                 variant="unstyled"
