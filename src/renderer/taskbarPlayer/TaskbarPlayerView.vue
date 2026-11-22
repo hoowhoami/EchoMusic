@@ -115,6 +115,11 @@ const coverVisible = computed(() =>
     ? settings.value.pausedDisplay !== 'name'
     : settings.value.playingDisplay !== 'lyrics',
 );
+/**
+ * 悬停/聚焦展开时必须凑齐「封面 + 控制条 + 歌名·歌手·进度」这三部分：
+ * 两档设置只管收起态显示什么，展开态一律把封面补上，缺一块就不像播放器了。
+ */
+const coverShown = computed(() => coverVisible.value || expanded.value);
 /** 暂停态那一行「歌名·歌手」是否出现（悬停展开时另有一块 song-info，与它无关）。 */
 const nowVisible = computed(
   () => lyricsCollapsed.value && settings.value.pausedDisplay !== 'cover',
@@ -243,7 +248,7 @@ const reportWidth = async () => {
   if (!element) return;
   const style = getComputedStyle(element);
   const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-  const coverWidth = coverVisible.value
+  const coverWidth = coverShown.value
     ? (element.querySelector('.cover')?.getBoundingClientRect().width ?? 0) +
       parseFloat(style.columnGap)
     : 0;
@@ -368,7 +373,7 @@ onUnmounted(() => {
       @focusout="focusOut"
     >
       <button
-        v-if="coverVisible"
+        v-if="coverShown"
         type="button"
         class="cover"
         aria-label="打开 EchoMusic"
