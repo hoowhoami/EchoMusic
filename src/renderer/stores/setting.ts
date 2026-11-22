@@ -111,6 +111,12 @@ const toImpulseResponseFilePayload = (file: SpatialAudioEffectEntry): SpatialAud
   vpfPath: file.vpfPath,
 });
 
+/** 歌词页外观模式的类型、纯解析函数与墨色锚点定义在 shared 纯模块，此处转发导出
+ * 便于 store 消费方沿用单一导入面（tests 直接 import shared 真实现）。 */
+import type { LyricPageAppearanceMode } from '../../shared/lyricPageAppearance';
+export type { LyricPageAppearanceMode };
+export { resolveLyricPageIsDark, LYRIC_PAGE_INK } from '../../shared/lyricPageAppearance';
+
 export const useSettingStore = defineStore('setting', {
   state: () => ({
     titlebarLayout: emptyTitlebarLayout(),
@@ -167,6 +173,8 @@ export const useSettingStore = defineStore('setting', {
     lyricCollapseHideControls: false,
     lyricPageBackgroundBlur: false,
     lyricPageBackgroundRhythm: false,
+    /** 歌词页外观模式：深色 / 浅色 / 跟随主程序。默认深色保持历史沉浸体验。 */
+    lyricPageAppearanceMode: 'dark' as LyricPageAppearanceMode,
     lyricFilterEnabled: false,
     lyricFilterPattern: '',
     autoNext: false,

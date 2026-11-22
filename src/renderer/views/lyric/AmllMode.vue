@@ -13,10 +13,12 @@ import { isLyricLineFiltered } from '@/utils/lyricFilter';
 import { useLyricSkin } from './composables/useLyricSkin';
 import {
   AMLL_TEXT_COLOR_FALLBACK,
+  AMLL_TEXT_COLOR_FALLBACK_LIGHT,
   HOST_SKIN_KEYS,
   LYRIC_SKIN_AMLL_DEFAULTS,
   resolveLyricSkinColor,
 } from './skins/config';
+import { useLyricPageIsDark } from './composables/useLyricAppearance';
 import { buildAmllLyricLines } from './amll/convertLyrics';
 import { buildAmllHostStyle } from './amll/hostStyle';
 import { afterPaint } from '@/utils/afterPaint';
@@ -76,6 +78,7 @@ let lastAppliedTimeMs = Number.NaN;
 let openingOverlay: HTMLElement | null = null;
 let openingLayoutPending = true;
 let openingFrames = 0;
+let hostResizeObserver: ResizeObserver | null = null;
 let cancelInitialization: (() => void) | undefined;
 
 const rafLoop = (timestamp: number) => {
@@ -169,6 +172,10 @@ const handleVisibilityChange = () => {
   }
 };
 
+// 窗口尺寸是歌词字号（vw/vh）与窄视口阈值的输入；
+// 容器被 max-width 限制时宿主尺寸可能不变，仍需跟随窗口推帧刷新布局。
+const handleWindowResize = () => requestFrame();
+
 const handleLineClick = (event: Event) => {
   const lineEvent = event as LyricLineMouseEvent;
   // Core forwards native click detail, so the second click identifies a double-click
@@ -226,7 +233,12 @@ const initializePlayer = () => {
   else player.pause();
   playerRef.value = player;
   document.addEventListener('visibilitychange', handleVisibilityChange);
-  lastFrameTime = performance.now();
+  // 暂停时没有常驻 rAF，而引擎内部的 ResizeObserver 只会把新布局写入弹簧目标，
+  // 不推帧就不会应用到 DOM，导致暂停状态调整窗口后歌词间距 / 缩放停留在旧值。
+  // 这里监听宿主尺寸变化唤醒一帧收敛窗口，弹簧到位后循环自行停止。
+  hostResizeObserver = new ResizeObserver(() => requestFrame());
+  hostResizeObserver.observe(host);
+  window.addEventListener('resize', handleWindowResize);
   requestFrame();
 };
 
@@ -244,6 +256,9 @@ onMounted(() => {
 onUnmounted(() => {
   cancelInitialization?.();
   document.removeEventListener('visibilitychange', handleVisibilityChange);
+  window.removeEventListener('resize', handleWindowResize);
+  hostResizeObserver?.disconnect();
+  hostResizeObserver = null;
   if (rafId !== null) cancelAnimationFrame(rafId);
   rafId = null;
   const player = playerRef.value;
@@ -317,17 +332,24 @@ watch(
   },
 );
 
+const lyricIsDark = useLyricPageIsDark();
 const resolvedTextColor = computed(() =>
-  resolveLyricSkinColor(settings.value.textColor, AMLL_TEXT_COLOR_FALLBACK),
-);
-// 歌词字体继承与颜色 CSS 变量的组装规则见 amll/hostStyle.ts。
-const playerAreaStyle = computed(() =>
-  buildAmllHostStyle(
-    settingStore.buildLyricFontFamily(),
+  resolveLyricSkinColor(
     settings.value.textColor,
-    resolvedTextColor.value,
+    lyricIsDark.value ? AMLL_TEXT_COLOR_FALLBACK : AMLL_TEXT_COLOR_FALLBACK_LIGHT,
   ),
 );
+// 歌词字体继承与颜色 CSS 变量的组装规则见 amll/hostStyle.ts。
+// 深色档保持 core 白字默认（未配置时不下发变量）；浅色档必须显式下发深色文字，
+// 并下发深色 hover 高亮（core 默认白色 6% hover 在浅底不可见）。
+const playerAreaStyle = computed(() => ({
+  ...buildAmllHostStyle(
+    settingStore.buildLyricFontFamily(),
+    settings.value.textColor || (lyricIsDark.value ? '' : AMLL_TEXT_COLOR_FALLBACK_LIGHT),
+    resolvedTextColor.value,
+  ),
+  ...(lyricIsDark.value ? {} : { '--amll-lp-hover-bg-color': 'rgba(0, 0, 0, 0.06)' }),
+}));
 </script>
 
 <template>
@@ -439,6 +461,9 @@ const playerAreaStyle = computed(() =>
 .amll-engine-host {
   width: 100%;
   height: 100%;
+  /* core 歌词用 mix-blend-mode: plus-lighter，锁定混合作用域在引擎内部，
+   * 避免宿主堆叠上下文变化时浅色档歌词被整体加亮而消失 */
+  isolation: isolate;
 }
 
 @media (max-width: 768px) {

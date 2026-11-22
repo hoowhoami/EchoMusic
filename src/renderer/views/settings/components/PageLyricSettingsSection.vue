@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { useSettingStore } from '@/stores/setting';
+import { normalizeLyricPageAppearanceMode } from '../../../../shared/lyricPageAppearance';
 import { useLyricStore } from '@/stores/lyric';
 import { useLyricColorPicker } from '@/composables/useLyricColorPicker';
+import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import { Icon } from '@iconify/vue';
@@ -12,6 +14,12 @@ const settingStore = useSettingStore();
 const lyricStore = useLyricStore();
 const { activeValue, activeTitle, isOpen, dynamicOption, presets, open, close, apply, reset } =
   useLyricColorPicker();
+
+const appearanceModes = [
+  { value: 'follow', label: '跟随主程序' },
+  { value: 'dark', label: '深色' },
+  { value: 'light', label: '浅色' },
+];
 </script>
 
 <template>
@@ -63,6 +71,24 @@ const { activeValue, activeTitle, isOpen, dynamicOption, presets, open, close, a
           </button>
         </div>
       </div>
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">外观模式</h3>
+        <p class="text-sm text-text-secondary">
+          歌词页深浅色：浅色使用封面主色提亮背景，跟随主程序时随深浅色模式切换
+        </p>
+      </div>
+      <Select
+        :model-value="normalizeLyricPageAppearanceMode(settingStore.lyricPageAppearanceMode)"
+        :options="appearanceModes"
+        aria-label="歌词页外观模式"
+        class="w-36 shrink-0"
+        @update:model-value="
+          settingStore.lyricPageAppearanceMode = normalizeLyricPageAppearanceMode($event)
+        "
+      />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">

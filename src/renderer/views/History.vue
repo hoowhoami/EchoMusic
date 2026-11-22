@@ -161,7 +161,10 @@ const formatShareTimestamp = (date = new Date()) => {
 };
 
 // 统计快照：逐行对齐 EchoMusicNext buildStats 的口径（见 src/shared/historyStats.ts）
-const historyStats = computed(() => buildHistoryStats(historyStore.entries));
+// 已记录时长取独立聚合的终身累计，不随历史裁剪/删除/清空变化
+const historyStats = computed(() =>
+  buildHistoryStats(historyStore.entries, historyStore.listenedTotalMs),
+);
 const statsLoading = computed(() => !historyStore.hydrated && historyStore.entries.length === 0);
 // 本地历史加载无失败态暴露，错误文案恒为空，保留结构以便与 Next 的错误空态对齐
 // TODO: hydrate() 目前失败只 logger.warn 不暴露状态；接通后此空态卡可展示真实错误信息

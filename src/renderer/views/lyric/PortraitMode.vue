@@ -5,6 +5,7 @@ import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useSettingStore } from '@/stores/setting';
 import { useLyricPortrait } from '@/composables/useLyricPortrait';
 import { useLyricBackground } from './composables/useLyricBackground';
+import { useLyricPageIsDark } from './composables/useLyricAppearance';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverDisplayUrl } from '@/utils/cover';
 import Cover from '@/components/ui/Cover.vue';
@@ -26,9 +27,20 @@ const currentTrackLyricHash = computed(() =>
   String(currentTrack.value?.hash ?? currentTrack.value?.id ?? '').trim(),
 );
 
-// 背景主题色（无写真时使用）
+// 背景主题色（无写真时使用）。兜底背景与遮罩直接消费 LyricPage 下发的分档变量，
+// 避免与 LyricPage 的 lyricPalette 重复维护两份同值配置。
 const coverUrl = computed(() => currentTrack.value?.coverUrl);
-const { backgroundColor } = useLyricBackground(coverUrl);
+const lyricIsDark = useLyricPageIsDark();
+const { backgroundColor } = useLyricBackground(coverUrl, lyricIsDark);
+const fallbackBg = 'var(--lyric-page-bg, #1a1d22)';
+const blurOverlayColor = 'var(--lyric-blur-overlay-bg, rgba(0, 0, 0, 0.5))';
+const dimOverlayColor = 'var(--lyric-dim-overlay-bg, black)';
+// 写真遮罩不透明度：浅色档深字落在普遍偏暗的写真相册上不可读，
+// 遮罩（白色提亮）需要保留下限，避免用户把 backdropOpacity 调到 100 后完全无遮罩
+const dimOverlayOpacity = computed(() => {
+  const userOpacity = 1 - settings.value.backdropOpacity / 100;
+  return lyricIsDark.value ? userOpacity : Math.max(0.4, userOpacity);
+});
 const displayCoverUrl = computed(() => {
   void coverFallbackRevision.value;
   return resolveCoverDisplayUrl(coverUrl.value, 400, { scope: 'lyric-background' });
@@ -324,7 +336,7 @@ defineExpose({
 <template>
   <div class="portrait-mode" @mousemove="handleMouseMove" @wheel.passive="handleWheel">
     <!-- 写真背景 -->
-    <div class="portrait-backdrop" :style="{ backgroundColor: backgroundColor || '#1a1d22' }">
+    <div class="portrait-backdrop" :style="{ backgroundColor: backgroundColor || fallbackBg }">
       <div class="portrait-blur-stack">
         <img
           v-for="(_, layerIndex) in blurLayers"
@@ -334,7 +346,11 @@ defineExpose({
           class="portrait-blur-img"
           :class="{ 'is-visible': visibleBlurLayer === layerIndex }"
         />
-        <div v-if="hasVisibleBlur" class="portrait-blur-overlay"></div>
+        <div
+          v-if="hasVisibleBlur"
+          class="portrait-blur-overlay"
+          :style="{ background: blurOverlayColor }"
+        ></div>
       </div>
       <div class="portrait-media-stack">
         <Cover
@@ -358,11 +374,11 @@ defineExpose({
       </div>
     </div>
 
-    <!-- 遮罩层（有写真或启用封面兜底时压暗，透明度由设置控制） -->
+    <!-- 遮罩层（有写真或启用封面兜底时压暗/提亮，透明度由设置控制） -->
     <div
       v-if="hasVisiblePortrait || showCoverFallback"
       class="portrait-overlay"
-      :style="{ opacity: 1 - settings.backdropOpacity / 100 }"
+      :style="{ opacity: dimOverlayOpacity, background: dimOverlayColor }"
     ></div>
 
     <!-- 歌词区域 -->
@@ -455,13 +471,13 @@ defineExpose({
 .portrait-blur-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  /* 颜色由模板内联的 --lyric-blur-overlay-bg 分档变量提供 */
 }
 
 .portrait-overlay {
   position: fixed;
   inset: 0;
-  background: black;
+  /* 颜色由模板内联的 --lyric-dim-overlay-bg 分档变量提供 */
   pointer-events: none;
   z-index: 1;
 }

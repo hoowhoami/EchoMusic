@@ -33,6 +33,8 @@ import { createResolver } from './player/resolver';
 import { useSongQualityAccessStore } from './songQualityAccess';
 import { createHistoryManager } from './player/history';
 import { createListeningTimeManager } from './player/listeningTime';
+import { createListenHistory } from './player/listenHistory';
+import { useHistoryStore } from './historyStore';
 import { createDeviceManager } from './player/device';
 import { createSpatialAudioSupport } from './player/spatialAudioSupport';
 import { shouldShowPlaybackBuffering } from './player/progressStatus';
@@ -94,6 +96,23 @@ export const usePlayerStore = defineStore(
     );
     const historyManager = createHistoryManager(state);
     const listeningTimeManager = createListeningTimeManager(state);
+    // 本地收听时长累计：与登录/远端上报无关，纯本地历史统计
+    const localListenHistory = createListenHistory({
+      now: () => performance.now(),
+      blocked: () =>
+        !getPlaybackIsPlaying(state) ||
+        getPlaybackIsLoading(state) ||
+        state.awaitingTrackLoad ||
+        state.stallRecovering ||
+        state.nativeSeekActive ||
+        state.seekTargetTime !== null,
+      record: (song, listenedMs) => useHistoryStore().addListenTime(song, listenedMs),
+      onError: (error) => logger.warn('PlayerStore', 'Local listen time settle failed', error),
+    });
+    // 页面关闭前尽力结算最后一段；强退/崩溃由 60s 周期结算兜底
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('beforeunload', () => localListenHistory.stop());
+    }
 
     // 播放生命周期事件总线：随 store 单例创建，全程存活，供插件等订阅方感知播放事件
     const playerEvents = createPlayerEventBus();
@@ -110,10 +129,13 @@ export const usePlayerStore = defineStore(
       ...extra,
     });
     const emitPlayerEvent = (event: PlayerEventName, extra?: Partial<PlayerEventPayload>) => {
-      if (event === 'seek' || event === 'play' || event === 'pause')
+      if (event === 'seek' || event === 'play' || event === 'pause') {
         listeningTimeManager.resetPosition();
+        localListenHistory.resetPosition();
+      }
       if (event === 'trackchange' || event === 'ended' || event === 'error') {
         void listeningTimeManager.flush(event === 'ended' ? '完整播放' : '中断播放');
+        localListenHistory.flush();
       }
       playerEvents.emit(event, getPlayerEventPayload(event, extra));
     };
@@ -729,6 +751,7 @@ export const usePlayerStore = defineStore(
       () => {
         void listeningTimeManager.flush('完整播放');
       },
+      () => localListenHistory.stop(),
     );
     let audioDeviceListListenerRegistered = false;
 
@@ -1337,6 +1360,11 @@ export const usePlayerStore = defineStore(
           state.currentTime = currentTime;
           state.currentTimeUpdatedAt = payload?.sampledAt ?? now;
           listeningTimeManager.tick();
+          localListenHistory.tick(
+            state.currentTrackSnapshot,
+            state.currentTime,
+            state.playbackRate,
+          );
           void playbackManager.prepareGaplessNext();
           if (now - lastEventTimeUpdate >= EVENT_TIMEUPDATE_MS) {
             lastEventTimeUpdate = now;

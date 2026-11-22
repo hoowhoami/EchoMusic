@@ -1,5 +1,6 @@
 import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
+import { LYRIC_PAGE_INK, resolveLyricPageIsDark } from '../src/shared/lyricPageAppearance.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
@@ -205,6 +206,14 @@ function store(service) {
     '@/plugins/lyrics': {},
     '@/services/opencc': service,
     './theme': {},
+
+    './setting': {
+      resolveLyricPageIsDark,
+
+      useSettingStore: () => ({ lyricPageAppearanceMode: 'dark' }),
+
+      LYRIC_PAGE_INK,
+    },
     '../../shared/lyricOffset': offset,
     '../../shared/embeddedMetadata': embeddedTags,
     '../../shared/opencc': opencc,

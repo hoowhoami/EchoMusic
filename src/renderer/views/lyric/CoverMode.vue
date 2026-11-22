@@ -113,10 +113,10 @@ const { settings } = useLyricSkin(HOST_SKIN_KEYS.cover, LYRIC_SKIN_COVER_DEFAULT
 .sync-warning {
   margin-top: 8px;
   font-size: 11px;
-  color: rgba(255, 200, 50, 0.85);
+  color: var(--lyric-warning-color);
   padding: 4px 12px;
   border-radius: 999px;
-  background: rgba(255, 200, 50, 0.1);
+  background: var(--lyric-warning-bg);
   display: inline-block;
 }
 
