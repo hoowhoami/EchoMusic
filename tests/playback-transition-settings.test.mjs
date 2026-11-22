@@ -230,6 +230,8 @@ function setup({
     './resume': {
       resolveResumeEntry: () => 'single',
       resolveResumePosition: () => 0,
+      resumeClaimFromQueues: () => null,
+      resumeOwnership: () => ({ artistIds: [], queueId: null }),
       resumeRecordForScope: () => undefined,
     },
     '@/utils/resumeHint': {

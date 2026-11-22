@@ -205,6 +205,7 @@ export const queueActions = {
       type: options.type,
       dynamic: options.dynamic,
       meta: options.meta,
+      resumeScope: options.resumeScope,
     });
     this.playbackQueues.unshift(normalizePlaybackQueueRuntime(created));
     this.trimPlaybackQueues();
@@ -301,6 +302,8 @@ export const queueActions = {
     targetQueue.type = options.type ?? targetQueue.type;
     targetQueue.dynamic = options.dynamic ?? targetQueue.dynamic;
     targetQueue.meta = options.meta ? { ...targetQueue.meta, ...options.meta } : targetQueue.meta;
+    // 归属跟着队列走：这次没带归属（其它入口）时不能把队列上原有的归属抹掉。
+    if (options.resumeScope !== undefined) targetQueue.resumeScope = options.resumeScope ?? null;
     if (
       targetQueue.currentTrackId &&
       !targetQueue.songs.some((song) => String(song.id) === String(targetQueue.currentTrackId))

@@ -56,6 +56,11 @@ export interface PlaybackQueueState {
   updatedAt: number;
   dynamic: boolean;
   meta: PlaybackQueueMetaValueMap;
+  /**
+   * 队列带出来的详情页归属：从详情页起播时记在这个队列上，之后在同一队列里点别的歌、
+   * 上一首下一首都还认这一页；换个入口起播就是另一个队列，没有归属。
+   */
+  resumeScope?: PlaybackResumeScope | null;
 }
 
 /** 详情页点播时带的续播认领：只有从专辑/歌手/歌单/有声页发起的播放才带。 */

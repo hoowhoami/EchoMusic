@@ -139,13 +139,17 @@ export function useAppRuntime(
     if (!lifetime.active) return;
 
     // 续播记录跟播放历史共用一份容量：历史里已经没有的曲目，续播进度与桶一并清掉。
+    // 两个前提：历史必须真的读成功了（读失败/未读完时 entries 是空的，据此裁剪会把数据全删），
+    // 且当前窗口要拥有播放引擎（壁纸窗口只做镜像，不该改动这份数据）。
+    const canPruneResume = () => historyStore.hydrated && !isWallpaperRoute?.value;
     const pruneResumeWithHistory = () => {
+      if (!canPruneResume()) return;
       activePlayer.pruneResumeAgainstHistory(
         historyStore.entries.map((entry) => resolveSongHistoryId(entry.song)),
       );
     };
     pruneResumeWithHistory();
-    activePlayer.dedupeAlbumAudiobookScopes();
+    if (canPruneResume()) activePlayer.dedupeAlbumAudiobookScopes();
 
     // 续播卡的三个开关与停留时长跟着设置走：设置页一改，下一次弹卡立即生效
     const syncResumeHintConfig = () => {

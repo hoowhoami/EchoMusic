@@ -17,7 +17,13 @@ import type { PluginAudioSourceTransformStage } from '@/plugins/audioSource';
 import { isPlayableSong } from '@/utils/song';
 import type { PlayerState } from './state';
 import type { ResumeScopeKind } from './resume';
-import { resolveResumeEntry, resolveResumePosition, resumeRecordForScope } from './resume';
+import {
+  resolveResumeEntry,
+  resolveResumePosition,
+  resumeClaimFromQueues,
+  resumeOwnership,
+  resumeRecordForScope,
+} from './resume';
 import { maybeShowResumeHint, resumeHintState } from '@/utils/resumeHint';
 import router from '@/router';
 import { normalizePlayerErrorPayload, type PlayerEngine } from '@/utils/player';
@@ -1457,6 +1463,14 @@ export const createPlaybackManager = (
     }, delayMs);
   };
 
+  /** 队列自己带出来的详情页归属：只有这次播放确实来自该队列才认，避免上一次的归属残留到别处。 */
+  const queueResumeClaim = (queueId: string | null | undefined) => {
+    const id = queueId == null ? '' : String(queueId);
+    if (!id) return null;
+    const queue = playlistStore.playbackQueues.find((item) => item.id === id);
+    return queue?.resumeScope ?? null;
+  };
+
   const playTrack = async (
     id: string,
     playlist?: Song[],
@@ -1476,8 +1490,9 @@ export const createPlaybackManager = (
     },
   ) => {
     const requestSeq = ++state.playbackRequestSeq;
-    // 认领只在这次起播有效：详情页点播会带，其它入口不带就清空，避免上一次的认领残留到下一次。
-    state.resumeClaim = options?.resumeClaim ?? null;
+    // 认领只在这次起播有效：详情页点播会带；队列上记着归属的（详情页起播那次写下的），
+    // 在同一队列里点别的歌、上一首下一首也接着认，否则整张连播会掉回单曲线。
+    state.resumeClaim = options?.resumeClaim ?? queueResumeClaim(options?.sourceQueueId ?? null);
     state.mvAudioFallbackFailureReason = '';
     deferredPreResolvedFallback = null;
     fmAdvanceId++;
@@ -1564,7 +1579,11 @@ export const createPlaybackManager = (
     const resumeEntry = resolveResumeEntry(state, {
       playMode: state.playMode,
       albumId: track.albumId ?? null,
-      trackId: resolvedId,
+      ...resumeOwnership(track, state.currentSourceQueueId),
+      // 认领优先用这次起播带的；没有就退回队列上记着的归属（重启恢复的队列没有起播认领）
+      claim:
+        state.resumeClaim ??
+        resumeClaimFromQueues(playlistStore.playbackQueues, state.currentSourceQueueId),
     });
     state.currentTime = resolveResumePosition(
       state,

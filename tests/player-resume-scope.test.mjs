@@ -49,7 +49,7 @@ test('只有详情页点播才认领桶，其它入口记单曲线', () => {
   );
 });
 
-test('随机播放不认领桶，但已认领的曲目继续留在桶里', () => {
+test('随机播放不认领桶，其它入口播同一首也不迁移', () => {
   const state = fresh();
   state.resumeScopes.push(scope('playlist', 'p1', '7'));
   state.resumeClaim = { kind: 'playlist', id: 'p1' };
@@ -61,10 +61,47 @@ test('随机播放不认领桶，但已认领的曲目继续留在桶里', () =>
   state.resumeClaim = null;
   assert.equal(
     resume.resolveResumeEntry(state, { trackId: 7 }),
-    'playlist:p1',
-    '桶里认领过的曲目从其它入口再播不迁移',
+    'single',
+    '没有认领时，哪怕是桶里记过的曲目也记单曲线',
   );
-  assert.equal(resume.resolveResumeEntry(state, { trackId: 8 }), 'single');
+});
+
+test('歌单桶只认自己那条队列，歌手桶只认歌手名下', () => {
+  const state = fresh();
+  state.resumeScopes.push(scope('playlist', 'p1', '7'));
+  state.resumeScopes.push(scope('artist', 'a1', '8'));
+  assert.equal(
+    resume.resolveResumeEntry(state, {
+      claim: { kind: 'playlist', id: 'p1' },
+      queueId: 'queue:playlist:p1',
+    }),
+    'playlist:p1',
+    '播放队列就是这张歌单时继续记歌单线',
+  );
+  assert.equal(
+    resume.resolveResumeEntry(state, {
+      claim: { kind: 'playlist', id: 'p1' },
+      queueId: 'queue:playlist:p2',
+    }),
+    'single',
+    '别的歌单队列不能写进这条线',
+  );
+  assert.equal(
+    resume.resolveResumeEntry(state, {
+      claim: { kind: 'artist', id: 'a1' },
+      artistIds: ['a1', 9],
+    }),
+    'artist:a1',
+    '曲目的歌手里有这一位就继续记歌手线',
+  );
+  assert.equal(
+    resume.resolveResumeEntry(state, {
+      claim: { kind: 'artist', id: 'a1' },
+      artistIds: [null, 9],
+    }),
+    'single',
+    '曲目不在这一位名下就退回单曲线',
+  );
 });
 
 test('记录线解析：只认四种桶，single 与其它前缀都不算', () => {
@@ -133,6 +170,23 @@ test('删掉正在播的那个桶时一并撤销认领，下一秒不会被写�
   );
   resume.rememberResumePosition(state, '5', 120, 600, 'single');
   assert.equal(state.resumeScopes.length, 0, '写进度不该把删掉的桶带回来');
+});
+
+test('队列带出来的归属能当认领兜底（重启恢复的队列没有起播认领）', () => {
+  const queues = [
+    { id: 'queue:album:100', resumeScope: { kind: 'audiobook', id: '100' } },
+    { id: 'queue:history', resumeScope: null },
+    { id: 'queue:album:200' },
+  ];
+  assert.deepEqual(resume.resumeClaimFromQueues(queues, 'queue:album:100'), {
+    kind: 'audiobook',
+    id: '100',
+  });
+  assert.equal(resume.resumeClaimFromQueues(queues, 'queue:history'), null);
+  assert.equal(resume.resumeClaimFromQueues(queues, 'queue:album:200'), null);
+  assert.equal(resume.resumeClaimFromQueues(queues, 'queue:album:999'), null);
+  assert.equal(resume.resumeClaimFromQueues(queues, ''), null);
+  assert.equal(resume.resumeClaimFromQueues(null, 'queue:album:100'), null);
 });
 
 test('删的是别的桶时不动当前认领', () => {

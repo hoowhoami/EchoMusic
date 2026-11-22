@@ -41,8 +41,42 @@ export type ResumeState = Pick<PlayerState, 'resumePositions' | 'resumeScopes'> 
 export interface ResumeEntryContext {
   playMode?: PlayMode;
   albumId?: string | number | null;
-  trackId?: string | number | null;
+  /** 当前曲目的歌手 id，用来校验歌手页的归属。 */
+  artistIds?: readonly (string | number | null | undefined)[];
+  /** 当前播放队列 id：只有 queue:playlist:<id> 才认歌单桶。 */
+  queueId?: string | null;
+  /** 这次播放带的详情页归属；缺省读 state.resumeClaim。 */
+  claim?: ResumeClaim | null;
 }
+
+/** 归属校验用的上下文：这首曲目挂在哪些歌手名下、当前在哪个队列里播。 */
+export const resumeOwnership = (
+  song: {
+    artists?: Array<{ id?: string | number }>;
+    singers?: Array<{ id?: string | number }>;
+  } | null,
+  queueId?: string | number | null,
+): Pick<ResumeEntryContext, 'artistIds' | 'queueId'> => ({
+  artistIds: [...(song?.artists ?? []), ...(song?.singers ?? [])].map((item) => item?.id),
+  queueId: queueId == null ? null : String(queueId),
+});
+
+/**
+ * 队列上记着的详情页归属：详情页起播那次写在队列上，之后重启恢复、队列里切歌、
+ * 上一首下一首都靠它把进度写回对的桶，不用再指望内存里那次起播的认领。
+ */
+export const resumeClaimFromQueues = (
+  queues:
+    | ReadonlyArray<{ id?: string | number | null; resumeScope?: ResumeClaim | null }>
+    | null
+    | undefined,
+  queueId?: string | number | null,
+): ResumeClaim | null => {
+  const id = queueId == null ? '' : String(queueId);
+  if (!id || !queues) return null;
+  const queue = queues.find((item) => String(item.id ?? '') === id);
+  return queue?.resumeScope ?? null;
+};
 
 export interface ResumeScopeMeta {
   name?: string;
@@ -109,35 +143,36 @@ const findScope = (
 ): PlayerState['resumeScopes'][number] | null =>
   state.resumeScopes.find((scope) => scope.kind === kind && scope.id === id) ?? null;
 
-/** 认领来的这首必须真的属于那个详情页：有声章节、专辑曲目的 albumId 就是它。 */
+/** 认领来的这首必须真的属于那个详情页：专辑/有声看 albumId，歌手看歌手 id，歌单看播放队列。 */
 const scopeOwnsTrack = (
   scope: { kind: ResumeScopeKind; id: string },
-  albumId: unknown,
+  context: ResumeEntryContext,
 ): boolean => {
-  // 歌手页与歌单页的归属由页面自己判定（歌手看歌手 id，歌单看播放队列/曲目是否在表里）
-  if (scope.kind === 'artist' || scope.kind === 'playlist') return true;
-  const id = toKey(albumId);
-  return id !== '' && id === scope.id;
+  const id = toKey(scope.id);
+  if (id === '') return false;
+  switch (scope.kind) {
+    case 'album':
+    case 'audiobook':
+      return toKey(context.albumId) === id;
+    case 'artist':
+      return (context.artistIds ?? []).some((value) => toKey(value) === id);
+    case 'playlist':
+      // 歌单里的曲目没法从单曲本身反查，只能看这次播放是不是就走在这条队列上。
+      return toKey(context.queueId) === `queue:playlist:${id}`;
+    default:
+      return false;
+  }
 };
 
 export const resolveResumeEntry = (state: ResumeState, context: ResumeEntryContext): string => {
   // 随机播放不认领任何桶：乱序跳着听不构成「在听这张专辑 / 这本书」。
   if (context.playMode === 'random') return RESUME_SINGLE_ENTRY;
-  // 只有详情页点播会带认领标记（queueOptions.resumeScope）：搜索、收藏、歌词搜索、
-  // 歌词行双击、推荐、历史这些入口不带，哪怕这一首恰好属于某本书，也一律记单曲线，
-  // 否则卡片上原来的章节名会被顶掉。
-  const claim = state.resumeClaim ?? null;
-  if (claim && scopeOwnsTrack(claim, context.albumId)) {
+  // 只有详情页点播会带认领标记（队列上的 resumeScope）：搜索、收藏、歌词搜索、
+  // 歌词行双击、推荐、历史这些入口起播的队列没有归属，哪怕这一首恰好属于某张专辑，
+  // 也一律记单曲线，否则卡片上原来的记录会被别处的播放顶掉。
+  const claim = context.claim ?? state.resumeClaim ?? null;
+  if (claim && scopeOwnsTrack(claim, context)) {
     return scopeEntry(claim.kind, claim.id);
-  }
-  // 已经由某个桶认领的曲目（详情页整张连播的下一首）继续留在那个桶里，
-  // 否则自动连播会退回单曲线，桶里那条记录就成了没人维护的孤儿。
-  const ownerTrackId = toKey(context.trackId);
-  if (ownerTrackId) {
-    const owner = state.resumeScopes.find(
-      (scope) => scope.trackId === ownerTrackId && scopeOwnsTrack(scope, context.albumId),
-    );
-    if (owner) return scopeEntry(owner.kind, owner.id);
   }
   return RESUME_SINGLE_ENTRY;
 };

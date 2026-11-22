@@ -103,7 +103,8 @@ export const useHistoryStore = defineStore('history', () => {
     if (hydratePromise) return hydratePromise;
     const storage = window.electron?.storage;
     if (!storage) {
-      hydrated.value = true;
+      // 不能把「读不到历史」当成「历史是空的」：上层续播裁剪会据此把进度与续播桶全删。
+      logger.warn('HistoryStore', 'Storage unavailable, history stays unloaded');
       return;
     }
     const requestGeneration = generation;

@@ -182,6 +182,7 @@ export const buildPlaybackQueueState = (
     updatedAt: now,
     dynamic: options.dynamic ?? false,
     meta: { ...(options.meta ?? {}) },
+    resumeScope: options.resumeScope ?? null,
   };
 };
 

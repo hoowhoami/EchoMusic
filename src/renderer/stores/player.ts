@@ -35,6 +35,8 @@ import {
   registerResumeScope,
   rememberResumePosition,
   resolveResumeEntry,
+  resumeClaimFromQueues,
+  resumeOwnership,
   resumeRecordForScope,
   resolveResumePosition,
 } from './player/resume';
@@ -815,7 +817,17 @@ export const usePlayerStore = defineStore(
       resolveResumeEntry(state, {
         playMode: state.playMode,
         albumId: state.currentTrackSnapshot?.albumId ?? null,
-        trackId: state.currentTrackId ?? null,
+        ...resumeOwnership(
+          state.currentTrackSnapshot ?? null,
+          state.currentSourceQueueId ?? playlistStore.activeQueueId,
+        ),
+        // 这次起播没带认领时用队列上的归属兜底：重启恢复出来的队列不会走起播那条路
+        claim:
+          state.resumeClaim ??
+          resumeClaimFromQueues(
+            playlistStore.playbackQueues,
+            state.currentSourceQueueId ?? playlistStore.activeQueueId,
+          ),
       });
     const handlePlaybackEnded = async () => {
       if (handlingPlaybackEnd) return;
@@ -1156,6 +1168,16 @@ export const usePlayerStore = defineStore(
         resolveResumeEntry(state, {
           playMode: state.playMode,
           albumId: targetTrack.albumId ?? null,
+          ...resumeOwnership(
+            targetTrack,
+            state.currentSourceQueueId ?? playlistStore.activeQueueId,
+          ),
+          claim:
+            state.resumeClaim ??
+            resumeClaimFromQueues(
+              playlistStore.playbackQueues,
+              state.currentSourceQueueId ?? playlistStore.activeQueueId,
+            ),
         }),
       );
       state.currentTimeUpdatedAt = Date.now();

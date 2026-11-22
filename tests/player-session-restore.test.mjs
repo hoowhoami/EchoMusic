@@ -349,6 +349,7 @@ test('real player-store init restores the transient queue before publishing meta
     './player/resume': {
       resolveResumeEntry: () => 'single',
       resolveResumePosition: () => 0,
+      resumeClaimFromQueues: () => null,
       resumeRecordForScope: () => undefined,
       resumeRecordOfTrack: () => undefined,
       rememberResumePosition: () => {},
