@@ -554,6 +554,8 @@ const videosLoading = ref(false);
 const videosLoaded = ref(false);
 const videosPage = ref(1);
 const videosHasMore = ref(true);
+// 收藏视频总数：只靠已加载条数算不准（一页 30 条），徽标用接口给的 ctotal
+const videosTotal = ref(0);
 const VIDEOS_PAGE_SIZE = 30;
 let videosGeneration = 0;
 
@@ -604,6 +606,10 @@ const fetchVideos = async (reset = false) => {
       } else {
         videos.value = [...videos.value, ...mapped];
       }
+      // ctotal 是收藏视频的总数，列表只拿一页，徽标要看总数
+      const ctotal = data?.ctotal;
+      videosTotal.value =
+        typeof ctotal === 'number' && Number.isFinite(ctotal) ? ctotal : videos.value.length;
       videosHasMore.value = mapped.length >= VIDEOS_PAGE_SIZE;
       videosPage.value = requestPage + 1;
       videosLoaded.value = true;
@@ -623,6 +629,7 @@ const resetVideos = () => {
   videos.value = [];
   videosLoading.value = false;
   videosLoaded.value = false;
+  videosTotal.value = 0;
   videosPage.value = 1;
   videosHasMore.value = true;
   videoSearchQuery.value = '';
@@ -908,12 +915,9 @@ const loadActiveTabData = () => {
   if (!isActive.value) return;
   if (!isLoggedIn.value) return;
   if (!currentUserKey.value) return;
-  if ((activeTab.value === 'singers' || activeTab.value === 'users') && !followedLoaded.value) {
-    void fetchFollowed();
-  }
-  if (activeTab.value === 'videos' && !videosLoaded.value) {
-    void fetchVideos(true);
-  }
+  // 歌手/用户/视频的徽标要一进页面就有，所以不等点开 tab 就先静默拉一次
+  if (!followedLoaded.value) void fetchFollowed();
+  if (!videosLoaded.value) void fetchVideos(true);
   if (activeTab.value === 'albums' || activeTab.value === 'audiobooks') {
     void fetchMissingAlbumCategories();
   }
@@ -1001,7 +1005,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                 <span v-if="userCards.length > 0">{{ userCards.length }} 位用户</span>
                 <span v-if="musicAlbums.length > 0">{{ musicAlbums.length }} 张专辑</span>
                 <span v-if="audiobookAlbums.length > 0"> {{ audiobookAlbums.length }} 张有声 </span>
-                <span v-if="videos.length > 0">{{ videos.length }} 个视频</span>
+                <span v-if="videosTotal > 0">{{ videosTotal }} 个视频</span>
               </div>
             </div>
           </template>
@@ -1106,7 +1110,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                     </TabsTrigger>
                     <TabsTrigger value="videos">
                       <span class="badge-label"
-                        >视频 <Badge v-if="videos.length > 0" :count="videos.length"
+                        >视频 <Badge v-if="videosTotal > 0" :count="videosTotal"
                       /></span>
                     </TabsTrigger>
                   </TabsList>
