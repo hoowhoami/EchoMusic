@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { computed, ref, watch } from 'vue';
+import { computed, effectScope, ref, watch } from 'vue';
 import { useSettingStore } from './setting';
 
 export interface OutputTargetView {
@@ -72,6 +72,10 @@ export const useOutputStore = defineStore('output', () => {
   );
   const visibleTargets = computed(() => targets.value);
   let started = false;
+  // 长期副作用宿主：与 store 单例同生命周期，永不 stop。
+  // 避免 bind() 在 setup 阶段被调用时，watch 绑定到调用方组件 scope，
+  // 组件卸载后同步静默失效（started 标记还会阻止重新注册）。
+  const effects = effectScope(true);
   let browsingRequests = 0;
   let refreshFlight: Promise<void> | null = null;
   let discoveryRevision = 0;
@@ -93,36 +97,38 @@ export const useOutputStore = defineStore('output', () => {
     const api = outputApi();
     if (!api) return;
     started = true;
-    api.onEvent((event) => {
-      if (event?.type === 'session-ended') {
-        error.value = '设备已断开，已暂停并保留队列。不会自动改回本机播放';
-      }
-      if (event?.payload && typeof event.payload === 'object') apply(event.payload as OutputView);
+    effects.run(() => {
+      api.onEvent((event) => {
+        if (event?.type === 'session-ended') {
+          error.value = '设备已断开，已暂停并保留队列。不会自动改回本机播放';
+        }
+        if (event?.payload && typeof event.payload === 'object') apply(event.payload as OutputView);
+      });
+      watch(
+        () => settingStore.networkPlaybackEnabled,
+        (enabled) => {
+          const revision = ++discoveryRevision;
+          remoteSearching.value = false;
+          void api
+            .setEnabled(Boolean(enabled))
+            .then((view) => {
+              if (revision !== discoveryRevision) return;
+              apply(view);
+              if (enabled && browsing.value) {
+                void (async () => {
+                  await refreshFlight;
+                  if (revision === discoveryRevision) await refresh();
+                })();
+              }
+            })
+            .catch((caught: unknown) => {
+              if (revision !== discoveryRevision) return;
+              diagnostics.value = caught instanceof Error ? caught.message : '网络播放开关未能同步';
+            });
+        },
+        { immediate: true, flush: 'sync' },
+      );
     });
-    watch(
-      () => settingStore.networkPlaybackEnabled,
-      (enabled) => {
-        const revision = ++discoveryRevision;
-        remoteSearching.value = false;
-        void api
-          .setEnabled(Boolean(enabled))
-          .then((view) => {
-            if (revision !== discoveryRevision) return;
-            apply(view);
-            if (enabled && browsing.value) {
-              void (async () => {
-                await refreshFlight;
-                if (revision === discoveryRevision) await refresh();
-              })();
-            }
-          })
-          .catch((caught: unknown) => {
-            if (revision !== discoveryRevision) return;
-            diagnostics.value = caught instanceof Error ? caught.message : '网络播放开关未能同步';
-          });
-      },
-      { immediate: true, flush: 'sync' },
-    );
   }
 
   async function refresh(): Promise<void> {

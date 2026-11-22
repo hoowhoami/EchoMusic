@@ -1,5 +1,6 @@
 import { useThemeStore } from '@/stores/theme';
 import { LYRIC_COVER_COLOR_VALUE } from '@/stores/lyric';
+import { LYRIC_PAGE_INK, resolveLyricPageIsDark, useSettingStore } from '@/stores/setting';
 import { getNormalizedAccent, DEFAULT_ACCENT } from '@/utils/color';
 
 export const HOST_SKIN_KEYS = {
@@ -97,18 +98,19 @@ export const LYRIC_SKIN_AMLL_DEFAULTS: LyricSkinConfigAmll = {
 };
 
 export const AMLL_TEXT_COLOR_FALLBACK = '#ffffff';
+/** 浅色歌词页的 AMLL 文字回退色：深色文字保证浅背景可读。 */
+export const AMLL_TEXT_COLOR_FALLBACK_LIGHT = LYRIC_PAGE_INK;
 
 export const LYRIC_FONT_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
 
 export const lyricSkinFontWeight = (index: number) =>
   LYRIC_FONT_WEIGHTS[Math.max(0, Math.min(8, Math.round(index)))] ?? 900;
 
-/** 皮肤内歌词颜色的统一解析：空值回退默认色，`__cover__` 取封面主题色。 */
+/** 皮肤内歌词颜色的统一解析：空值回退默认色，`__cover__` 按歌词页外观取封面主题色。 */
 export function resolveLyricSkinColor(value: string, fallback: string): string {
-  if (value === LYRIC_COVER_COLOR_VALUE) {
-    const themeStore = useThemeStore();
-    // Lyrics have a dark backdrop regardless of the application theme.
-    return getNormalizedAccent(themeStore.coverColor || DEFAULT_ACCENT, true);
-  }
-  return value || fallback;
+  if (value !== LYRIC_COVER_COLOR_VALUE) return value || fallback;
+  const settingStore = useSettingStore();
+  const themeStore = useThemeStore();
+  const isDark = resolveLyricPageIsDark(settingStore.lyricPageAppearanceMode, themeStore.isDark);
+  return getNormalizedAccent(themeStore.coverColor || DEFAULT_ACCENT, isDark);
 }

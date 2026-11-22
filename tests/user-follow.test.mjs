@@ -1,4 +1,5 @@
 import { userIdentity } from './helpers/user-identity.mjs';
+import { userSessionWatch } from './helpers/user-session.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -103,6 +104,7 @@ function fixture() {
     '@/utils/userSession': sessionModule.exports,
     '@/utils/accountVip': vipModule.exports,
     '@/utils/userIdentity': userIdentity,
+    '@/utils/watchUserSession': userSessionWatch,
     'vue-router': { useRouter: () => ({}) },
     // 页面在会话变化时会重新拉关系列表，这里接真 watcher。
     '@/utils/watchUserSession': watchSessionModule.exports,
@@ -123,6 +125,7 @@ function fixture() {
     '@/utils/logger': { error() {} },
     '@/api/user': api,
     '@/utils/cover': { normalizeCoverUrl: (value) => value },
+    '@/components/ui/tooltip': { vTooltip: {} },
     '@/icons': {},
     '../../shared/birthday': {},
     '../../shared/profileStats': {},

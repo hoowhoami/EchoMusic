@@ -24,7 +24,15 @@ static DROPPED_CRITICAL_EVENT_COUNT: AtomicU64 = AtomicU64::new(0);
 static EVENT_DISPATCHER_STOPPING: AtomicBool = AtomicBool::new(false);
 const CORE_LOOP_TICK: Duration = Duration::from_millis(250);
 const CORE_COMMAND_REPLY_TIMEOUT: Duration = Duration::from_secs(2);
-const CORE_BLOCKING_COMMAND_REPLY_TIMEOUT: Duration = Duration::from_secs(5);
+/// 阻塞式核心命令的回复超时。
+/// `play` 会同步等待输出启动；`set-audio-output` 在切换失败后还会恢复
+/// 上一路输出，最坏耗时 = 首次启动 + 恢复两轮，每轮约
+/// `OUTPUT_START_WATCHDOG × OUTPUT_START_ATTEMPTS + OUTPUT_START_RETRY_DELAY`
+/// （见 control::output_lifecycle，共约 12.5 s）。该超时必须完整覆盖这组
+/// 最坏路径：否则慢设备上命令实际能成功，却在向 JS 回复前被判定超时，
+/// 排队其后的 pause/seek 也会一并被丢弃。两者关系由
+/// `output_start_budget_stays_within_blocking_command_timeout` 测试守护。
+pub(crate) const CORE_BLOCKING_COMMAND_REPLY_TIMEOUT: Duration = Duration::from_millis(13_000);
 const EVENT_QUEUE_CAPACITY: usize = 256;
 const CRITICAL_DISPATCH_QUEUE_RETRY_BUDGET: Duration = Duration::from_secs(1);
 const CRITICAL_CALLBACK_QUEUE_RETRY_BUDGET: Duration = Duration::from_secs(2);
@@ -358,7 +366,9 @@ pub(crate) fn call_core_command_blocking<T: Send + 'static>(
     };
     let (reply_tx, reply_rx) = sync_channel(1);
     let cancelled = Arc::new(AtomicBool::new(false));
+    let started = Arc::new(AtomicBool::new(false));
     let command_cancelled = cancelled.clone();
+    let command_started = started.clone();
     sender
         .send(CoreDispatcherMessage::Command {
             name,
@@ -366,6 +376,7 @@ pub(crate) fn call_core_command_blocking<T: Send + 'static>(
                 if command_cancelled.load(Ordering::Acquire) {
                     return;
                 }
+                command_started.store(true, Ordering::Release);
                 let _ = reply_tx.send(command(runtime));
             }),
         })
@@ -374,8 +385,17 @@ pub(crate) fn call_core_command_blocking<T: Send + 'static>(
         Ok(result) => result,
         Err(err) => {
             cancelled.store(true, Ordering::Release);
+            // 区分「超时前命令尚未开始」与「执行中超时」：前者可以确定命令
+            // 没有产生副作用，后者只能视为结果未知。都报 "timed out" 会让
+            // 调用方无法判断能否安全重试。
             let reason = match err {
-                RecvTimeoutError::Timeout => "timed out",
+                RecvTimeoutError::Timeout => {
+                    if started.load(Ordering::Acquire) {
+                        "timed out while executing"
+                    } else {
+                        "timed out before execution"
+                    }
+                }
                 RecvTimeoutError::Disconnected => "reply channel closed",
             };
             Err(napi::Error::from_reason(format!(

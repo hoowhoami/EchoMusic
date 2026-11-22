@@ -169,7 +169,7 @@ test('菜单开着时按钮不弹悬浮提示', () => {
   for (const file of files) {
     const source = readFileSync(file, 'utf8').replaceAll('\r\n', '\n');
     assert.ok(
-      source.includes('overlayToggles.desktopSurfaceMenu.open ? undefined'),
+      source.includes("overlayToggles.desktopSurfaceMenu.open ? ''"),
       '菜单开着时不显示 tooltip：' + file.pathname,
     );
   }

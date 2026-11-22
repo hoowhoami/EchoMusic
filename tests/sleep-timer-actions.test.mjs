@@ -4,12 +4,11 @@ import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 
 // Compile the IPC registration with stubbed dependencies. No system command is run.
-// 工作区按 .gitattributes 存成 CRLF，下面按 \n 定位切片，先统一成 LF。
-const source = readFileSync(new URL('../src/main/ipc/window.ts', import.meta.url), 'utf8').replace(
-  /\r\n/g,
-  '\n',
+const source = readFileSync(new URL('../src/main/ipc/window.ts', import.meta.url), 'utf8');
+// 源码在 Windows 检出为 CRLF，用正则匹配注册起点
+const start = source.search(
+  / {2}ipcRegistry\.registerHandler\(\r?\n {4}'sleep-timer:execute-action'/,
 );
-const start = source.indexOf("  ipcRegistry.registerHandler(\n    'sleep-timer:execute-action'");
 const end = source.indexOf('  // Subscribe once', start);
 assert.ok(start >= 0 && end > start);
 const code = transformSync(source.slice(start, end), { loader: 'ts' }).code;

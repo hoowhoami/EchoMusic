@@ -308,6 +308,7 @@ test('real player-store init restores the transient queue before publishing meta
     './lyric': { useLyricStore: () => lyric },
     './setting': { useSettingStore: () => settings },
     './toast': { useToastStore: () => manager },
+    './historyStore': { useHistoryStore: () => ({ addListenTime: async () => {} }) },
     './user': { useUserStore: () => ({}) },
     '@/utils/logger': { info: noop, warn: noop, error: noop },
     '@/utils/player': { PlayerEngine: Engine },
@@ -331,6 +332,9 @@ test('real player-store init restores the transient queue before publishing meta
     './player/history': { createHistoryManager: () => manager },
     './player/listeningTime': {
       createListeningTimeManager: () => ({ flush: async () => {}, resetPosition: noop }),
+    },
+    './player/listenHistory': {
+      createListenHistory: () => ({ tick: noop, flush: noop, resetPosition: noop, stop: noop }),
     },
     './player/device': { createDeviceManager: () => manager },
     './player/spatialAudioSupport': { createSpatialAudioSupport: () => manager },

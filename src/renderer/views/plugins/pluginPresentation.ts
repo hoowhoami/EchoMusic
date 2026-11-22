@@ -7,6 +7,7 @@ export const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
   if (manifest.capabilities?.theme) tags.push('主题');
   if (manifest.capabilities?.lyricEffects) tags.push('歌词动效');
   if (manifest.capabilities?.lyrics) tags.push('歌词解析');
+  if (manifest.capabilities?.lyricsPage) tags.push('歌词页界面');
   if (manifest.capabilities?.audioSource) tags.push('音源解析');
   if (manifest.capabilities?.audioSpectrum) tags.push('音频频谱');
   if (manifest.capabilities?.backups) tags.push('备份与恢复');
@@ -19,6 +20,7 @@ export const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
   if (manifest.capabilities?.unrestrictedNetwork) tags.push('原生网络');
   if (manifest.capabilities?.serverIntercept) tags.push('请求拦截');
   if (manifest.capabilities?.tcp) tags.push('TCP 网络');
+  if (manifest.capabilities?.webServer) tags.push('本地服务');
   if (manifest.contributes?.windows?.length) tags.push('插件浮窗');
   return tags;
 };

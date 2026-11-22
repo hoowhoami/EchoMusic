@@ -325,6 +325,7 @@ function dialogFixture(t, addPlaylist = async () => {}) {
         }),
     },
     '@/icons': {},
+    '@/components/ui/tooltip': { vTooltip: {} },
     '@/utils/playlistOrder': { orderByPlaylistPosition: (items) => items },
     '@/stores/playlist/helpers': { includesPlaylistIdentity: () => false },
     '@/utils/playbackQueuePresentation': {

@@ -375,6 +375,15 @@ function plazaFixture(t, downloaded = []) {
   };
   const { useAudioEffectPlaza } = loadModule('../src/renderer/composables/useAudioEffectPlaza.ts', {
     vue,
+    // 后台同步器与市场缓存不在本测试范围内，给不会触发网络/任务的空桩
+    '@/utils/effectPlazaSync': {
+      ensureEffectPlazaSync: () => Promise.resolve(),
+      plazaSyncState: vue.reactive({ active: false, done: 0, total: 0, label: '空闲' }),
+    },
+    '@/stores/audioEffectPlazaCache': {
+      effectPlazaCacheState: vue.reactive({ effects: {} }),
+      plazaCacheRevision: vue.ref(0),
+    },
     '@/stores/setting': {
       useSettingStore: () => ({
         get impulseResponseFiles() {

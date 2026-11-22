@@ -1,5 +1,6 @@
 import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
+import { LYRIC_PAGE_INK, resolveLyricPageIsDark } from '../src/shared/lyricPageAppearance.ts';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
@@ -42,8 +43,16 @@ const { useLyricStore } = compile('../src/renderer/stores/lyric.ts', {
   '@/plugins/lyrics': {},
   '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
   './theme': {},
+
+  './setting': {
+    resolveLyricPageIsDark,
+
+    useSettingStore: () => ({ lyricPageAppearanceMode: 'dark' }),
+
+    LYRIC_PAGE_INK,
+  },
   '../../shared/lyricOffset': offset,
-    '../../shared/embeddedMetadata': embeddedTags,
+  '../../shared/embeddedMetadata': embeddedTags,
   '../../shared/opencc': opencc,
 });
 const store = () => useLyricStore(pinia.createPinia());
@@ -239,6 +248,7 @@ test('paused global calibration reaches now-playing/taskbar, Mini and desktop sn
     './store': { useDesktopLyricStore: () => desktop },
     '@/utils/shortcuts': {},
     '@/utils/lruMap': lruMap,
+    '@/views/lyric/portraitCollapseState': { portraitLyricCollapsed: { value: false } },
     '@/utils/playbackQueuePresentation': { getPlaybackQueuePresentation: () => ({ title: '' }) },
     '@/stores/playlist/helpers': { resolveFavoriteSongKey: () => 'a' },
     '../../shared/nowPlaying': nowPlaying,
@@ -376,9 +386,21 @@ test('SQLite persistence saves both scopes and restores them in a new store', as
       },
     },
   };
+  // sqlitePersist 内部用常驻 effectScope 订阅待持久化字段；测试释放 Pinia 前先停止
+  // 这些 scope，避免 watcher 在 $state 被清空后继续读取。
+  const persistScopes = [];
+  const vueForPersist = {
+    ...vue,
+    effectScope: (detached) => {
+      const scope = vue.effectScope(detached);
+      persistScopes.push(scope);
+      return scope;
+    },
+  };
   const plugin = compile(
     '../src/renderer/stores/sqlitePersist.ts',
     {
+      vue: vueForPersist,
       '../../shared/storePersistence': persistence,
       '@/utils/logger': { warn() {} },
     },
@@ -404,6 +426,7 @@ test('SQLite persistence saves both scopes and restores them in a new store', as
   await plugin.waitForSqlitePersistHydration();
   second.loadedHash = 'a';
   assert.equal(second.currentTimeOffset, 300);
+  persistScopes.forEach((scope) => scope.stop());
   pinia.disposePinia(firstPinia);
   pinia.disposePinia(secondPinia);
 });

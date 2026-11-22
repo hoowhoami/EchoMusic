@@ -1,5 +1,5 @@
 import { ipcRegistry } from '../ipc/registry';
-import { BrowserWindow, app, screen } from 'electron';
+import { BrowserWindow, screen, shell } from 'electron';
 import { syncMacDockVisibility } from '../macBackgroundMode';
 import { installWindowBackgroundThrottling } from '../windowBackgroundThrottling';
 import { join } from 'path';
@@ -297,6 +297,18 @@ const createPluginWindow = async (
   });
 
   installWindowBackgroundThrottling(win);
+  // 插件窗口只承载宿主页面：拒绝窗口内导航与子窗口创建。
+  // preload 会在每次页面加载时重新注入，若不拦截，插件代码跳转到任意远程页面
+  // 后该页面就会获得完整的宿主 IPC 桥。
+  // 外链（target=_blank / window.open）改由系统浏览器打开，与主窗口、迷你播放器
+  // 策略一致，避免插件里的链接点击静默失效；子窗口本身仍然拒绝创建。
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https:')) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
+  });
   const record: PluginWindowRecord = {
     pluginId: descriptor.pluginId,
     windowId: descriptor.id,

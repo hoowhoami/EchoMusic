@@ -53,6 +53,7 @@ function fixture(t, initialSection = 'interface') {
         interface: { label: '界面与外观' },
         window: { label: '窗口与系统' },
         player: { label: '播放引擎' },
+        wallpaper: { label: '动态歌词壁纸' },
       },
       shortcutItems: [],
     },

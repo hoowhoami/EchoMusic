@@ -158,13 +158,21 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
         : stateKeys.filter((key) => !persist.omit?.includes(key));
   persistScope.run(() => {
     watch(
-      () => watchedKeys.map((key) => store.$state[key]),
+      () => {
+        // Pinia 销毁会清空 pinia.state，此时 store.$state 为 undefined；
+        // 常驻 watch 仍可能在销毁后被触发（HMR、测试清理），需要防御性读取。
+        const state = store.$state as Record<string, unknown> | undefined;
+        return state ? watchedKeys.map((key) => state[key]) : [];
+      },
       () => {
         if (!hydrated || !window.electron?.storage) return;
         if (pendingSave) return;
         pendingSave = window.setTimeout(() => {
           pendingSave = 0;
-          const payload = buildPersistedState(store.$state, persist);
+          // 定时器触发时 store 可能已被销毁，此时没有可持久化的状态
+          const state = store.$state as Record<string, unknown> | undefined;
+          if (!state) return;
+          const payload = buildPersistedState(state, persist);
           writes = writes
             .then(async () => {
               if (lastPersistedState && isSamePersistedValue(payload, lastPersistedState)) return;

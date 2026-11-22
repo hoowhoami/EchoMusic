@@ -88,6 +88,12 @@ function setup(t, { mini = false, hydration, desktopSync, autoPlay = false } = {
     },
     'vue-router': { useRouter: () => ({ isReady: async () => {}, push() {} }) },
     '@/stores/setting': { useSettingStore: () => settings },
+    // 续播提示的配置写入口，本测试只验证启动流程，给最小桩。
+    '@/utils/resumeHint': {
+      RESUME_HINT_MAX_SECS: 60,
+      RESUME_HINT_MIN_SECS: 3,
+      setResumeHintConfig: () => {},
+    },
     '@/stores/output': { useOutputStore: () => ({ bind: record('output.bind') }) },
     '@/stores/update': {
       useUpdateStore: () => ({

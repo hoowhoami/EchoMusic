@@ -1,5 +1,6 @@
 import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
+import { LYRIC_PAGE_INK, resolveLyricPageIsDark } from '../src/shared/lyricPageAppearance.ts';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
@@ -58,6 +59,14 @@ function storeFixture(api = {}, resolvePluginLyric = async () => null) {
     '@/plugins/lyrics': { resolvePluginLyric },
     '@/services/opencc': { convertLyricLinesForDisplay: async (lines) => lines },
     './theme': { useThemeStore: () => ({}) },
+
+    './setting': {
+      resolveLyricPageIsDark,
+
+      useSettingStore: () => ({ lyricPageAppearanceMode: 'dark' }),
+
+      LYRIC_PAGE_INK,
+    },
     '../../shared/lyricOffset': offset,
     '../../shared/embeddedMetadata': embeddedTags,
     '../../shared/opencc': opencc,
@@ -196,7 +205,12 @@ function dialogFixture(t, overrides = {}, propOverrides = {}) {
     currentCandidateKey: '',
     manualLyricMap: {},
     embeddedLyricSelectionMap: {},
-    previewEmbeddedLyric: (content) => ({ lines: [], rawLyric: content, hasTranslation: false, hasRomanization: false }),
+    previewEmbeddedLyric: (content) => ({
+      lines: [],
+      rawLyric: content,
+      hasTranslation: false,
+      hasRomanization: false,
+    }),
     fetchLyricCandidates: async () => [candidate('auto')],
     searchLyricCandidates: async () => [candidate('custom')],
     previewCandidate: async () => ({
@@ -616,7 +630,9 @@ test('plain embedded lyrics allow hash and catalog lookup before authoritative t
   const { store } = storeFixture({
     searchLyric: async (query) => {
       calls.push(query);
-      return { candidates: query.keywords === '李易峰 - 剑伤' ? [candidate('embedded-title')] : [] };
+      return {
+        candidates: query.keywords === '李易峰 - 剑伤' ? [candidate('embedded-title')] : [],
+      };
     },
     getLyric: async () => ({ decodeContent: '[00:01.00]在线时间轴歌词' }),
   });
@@ -697,12 +713,16 @@ test('native completion drives the real lyric search/detail/parser path using ta
 });
 
 test('late embedded tags join the pending hash request and supply the final name lookup', async () => {
-  const old = deferred(), fresh = deferred(), calls = [];
-  const { store } = storeFixture({ searchLyric: (query) => {
-    calls.push(query);
-    if (query.hash) return old.promise;
-    return query.keywords === '李易峰 - 剑伤' ? fresh.promise : { candidates: [] };
-  } });
+  const old = deferred(),
+    fresh = deferred(),
+    calls = [];
+  const { store } = storeFixture({
+    searchLyric: (query) => {
+      calls.push(query);
+      if (query.hash) return old.promise;
+      return query.keywords === '李易峰 - 剑伤' ? fresh.promise : { candidates: [] };
+    },
+  });
   const track = { title: 'Filename', artist: 'Guessed singer', source: 'cloud' };
   const first = store.fetchLyrics('same-file-pending', { track });
   const tagged = { ...track, embeddedMetadata: { title: '剑伤', artist: '李易峰' } };
@@ -710,9 +730,10 @@ test('late embedded tags join the pending hash request and supply the final name
   assert.equal(calls.length, 1);
   old.resolve({ candidates: [] });
   await flush();
-  assert.deepEqual(calls.map(q => q.hash || q.keywords), [
-    'same-file-pending', 'Guessed singer - Filename', '李易峰 - 剑伤',
-  ]);
+  assert.deepEqual(
+    calls.map((q) => q.hash || q.keywords),
+    ['same-file-pending', 'Guessed singer - Filename', '李易峰 - 剑伤'],
+  );
   await store.fetchLyrics('same-file-pending', { track: tagged });
   assert.equal(calls.length, 3);
   fresh.resolve({ candidates: [candidate('new-match')] });
@@ -722,14 +743,20 @@ test('late embedded tags join the pending hash request and supply the final name
 
 test('successful hash lyrics stay cached when embedded tags arrive later', async () => {
   const calls = [];
-  const { store } = storeFixture({ searchLyric: async (query) => {
-    calls.push(query);
-    return { candidates: [candidate('old-hash')] };
-  } });
+  const { store } = storeFixture({
+    searchLyric: async (query) => {
+      calls.push(query);
+      return { candidates: [candidate('old-hash')] };
+    },
+  });
   await store.fetchLyrics('same-file-cache', { track: { title: 'Filename', source: 'cloud' } });
   store.clear();
   await store.fetchLyrics('same-file-cache', {
-    track: { title: 'Filename', source: 'cloud', embeddedMetadata: { title: '剑伤', artist: '李易峰' } },
+    track: {
+      title: 'Filename',
+      source: 'cloud',
+      embeddedMetadata: { title: '剑伤', artist: '李易峰' },
+    },
   });
   assert.equal(calls.length, 1);
   assert.equal(store.currentCandidateKey, 'old-hash:access-old-hash');
@@ -767,12 +794,18 @@ test('remembered manual lyrics still win over file-tag matching', async () => {
 
 test('automatic candidate list uses hash, catalog identity, embedded identity, then recommends within the matched query', async () => {
   const calls = [];
-  const { store } = storeFixture({ searchLyric: async (query) => {
-    calls.push(query);
-    return { candidates: query.keywords === '李易峰 - 剑伤' ? [candidate('tagged-auto')] : [] };
-  } });
+  const { store } = storeFixture({
+    searchLyric: async (query) => {
+      calls.push(query);
+      return { candidates: query.keywords === '李易峰 - 剑伤' ? [candidate('tagged-auto')] : [] };
+    },
+  });
   await store.fetchLyricCandidates('native-candidates', {
-    title: 'Filename', artist: 'Guessed singer', embeddedTitle: '剑伤', embeddedArtist: '李易峰', duration: 190000,
+    title: 'Filename',
+    artist: 'Guessed singer',
+    embeddedTitle: '剑伤',
+    embeddedArtist: '李易峰',
+    duration: 190000,
   });
   assert.deepEqual(calls, [
     { hash: 'native-candidates', duration: 190000, albumAudioId: undefined, man: 'yes' },
@@ -784,10 +817,12 @@ test('automatic candidate list uses hash, catalog identity, embedded identity, t
 
 test('open lyric dialog forwards late native identity separately from the catalog search fields', async (t) => {
   const calls = [];
-  const f = dialogFixture(t, { fetchLyricCandidates: async (_hash, query) => {
-    calls.push(query);
-    return [candidate('auto')];
-  } });
+  const f = dialogFixture(t, {
+    fetchLyricCandidates: async (_hash, query) => {
+      calls.push(query);
+      return [candidate('auto')];
+    },
+  });
   await flush();
   f.props.embeddedTitle = '剑伤';
   f.props.embeddedArtist = '李易峰';
@@ -795,8 +830,13 @@ test('open lyric dialog forwards late native identity separately from the catalo
   assert.equal(f.view.searchTitle.value, '剑伤');
   assert.equal(f.view.searchArtist.value, '李易峰');
   assert.deepEqual(calls.at(-1), {
-    title: '**', artist: '**', duration: 180000, albumAudioId: 7,
-    embeddedTitle: '剑伤', embeddedArtist: '李易峰', force: false,
+    title: '**',
+    artist: '**',
+    duration: 180000,
+    albumAudioId: 7,
+    embeddedTitle: '剑伤',
+    embeddedArtist: '李易峰',
+    force: false,
   });
 });
 
@@ -844,12 +884,16 @@ for (const outcome of ['empty', 'invalid-detail', 'error']) {
 
 test('manually selected embedded lyrics avoid automatic online lookup while online candidates remain searchable', async () => {
   const calls = [];
-  const { store } = storeFixture({ searchLyric: async (query) => {
-    calls.push(query);
-    return { candidates: [candidate('online-option')] };
-  } });
+  const { store } = storeFixture({
+    searchLyric: async (query) => {
+      calls.push(query);
+      return { candidates: [candidate('online-option')] };
+    },
+  });
   store.applyEmbeddedLyric('preferred-native', '内嵌文本');
-  await store.fetchLyrics('preferred-native', { track: { embeddedMetadata: { lyric: '内嵌文本' } } });
+  await store.fetchLyrics('preferred-native', {
+    track: { embeddedMetadata: { lyric: '内嵌文本' } },
+  });
   assert.equal(calls.length, 0);
   assert.equal(store.currentCandidateKey, 'embedded');
   const results = await store.fetchLyricCandidates('preferred-native', { title: 'Song' });
@@ -864,7 +908,10 @@ test('manual online choice replaces an embedded choice and survives subsequent a
   store.applyEmbeddedLyric(track.hash, track.embeddedMetadata.lyric);
   await store.fetchLyrics(track.hash, { track });
   assert.equal(store.currentCandidateKey, 'embedded');
-  assert.equal(await store.applyCandidate(track.hash, candidate('manual-online'), { remember: true }), true);
+  assert.equal(
+    await store.applyCandidate(track.hash, candidate('manual-online'), { remember: true }),
+    true,
+  );
   await store.fetchLyrics(track.hash, { track });
   assert.equal(store.currentCandidateKey, 'manual-online:access-manual-online');
   store.clear();
@@ -874,10 +921,12 @@ test('manual online choice replaces an embedded choice and survives subsequent a
 
 test('switching manual source choices reuses cached online lyrics', async () => {
   let searches = 0;
-  const { store } = storeFixture({ searchLyric: async () => {
-    searches++;
-    return { candidates: [candidate('cached-online')] };
-  } });
+  const { store } = storeFixture({
+    searchLyric: async () => {
+      searches++;
+      return { candidates: [candidate('cached-online')] };
+    },
+  });
   const track = { hash: 'preference-toggle', embeddedMetadata: { lyric: '内嵌文本' } };
   await store.fetchLyrics(track.hash, { track });
   store.applyEmbeddedLyric(track.hash, track.embeddedMetadata.lyric);
@@ -901,10 +950,12 @@ test('late online response cannot override an explicit embedded choice', async (
 
 test('failed forced refresh preserves already resolved online lyrics ahead of embedded fallback', async () => {
   let fail = false;
-  const { store } = storeFixture({ searchLyric: async () => {
-    if (fail) throw new Error('offline');
-    return { candidates: [candidate('preserved-online')] };
-  } });
+  const { store } = storeFixture({
+    searchLyric: async () => {
+      if (fail) throw new Error('offline');
+      return { candidates: [candidate('preserved-online')] };
+    },
+  });
   const options = { track: { embeddedMetadata: { title: 'File', lyric: '内嵌文本' } } };
   await store.fetchLyrics('preserve-online', options);
   fail = true;
@@ -917,29 +968,40 @@ test('failed forced refresh preserves already resolved online lyrics ahead of em
 
 test('catalog hash lyrics remain available when embedded artist aliases have no keyword results', async () => {
   const calls = [];
-  const { store } = storeFixture({ searchLyric: async (q) => {
-    calls.push(q);
-    return { candidates: q.hash ? [candidate('sunshine-hash')] : [] };
-  } });
+  const { store } = storeFixture({
+    searchLyric: async (q) => {
+      calls.push(q);
+      return { candidates: q.hash ? [candidate('sunshine-hash')] : [] };
+    },
+  });
   const track = {
-    title: 'Sunshine in the Rain', artist: 'Bodies Without Organs', albumAudioId: 28409299,
+    title: 'Sunshine in the Rain',
+    artist: 'Bodies Without Organs',
+    albumAudioId: 28409299,
     embeddedMetadata: { title: 'Sunshine In The Rain', artist: 'B.W.O' },
   };
   await store.fetchLyrics('sunshine-regression', { track, duration: 241587 });
-  assert.deepEqual(calls, [{ hash: 'sunshine-regression', duration: 241587, albumAudioId: 28409299, man: 'no' }]);
+  assert.deepEqual(calls, [
+    { hash: 'sunshine-regression', duration: 241587, albumAudioId: 28409299, man: 'no' },
+  ]);
   assert.equal(store.currentCandidateKey, 'sunshine-hash:access-sunshine-hash');
   assert.equal(store.lines.length, 1);
 });
 
 test('metadata arriving during a successful hash lookup neither duplicates it nor discards its lyrics', async () => {
-  const gate = deferred(), calls = [];
-  const { store } = storeFixture({ searchLyric: async (q) => {
-    calls.push(q);
-    return q.hash ? gate.promise : { candidates: [] };
-  } });
+  const gate = deferred(),
+    calls = [];
+  const { store } = storeFixture({
+    searchLyric: async (q) => {
+      calls.push(q);
+      return q.hash ? gate.promise : { candidates: [] };
+    },
+  });
   const track = { title: 'Sunshine in the Rain', artist: 'Bodies Without Organs' };
   const first = store.fetchLyrics('native-hash-pending', { track });
-  await store.fetchLyrics('native-hash-pending', { track: { ...track, embeddedMetadata: { title: 'Sunshine In The Rain', artist: 'B.W.O' } } });
+  await store.fetchLyrics('native-hash-pending', {
+    track: { ...track, embeddedMetadata: { title: 'Sunshine In The Rain', artist: 'B.W.O' } },
+  });
   assert.equal(calls.length, 1);
   gate.resolve({ candidates: [candidate('pending-hash-wins')] });
   await first;
@@ -950,32 +1012,48 @@ test('metadata arriving during a successful hash lookup neither duplicates it no
 for (const hit of ['hash', 'catalog', 'embedded', 'none']) {
   test(`ordered automatic matching stops at ${hit}`, async () => {
     const calls = [];
-    const { store } = storeFixture({ searchLyric: async (query) => {
-      const stage = query.hash ? 'hash' : query.keywords === 'Catalog artist - Catalog title' ? 'catalog' : 'embedded';
-      calls.push(stage);
-      return { candidates: stage === hit ? [candidate(`${hit}-winner`)] : [] };
-    } });
+    const { store } = storeFixture({
+      searchLyric: async (query) => {
+        const stage = query.hash
+          ? 'hash'
+          : query.keywords === 'Catalog artist - Catalog title'
+            ? 'catalog'
+            : 'embedded';
+        calls.push(stage);
+        return { candidates: stage === hit ? [candidate(`${hit}-winner`)] : [] };
+      },
+    });
     await store.fetchLyrics(`ordered-${hit}`, {
       track: {
-        title: 'Catalog title', artist: 'Catalog artist',
+        title: 'Catalog title',
+        artist: 'Catalog artist',
         embeddedMetadata: { title: 'Tag title', artist: 'Tag artist', lyric: '内嵌兜底' },
       },
     });
-    assert.deepEqual(calls, ['hash', 'catalog', 'embedded'].slice(0, hit === 'hash' ? 1 : hit === 'catalog' ? 2 : 3));
-    assert.equal(store.currentCandidateKey, hit === 'none' ? 'embedded' : `${hit}-winner:access-${hit}-winner`);
+    assert.deepEqual(
+      calls,
+      ['hash', 'catalog', 'embedded'].slice(0, hit === 'hash' ? 1 : hit === 'catalog' ? 2 : 3),
+    );
+    assert.equal(
+      store.currentCandidateKey,
+      hit === 'none' ? 'embedded' : `${hit}-winner:access-${hit}-winner`,
+    );
     assert.equal(store.rawLyric, hit === 'none' ? '内嵌兜底' : '[00:01.00]测试歌词');
   });
 }
 
 test('equivalent catalog and embedded names issue only one keyword lookup', async () => {
   const calls = [];
-  const { store } = storeFixture({ searchLyric: async (query) => {
-    calls.push(query);
-    return { candidates: [] };
-  } });
+  const { store } = storeFixture({
+    searchLyric: async (query) => {
+      calls.push(query);
+      return { candidates: [] };
+    },
+  });
   await store.fetchLyrics('same-name-dedupe', {
     track: {
-      title: 'Song title', artist: 'Artist',
+      title: 'Song title',
+      artist: 'Artist',
       embeddedMetadata: { title: '  SONG  TITLE ', artist: 'ARTIST ', lyric: '内嵌兜底' },
     },
   });
@@ -986,12 +1064,17 @@ test('equivalent catalog and embedded names issue only one keyword lookup', asyn
 });
 
 test('late tags during the catalog lookup supply the embedded lookup without restarting earlier stages', async () => {
-  const catalog = deferred(), calls = [];
-  const { store } = storeFixture({ searchLyric: async (query) => {
-    calls.push(query);
-    if (query.hash) return { candidates: [] };
-    return query.keywords === 'Catalog artist - Catalog title' ? catalog.promise : { candidates: [candidate('late-native')] };
-  } });
+  const catalog = deferred(),
+    calls = [];
+  const { store } = storeFixture({
+    searchLyric: async (query) => {
+      calls.push(query);
+      if (query.hash) return { candidates: [] };
+      return query.keywords === 'Catalog artist - Catalog title'
+        ? catalog.promise
+        : { candidates: [candidate('late-native')] };
+    },
+  });
   const track = { title: 'Catalog title', artist: 'Catalog artist' };
   const first = store.fetchLyrics('late-native-order', { track });
   await flush();
@@ -1001,9 +1084,10 @@ test('late tags during the catalog lookup supply the embedded lookup without res
   assert.equal(calls.length, 2);
   catalog.resolve({ candidates: [] });
   await first;
-  assert.deepEqual(calls.map(q => q.hash || q.keywords), [
-    'late-native-order', 'Catalog artist - Catalog title', 'Tag artist - Tag title',
-  ]);
+  assert.deepEqual(
+    calls.map((q) => q.hash || q.keywords),
+    ['late-native-order', 'Catalog artist - Catalog title', 'Tag artist - Tag title'],
+  );
   assert.equal(store.currentCandidateKey, 'late-native:access-late-native');
 });
 
@@ -1020,7 +1104,9 @@ for (const content of ['第一行\n第二行', '[00:01.00]第一行\n[00:02.00]�
 }
 
 test('explicit embedded choice survives replay and yields to a later manual online choice', async () => {
-  const { store } = storeFixture({ searchLyric: async () => ({ candidates: [candidate('online-again')] }) });
+  const { store } = storeFixture({
+    searchLyric: async () => ({ candidates: [candidate('online-again')] }),
+  });
   const track = { hash: 'manual-embedded', embeddedMetadata: { lyric: '内嵌文本' } };
   assert.equal(store.applyEmbeddedLyric(track.hash, '内嵌文本'), true);
   assert.equal(store.embeddedLyricSelectionMap[track.hash], true);
@@ -1034,7 +1120,9 @@ test('explicit embedded choice survives replay and yields to a later manual onli
 });
 
 test('restoring automatic mode removes explicit embedded choice and uses online first', async () => {
-  const { store } = storeFixture({ searchLyric: async () => ({ candidates: [candidate('restored-online')] }) });
+  const { store } = storeFixture({
+    searchLyric: async () => ({ candidates: [candidate('restored-online')] }),
+  });
   const track = { hash: 'restore-native-choice', embeddedMetadata: { lyric: '内嵌文本' } };
   store.applyEmbeddedLyric(track.hash, '内嵌文本');
   await store.restoreAutoLyric(track.hash, { track });
@@ -1057,15 +1145,22 @@ test('native completion cannot interrupt a pending manual online selection', asy
 });
 
 test('a remembered embedded choice falls through to online when the file has no embedded lyrics', async () => {
-  const { store } = storeFixture({ searchLyric: async () => ({ candidates: [candidate('no-native')] }) });
+  const { store } = storeFixture({
+    searchLyric: async () => ({ candidates: [candidate('no-native')] }),
+  });
   store.embeddedLyricSelectionMap['no-native-file'] = true;
   await store.fetchLyrics('no-native-file', { track: { embeddedMetadata: { title: 'Song' } } });
   assert.equal(store.currentCandidateKey, 'no-native:access-no-native');
 });
 
 test('dialog previews explicitly selected embedded lyrics while online lookup is pending', async (t) => {
-  const pending = deferred(), result = [candidate('online-panel')];
-  const f = dialogFixture(t, { fetchLyricCandidates: () => pending.promise }, { embeddedLyric: '第一行\n第二行' });
+  const pending = deferred(),
+    result = [candidate('online-panel')];
+  const f = dialogFixture(
+    t,
+    { fetchLyricCandidates: () => pending.promise },
+    { embeddedLyric: '第一行\n第二行' },
+  );
   f.view.selectCandidate(f.view.embeddedCandidate.value);
   await flush();
   assert.equal(f.view.isLoading.value, true);
@@ -1083,10 +1178,19 @@ test('dialog previews explicitly selected embedded lyrics while online lookup is
 
 test('failed online search leaves embedded lyrics selectable and applicable in the dialog', async (t) => {
   const applies = [];
-  const f = dialogFixture(t, {
-    fetchLyricCandidates: async () => { throw new Error('offline'); },
-    applyEmbeddedLyric: (hash, content) => { applies.push([hash, content]); return true; },
-  }, { embeddedLyric: '内嵌预览' });
+  const f = dialogFixture(
+    t,
+    {
+      fetchLyricCandidates: async () => {
+        throw new Error('offline');
+      },
+      applyEmbeddedLyric: (hash, content) => {
+        applies.push([hash, content]);
+        return true;
+      },
+    },
+    { embeddedLyric: '内嵌预览' },
+  );
   await flush();
   assert.equal(f.view.candidates.value.length, 1);
   assert.equal(f.view.searchError.value, '在线歌词搜索失败，请重试');
@@ -1097,11 +1201,18 @@ test('failed online search leaves embedded lyrics selectable and applicable in t
 
 test('dialog allows replacing a remembered embedded choice with an online candidate', async (t) => {
   const applies = [];
-  const f = dialogFixture(t, {
-    embeddedLyricSelectionMap: { cloud: true },
-    currentCandidateKey: 'embedded',
-    applyCandidate: async (hash, value, options) => { applies.push([hash, value.id, options]); return true; },
-  }, { embeddedLyric: '内嵌预览' });
+  const f = dialogFixture(
+    t,
+    {
+      embeddedLyricSelectionMap: { cloud: true },
+      currentCandidateKey: 'embedded',
+      applyCandidate: async (hash, value, options) => {
+        applies.push([hash, value.id, options]);
+        return true;
+      },
+    },
+    { embeddedLyric: '内嵌预览' },
+  );
   await flush();
   assert.equal(f.view.candidates.value.length, 2);
   f.view.selectedKey.value = 'auto:access-auto';
@@ -1141,22 +1252,29 @@ for (const [value, embedded, expected] of [
 
 test('automatic name fallback replaces fully masked fields and deduplicates the embedded query', async () => {
   const calls = [];
-  const { store } = storeFixture({ searchLyric: async (query) => {
-    calls.push(query);
-    return { candidates: [] };
-  } });
+  const { store } = storeFixture({
+    searchLyric: async (query) => {
+      calls.push(query);
+      return { candidates: [] };
+    },
+  });
   await store.fetchLyrics('masked-song', {
     track: { title: '**', artist: '***', embeddedMetadata: { title: '剑伤', artist: '李易峰' } },
   });
-  assert.deepEqual(calls.map(q => q.hash || q.keywords), ['masked-song', '李易峰 - 剑伤']);
+  assert.deepEqual(
+    calls.map((q) => q.hash || q.keywords),
+    ['masked-song', '李易峰 - 剑伤'],
+  );
 });
 
 test('masked names do not change successful hash matching', async () => {
   const calls = [];
-  const { store } = storeFixture({ searchLyric: async (query) => {
-    calls.push(query);
-    return { candidates: [{ ...candidate('hash-hit'), singer: '***' }] };
-  } });
+  const { store } = storeFixture({
+    searchLyric: async (query) => {
+      calls.push(query);
+      return { candidates: [{ ...candidate('hash-hit'), singer: '***' }] };
+    },
+  });
   await store.fetchLyrics('keep-hash-first', {
     track: { title: '剑伤', artist: '***', embeddedMetadata: { title: '剑伤', artist: '李易峰' } },
   });
@@ -1167,9 +1285,21 @@ test('masked names do not change successful hash matching', async () => {
 
 test('dialog replaces masked defaults and explicitly submitted masked edits with embedded names', async (t) => {
   const calls = [];
-  const f = dialogFixture(t, { searchLyricCandidates: async (query) => { calls.push(query); return []; } }, {
-    title: '剑伤', artist: '***', embeddedTitle: '剑伤', embeddedArtist: '李易峰',
-  });
+  const f = dialogFixture(
+    t,
+    {
+      searchLyricCandidates: async (query) => {
+        calls.push(query);
+        return [];
+      },
+    },
+    {
+      title: '剑伤',
+      artist: '***',
+      embeddedTitle: '剑伤',
+      embeddedArtist: '李易峰',
+    },
+  );
   await flush();
   assert.equal(f.view.searchTitle.value, '剑伤');
   assert.equal(f.view.searchArtist.value, '李易峰');
@@ -1197,9 +1327,18 @@ test('late embedded data preserves edited query, manual results, selection and o
   let searches = 0;
   let previews = 0;
   const f = dialogFixture(t, {
-    fetchLyricCandidates: async () => { searches++; return [candidate('auto')]; },
-    searchLyricCandidates: async () => { searches++; return [candidate('custom-one'), candidate('custom-two')]; },
-    previewCandidate: async (entry) => { previews++; return { lines: [], rawLyric: entry.id, hasTranslation: false, hasRomanization: false }; },
+    fetchLyricCandidates: async () => {
+      searches++;
+      return [candidate('auto')];
+    },
+    searchLyricCandidates: async () => {
+      searches++;
+      return [candidate('custom-one'), candidate('custom-two')];
+    },
+    previewCandidate: async (entry) => {
+      previews++;
+      return { lines: [], rawLyric: entry.id, hasTranslation: false, hasRomanization: false };
+    },
   });
   await flush();
   f.view.searchTitle.value = '手动歌名';
@@ -1217,10 +1356,17 @@ test('late embedded data preserves edited query, manual results, selection and o
   assert.equal(f.view.searchTitle.value, '手动歌名');
   assert.equal(f.view.searchArtist.value, '手动歌手');
   assert.equal(f.view.selectedKey.value, 'custom-two:access-custom-two');
-  assert.deepEqual(f.view.candidates.value.map(entry => f.view.candidateKey(entry)), ['embedded', 'custom-one:access-custom-one', 'custom-two:access-custom-two']);
+  assert.deepEqual(
+    f.view.candidates.value.map((entry) => f.view.candidateKey(entry)),
+    ['embedded', 'custom-one:access-custom-one', 'custom-two:access-custom-two'],
+  );
   assert.deepEqual(f.view.previewStaticLines.value, ['custom-two']);
   assert.equal(searches, beforeSearches);
-  assert.equal(previews, beforePreviews, 'a new embedded candidate must not reload an unrelated online preview');
+  assert.equal(
+    previews,
+    beforePreviews,
+    'a new embedded candidate must not reload an unrelated online preview',
+  );
 });
 
 test('late embedded lyrics do not cancel an in-flight manual keyword search', async (t) => {
@@ -1238,13 +1384,21 @@ test('late embedded lyrics do not cancel an in-flight manual keyword search', as
   pending.resolve([candidate('manual-result')]);
   await searching;
   await flush();
-  assert.deepEqual(f.view.candidates.value.map(entry => f.view.candidateKey(entry)), ['embedded', 'manual-result:access-manual-result']);
+  assert.deepEqual(
+    f.view.candidates.value.map((entry) => f.view.candidateKey(entry)),
+    ['embedded', 'manual-result:access-manual-result'],
+  );
   assert.equal(f.view.isLoading.value, false);
 });
 
 test('a lyric-only update adds the local candidate without resetting an untouched automatic result', async (t) => {
   let searches = 0;
-  const f = dialogFixture(t, { fetchLyricCandidates: async () => { searches++; return [candidate('auto')]; } });
+  const f = dialogFixture(t, {
+    fetchLyricCandidates: async () => {
+      searches++;
+      return [candidate('auto')];
+    },
+  });
   await flush();
   f.props.embeddedLyric = '第一份内嵌歌词';
   await flush();
@@ -1262,7 +1416,12 @@ test('a lyric-only update adds the local candidate without resetting an untouche
 test('unsent edits survive native enrichment while automatic search is pending', async (t) => {
   const pending = deferred();
   let searches = 0;
-  const f = dialogFixture(t, { fetchLyricCandidates: () => { searches++; return pending.promise; } });
+  const f = dialogFixture(t, {
+    fetchLyricCandidates: () => {
+      searches++;
+      return pending.promise;
+    },
+  });
   f.view.searchArtist.value = '尚未提交的歌手';
   f.props.embeddedTitle = '内嵌歌名';
   f.props.embeddedArtist = '内嵌歌手';
@@ -1273,12 +1432,20 @@ test('unsent edits survive native enrichment while automatic search is pending',
   pending.resolve([candidate('auto-pending')]);
   await flush();
   assert.equal(f.view.searchArtist.value, '尚未提交的歌手');
-  assert.deepEqual(f.view.candidates.value.map(entry => f.view.candidateKey(entry)), ['embedded', 'auto-pending:access-auto-pending']);
+  assert.deepEqual(
+    f.view.candidates.value.map((entry) => f.view.candidateKey(entry)),
+    ['embedded', 'auto-pending:access-auto-pending'],
+  );
 });
 
 test('an explicit candidate selection survives late identity without requiring keyword edits', async (t) => {
   let searches = 0;
-  const f = dialogFixture(t, { fetchLyricCandidates: async () => { searches++; return [candidate('first'), candidate('chosen')]; } });
+  const f = dialogFixture(t, {
+    fetchLyricCandidates: async () => {
+      searches++;
+      return [candidate('first'), candidate('chosen')];
+    },
+  });
   await flush();
   f.view.selectCandidate(f.view.candidates.value[1]);
   await flush();
@@ -1316,31 +1483,57 @@ test('removing an embedded candidate preserves online results and switching trac
   assert.equal(f.view.selectedCandidate.value.id, 'auto');
 });
 
-
 test('manual embedded selection survives persisted restart without changing another song default', async (t) => {
   const saved = new Map();
   const timers = new Map();
   let timerId = 0;
   const runtimeWindow = {
-    setTimeout: (fn) => { const id = ++timerId; timers.set(id, fn); return id; },
+    setTimeout: (fn) => {
+      const id = ++timerId;
+      timers.set(id, fn);
+      return id;
+    },
     clearTimeout: (id) => timers.delete(id),
-    electron: { storage: {
-      getKv: async (key) => saved.has(key) ? structuredClone(saved.get(key)) : null,
-      setKv: async (key, value) => { saved.set(key, structuredClone(value)); },
-      deleteKv: async (key) => saved.delete(key),
-    } },
+    electron: {
+      storage: {
+        getKv: async (key) => (saved.has(key) ? structuredClone(saved.get(key)) : null),
+        setKv: async (key, value) => {
+          saved.set(key, structuredClone(value));
+        },
+        deleteKv: async (key) => saved.delete(key),
+      },
+    },
   };
-  const persist = compile(read('stores/sqlitePersist.ts'), {
-    '../../shared/storePersistence': persistence,
-    '@/utils/logger': { warn() {} },
-  }, runtimeWindow);
+  // sqlitePersist 内部用常驻 effectScope 订阅待持久化字段；测试释放 Pinia 前先停止
+  // 这些 scope，避免 watcher 在 $state 被清空后继续读取。
+  const persistScopes = [];
+  const vueForPersist = {
+    ...vue,
+    effectScope: (detached) => {
+      const scope = vue.effectScope(detached);
+      persistScopes.push(scope);
+      return scope;
+    },
+  };
+  t.after(() => persistScopes.forEach((scope) => scope.stop()));
+  const persist = compile(
+    read('stores/sqlitePersist.ts'),
+    {
+      vue: vueForPersist,
+      '../../shared/storePersistence': persistence,
+      '@/utils/logger': { warn() {} },
+    },
+    runtimeWindow,
+  );
   let searches = 0;
   const createStore = () => {
     // A fresh module and Pinia instance simulate a restart, including empty runtime caches.
-    const { useLyricStore } = storeFixture({ searchLyric: async () => {
-      searches++;
-      return { candidates: [candidate('default-online')] };
-    } });
+    const { useLyricStore } = storeFixture({
+      searchLyric: async () => {
+        searches++;
+        return { candidates: [candidate('default-online')] };
+      },
+    });
     const instance = pinia.createPinia();
     instance.use(persist.sqlitePersistPlugin);
     vue.createApp({}).use(instance);
@@ -1356,16 +1549,24 @@ test('manual embedded selection survives persisted restart without changing anot
   await flush();
   const persisted = [...saved.values()][0];
   assert.deepEqual(persisted.embeddedLyricSelectionMap, { 'remember-native': true });
-  assert.equal(JSON.stringify(persisted).includes('内嵌文本'), false, 'persist the choice, not the lyric payload');
+  assert.equal(
+    JSON.stringify(persisted).includes('内嵌文本'),
+    false,
+    'persist the choice, not the lyric payload',
+  );
   const restarted = createStore();
   await persist.waitForSqlitePersistHydration();
   assert.equal(restarted.rawLyric, '');
   assert.equal(restarted.embeddedLyricSelectionMap['remember-native'], true);
-  await restarted.fetchLyrics('remember-native', { track: { embeddedMetadata: { lyric: '本次从文件读取的新歌词' } } });
+  await restarted.fetchLyrics('remember-native', {
+    track: { embeddedMetadata: { lyric: '本次从文件读取的新歌词' } },
+  });
   assert.equal(restarted.currentCandidateKey, 'embedded');
   assert.equal(restarted.rawLyric, '本次从文件读取的新歌词');
   assert.equal(searches, 0);
-  await restarted.fetchLyrics('never-selected', { track: { embeddedMetadata: { lyric: '另一首内嵌歌词' } } });
+  await restarted.fetchLyrics('never-selected', {
+    track: { embeddedMetadata: { lyric: '另一首内嵌歌词' } },
+  });
   assert.equal(searches, 1);
   assert.equal(restarted.currentCandidateKey, 'default-online:access-default-online');
 });
@@ -1373,25 +1574,41 @@ test('manual embedded selection survives persisted restart without changing anot
 test('dialog selects the playing online lyric by id when list accesskey differs', async (t) => {
   const playing = { ...candidate('same-id'), accesskey: 'playback-key' };
   const listed = { ...candidate('same-id'), accesskey: 'list-key' };
-  const f = dialogFixture(t, {
-    currentCandidateKey: 'same-id:playback-key',
-    autoCandidateKey: 'same-id:list-key',
-    fetchLyricCandidates: async () => [listed],
-  }, { embeddedLyric: '内嵌候选' });
-  assert.notEqual(f.view.selectedKey.value, 'embedded', 'do not check native while waiting for the playing online candidate');
+  const f = dialogFixture(
+    t,
+    {
+      currentCandidateKey: 'same-id:playback-key',
+      autoCandidateKey: 'same-id:list-key',
+      fetchLyricCandidates: async () => [listed],
+    },
+    { embeddedLyric: '内嵌候选' },
+  );
+  assert.notEqual(
+    f.view.selectedKey.value,
+    'embedded',
+    'do not check native while waiting for the playing online candidate',
+  );
   await flush();
   assert.equal(f.view.selectedKey.value, 'same-id:list-key');
   assert.equal(f.view.selectedCandidate.value.id, playing.id);
-  assert.equal(f.store.currentCandidateKey, 'same-id:playback-key', 'opening the panel must not apply anything');
+  assert.equal(
+    f.store.currentCandidateKey,
+    'same-id:playback-key',
+    'opening the panel must not apply anything',
+  );
 });
 
 for (const current of ['', 'not-in-results:old-key']) {
   test(`dialog falls through to online recommendation when current key is ${JSON.stringify(current)}`, async (t) => {
-    const f = dialogFixture(t, {
-      currentCandidateKey: current,
-      autoCandidateKey: 'recommended:access-recommended',
-      fetchLyricCandidates: async () => [candidate('other'), candidate('recommended')],
-    }, { embeddedLyric: '内嵌候选' });
+    const f = dialogFixture(
+      t,
+      {
+        currentCandidateKey: current,
+        autoCandidateKey: 'recommended:access-recommended',
+        fetchLyricCandidates: async () => [candidate('other'), candidate('recommended')],
+      },
+      { embeddedLyric: '内嵌候选' },
+    );
     await flush();
     assert.equal(f.view.selectedKey.value, 'recommended:access-recommended');
   });
@@ -1405,10 +1622,14 @@ test('dialog defaults to an online candidate before embedded when no recommendat
 
 test('a pending result does not replace the candidate explicitly clicked in the dialog', async (t) => {
   const pending = deferred();
-  const f = dialogFixture(t, {
-    currentCandidateKey: 'playing:access-playing',
-    fetchLyricCandidates: () => pending.promise,
-  }, { embeddedLyric: '内嵌候选' });
+  const f = dialogFixture(
+    t,
+    {
+      currentCandidateKey: 'playing:access-playing',
+      fetchLyricCandidates: () => pending.promise,
+    },
+    { embeddedLyric: '内嵌候选' },
+  );
   f.view.selectCandidate(f.view.embeddedCandidate.value);
   pending.resolve([candidate('playing')]);
   await flush();
@@ -1417,7 +1638,11 @@ test('a pending result does not replace the candidate explicitly clicked in the 
 });
 
 test('late playing lyric identity aligns the dialog until the user explicitly selects another candidate', async (t) => {
-  const f = dialogFixture(t, { fetchLyricCandidates: async () => [candidate('first'), candidate('playing')] }, { embeddedLyric: '内嵌候选' });
+  const f = dialogFixture(
+    t,
+    { fetchLyricCandidates: async () => [candidate('first'), candidate('playing')] },
+    { embeddedLyric: '内嵌候选' },
+  );
   await flush();
   f.store.currentCandidateKey = 'playing:different-key';
   await flush();
@@ -1429,7 +1654,11 @@ test('late playing lyric identity aligns the dialog until the user explicitly se
 });
 
 test('a currently used embedded lyric remains selected when online results arrive', async (t) => {
-  const f = dialogFixture(t, { currentCandidateKey: 'embedded' }, { embeddedLyric: '正在使用的内嵌歌词' });
+  const f = dialogFixture(
+    t,
+    { currentCandidateKey: 'embedded' },
+    { embeddedLyric: '正在使用的内嵌歌词' },
+  );
   await flush();
   assert.equal(f.view.selectedKey.value, 'embedded');
 });

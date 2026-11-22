@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Readable } from 'node:stream';
 import type {
   EchoPluginDescriptor,
   PluginListFilesOptions,
@@ -23,6 +22,7 @@ import type {
 import type { DownloadOptions, DownloadSource } from '../../shared/pluginDownloads';
 import { FileGrants } from './fileGrants';
 import { DownloadEngine } from '../downloads/engine';
+import { fsReadStreamToWeb } from '../fsStream';
 import { atomicJson, commitFile, ResourceError, safePath } from '../downloads/files';
 import { readAudioMetadata } from '../media/audioMetadata';
 
@@ -405,14 +405,13 @@ export class PluginResources {
       const stream = createReadStream(file.path, {
         start,
         end,
-        signal: controller.signal,
         highWaterMark: 256 * 1024,
       });
       stream.once('close', () => {
         lease.aborts.delete(controller);
         request.signal.removeEventListener('abort', abort);
       });
-      return new Response(Readable.toWeb(stream) as ReadableStream, {
+      return new Response(fsReadStreamToWeb(stream, controller.signal), {
         status: partial ? 206 : 200,
         headers,
       });

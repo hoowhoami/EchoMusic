@@ -1,8 +1,10 @@
 import * as embeddedTags from '../src/shared/embeddedMetadata.ts';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { LYRIC_PAGE_INK, resolveLyricPageIsDark } from '../src/shared/lyricPageAppearance.ts';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { transformSync } from 'esbuild';
 import * as vue from 'vue';
 import * as pinia from 'pinia';
@@ -204,6 +206,14 @@ function store(service) {
     '@/plugins/lyrics': {},
     '@/services/opencc': service,
     './theme': {},
+
+    './setting': {
+      resolveLyricPageIsDark,
+
+      useSettingStore: () => ({ lyricPageAppearanceMode: 'dark' }),
+
+      LYRIC_PAGE_INK,
+    },
     '../../shared/lyricOffset': offset,
     '../../shared/embeddedMetadata': embeddedTags,
     '../../shared/opencc': opencc,
@@ -431,7 +441,14 @@ test('traditional variants are accepted by shared settings and native profile gu
   assert.equal(modes.indexOf('traditional-variants'), modes.indexOf('traditional') + 1);
 });
 
-test('real native variant display preserves timed segments, ruby and romanization with isolated caches', async () => {
+test('real native variant display preserves timed segments, ruby and romanization with isolated caches', async (t) => {
+  // native addon 是构建产物（.node 不入库），未构建时跳过该集成用例
+  if (
+    !existsSync(fileURLToPath(new URL('../native/echo-opencc/echo-opencc.node', import.meta.url)))
+  ) {
+    t.skip('需先构建 echo-opencc native addon');
+    return;
+  }
   const native = createRequire(import.meta.url)('../native/echo-opencc');
   const calls = [];
   const service = setup((texts, profile) => {

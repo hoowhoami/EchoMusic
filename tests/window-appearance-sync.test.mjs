@@ -76,7 +76,14 @@ test('window frost toggle persists and reaches native sync; transparency changes
   f.controls.setFrosted(true);
   await flush();
   assert.equal(f.theme.activePreferences.windowFrosted, true);
-  assert.deepEqual(f.calls.at(-1), { enabled: true, frosted: true, transparency: 40, color: '' });
+  // 新增 keepFrostedOnBlur（失焦保持毛玻璃），默认关闭
+  assert.deepEqual(f.calls.at(-1), {
+    enabled: true,
+    frosted: true,
+    transparency: 40,
+    color: '',
+    keepFrostedOnBlur: false,
+  });
   f.theme.windowTransparency = 70;
   await flush();
   assert.equal(f.calls.at(-1).frosted, true);

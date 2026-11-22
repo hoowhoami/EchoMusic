@@ -1,4 +1,4 @@
-import { app, protocol } from 'electron';
+import { app, dialog, protocol } from 'electron';
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'echo-player-cover',
@@ -34,23 +34,38 @@ if (process.platform === 'win32') {
   app.commandLine.appendSwitch('no-sandbox');
 }
 
-// 必须在 app.ready 之前读取并应用 GPU 加速设置
-if (getDisableGpuAccelerationSetting()) {
-  app.disableHardwareAcceleration();
-}
+const applyPreReadySettings = () => {
+  // 必须在 app.ready 之前读取并应用 GPU 加速设置
+  if (getDisableGpuAccelerationSetting()) {
+    app.disableHardwareAcceleration();
+  }
 
-// 高 DPI 支持：在 app.ready 前让 Chromium 使用指定设备缩放因子。
-const highDpiSettings = getHighDpiSettings();
-if (highDpiSettings.enabled) {
-  app.commandLine.appendSwitch('high-dpi-support', '1');
-  app.commandLine.appendSwitch('force-device-scale-factor', String(highDpiSettings.dpiScale));
-}
+  // 高 DPI 支持：在 app.ready 前让 Chromium 使用指定设备缩放因子。
+  const highDpiSettings = getHighDpiSettings();
+  if (highDpiSettings.enabled) {
+    app.commandLine.appendSwitch('high-dpi-support', '1');
+    app.commandLine.appendSwitch('force-device-scale-factor', String(highDpiSettings.dpiScale));
+  }
 
-// 开发者模式开启时在本机开放 CDP 调试端口。remote-debugging-port 必须在
-// app.ready 前写入命令行，因此这里读持久化设置，变更后重启应用生效；
-// UI 侧开启前有风险确认弹窗（见 ExperimentalSettingsSection）。
-if (getDevToolsEnabledSetting()) {
-  app.commandLine.appendSwitch('remote-debugging-port', String(getDevToolsDebugPortSetting()));
-}
+  // 开发者模式开启时在本机开放 CDP 调试端口。remote-debugging-port 必须在
+  // app.ready 前写入命令行，因此这里读持久化设置，变更后重启应用生效；
+  // UI 侧开启前有风险确认弹窗（见 ExperimentalSettingsSection）。
+  if (getDevToolsEnabledSetting()) {
+    app.commandLine.appendSwitch('remote-debugging-port', String(getDevToolsDebugPortSetting()));
+  }
+};
 
-void import('./app');
+// ready 前的设置读取依赖原生存储 addon。addon 加载或初始化失败时若无提示，
+// 用户只会看到应用无窗口静默退出；这里统一兜底并给出可读原因。
+try {
+  applyPreReadySettings();
+  void import('./app');
+} catch (error) {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error('[Main] Failed to apply pre-ready settings', error);
+  dialog.showErrorBox(
+    '应用初始化失败',
+    `读取本地设置或加载原生存储模块失败，应用将退出。\n\n${detail}`,
+  );
+  app.exit(1);
+}

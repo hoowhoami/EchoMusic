@@ -74,8 +74,11 @@ function fixture(t, hasBarrage = true, surface = 'lyric') {
         taskbarLocked: vue.ref(false),
         desktopSurfaceLocked: vue.ref(false),
         desktopSurfaceHint: vue.ref('打开桌面歌词'),
+        desktopSurfaceIconKind: vue.ref('lyric'),
+        desktopSurfaceMenu: vue.reactive({ open: false }),
         supported: true,
         toggleDesktopSurface: () => {},
+        openDesktopSurfaceMenu: () => {},
       }),
     },
   }).default;

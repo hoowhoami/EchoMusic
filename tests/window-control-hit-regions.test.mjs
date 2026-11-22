@@ -11,7 +11,7 @@ function loadComponent(file, dependencies, platform) {
   const script = compileScript(descriptor, { id: file, inlineTemplate: true });
   const code = transformSync(script.content, { loader: 'ts', format: 'cjs' }).code;
   const module = { exports: {} };
-  new Function('require', 'module', 'exports', 'window', code)(
+  new Function('require', 'module', 'exports', 'window', 'HTMLElement', code)(
     (name) => {
       if (!(name in dependencies)) throw new Error(`Unexpected dependency: ${name}`);
       const dependency = dependencies[name];
@@ -20,6 +20,8 @@ function loadComponent(file, dependencies, platform) {
     module,
     module.exports,
     { electron: { platform, windowControl() {} }, history: { state: {} } },
+    // TitleBar derives its search anchor via `instanceof HTMLElement`; SSR has no DOM.
+    class HTMLElement {},
   );
   return module.exports.default;
 }
@@ -63,6 +65,7 @@ for (const platform of ['win32', 'linux']) {
           './WindowControls.vue': { default: windowControls },
           './TitleBarMoreMenu.vue': { default: empty },
           './TitlebarActionButton.vue': { default: empty },
+          './ResumeHintCard.vue': { default: empty },
           './useTitlebarSort': { useTitlebarSort() {} },
           '@vueuse/core': { useResizeObserver() {} },
           '@/plugins/titlebar': {

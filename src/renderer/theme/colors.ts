@@ -108,13 +108,14 @@ export function surfaceAccentText(accent: string, background: string, card: stri
   return readableSurfaceText(accent, [background, card]);
 }
 
-/** The immersive player has a dark cover backdrop even when the app is light.
+/** 沉浸式歌词页的宿主配色。默认深色保持历史行为；浅色档由外观模式设置显式传入。
  * Keep host chrome local while floating panels retain their own readable palette. */
 export function lyricPageColorVariables(
   accent: string,
   background: string,
+  isDark = true,
 ): Record<string, string> {
-  const tokens = neutralTokens(true);
+  const tokens = neutralTokens(isDark);
   const surfaces = [background, mixColor(background, tokens.text, 0.1)];
   return {
     '--text-main': tokens.text,

@@ -6,12 +6,14 @@ import { computed } from 'vue';
 import Switch from '@/components/ui/Switch.vue';
 import { useLyricSkin } from '../composables/useLyricSkin';
 import { HOST_SKIN_KEYS, LYRIC_SKIN_PORTRAIT_DEFAULTS } from './config';
+import { useLyricPageIsDark } from '../composables/useLyricAppearance';
 import LyricTextStyleSettings from './LyricTextStyleSettings.vue';
 
 const { settings, patch, reset } = useLyricSkin(
   HOST_SKIN_KEYS.portrait,
   LYRIC_SKIN_PORTRAIT_DEFAULTS,
 );
+const lyricIsDark = useLyricPageIsDark();
 
 const hasCustomSettings = computed(() =>
   Object.entries(LYRIC_SKIN_PORTRAIT_DEFAULTS).some(
@@ -20,6 +22,11 @@ const hasCustomSettings = computed(() =>
 );
 
 const backdropOpacityLabel = computed(() => `${settings.value.backdropOpacity}%`);
+// 浅色档遮罩有不透明度下限（PortraitMode 的 dimOverlayOpacity），滑杆 60~100 区间
+// 视觉无反馈，动态提示避免用户以为设置失效；深色档无下限不提示
+const backdropOpacityHint = computed(() =>
+  lyricIsDark.value ? undefined : '浅色页遮罩有 40% 提亮下限，透明度高于 60% 后不再变化',
+);
 const carouselIntervalLabel = computed(() => `${settings.value.carouselInterval} 秒`);
 const autoCollapseDelayLabel = computed(() => `${settings.value.autoCollapseDelay} 秒`);
 
@@ -51,6 +58,7 @@ const collapseHideControls = computed({
         label="背景透明度"
         :model-value="settings.backdropOpacity"
         :value-label="backdropOpacityLabel"
+        :hint="backdropOpacityHint"
         :min="10"
         :max="100"
         :step="5"

@@ -14,14 +14,14 @@ const props = defineProps<{
 
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue';
 import { usePlayerStore } from '@/stores/player';
-import { useSettingStore } from '@/stores/setting';
+import { LYRIC_PAGE_INK, useSettingStore } from '@/stores/setting';
 import { useLyricStore } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
 import { useThemeStore } from '@/stores/theme';
 import { lyricPageColorVariables } from '@/theme/colors';
 import { usePlayerControls } from '@/composables/usePlayerControls';
-import { vTooltip } from '@/components/ui/tooltip';
 import { useLyricBackground } from './composables/useLyricBackground';
+import { useLyricPageIsDark } from './composables/useLyricAppearance';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverDisplayUrl } from '@/utils/cover';
 import LyricPageTitlebar from './LyricPageTitlebar.vue';
@@ -115,7 +115,9 @@ const pluginTools = computed(() => pluginPage.value?.tools ?? 'host');
 
 // 背景主题色
 const coverUrl = computed(() => currentTrack.value?.coverUrl);
-const { backgroundColor } = useLyricBackground(coverUrl);
+// 歌词页是否深色：由外观模式设置（深色/浅色/跟随主程序）与主程序主题共同决定
+const lyricIsDark = useLyricPageIsDark();
+const { backgroundColor } = useLyricBackground(coverUrl, lyricIsDark);
 const displayCoverUrl = computed(() => {
   void coverFallbackRevision.value;
   return resolveCoverDisplayUrl(coverUrl.value, 400, { scope: 'lyric-background' });
@@ -172,24 +174,47 @@ const isBlurBackgroundRhythmEnabled = computed(
 );
 const fluidBackgroundReady = ref(false);
 
+// 歌词页分档配色：深色档保持历史值，浅色档为封面提亮浅调风格的配套中性色
+const LYRIC_PAGE_PALETTES = {
+  dark: {
+    blurBase: '#000000', // 模糊封面底色
+    fallbackBg: LYRIC_PAGE_INK, // 无封面主色时的兜底背景
+    pluginBg: '#0a0f0e', // 插件皮肤页背景
+    pluginFallbackBg: '#171718', // 插件皮肤页文字可读性计算的参考背景
+    blurOverlay: 'rgba(0, 0, 0, 0.5)', // 模糊封面压暗遮罩
+    dimOverlay: 'black', // 写真/封面兜底压暗遮罩
+  },
+  light: {
+    blurBase: '#ffffff',
+    fallbackBg: '#f5f5f7',
+    pluginBg: '#f6f6f6',
+    pluginFallbackBg: '#f6f6f6',
+    blurOverlay: 'rgba(255, 255, 255, 0.55)',
+    dimOverlay: 'white',
+  },
+} as const;
+const lyricPalette = computed(() =>
+  lyricIsDark.value ? LYRIC_PAGE_PALETTES.dark : LYRIC_PAGE_PALETTES.light,
+);
+
 // 背景样式
 const backgroundStyle = computed(() => {
   if (viewMode.value === 'portrait') {
-    // 写真模式：模糊背景启用时用黑色底色，否则不设（让写真图片透出）
+    // 写真模式：模糊背景启用时用底色承托，否则不设（让写真图片透出）
     if (settingStore.lyricPageBackgroundBlur && settledBlurCoverUrl.value) {
-      return { backgroundColor: '#000000' };
+      return { backgroundColor: lyricPalette.value.blurBase };
     }
     return {};
   }
-  // 启用模糊背景时使用深色底色（图片叠加在上面）
+  // 启用模糊背景时使用底色（图片叠加在上面）
   if (settingStore.lyricPageBackgroundBlur && settledBlurCoverUrl.value) {
-    return { backgroundColor: '#000000' };
+    return { backgroundColor: lyricPalette.value.blurBase };
   }
   // 封面/歌词模式使用主题色
   if (backgroundColor.value) {
     return { backgroundColor: backgroundColor.value };
   }
-  return { backgroundColor: '#1a1d22' };
+  return { backgroundColor: lyricPalette.value.fallbackBg };
 });
 
 // 壁纸的「仅歌词」要露出系统桌面壁纸，页面不能自带不透明底色；
@@ -199,11 +224,21 @@ const isClearWallpaper = computed(() => isWallpaper.value && props.clearBackgrou
 const pageStyle = computed(() => ({
   ...lyricPageColorVariables(
     themeStore.accentColor,
-    (isBuiltinSkin.value && backgroundStyle.value.backgroundColor) || '#171718',
+    (isBuiltinSkin.value && backgroundStyle.value.backgroundColor) ||
+      lyricPalette.value.pluginFallbackBg,
+    lyricIsDark.value,
   ),
   ...(isBuiltinSkin.value && viewMode.value === 'portrait' && !isClearWallpaper.value
     ? backgroundStyle.value
     : {}),
+  // 分档背景变量：供 scoped CSS 与子皮肤（写真兜底/遮罩/插件页）引用
+  '--lyric-page-bg': lyricPalette.value.fallbackBg,
+  '--lyric-blur-overlay-bg': lyricPalette.value.blurOverlay,
+  '--lyric-dim-overlay-bg': lyricPalette.value.dimOverlay,
+  '--lyric-plugin-bg': lyricPalette.value.pluginBg,
+  // 同步警告胶囊：深色档用亮黄、浅色档用深琥珀保证对比度
+  '--lyric-warning-color': lyricIsDark.value ? 'rgba(255, 200, 50, 0.85)' : '#b45309',
+  '--lyric-warning-bg': lyricIsDark.value ? 'rgba(255, 200, 50, 0.1)' : 'rgba(180, 83, 9, 0.08)',
 }));
 
 // 设置 Drawer：'skins' 为换肤面板（点皮肤卡进入该皮肤设置），'settings' 直接进入当前皮肤设置
@@ -648,12 +683,9 @@ onUnmounted(() => {
               opacity: isCollapsed && !isMouseActive ? 0 : 1,
               pointerEvents: isCollapsed && !isMouseActive ? 'none' : 'auto',
             }"
-            :aria-label="portraitModeRef.isLyricCollapsed ? '展开歌词' : '收起歌词'"
-            v-tooltip="{
-              content: portraitModeRef.isLyricCollapsed ? '展开歌词' : '收起歌词',
-              side: 'bottom',
-              mode: 'always',
-            }"
+            :aria-expanded="!portraitModeRef.isLyricCollapsed"
+            :tooltip="portraitModeRef.isLyricCollapsed ? '展开歌词' : '收起歌词'"
+            tooltip-side="bottom"
             @click="portraitModeRef.handleCollapseClick()"
           >
             <Icon
@@ -943,14 +975,14 @@ onUnmounted(() => {
 }
 
 .lyric-page.is-portrait {
-  background-color: #1a1d22;
+  background-color: var(--lyric-page-bg);
 }
 
 .lyric-background {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-color: #1a1d22;
+  background-color: var(--lyric-page-bg);
   transition: background-color 0.5s ease;
 }
 
@@ -991,11 +1023,11 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   z-index: 3;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--lyric-blur-overlay-bg);
 }
 
 .is-plugin-page {
-  background: #0a0f0e;
+  background: var(--lyric-plugin-bg);
 }
 .plugin-lyrics-content {
   position: absolute;
@@ -1063,10 +1095,10 @@ onUnmounted(() => {
 
 .toolbar-sync-warning {
   font-size: 11px;
-  color: rgba(255, 200, 50, 0.85);
+  color: var(--lyric-warning-color);
   padding: 2px 10px;
   border-radius: 999px;
-  background: rgba(255, 200, 50, 0.1);
+  background: var(--lyric-warning-bg);
   white-space: nowrap;
 }
 
@@ -1077,10 +1109,10 @@ onUnmounted(() => {
   transform: translateX(-50%);
   z-index: 50;
   font-size: 11px;
-  color: rgba(255, 200, 50, 0.85);
+  color: var(--lyric-warning-color);
   padding: 4px 14px;
   border-radius: 999px;
-  background: rgba(255, 200, 50, 0.1);
+  background: var(--lyric-warning-bg);
   white-space: nowrap;
   pointer-events: none;
 }

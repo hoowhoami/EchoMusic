@@ -853,6 +853,7 @@ function pageFixture(t) {
     },
     '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': session,
+    '@/components/ui/tooltip': { vTooltip: {} },
 
     '@/utils/composerKeyboard': keyboard,
     '@/api/listenTogether': f.api,

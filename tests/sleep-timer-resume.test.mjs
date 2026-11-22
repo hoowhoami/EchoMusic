@@ -65,6 +65,10 @@ function setup() {
     },
     emitPlayerEvent: (event) => calls.push(event),
     handlePlaybackEnded: () => calls.push('auto-next'),
+    // showResumeCard 是在 togglePlay 之前的闭包（依赖 resumeHintState / router /
+    // maybeShowResumeHint），不在本测试切片的源码区间内，因此以空桩注入：它只负责弹续播卡，
+    // 不参与睡眠定时器的暂停 / 重播决策，也不应写入 calls。
+    showResumeCard: () => {},
   };
   const toggle = new Function(...Object.keys(deps), `${toggleCode}; return togglePlay;`)(
     ...Object.values(deps),

@@ -68,6 +68,9 @@ function fixture(t) {
       useRouteTabs: () => ({ state: { tab: vue.ref('songs') }, select() {} }),
     },
     '@/composables/useStickyTabsLayout': { useStickyTabsLayout: () => ({}) },
+    '@/composables/useTabDoubleClickTop': {
+      useTabDoubleClickTop: () => ({ onTabPointerDown: () => {}, onTabDoubleClick: () => {} }),
+    },
     '@/utils/cover': {},
     '@/utils/playback': {},
     '@/utils/songList': {},

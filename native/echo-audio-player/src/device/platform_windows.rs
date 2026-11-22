@@ -828,6 +828,16 @@ unsafe fn wasapi_resolved_format_from_wave_format(
             }
         }
         KernelStreaming::WAVE_FORMAT_EXTENSIBLE => {
+            // 驱动可能返回截断的 WAVEFORMATEXTENSIBLE（例如 IsFormatSupported 的
+            // closest match）。cbSize 必须覆盖扩展部分，否则按扩展结构解引用会越界读。
+            let extensible_tail = (std::mem::size_of::<Audio::WAVEFORMATEXTENSIBLE>()
+                - std::mem::size_of::<Audio::WAVEFORMATEX>())
+                as u16;
+            if wave_format.cbSize < extensible_tail {
+                return Err(
+                    "WASAPI shared mix format has truncated WAVEFORMATEXTENSIBLE".to_string()
+                );
+            }
             let extensible = &*(wave_format as *const _ as *const Audio::WAVEFORMATEXTENSIBLE);
             let sub_format = extensible.SubFormat;
             let valid_bits_per_sample = extensible.Samples.wValidBitsPerSample;

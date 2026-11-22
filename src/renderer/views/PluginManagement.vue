@@ -259,7 +259,9 @@ const confirmUninstallPlugin = async () => {
 
 const getStatusLabel = (record: (typeof records.value)[number]) => {
   if (record.descriptor.invalid) return '无效';
-  if (!record.descriptor.compatibility.compatible) return '版本要求';
+  if (!record.descriptor.compatibility.compatible) {
+    return record.descriptor.compatibility.platformIncompatible ? '平台不支持' : '版本要求';
+  }
   if (getCurrentPluginCardFailure(record)) return record.status === 'error' ? '出错' : '异常';
   if (!record.descriptor.enabled) return '已停用';
   if (pluginRuntimeState.safeMode && record.descriptor.enabled) return '安全模式';

@@ -41,6 +41,20 @@ const mergeVipComments = (current: Comment[], enriched: Comment[]): Comment[] =>
   return changed ? next : current;
 };
 
+type CommentListFetcher = (
+  id: string,
+  page: number,
+  pagesize: number,
+  options: { showClassify: boolean; showHotwordList: boolean },
+) => Promise<unknown>;
+
+// 三类评论接口的入参结构一致，仅资源类型不同；集中登记后由同一状态机分发。
+const COMMENT_LIST_FETCHERS: Record<CommentResourceType, CommentListFetcher> = {
+  music: getMusicComments,
+  playlist: getPlaylistComments,
+  album: getAlbumComments,
+};
+
 /** 构建评论数据。VIP 铭牌异步补上，不挡住列表首屏。 */
 const buildPayload = (data: unknown): CommentPayload => {
   const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
@@ -153,198 +167,78 @@ export function useComments(options: UseCommentsOptions) {
       .catch(() => undefined);
   };
 
-  const fetchMusicComments = async (reset = false) => {
-    if (stopped.value) return;
-    if (isLoadingComments.value && !reset) return;
-    if (reset) {
-      commentsGeneration += 1;
-      page.value = 1;
-      comments.value = [];
-      total.value = 0;
-      hasMore.value = true;
-    }
-    const requestGeneration = commentsGeneration;
-    const resourceGeneration = generation;
-    const isCurrent = () =>
-      !stopped.value &&
-      requestGeneration === commentsGeneration &&
-      resourceGeneration === generation;
-    isLoadingComments.value = true;
-    try {
-      const res = await getMusicComments(effectiveId, page.value, 30, {
-        showClassify: reset,
-        showHotwordList: reset,
-      });
-      if (!isCurrent()) return;
-      if (
-        res &&
-        typeof res === 'object' &&
-        'status' in res &&
-        (res as { status?: number }).status === 1
-      ) {
-        const payload = buildPayload(res);
-        if (reset) {
-          hotComments.value = payload.hot ?? [];
-          classifyList.value = payload.classifyList;
-          hotwordList.value = payload.hotwordList;
-          if (!selectedClassify.value && classifyList.value.length > 0) {
-            selectedClassify.value = classifyList.value[0].id;
-          }
-          if (!selectedHotword.value && hotwordList.value.length > 0) {
-            selectedHotword.value = hotwordList.value[0].content;
-          }
-        }
-        comments.value = reset
-          ? payload.list
-          : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
-        total.value = payload.total;
-        hasMore.value =
-          payload.list.length > 0 &&
-          (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
-        if (hasMore.value) page.value += 1;
-        applyVipLater(
-          payload,
-          (enriched) => {
-            if (reset && enriched.hot) {
-              hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
-            }
-            comments.value = mergeVipComments(comments.value, enriched.list);
-          },
-          isCurrent,
-        );
-      }
-    } catch {
-      if (!isCurrent()) return;
-      toastStore.loadFailed('评论');
-    } finally {
-      if (isCurrent()) isLoadingComments.value = false;
-    }
-  };
-
-  const fetchPlaylistComments = async (reset = false) => {
-    if (stopped.value) return;
-    if (isLoadingComments.value && !reset) return;
-    if (reset) {
-      commentsGeneration += 1;
-      page.value = 1;
-      comments.value = [];
-      total.value = 0;
-      hasMore.value = true;
-    }
-    const requestGeneration = commentsGeneration;
-    const resourceGeneration = generation;
-    const isCurrent = () =>
-      !stopped.value &&
-      requestGeneration === commentsGeneration &&
-      resourceGeneration === generation;
-    isLoadingComments.value = true;
-    try {
-      const res = await getPlaylistComments(resourceId, page.value, 30, {
-        showClassify: reset,
-        showHotwordList: reset,
-      });
-      if (!isCurrent()) return;
-      if (
-        res &&
-        typeof res === 'object' &&
-        'status' in res &&
-        (res as { status?: number }).status === 1
-      ) {
-        const payload = buildPayload(res);
-        if (reset) {
-          hotComments.value = payload.hot ?? [];
-        }
-        comments.value = reset
-          ? payload.list
-          : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
-        total.value = payload.total;
-        hasMore.value =
-          payload.list.length > 0 &&
-          (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
-        if (hasMore.value) page.value += 1;
-        applyVipLater(
-          payload,
-          (enriched) => {
-            if (reset && enriched.hot) {
-              hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
-            }
-            comments.value = mergeVipComments(comments.value, enriched.list);
-          },
-          isCurrent,
-        );
-      }
-    } catch {
-      if (!isCurrent()) return;
-      toastStore.loadFailed('评论');
-    } finally {
-      if (isCurrent()) isLoadingComments.value = false;
-    }
-  };
-
-  const fetchAlbumComments = async (reset = false) => {
-    if (stopped.value) return;
-    if (isLoadingComments.value && !reset) return;
-    if (reset) {
-      commentsGeneration += 1;
-      page.value = 1;
-      comments.value = [];
-      total.value = 0;
-      hasMore.value = true;
-    }
-    const requestGeneration = commentsGeneration;
-    const resourceGeneration = generation;
-    const isCurrent = () =>
-      !stopped.value &&
-      requestGeneration === commentsGeneration &&
-      resourceGeneration === generation;
-    isLoadingComments.value = true;
-    try {
-      const res = await getAlbumComments(resourceId, page.value, 30, {
-        showClassify: reset,
-        showHotwordList: reset,
-      });
-      if (!isCurrent()) return;
-      if (
-        res &&
-        typeof res === 'object' &&
-        'status' in res &&
-        (res as { status?: number }).status === 1
-      ) {
-        const payload = buildPayload(res);
-        if (reset) {
-          hotComments.value = payload.hot ?? [];
-        }
-        comments.value = reset
-          ? payload.list
-          : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
-        total.value = payload.total;
-        hasMore.value =
-          payload.list.length > 0 &&
-          (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
-        if (hasMore.value) page.value += 1;
-        applyVipLater(
-          payload,
-          (enriched) => {
-            if (reset && enriched.hot) {
-              hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
-            }
-            comments.value = mergeVipComments(comments.value, enriched.list);
-          },
-          isCurrent,
-        );
-      }
-    } catch {
-      if (!isCurrent()) return;
-      toastStore.loadFailed('评论');
-    } finally {
-      if (isCurrent()) isLoadingComments.value = false;
-    }
-  };
-
+  // 三类资源共用同一套分页/VIP 补全/竞态状态机，仅 API 函数与重置字段不同。
   const fetchComments = async (reset = false) => {
-    if (resourceType === 'music') return fetchMusicComments(reset);
-    if (resourceType === 'playlist') return fetchPlaylistComments(reset);
-    return fetchAlbumComments(reset);
+    if (stopped.value) return;
+    if (isLoadingComments.value && !reset) return;
+    if (reset) {
+      commentsGeneration += 1;
+      page.value = 1;
+      comments.value = [];
+      total.value = 0;
+      hasMore.value = true;
+    }
+    const requestGeneration = commentsGeneration;
+    const resourceGeneration = generation;
+    const isCurrent = () =>
+      !stopped.value &&
+      requestGeneration === commentsGeneration &&
+      resourceGeneration === generation;
+    isLoadingComments.value = true;
+    try {
+      // 歌曲评论优先使用 mixSongId（effectiveId），歌单/专辑使用 resourceId。
+      const targetId = resourceType === 'music' ? effectiveId : resourceId;
+      const res = await COMMENT_LIST_FETCHERS[resourceType](targetId, page.value, 30, {
+        showClassify: reset,
+        showHotwordList: reset,
+      });
+      if (!isCurrent()) return;
+      if (
+        res &&
+        typeof res === 'object' &&
+        'status' in res &&
+        (res as { status?: number }).status === 1
+      ) {
+        const payload = buildPayload(res);
+        if (reset) {
+          hotComments.value = payload.hot ?? [];
+          // 分类与热词列表只由歌曲评论首屏返回，歌单/专辑评论不覆盖这些入口。
+          if (resourceType === 'music') {
+            classifyList.value = payload.classifyList;
+            hotwordList.value = payload.hotwordList;
+            if (!selectedClassify.value && classifyList.value.length > 0) {
+              selectedClassify.value = classifyList.value[0].id;
+            }
+            if (!selectedHotword.value && hotwordList.value.length > 0) {
+              selectedHotword.value = hotwordList.value[0].content;
+            }
+          }
+        }
+        comments.value = reset
+          ? payload.list
+          : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
+        total.value = payload.total;
+        hasMore.value =
+          payload.list.length > 0 &&
+          (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
+        if (hasMore.value) page.value += 1;
+        applyVipLater(
+          payload,
+          (enriched) => {
+            if (reset && enriched.hot) {
+              hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
+            }
+            comments.value = mergeVipComments(comments.value, enriched.list);
+          },
+          isCurrent,
+        );
+      }
+    } catch {
+      if (!isCurrent()) return;
+      toastStore.loadFailed('评论');
+    } finally {
+      if (isCurrent()) isLoadingComments.value = false;
+    }
   };
 
   const fetchClassifyComments = async (reset = false) => {

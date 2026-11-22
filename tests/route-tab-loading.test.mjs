@@ -46,6 +46,10 @@ for (const [page, tab, count, fetch] of [
       refreshFavorites: () => {},
       setupLoadMoreObserver: () => {},
       setupCommentObserver: () => {},
+      // Favorites 现在一进页面就预拉歌手与视频两个 tab 的徽标数据，
+      // 两者都必须有桩；被计数的那个仍放在最后，覆盖上面的默认桩。
+      fetchFollowed: () => {},
+      fetchVideos: () => {},
       [fetch]: () => {
         calls++;
       },
@@ -158,6 +162,8 @@ test('favorites revisions invalidate inactive data without fetching, then reload
     videosLoaded,
     videosPage: ref(2),
     videosHasMore: ref(false),
+    // resetVideos 现在会同时清空总数徽标，桩表必须提供这个 ref。
+    videosTotal: ref(0),
     videoSearchQuery: ref(''),
     isActive,
     isLoggedIn: ref(true),
@@ -178,7 +184,8 @@ test('favorites revisions invalidate inactive data without fetching, then reload
       [
         'let videosGeneration = 0;',
         lazyFunction(source, 'resetVideos'),
-        source.match(/watch\(\n  \(\) => videoCollectionStore.revision,[\s\S]*?^\);/m)[0],
+        // 源码在 Windows 检出为 CRLF，不能用字面 \n 跨行匹配
+        source.match(/watch\(\s*\(\) => videoCollectionStore\.revision,[\s\S]*?^\);/m)[0],
         lazyFunction(source, 'loadActiveTabData'),
         source.match(/onActivated\(\(\) => \{[\s\S]*?^\}\);/m)[0],
       ].join('\n'),

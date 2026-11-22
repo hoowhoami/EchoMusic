@@ -97,12 +97,14 @@ function register(id = 'test', options = {}) {
 
 test('immersive player foreground uses its own dark surface while retaining the current accent', () => {
   const s = store();
+  // 缺省第三参保持历史深色行为（固定深色歌词页兼容）
+  assert.equal(api.lyricPageColorVariables('#0071e3', '#171718')['--text-main'], '#ffffff');
   for (const mode of ['light', 'dark']) {
     s.updateGeneralPreferences({ mode, accent: { source: 'cover', color: '#0071e3' } });
     for (const cover of ['#ff2222', '#00ff88', '#2244ff', '#ffcc22']) {
       s.coverColor = cover;
       for (const background of ['#171718', '#000000', '#203d49', '#402d31']) {
-        const vars = api.lyricPageColorVariables(s.accentColor, background);
+        const vars = api.lyricPageColorVariables(s.accentColor, background, true);
         assert.equal(vars['--text-main'], '#ffffff');
         for (const surface of [background, api.mixColor(background, '#ffffff', 0.1)]) {
           assert.ok(api.contrast(vars['--text-secondary'], surface) >= 4.5);
@@ -110,6 +112,23 @@ test('immersive player foreground uses its own dark surface while retaining the 
         }
         assert.equal(vars['--floating-text-main'], undefined);
         assert.equal(vars['--floating-accent-text'], undefined);
+      }
+    }
+  }
+});
+
+test('immersive player light appearance keeps dark text readable on light surfaces', () => {
+  const s = store();
+  s.updateGeneralPreferences({ mode: 'light', accent: { source: 'cover', color: '#0071e3' } });
+  for (const cover of ['#ff2222', '#00ff88', '#2244ff', '#ffcc22']) {
+    s.coverColor = cover;
+    for (const background of ['#f5f5f7', '#ffffff', '#dce4ee', '#f0e2e4']) {
+      const vars = api.lyricPageColorVariables(s.accentColor, background, false);
+      assert.equal(vars['--text-main'], '#000000');
+      assert.equal(vars['--content-tone'], '#000000');
+      for (const surface of [background, api.mixColor(background, '#000000', 0.1)]) {
+        assert.ok(api.contrast(vars['--text-secondary'], surface) >= 4.5);
+        assert.ok(api.contrast(vars['--color-primary-text'], surface) >= 4.5);
       }
     }
   }
