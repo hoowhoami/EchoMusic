@@ -144,9 +144,11 @@ export function useAppRuntime(
     const canPruneResume = () => historyStore.hydrated && !isWallpaperRoute?.value;
     const pruneResumeWithHistory = () => {
       if (!canPruneResume()) return;
-      activePlayer.pruneResumeAgainstHistory(
-        historyStore.entries.map((entry) => resolveSongHistoryId(entry.song)),
-      );
+      const trackIds = historyStore.entries.map((entry) => resolveSongHistoryId(entry.song));
+      // 空列表不能当作「历史里一首都不剩」的证据：只要有一次读到空快照，裁剪就会把
+      // 续播记录和全部桶一起删光，之后任何页面都再没有续播卡可显示。
+      if (trackIds.length === 0) return;
+      activePlayer.pruneResumeAgainstHistory(trackIds);
     };
     pruneResumeWithHistory();
     if (canPruneResume()) activePlayer.dedupeAlbumAudiobookScopes();

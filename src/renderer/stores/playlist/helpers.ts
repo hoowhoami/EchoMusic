@@ -6,7 +6,9 @@ import { DEFAULT_PLAYBACK_QUEUE_ID, PERSONAL_FM_MODE } from './constants';
 import type {
   PersonalFmMode,
   PersonalFmSongPoolId,
+  PlaybackQueueMetaValueMap,
   PlaybackQueueState,
+  PlaybackResumeScope,
   SetPlaybackQueueOptions,
 } from './types';
 
@@ -138,12 +140,60 @@ export const toRawSongList = (songs: Song[] = []): Song[] => {
   return markRaw(songs.map((song) => toRawSong(withoutEmbeddedMetadata(toRaw(song)))));
 };
 
+const RESUME_SCOPE_META_KIND = 'resumeScopeKind';
+const RESUME_SCOPE_META_ID = 'resumeScopeId';
+
+const RESUME_SCOPE_KINDS: readonly PlaybackResumeScope['kind'][] = [
+  'audiobook',
+  'album',
+  'artist',
+  'playlist',
+];
+
+const isResumeScopeKind = (value: unknown): value is PlaybackResumeScope['kind'] =>
+  typeof value === 'string' && (RESUME_SCOPE_KINDS as readonly string[]).includes(value);
+
+/**
+ * 队列归属在内存里，落库时被镜像进 meta（见 store.ts 的 withResumeScopeMeta）。
+ * 水合恢复的队列没有 resumeScope 字段，这里从 meta 还原，重启后仍能认领详情页的桶；
+ * 没有归属的队列（搜索、收藏等入口起播）保持 null。
+ */
+const restoreResumeScope = (queue: PlaybackQueueState): void => {
+  if (queue.resumeScope) return;
+  const meta = queue.meta ?? {};
+  const kind = meta.resumeScopeKind;
+  const id = meta.resumeScopeId;
+  if (isResumeScopeKind(kind) && id !== null && id !== undefined && String(id) !== '') {
+    queue.resumeScope = { kind, id: String(id) };
+  }
+};
+
+/**
+ * 队列归属（从详情页起播时认领的那个桶）只存在内存里，重启恢复的队列就丢了归属，
+ * 之后在同一队列里听什么都不再写回详情页的桶。落库前把它镜像进 meta（meta 存
+ * meta_json），水合时再由 restoreResumeScope 还原。
+ */
+export const withResumeScopeMeta = (
+  queue: Pick<PlaybackQueueState, 'meta' | 'resumeScope'>,
+): PlaybackQueueMetaValueMap => {
+  const meta: PlaybackQueueMetaValueMap = { ...queue.meta };
+  delete meta[RESUME_SCOPE_META_KIND];
+  delete meta[RESUME_SCOPE_META_ID];
+  const scope = queue.resumeScope;
+  if (scope) {
+    meta[RESUME_SCOPE_META_KIND] = scope.kind;
+    meta[RESUME_SCOPE_META_ID] = scope.id;
+  }
+  return meta;
+};
+
 export const normalizePlaybackQueueRuntime = (queue: PlaybackQueueState): PlaybackQueueState => {
   queue.songs = toRawSongList(queue.songs ?? []);
   const playbackRevision = Number(queue.playbackRevision);
   queue.playbackRevision = Number.isSafeInteger(playbackRevision)
     ? Math.max(0, playbackRevision)
     : 0;
+  restoreResumeScope(queue);
   return queue;
 };
 
