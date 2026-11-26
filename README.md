@@ -224,6 +224,8 @@ sudo apt-get install -y build-essential pkg-config clang libclang-dev \
 
 > 开发模式下会由 Electron 主进程自动拉起本地服务端。
 
+Windows 主窗口默认使用 `Space` 播放 / 暂停音乐，输入框和音视频控件中的空格不会触发此快捷键。可在“设置 → 快捷键”中修改或清空绑定；已有自定义绑定会保留。
+
 #### 内存诊断
 
 需要观察 Electron 主进程、Renderer、GPU 等进程的内存变化时，可以开启启动阶段内存诊断日志：
