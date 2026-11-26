@@ -6,11 +6,13 @@ import Select from '@/components/ui/Select.vue';
 import Slider from '@/components/ui/Slider.vue';
 import Switch from '@/components/ui/Switch.vue';
 import {
-  DEFAULT_WALLPAPER_FRAME_PROFILE,
   DEFAULT_WALLPAPER_SETTINGS,
   DEFAULT_WALLPAPER_TEXTURE,
-  WALLPAPER_FRAME_PRESETS,
+  WALLPAPER_MAX_FPS,
+  WALLPAPER_MIN_FPS,
   WALLPAPER_PALETTES,
+  frameRateOf,
+  occludedFpsOf,
   type WallpaperPaletteKey,
   type WallpaperSettings,
   type WallpaperState,
@@ -29,6 +31,8 @@ const settings = ref<WallpaperSettings>({
   texture: { ...DEFAULT_WALLPAPER_TEXTURE },
 });
 const displays = ref<WallpaperState['displays']>([]);
+const activeRates = ref<Record<string, number>>({});
+const activeReasons = ref<Record<string, string>>({});
 
 const contentModeOptions = [
   { label: '跟随播放页', value: 'follow' },
@@ -38,36 +42,47 @@ const pauseOptions = [
   { label: '暂停壁纸', value: 'freeze' },
   { label: '关闭壁纸', value: 'hide' },
 ];
-// 绘制性能档位：一档同时决定正常播放与被遮挡两档帧率，滑动条取值即档位下标
-const frameProfileIndex = computed(() => {
-  const index = WALLPAPER_FRAME_PRESETS.findIndex(
-    (item) => item.key === settings.value.frameProfile,
+// 绘制帧率按屏各配一份：滑杆就摆在这一屏的开关左边，改的是哪块屏一目了然。
+// 轨道固定铺满 30–240，但真正能拖到多少卡在这块屏的刷新率上（拖不上去）。
+const maxRateOf = (display: WallpaperState['displays'][number]) => {
+  const refresh = Number(display.refreshRate) || 0;
+  return refresh > 0 ? Math.min(refresh, WALLPAPER_MAX_FPS) : WALLPAPER_MAX_FPS;
+};
+const rateOf = (display: WallpaperState['displays'][number]) =>
+  Math.min(frameRateOf(settings.value, display.id), maxRateOf(display));
+const setDisplayRate = (display: WallpaperState['displays'][number], value: number) => {
+  const next = Math.max(
+    WALLPAPER_MIN_FPS,
+    Math.min(Math.round(Number(value) || 0), maxRateOf(display)),
   );
-  if (index >= 0) return index;
-  const fallback = WALLPAPER_FRAME_PRESETS.findIndex(
-    (item) => item.key === DEFAULT_WALLPAPER_FRAME_PROFILE,
-  );
-  return fallback >= 0 ? fallback : 0;
-});
-const currentFramePreset = computed(
-  () => WALLPAPER_FRAME_PRESETS[frameProfileIndex.value] ?? WALLPAPER_FRAME_PRESETS[0],
-);
-const frameProfileHint = computed(
-  () =>
-    '播放 ' +
-    currentFramePreset.value.playing +
-    ' 帧，桌面被挡住 ' +
-    currentFramePreset.value.occluded +
-    ' 帧',
-);
-const formatFrameProfile = (value: number) => WALLPAPER_FRAME_PRESETS[value]?.label ?? '';
-const setFrameProfile = (value: number) => {
-  const preset = WALLPAPER_FRAME_PRESETS[value];
-  if (!preset) return;
-  void setSettings({ frameProfile: preset.key });
+  // 只提交这一块屏的键：主进程按屏深合并，不会碰其它屏的帧率。
+  void setSettings({ frameRates: { [display.id]: next } });
+};
+const formatFrameRate = (value: number) => `${value} 帧`;
+// 一行三个数按「设定 → 节能 → 当前」排：先看你能调的，再看自动降的，最后看实际跑的。
+const frameHint = (display: WallpaperState['displays'][number]) => {
+  const rate = rateOf(display);
+  // 没勾选这块屏时壁纸根本不在上面画，报「暂停」会让人以为是自己按了暂停。
+  if (!displayIds.value.includes(display.id)) return `设定 ${rate} 帧 · 未在这块屏显示`;
+  const live = activeRates.value[display.id] ?? 0;
+  // 0 帧要分开说：被窗口挡住还是暂停播放，用户要做的事完全不一样。
+  const still = () => {
+    switch (activeReasons.value[display.id]) {
+      case 'covered':
+        return '被窗口挡住';
+      case 'occluded':
+        return '被遮挡';
+      case 'fullscreen':
+        return '全屏中';
+      default:
+        return '暂停';
+    }
+  };
+  return `设定 ${rate} 帧 · 节能 ${occludedFpsOf(rate)} 帧 · 当前 ${live > 0 ? `${live} 帧` : still()}`;
 };
 // 「仅歌词」画面质感的可调参数：中心压暗、边缘压暗、压暗曲线与粒子数量/大小
-type TextureNumericKey = 'centerDim' | 'edgeDim' | 'curve' | 'particleDensity' | 'particleSize';
+type TextureNumericKey =
+  'centerDim' | 'edgeDim' | 'curve' | 'particleDensity' | 'particleSize' | 'particleSpeed';
 
 type TextureKnob = {
   key: TextureNumericKey;
@@ -84,8 +99,8 @@ const textureKnobs: TextureKnob[] = [
   {
     key: 'centerDim',
     group: 'dim',
-    label: '中心压暗',
-    hint: '屏幕中心压到多暗，按实际效果直读',
+    label: '压暗中心',
+    hint: '屏幕中心的压暗效果',
     min: 0,
     max: 100,
     step: 1,
@@ -94,8 +109,8 @@ const textureKnobs: TextureKnob[] = [
   {
     key: 'edgeDim',
     group: 'dim',
-    label: '边缘压暗',
-    hint: '贴到屏幕边缘时压到多暗',
+    label: '压暗边缘',
+    hint: '屏幕边缘的压暗效果',
     min: 0,
     max: 100,
     step: 1,
@@ -105,7 +120,7 @@ const textureKnobs: TextureKnob[] = [
     key: 'curve',
     group: 'dim',
     label: '压暗曲线',
-    hint: '越小越平；越大则中间几乎不变、靠边才迅速变暗',
+    hint: '屏幕中心到边缘的压暗变化曲率',
     min: 0,
     max: 100,
     step: 1,
@@ -115,7 +130,7 @@ const textureKnobs: TextureKnob[] = [
     key: 'particleDensity',
     group: 'particle',
     label: '浮尘数量',
-    hint: '画面里飘着的尘埃颗粒，100% 为默认',
+    hint: '画面里飘动的尘埃数量',
     min: 0,
     max: 200,
     step: 5,
@@ -125,7 +140,17 @@ const textureKnobs: TextureKnob[] = [
     key: 'particleSize',
     group: 'particle',
     label: '浮尘大小',
-    hint: '尘埃颗粒的尺寸，100% 为默认',
+    hint: '画面里飘动的尘埃大小',
+    min: 0,
+    max: 200,
+    step: 5,
+    unit: 'percent',
+  },
+  {
+    key: 'particleSpeed',
+    group: 'particle',
+    label: '浮尘速度',
+    hint: '画面里飘动尘埃的运动速度',
     min: 0,
     max: 200,
     step: 5,
@@ -140,6 +165,7 @@ const KNOB_SCALE: Record<string, number> = {
   curve: 100,
   particleDensity: 100,
   particleSize: 100,
+  particleSpeed: 100,
 };
 
 const dimKnobs = textureKnobs.filter((item) => item.group === 'dim');
@@ -195,7 +221,8 @@ const canResetTexture = computed(() => {
   return (
     current.particleEnabled &&
     (!nearSlider(current.particleDensity, defaults.particleDensity) ||
-      !nearSlider(current.particleSize, defaults.particleSize))
+      !nearSlider(current.particleSize, defaults.particleSize) ||
+      !nearSlider(current.particleSpeed, defaults.particleSpeed))
   );
 });
 
@@ -213,6 +240,7 @@ const resetTexture = () => {
   if (current.particleEnabled) {
     next.particleDensity = defaults.particleDensity;
     next.particleSize = defaults.particleSize;
+    next.particleSpeed = defaults.particleSpeed;
   }
   next.passthroughEnabled = defaults.passthroughEnabled;
   void setSettings({ texture: next });
@@ -238,16 +266,14 @@ const multiDisplay = computed(() => displays.value.length > 1);
 const contentModeHint = computed(() => {
   switch (settings.value.contentMode) {
     case 'lyric':
-      return '保留当前皮肤的歌词样式，去掉背景和封面，露出系统桌面壁纸';
+      return '保留当前皮肤的歌词样式，去掉背景和封面';
     default:
       return '与播放页完全一致，含皮肤与视图模式';
   }
 });
 // 提示语只讲当前选中的那一档，两档混在一起看反而要猜。
 const pauseHint = computed(() =>
-  settings.value.pauseBehavior === 'hide'
-    ? '暂停播放后收起壁纸，露出系统桌面壁纸'
-    : '暂停播放后画面暂停，壁纸不会消失',
+  settings.value.pauseBehavior === 'hide' ? '暂停播放后收起壁纸' : '暂停播放后画面暂停',
 );
 
 const applyState = (state: WallpaperState) => {
@@ -255,17 +281,10 @@ const applyState = (state: WallpaperState) => {
   enabled.value = Boolean(state.enabled);
   if (state.settings) settings.value = state.settings;
   displays.value = Array.isArray(state.displays) ? state.displays : [];
-  message.value = describeState(state);
-};
-const describeState = (state: WallpaperState) => {
-  if (!state.supported) return '当前系统暂不支持动态歌词壁纸';
-  if (!state.enabled) return '把正在播放的歌词铺在桌面图标下面';
-  if (state.reason === 'fullscreen') return '全屏应用正在运行，退出后自动恢复';
-  if (state.reason === 'covered') return '窗口占满桌面，壁纸暂停刷新';
-  if (state.reason === 'occluded') return `歌词被窗口挡住，已降到 ${state.frameRate} 帧`;
-  if (state.reason === 'paused') return '已暂停播放，壁纸停止刷新';
-  if (!state.attached) return '桌面层还没准备好，稍后会自动重试';
-  return '正在桌面层显示';
+  activeRates.value = state.activeFrameRates ?? {};
+  activeReasons.value = state.activeReasons ?? {};
+  // 顶部那行只留报错：正常状态不写文案，这里把上一次的报错清掉。
+  message.value = '';
 };
 const onState = (raw: unknown) => {
   if (!raw || typeof raw !== 'object') return;
@@ -300,7 +319,13 @@ const setEnabled = async (value: boolean) => {
 };
 const setSettings = async (patch: Partial<WallpaperSettings>) => {
   // 本地先合上：开关和滑块立刻跟手，主进程返回的权威状态再对齐一次。
-  settings.value = { ...settings.value, ...patch };
+  // 逐屏字段必须深合：浅合并会把别的屏的键整个抹掉，那一行会瞬间跳回默认值。
+  settings.value = {
+    ...settings.value,
+    ...patch,
+    frameRates: { ...settings.value.frameRates, ...(patch.frameRates ?? {}) },
+    texture: { ...settings.value.texture, ...(patch.texture ?? {}) },
+  };
   try {
     applyState(await window.electron.wallpaper.setSettings(patch));
   } catch (error) {
@@ -320,15 +345,27 @@ const toggleDisplay = (id: string, value: boolean) => {
   // 基数必须是「当前真实存在的选中屏」，不能拿持久化名单：
   // 那份名单里混着失效 id，按它 append 只会越点越长，永远勾不上。
   const current = displayIds.value;
-  const next = value
-    ? [...current.filter((item) => item !== id), id]
-    : current.filter((item) => item !== id);
-  // 至少保留一块屏幕，否则壁纸无处可画
-  if (next.length === 0) return;
+  if (value) {
+    void setSettings({ displayIds: [...current.filter((item) => item !== id), id] });
+    return;
+  }
+  const next = current.filter((item) => item !== id);
+  // 关掉的是唯一选中的那块屏：壁纸总得有地方画，于是切到另一块（主屏优先），
+  // 而不是把开关禁掉——禁掉的话用户会陷在「明明只有这一块能关，却点不动」的死角里。
+  if (next.length === 0) {
+    const fallback =
+      displays.value.find((display) => display.id !== id && display.primary) ??
+      displays.value.find((display) => display.id !== id);
+    if (!fallback) return;
+    void setSettings({ displayIds: [fallback.id] });
+    return;
+  }
   void setSettings({ displayIds: next });
 };
 const displayLabel = (display: WallpaperState['displays'][number]) =>
-  `${display.width} × ${display.height}${display.primary ? ' · 主屏' : ''}`;
+  `${display.width} × ${display.height}${display.primary ? ' · 主屏' : ''}${
+    Number(display.refreshRate) > 0 ? ` · ${display.refreshRate}Hz` : ''
+  }`;
 </script>
 
 <template>
@@ -340,18 +377,18 @@ const displayLabel = (display: WallpaperState['displays'][number]) =>
       <div class="min-w-0 flex-1 space-y-1">
         <h3 class="font-semibold">启用动态歌词壁纸</h3>
         <p
+          v-if="message"
           id="wallpaper-status"
           role="status"
           aria-live="polite"
           class="text-sm text-text-secondary"
         >
-          {{ message || '把正在播放的歌词铺在桌面图标下面' }}
+          {{ message }}
         </p>
       </div>
       <div class="flex items-center gap-3 shrink-0">
         <Switch
           aria-label="启用动态歌词壁纸"
-          aria-describedby="wallpaper-status"
           :model-value="enabled"
           :disabled="busy"
           @update:model-value="setEnabled(Boolean($event))"
@@ -360,20 +397,32 @@ const displayLabel = (display: WallpaperState['displays'][number]) =>
     </div>
     <!-- 关闭壁纸时下面的细项没有意义，收起来保持界面干净 -->
     <template v-if="enabled">
-      <template v-if="multiDisplay">
-        <div v-for="display in displays" :key="display.id" class="settings-item">
-          <div class="min-w-0 flex-1 space-y-1">
-            <h3 class="font-semibold">{{ display.label }}</h3>
-            <p class="text-sm text-text-secondary">{{ displayLabel(display) }}</p>
-          </div>
-          <Switch
-            :aria-label="`在${display.label}显示壁纸`"
-            :model-value="displayIds.includes(display.id)"
-            :disabled="displayIds.length === 1 && displayIds.includes(display.id)"
-            @update:model-value="toggleDisplay(display.id, Boolean($event))"
-          />
+      <!-- 一屏一行：档位滑杆就在这一屏的开关左边，改的是哪块屏不用猜 -->
+      <div v-for="display in displays" :key="display.id" class="settings-item">
+        <div class="min-w-0 flex-1 space-y-1">
+          <h3 class="font-semibold">{{ display.label }}</h3>
+          <p class="text-sm text-text-secondary">{{ displayLabel(display) }}</p>
+          <p class="text-sm text-text-secondary">{{ frameHint(display) }}</p>
         </div>
-      </template>
+        <Slider
+          class="shrink-0 w-45"
+          :aria-label="`${display.label} 绘制帧率`"
+          :model-value="rateOf(display)"
+          :min="WALLPAPER_MIN_FPS"
+          :max="WALLPAPER_MAX_FPS"
+          :step="1"
+          :format-value="formatFrameRate"
+          :bubble="true"
+          :disabled="!displayIds.includes(display.id)"
+          @update:model-value="setDisplayRate(display, Number($event))"
+        />
+        <Switch
+          v-if="multiDisplay"
+          :aria-label="`在${display.label}显示壁纸`"
+          :model-value="displayIds.includes(display.id)"
+          @update:model-value="toggleDisplay(display.id, Boolean($event))"
+        />
+      </div>
       <!-- 配色是整体外观，只在仅歌词下有意义，不参与「画面质感」的恢复默认 -->
       <template v-if="settings.contentMode === 'lyric'">
         <div class="settings-item">
@@ -422,22 +471,7 @@ const displayLabel = (display: WallpaperState['displays'][number]) =>
           "
         />
       </div>
-      <div class="settings-item">
-        <div class="min-w-0 flex-1 space-y-1">
-          <h3 class="font-semibold">绘制性能</h3>
-          <p class="text-sm text-text-secondary">{{ frameProfileHint }}</p>
-        </div>
-        <Slider
-          class="shrink-0 w-45"
-          aria-label="绘制性能档位"
-          :model-value="frameProfileIndex"
-          :min="0"
-          :max="WALLPAPER_FRAME_PRESETS.length - 1"
-          :step="1"
-          :format-value="formatFrameProfile"
-          @update:model-value="setFrameProfile"
-        />
-      </div>
+
       <!-- 仅歌词模式才有压暗与浮尘，其他模式不展示这些参数 -->
       <template v-if="settings.contentMode === 'lyric'">
         <div class="settings-divider"></div>
@@ -471,7 +505,7 @@ const displayLabel = (display: WallpaperState['displays'][number]) =>
         <div class="settings-item">
           <div class="min-w-0 flex-1 space-y-1">
             <h3 class="font-semibold">压暗</h3>
-            <p class="text-sm text-text-secondary">画面中间浅、四周暗，越靠屏幕边缘越暗</p>
+            <p class="text-sm text-text-secondary">按当前壁纸配色压暗桌面</p>
           </div>
           <Switch
             aria-label="压暗"
@@ -500,11 +534,11 @@ const displayLabel = (display: WallpaperState['displays'][number]) =>
         </template>
         <div class="settings-item">
           <div class="min-w-0 flex-1 space-y-1">
-            <h3 class="font-semibold">浮尘粒子</h3>
-            <p class="text-sm text-text-secondary">画面里缓慢上浮的尘埃，增加层次感</p>
+            <h3 class="font-semibold">浮尘</h3>
+            <p class="text-sm text-text-secondary">画面里随处飘动的尘埃，增加层次感</p>
           </div>
           <Switch
-            aria-label="浮尘粒子"
+            aria-label="浮尘"
             :model-value="currentTexture.particleEnabled"
             @update:model-value="setTextureFlag('particleEnabled', Boolean($event))"
           />

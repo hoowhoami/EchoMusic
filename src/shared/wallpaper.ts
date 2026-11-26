@@ -23,6 +23,8 @@ export interface WallpaperTextureSettings {
   particleDensity: number;
   /** 浮尘粒子的尺寸系数（1 = 默认）。 */
   particleSize: number;
+  /** 浮尘粒子的运动速度系数（1 = 默认，与数量/大小同一口径）：默认已比原先快 1.5 倍，0 静止。 */
+  particleSpeed: number;
   /** 是否把画面压暗（中间浅、四周黑）。 */
   dimEnabled: boolean;
   /** 是否叠加浮尘粒子。 */
@@ -37,6 +39,7 @@ export const DEFAULT_WALLPAPER_TEXTURE: WallpaperTextureSettings = {
   curve: 0.5,
   particleDensity: 1,
   particleSize: 1,
+  particleSpeed: 1,
   dimEnabled: true,
   particleEnabled: true,
   passthroughEnabled: false,
@@ -109,7 +112,28 @@ export const WALLPAPER_FRAME_PRESETS: WallpaperFramePreset[] = [
 
 export const DEFAULT_WALLPAPER_FRAME_PROFILE: WallpaperFrameProfile = 'high';
 
-const FRAME_PROFILE_KEYS = WALLPAPER_FRAME_PRESETS.map((item) => item.key);
+/** 帧率量程：滑杆轨道固定铺满这段区间，真正能拖到多少由这块屏的刷新率决定。 */
+export const WALLPAPER_MIN_FPS = 30;
+export const WALLPAPER_MAX_FPS = 240;
+
+/** 桌面被挡住时的省电档 = 当前帧率的 20%，跟着设置走，不再单独配一档。 */
+export const WALLPAPER_OCCLUDED_RATIO = 0.2;
+
+/** 省电档帧率：四舍五入到整数，最低 1 帧（0 会被当成暂停）。 */
+export const occludedFpsOf = (fps: number): number =>
+  Math.max(1, Math.round(fps * WALLPAPER_OCCLUDED_RATIO));
+
+/** 把任意来源的帧率夹进量程；非数字按默认档处理前的兜底由调用方决定。 */
+export const clampFrameRate = (fps: number): number =>
+  Math.min(WALLPAPER_MAX_FPS, Math.max(WALLPAPER_MIN_FPS, Math.round(fps)));
+
+/**
+ * 下发给插件的节奏帧率：0 表示不限（主窗口，或壁纸没开帧率预算）。
+ * 与 clampFrameRate 的区别是不能把 0 抬成 30 —— 省电档本身可能只有几帧，
+ * 而「不限」必须能和「很低的帧率」区分开。
+ */
+export const paceFpsOf = (fps: number): number =>
+  Number.isFinite(fps) && fps > 0 ? Math.min(WALLPAPER_MAX_FPS, Math.round(fps)) : 0;
 
 export const getWallpaperFramePreset = (
   key: WallpaperFrameProfile | undefined,
@@ -144,8 +168,16 @@ export interface WallpaperSettings {
   displayIds: string[];
   contentMode: WallpaperContentMode;
   pauseBehavior: WallpaperPauseBehavior;
-  /** 绘制性能档位：决定正常播放与桌面被遮挡时各自的帧率。 */
-  frameProfile: WallpaperFrameProfile;
+  /**
+   * 全局默认绘制帧率（帧/秒）。档位不再是固定几档，滑杆连续取值；
+   * 桌面被挡住时的省电档按这个数的 20% 自动算。
+   */
+  frameRate: number;
+  /**
+   * 每块屏自己的绘制帧率（显示器 id → 帧/秒）。没配过的屏回落到 frameRate。
+   * 多屏的刷新率常常不一样（144Hz 副屏配 60Hz 主屏），一刀切的帧率必然有一块屏在空烧。
+   */
+  frameRates: Record<string, number>;
   /** 「仅歌词」的整套配色。 */
   palette: WallpaperPaletteKey;
   /** 「仅歌词」的画面质感参数。 */
@@ -156,7 +188,10 @@ export const DEFAULT_WALLPAPER_SETTINGS: WallpaperSettings = {
   displayIds: [],
   contentMode: 'follow',
   pauseBehavior: 'freeze',
-  frameProfile: DEFAULT_WALLPAPER_FRAME_PROFILE,
+  frameRate:
+    WALLPAPER_FRAME_PRESETS.find((item) => item.key === DEFAULT_WALLPAPER_FRAME_PROFILE)?.playing ??
+    60,
+  frameRates: {},
   palette: DEFAULT_WALLPAPER_PALETTE_KEY,
   texture: { ...DEFAULT_WALLPAPER_TEXTURE },
 };
@@ -169,6 +204,8 @@ export interface WallpaperDisplay {
   width: number;
   height: number;
   scaleFactor: number;
+  /** 这块屏的刷新率（Hz）；系统没报出来时是 0。 */
+  refreshRate: number;
   primary: boolean;
 }
 
@@ -191,6 +228,10 @@ export interface WallpaperState {
   coverage: number;
   /** 当前生效的帧率；0 表示暂停绘制。 */
   frameRate: number;
+  /** 每块屏当前生效的帧率（显示器 id → 帧/秒），0 表示这块屏暂停绘制。 */
+  activeFrameRates: Record<string, number>;
+  /** 每块屏当前为 0 帧的原因（covered/occluded/paused/fullscreen），供设置页说清楚为什么停了。 */
+  activeReasons: Record<string, string>;
   /** 当前策略原因，便于渲染层决定是否冻结动画。 */
   reason: string;
   displays: WallpaperDisplay[];
@@ -241,6 +282,7 @@ const normalizeTexture = (
       2,
     ),
     particleSize: clampDecimal(raw.particleSize, DEFAULT_WALLPAPER_TEXTURE.particleSize, 0, 2),
+    particleSpeed: clampDecimal(raw.particleSpeed, DEFAULT_WALLPAPER_TEXTURE.particleSpeed, 0, 2),
     dimEnabled: raw.dimEnabled !== false,
     particleEnabled: raw.particleEnabled !== false,
     // 默认关闭：老配置里没有这个字段时也按「不穿透」处理。
@@ -248,10 +290,80 @@ const normalizeTexture = (
   };
 };
 
+/**
+ * 老配置里存的是档位名（'insane' 这种），新配置存帧数。
+ * 这里把两种写法都读成帧数，读不出来返回 null 交给调用方兜底。
+ */
+const readFrameRate = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return clampFrameRate(value);
+  if (typeof value === 'string') {
+    const preset = WALLPAPER_FRAME_PRESETS.find((item) => item.key === value);
+    if (preset) return clampFrameRate(preset.playing);
+  }
+  return null;
+};
+
+/** 每块屏的帧率表：键为显示器 id，值夹进量程；认得档位名的老值就地换算，其余丢掉。 */
+const normalizeFrameRates = (input: unknown): Record<string, number> => {
+  const next: Record<string, number> = {};
+  if (!input || typeof input !== 'object') return next;
+  for (const [rawId, rawValue] of Object.entries(input as Record<string, unknown>)) {
+    const id = String(rawId).trim();
+    if (!id) continue;
+    const fps = readFrameRate(rawValue);
+    if (fps === null) continue;
+    next[id] = fps;
+  }
+  return next;
+};
+
+/**
+ * 某块屏实际用的帧率：单独配过用它，没配过回落到全局那一个。
+ * 主进程算策略、设置页显示滑杆都走这里，两边不会各算一套。
+ */
+export const frameRateOf = (
+  settings: Pick<WallpaperSettings, 'frameRate' | 'frameRates'>,
+  displayId: string,
+): number => settings.frameRates?.[displayId] ?? settings.frameRate;
+
+/**
+ * 把每屏帧率收敛到「当前真实存在的屏 + 这块屏真实的刷新率」。
+ *
+ * 两件事只能在这里收：屏幕重插、换口之后 id 会变，旧屏的键再没人读得懂，留着只会越攒越多；
+ * 用户在系统里把屏从 144Hz 降到 60Hz 之后，存下来的 144 不会自己变小，界面上就会出现
+ * 「设定 144 帧 / 当前 60 帧」这种自相矛盾的显示。
+ */
+export const reconcileFrameRates = (
+  rates: Record<string, number>,
+  displays: readonly Pick<WallpaperDisplay, 'id' | 'refreshRate'>[],
+): { rates: Record<string, number>; changed: boolean } => {
+  const limits = new Map(displays.map((display) => [display.id, display.refreshRate]));
+  const next: Record<string, number> = {};
+  let changed = false;
+  for (const [id, value] of Object.entries(rates ?? {})) {
+    const limit = limits.get(id);
+    // 屏已经不在了：这个键没有任何读者，直接丢掉。
+    if (limit === undefined) {
+      changed = true;
+      continue;
+    }
+    const capped = limit > 0 ? Math.min(value, limit) : value;
+    if (capped !== value) changed = true;
+    next[id] = capped;
+  }
+  return { rates: next, changed };
+};
+
 export const normalizeWallpaperSettings = (
   input: Partial<WallpaperSettings> | null | undefined = {},
 ): WallpaperSettings => {
-  const raw = (input ?? {}) as Partial<WallpaperSettings>;
+  const raw = (input ?? {}) as Partial<WallpaperSettings> & {
+    // 老配置字段：存的是档位名，读出来立刻换算成帧数，之后一律只认 frameRate/frameRates。
+    frameProfile?: unknown;
+    frameProfiles?: unknown;
+    frameRate?: unknown;
+    frameRates?: unknown;
+  };
   const ids = Array.isArray(raw.displayIds)
     ? raw.displayIds
         .filter((id) => typeof id === 'string' && id.trim().length > 0)
@@ -264,9 +376,12 @@ export const normalizeWallpaperSettings = (
       ? (raw.contentMode as WallpaperContentMode)
       : DEFAULT_WALLPAPER_SETTINGS.contentMode,
     pauseBehavior: raw.pauseBehavior === 'hide' ? 'hide' : 'freeze',
-    frameProfile: FRAME_PROFILE_KEYS.includes(raw.frameProfile as WallpaperFrameProfile)
-      ? (raw.frameProfile as WallpaperFrameProfile)
-      : DEFAULT_WALLPAPER_FRAME_PROFILE,
+    // 老配置读 frameProfile（档位名），新配置读 frameRate（帧数），两者都换算成帧数。
+    frameRate:
+      readFrameRate(raw.frameRate) ??
+      readFrameRate(raw.frameProfile) ??
+      DEFAULT_WALLPAPER_SETTINGS.frameRate,
+    frameRates: normalizeFrameRates(raw.frameRates ?? raw.frameProfiles),
     palette: PALETTE_KEYS.includes(raw.palette as WallpaperPaletteKey)
       ? (raw.palette as WallpaperPaletteKey)
       : DEFAULT_WALLPAPER_PALETTE_KEY,

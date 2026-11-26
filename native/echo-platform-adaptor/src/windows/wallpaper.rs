@@ -10,6 +10,7 @@ use napi::{
 };
 use napi_derive::napi;
 use std::{
+    collections::HashMap,
     ffi::c_void,
     mem::size_of,
     sync::{
@@ -20,12 +21,16 @@ use std::{
     time::Duration,
 };
 use windows::{
-    core::{w, BOOL},
+    core::{w, BOOL, PWSTR},
     Win32::{
-        Foundation::{HWND, RECT, LPARAM},
+        Foundation::{CloseHandle, HWND, LPARAM, RECT},
         Graphics::{
             Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS},
             Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST},
+        },
+        System::Threading::{
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+            PROCESS_QUERY_LIMITED_INFORMATION,
         },
         UI::{
             Shell::{
@@ -62,6 +67,67 @@ const DESKTOP_CLASSES: [&str; 6] = [
     "ApplicationManager_DesktopShellWindow",
     "SysListView32",
 ];
+
+/// 输入类系统浮层：触摸键盘（TabTip）、输入法候选宿主（TextInputHost）。
+/// 它们的窗口按屏幕大小铺开，但不画任何应用画面，算成遮挡会让壁纸在什么都没开的时候
+/// 一直判定成「被盖住」而冻住——用户看到的就是歌词不会动。
+const INPUT_OVERLAY_PROCESSES: [&str; 3] = [
+    "TabTip.exe",
+    "TextInputHost.exe",
+    "WindowsInternal.ComposableShell.Experiences.TextInput.InputApp.exe",
+];
+
+/// 点击穿透的浮层：鼠标事件直接穿过去，画面上也看不出东西。
+unsafe fn is_click_through(hwnd: HWND) -> bool {
+    let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+    style & WS_EX_TRANSPARENT.0 != 0
+}
+
+/// 窗口所属进程的可执行文件名（不含路径）。
+unsafe fn process_image_name(pid: u32) -> Option<String> {
+    if pid == 0 {
+        return None;
+    }
+    let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+    let mut buffer = [0u16; 260];
+    let mut size = buffer.len() as u32;
+    let queried = QueryFullProcessImageNameW(
+        process,
+        PROCESS_NAME_WIN32,
+        PWSTR(buffer.as_mut_ptr()),
+        &mut size,
+    )
+    .is_ok();
+    let _ = CloseHandle(process);
+    if !queried || size == 0 {
+        return None;
+    }
+    let path = String::from_utf16_lossy(&buffer[..size as usize]);
+    path.rsplit(['\\', '/']).next().map(|name| name.to_string())
+}
+
+/// 这个窗口算不算「挡住了壁纸」。透明浮层与输入法宿主一律不算。
+unsafe fn counts_as_cover(hwnd: HWND, cache: &mut HashMap<u32, Option<String>>) -> bool {
+    if is_click_through(hwnd) {
+        return false;
+    }
+    let mut pid = 0u32;
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    let name = match cache.get(&pid) {
+        Some(cached) => cached.clone(),
+        None => {
+            let resolved = process_image_name(pid);
+            cache.insert(pid, resolved.clone());
+            resolved
+        }
+    };
+    match name {
+        Some(name) => !INPUT_OVERLAY_PROCESSES
+            .iter()
+            .any(|item| name.eq_ignore_ascii_case(item)),
+        None => true,
+    }
+}
 
 fn parse_handle(handle: &str) -> napi::Result<HWND> {
     let value = handle
@@ -116,7 +182,10 @@ unsafe fn find_host() -> Option<HWND> {
     thread::sleep(Duration::from_millis(80));
     // Win10/11 通用：图标窗口 SHELLDLL_DefView 所在顶层窗口后面那个 WorkerW。
     let mut found = 0isize;
-    let _ = EnumWindows(Some(probe_desktop), LPARAM(&mut found as *mut isize as isize));
+    let _ = EnumWindows(
+        Some(probe_desktop),
+        LPARAM(&mut found as *mut isize as isize),
+    );
     if found != 0 {
         return Some(HWND(found as *mut c_void));
     }
@@ -137,8 +206,8 @@ pub fn wallpaper_attach(handle: String) -> napi::Result<()> {
     unsafe {
         // 与任务栏歌词相同的宿主契约保护：桌面被 Explorer 重建时补发 WM_DESTROY。
         super::taskbar::window_lifecycle::install(child)?;
-        let host = find_host()
-            .ok_or_else(|| napi::Error::from_reason("找不到桌面宿主窗口（WorkerW）"))?;
+        let host =
+            find_host().ok_or_else(|| napi::Error::from_reason("找不到桌面宿主窗口（WorkerW）"))?;
         let style = GetWindowLongPtrW(child, GWL_STYLE);
         let ex = GetWindowLongPtrW(child, GWL_EXSTYLE);
         SetParent(child, Some(host)).map_err(|error| napi::Error::from_reason(error.message()))?;
@@ -146,11 +215,7 @@ pub fn wallpaper_attach(handle: String) -> napi::Result<()> {
         let popup = WS_POPUP.0 as isize;
         let caption = WS_CAPTION.0 as isize;
         let child_flag = WS_CHILD.0 as isize;
-        SetWindowLongPtrW(
-            child,
-            GWL_STYLE,
-            (style & !popup & !caption) | child_flag,
-        );
+        SetWindowLongPtrW(child, GWL_STYLE, (style & !popup & !caption) | child_flag);
         let no_activate = WS_EX_NOACTIVATE.0 as isize;
         let tool_window = WS_EX_TOOLWINDOW.0 as isize;
         let app_window = WS_EX_APPWINDOW.0 as isize;
@@ -259,6 +324,8 @@ struct CoverScan {
     screen: RECT,
     own: HWND,
     rects: Vec<CoverRect>,
+    /// 每轮扫描内按 pid 缓存可执行文件名：同一进程的多个窗口只查一次。
+    process_names: HashMap<u32, Option<String>>,
 }
 
 /// 收集所有可能挡住桌面的顶层窗口矩形：只看可见、未被最小化、不在别的虚拟桌面上的窗口。
@@ -271,6 +338,10 @@ unsafe extern "system" fn collect_cover(hwnd: HWND, lparam: LPARAM) -> BOOL {
         return BOOL(1);
     }
     if DESKTOP_CLASSES.contains(&class_name(hwnd).as_str()) {
+        return BOOL(1);
+    }
+    // 透明浮层与输入法宿主：铺满整块屏但什么都没画，不能算成遮挡。
+    if !counts_as_cover(hwnd, &mut scan.process_names) {
         return BOOL(1);
     }
     // 在别的虚拟桌面上、或被 DWM 挂起的窗口依然 IsWindowVisible，但它们并没有显示出来。
@@ -361,6 +432,7 @@ unsafe fn measure(child: HWND, lyric: Option<CoverRect>) -> WallpaperOcclusion {
         screen,
         own: child,
         rects: Vec::new(),
+        process_names: HashMap::new(),
     };
     let _ = EnumWindows(
         Some(collect_cover),
@@ -543,4 +615,3 @@ impl WallpaperMonitor {
         self.child.to_string()
     }
 }
-

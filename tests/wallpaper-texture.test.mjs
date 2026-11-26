@@ -73,13 +73,52 @@ test('压暗层按中心/边缘/曲线采样，不再有写死的中间与边缘
   assert.doesNotMatch(source, /0\.27 \* darkness|0\.67 \* darkness/);
 });
 
-test('设置页三项滑杆换成中心压暗、边缘压暗与压暗曲线', () => {
+test('设置页三项滑杆是压暗中心、压暗边缘与压暗曲线', () => {
   const source = readFileSync(
     path.join(root, 'src/renderer/views/settings/components/WallpaperSettingsSection.vue'),
     'utf8',
   );
-  assert.match(source, /label: '中心压暗'/);
-  assert.match(source, /label: '边缘压暗'/);
+  assert.match(source, /label: '压暗中心'/);
+  assert.match(source, /label: '压暗边缘'/);
   assert.match(source, /label: '压暗曲线'/);
   assert.doesNotMatch(source, /label: '压黑范围'|label: '压黑暗度'|label: '中心压黑'/);
+});
+
+test('浮尘速度与数量/大小同口径：默认 1（100%），量程 0~2，脏值回落默认', () => {
+  const texture = wallpaper.normalizeWallpaperSettings({}).texture;
+  assert.equal(texture.particleSpeed, 1);
+  const high = wallpaper.normalizeWallpaperSettings({ texture: { particleSpeed: 3 } }).texture;
+  assert.equal(high.particleSpeed, 2);
+  const low = wallpaper.normalizeWallpaperSettings({ texture: { particleSpeed: -1 } }).texture;
+  assert.equal(low.particleSpeed, 0);
+  const dirty = wallpaper.normalizeWallpaperSettings({
+    texture: { particleSpeed: 'fast' },
+  }).texture;
+  assert.equal(dirty.particleSpeed, 1);
+});
+
+test('100% 已是原先的 1.5 倍：位移与摆动相位一起乘速度倍数', () => {
+  const source = readFileSync(
+    path.join(root, 'src/renderer/views/wallpaper/WallpaperParticles.vue'),
+    'utf8',
+  );
+  assert.match(source, /const SPEED_GAIN_AT_DEFAULT = 4/);
+  assert.match(source, /const SIZE_GAIN_AT_DEFAULT = 1\.3/);
+  assert.match(source, /const SPRITE_CORE_RATIO = 0\.5/);
+  assert.match(source, /body\.addColorStop\(SPRITE_CORE_RATIO, rgba\(tint, 0\.96\)\)/);
+  assert.match(source, /const gain = Math\.max\(0, props\.speed\) \* SPEED_GAIN_AT_DEFAULT/);
+  assert.match(source, /elapsed \+= delta \* gain/);
+  assert.match(source, /particle\.y \+= Math\.sin\(angle\) \* particle\.speed \* delta \* gain/);
+  const page = readFileSync(
+    path.join(root, 'src/renderer/views/wallpaper/WallpaperPage.vue'),
+    'utf8',
+  );
+  assert.match(page, /:speed="texture\.particleSpeed"/);
+  // 像灰尘一样自由飘：方向缓慢摆动，四面环绕
+  assert.match(source, /const WANDER_RAD = 1\.1/);
+  assert.match(
+    source,
+    /Math\.sin\(elapsed \* particle\.swayFreq \+ particle\.phase\) \* WANDER_RAD/,
+  );
+  assert.match(source, /particle\.x \+= Math\.cos\(angle\) \* particle\.speed \* delta \* gain/);
 });

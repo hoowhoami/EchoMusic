@@ -5,6 +5,7 @@ import { useLyricStore } from '@/stores/lyric';
 import type { AudioQualityValue, AudioEffectValue, PlayMode } from '@/types';
 import { createLyricTimeline } from '@/composables/useLyricTimeline';
 import { useLyricPageIsDark } from './useLyricAppearance';
+import { wallpaperFrameMode } from '@/wallpaper/frameContract';
 
 export type LyricsPagePanel =
   | 'queue'
@@ -93,6 +94,11 @@ export function useLyricsPageContext(
       view: {
         wallpaper: view.wallpaper.value,
         clearBackground: view.clearBackground.value,
+        // 壁纸帧率契约：插件自绘循环按这个节奏出帧，宿主不再另开一套限制。
+        frame: {
+          fps: wallpaperFrameMode.value.fps,
+          frozen: wallpaperFrameMode.value.frozen,
+        },
       },
       /** 歌词页当前是否深色（外观模式设置 + 主程序主题共同决定）。 */
       isDark: lyricIsDark.value,

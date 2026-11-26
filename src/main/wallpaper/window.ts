@@ -210,6 +210,19 @@ export const createWallpaperSurface = async (
         bounds.height +
         '）',
     );
+    // 挂载完立刻复摆几次：Chromium 在窗口「重新显示」时会按屏幕坐标恢复自己那份
+    // bounds，插屏时系统报的矩形也可能滞后。三次覆盖「挂上→首帧→缩放稳定」这段窗口期。
+    for (const delay of [60, 400, 1200]) {
+      const timer = setTimeout(() => {
+        if (surface.win.isDestroyed()) return;
+        try {
+          resyncWallpaperSurface(surface);
+        } catch (error) {
+          log.warn('[Wallpaper] 挂载后复摆失败:', error);
+        }
+      }, delay);
+      surface.win.once('closed', () => clearTimeout(timer));
+    }
     surface.monitor = new native.WallpaperMonitor(handle, 500, (state) => {
       // 只认明确的 false：原生模块版本不一致时字段可能读成 undefined，
       // 用 !state.alive 会把它当成窗口没了，进而每 5 秒重建一次。
@@ -243,6 +256,9 @@ export const placeWallpaperSurface = (surface: WallpaperSurface): void => {
   if (!surface.attached || surface.win.isDestroyed()) return;
   const native = getNativeWallpaper();
   if (!native) return;
+  // 隐藏期间一律不摆：原生摆放带 SWP_SHOWWINDOW，会把窗口在 Win32 层重新显示，
+  // 而 Chromium 仍按「隐藏」对待（不重绘），桌面上就留下那块窗口的空壳。
+  if (surface.win.isVisible?.() === false) return;
   try {
     const { x, y, width, height } = surface.nativeRect;
     native.wallpaperResize(nativeHandle(surface.win), x, y, width, height);
@@ -273,6 +289,36 @@ export const resizeWallpaperSurface = (surface: WallpaperSurface, display: Displ
   // 挂载之后它是桌面宿主的子窗口：Electron 的 setBounds 会把屏幕坐标直接当
   // 子窗口坐标用，落点整整偏一个宿主原点（还会被再夹一次），所以只走原生。
   placeWallpaperSurface(surface);
+};
+
+/** 按显示器 id 找回当前那块屏；拔掉了就返回 null。 */
+const findDisplay = (displayId: string): Display | null =>
+  screen.getAllDisplays().find((display) => String(display.id) === displayId) ?? null;
+
+/**
+ * 用「当前这块屏的真实矩形」校准并摆放窗口，返回矩形是否变了。
+ *
+ * 插拔屏幕的瞬间 Electron 报的 bounds 可能还是旧的：新屏常常先以主屏原点 (0,0)
+ * 出现，几百毫秒后才改成本来的位置。窗口是按创建那一刻的矩形挂上去的，只信那一刻，
+ * 就会留在主屏上——用户在设置里勾的是副屏，画面上却出现在主屏，看上去就是「反了」。
+ * 所以挂载之后、以及每次显示器事件之后都要按最新几何复摆一遍。
+ */
+export const resyncWallpaperSurface = (surface: WallpaperSurface): boolean => {
+  if (surface.win.isDestroyed()) return false;
+  const display = findDisplay(surface.displayId);
+  if (!display) return false;
+  if (!surfaceMatchesDisplay(surface, display)) {
+    resizeWallpaperSurface(surface, display);
+    return true;
+  }
+  placeWallpaperSurface(surface);
+  return false;
+};
+
+/** 这块屏的刷新率；取不到时返回 0，由调用方按档位原值处理。 */
+export const surfaceRefreshRate = (surface: WallpaperSurface): number => {
+  const frequency = findDisplay(surface.displayId)?.displayFrequency ?? 0;
+  return Number.isFinite(frequency) && frequency > 0 ? frequency : 0;
 };
 
 export const destroyWallpaperSurface = (surface: WallpaperSurface): void => {

@@ -4,18 +4,22 @@ import { parseHexColor, rgba } from './hexColor';
 import { cancelScheduledFrame, scheduleDrawFrame, type FrameHandle } from '@/utils/frameBudget';
 
 /**
- * 壁纸暗层上的浮尘粒子：随机分布、缓慢上浮。
+ * 壁纸暗层上的浮尘粒子：像真实灰尘一样没有固定方向，各自缓缓飘动、不断改向，飘出画面就从另一侧回来。
  * 尺寸按屏幕短边缩放（以 1080 为基准），因此在 1080p / 2K / 4K 上观感一致；
  * 每个粒子带一层偏右下的柔和阴影，画面越暗越能看出体积。
- * 帧率上限 30，窗口不可见时完全停止绘制。
+ * 帧率跟着壁纸帧率设置走（再由屏幕刷新率封顶），窗口不可见时完全停止绘制。
  */
 
 interface Particle {
   x: number;
   y: number;
   radius: number;
+  /** 飘动速度（px/s）。 */
   speed: number;
-  drift: number;
+  /** 初始方向（弧度），每颗粒子任意。 */
+  angle: number;
+  /** 改向快慢（rad/s），值越大越像被风吹得乱飘。 */
+  swayFreq: number;
   phase: number;
   alpha: number;
 }
@@ -26,24 +30,32 @@ const props = withDefaults(
     density?: number;
     /** 尺寸系数：1 = 默认大小。 */
     size?: number;
+    /** 速度系数（1 = 默认）：0 静止，1 已是原先的 1.5 倍，2 为 3 倍。 */
+    speed?: number;
     /** 粒子颜色，跟随壁纸配色。 */
     color?: string;
     /** 冻结：暂停播放时停掉绘制循环，画面停在最后一帧。 */
     frozen?: boolean;
   }>(),
-  { density: 1, size: 1, color: '#ffffff', frozen: false },
+  { density: 1, size: 1, speed: 1, color: '#ffffff', frozen: false },
 );
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 
-const FPS_LIMIT = 30;
-const FRAME_INTERVAL_MS = 1000 / FPS_LIMIT;
 const AREA_PER_PARTICLE = 12222;
 const MIN_PARTICLES = 80;
 const MAX_PARTICLES = 320;
 /** 尺寸基准短边：以 1080p 为基准，屏幕更大时粒子按比例放大。 */
 const REFERENCE_SHORT_SIDE = 1080;
+/** 速度系数 1（界面上的 100%）对应的实际倍数：默认档就是原先的 4 倍，再按系数线性放大。 */
+const SPEED_GAIN_AT_DEFAULT = 4;
+/** 尺寸系数 1（界面上的 100%）对应的实际放大：默认档比最早那版大 1.3 倍。 */
+const SIZE_GAIN_AT_DEFAULT = 1.3;
 const SPRITE_SIZE = 96;
+/** 方向摆动的最大幅度（弧度）：1.1 约等于 ±63°，飘起来才有"没有固定方向"的感觉。 */
+const WANDER_RAD = 1.1;
+/** 实芯半径占比：0.5 就是中间五成是实的，外面留一段更长的柔化带，颗粒是圆点但边缘不硬。 */
+const SPRITE_CORE_RATIO = 0.5;
 
 let frame: FrameHandle | null = null;
 let running = false;
@@ -77,21 +89,22 @@ const createSprite = (color: string): HTMLCanvasElement | null => {
     center + SPRITE_SIZE * 0.06,
     center,
   );
-  shadow.addColorStop(0, 'rgba(0, 0, 0, 0.26)');
-  shadow.addColorStop(0.35, 'rgba(0, 0, 0, 0.1)');
+  shadow.addColorStop(0, 'rgba(0, 0, 0, 0.18)');
+  shadow.addColorStop(0.35, 'rgba(0, 0, 0, 0.06)');
   shadow.addColorStop(1, 'rgba(0, 0, 0, 0)');
   context.fillStyle = shadow;
   context.beginPath();
-  context.arc(center, center, center * 0.9, 0, Math.PI * 2);
+  context.arc(center, center, center * 0.82, 0, Math.PI * 2);
   context.fill();
 
   // 本体：中心实心，向外柔化到透明；颜色由壁纸配色决定
   const tint = parseHexColor(color, { r: 255, g: 255, b: 255 });
   const body = context.createRadialGradient(center, center, 0, center, center, center);
   body.addColorStop(0, rgba(tint, 1));
-  body.addColorStop(0.28, rgba(tint, 0.98));
-  body.addColorStop(0.5, rgba(tint, 0.72));
-  body.addColorStop(0.78, rgba(tint, 0.26));
+  body.addColorStop(SPRITE_CORE_RATIO, rgba(tint, 0.96));
+  body.addColorStop(0.68, rgba(tint, 0.72));
+  body.addColorStop(0.84, rgba(tint, 0.34));
+  body.addColorStop(0.94, rgba(tint, 0.12));
   body.addColorStop(1, rgba(tint, 0));
   context.fillStyle = body;
   context.beginPath();
@@ -104,14 +117,18 @@ const createSprite = (color: string): HTMLCanvasElement | null => {
 const createParticle = (anywhere: boolean): Particle => {
   // 大小分层：多数是细尘，少数是明显颗粒；半径已按屏幕短边缩放
   const sizeFactor = Math.max(props.size, 0.01);
-  const radius = (2 + Math.pow(Math.random(), 1.6) * 14) * sizeScale * sizeFactor;
-  const sizeFade = 1 - Math.min(radius / (17 * sizeScale * sizeFactor), 0.4);
+  const radius =
+    (2 + Math.pow(Math.random(), 1.6) * 14) * sizeScale * sizeFactor * SIZE_GAIN_AT_DEFAULT;
+  // 分母同样乘基准放大：只把颗粒放大，亮度分布保持原样。
+  const sizeFade = 1 - Math.min(radius / (17 * sizeScale * sizeFactor * SIZE_GAIN_AT_DEFAULT), 0.4);
   return {
     x: Math.random() * width,
-    y: anywhere ? Math.random() * height : height + random(4, 40) * sizeScale,
+    // 新颗粒也从画面外侧进场，避免在视线里凭空出现
+    y: anywhere ? Math.random() * height : -random(20, 120) * sizeScale,
     radius,
-    speed: (random(4, 26) * sizeScale) / (0.7 + radius * 0.25),
-    drift: random(2, 12) * sizeScale,
+    speed: random(8, 30) * sizeScale,
+    angle: random(0, Math.PI * 2),
+    swayFreq: random(0.12, 0.45),
     phase: random(0, Math.PI * 2),
     alpha: random(0.14, 0.52) * sizeFade,
   };
@@ -136,17 +153,21 @@ const buildParticles = () => {
 const draw = (delta: number) => {
   if (!ctx || !sprite) return;
   ctx.clearRect(0, 0, width, height);
-  elapsed += delta;
+  const gain = Math.max(0, props.speed) * SPEED_GAIN_AT_DEFAULT;
+  // 相位和时间一起缩放：速度调低时左右飘也跟着变慢，不会只剩下落变慢。
+  elapsed += delta * gain;
+  const margin = 60 * sizeScale;
   for (const particle of particles) {
-    particle.y -= particle.speed * delta;
-    particle.x += Math.sin(elapsed * 0.6 + particle.phase) * particle.drift * delta;
-    if (particle.y < -particle.radius) {
-      Object.assign(particle, createParticle(false));
-    } else if (particle.x < -particle.radius) {
-      particle.x = width + particle.radius;
-    } else if (particle.x > width + particle.radius) {
-      particle.x = -particle.radius;
-    }
+    // 方向本身在缓慢摆动：粒子走的是一条不断改向的曲线，而不是直线飘
+    const angle =
+      particle.angle + Math.sin(elapsed * particle.swayFreq + particle.phase) * WANDER_RAD;
+    particle.x += Math.cos(angle) * particle.speed * delta * gain;
+    particle.y += Math.sin(angle) * particle.speed * delta * gain;
+    // 四面都环绕，飘出去就从对面回来，画面里始终均匀有粒子
+    if (particle.x < -margin) particle.x = width + margin;
+    else if (particle.x > width + margin) particle.x = -margin;
+    if (particle.y < -margin) particle.y = height + margin;
+    else if (particle.y > height + margin) particle.y = -margin;
     ctx.globalAlpha = particle.alpha;
     ctx.drawImage(
       sprite,
@@ -169,8 +190,11 @@ const tick = (now: number) => {
   frame = null;
   if (!running) return;
   scheduleNext();
-  if (lastFrameAt === 0) lastFrameAt = now;
-  if (now - lastFrameAt < FRAME_INTERVAL_MS) return;
+  // 不再自己限帧：帧预算已经按壁纸设置的帧率（再看屏幕刷新率）发帧，这里只负责把时间差交给动画。
+  if (lastFrameAt === 0) {
+    lastFrameAt = now;
+    return;
+  }
   const delta = Math.min((now - lastFrameAt) / 1000, 0.1);
   lastFrameAt = now;
   draw(delta);

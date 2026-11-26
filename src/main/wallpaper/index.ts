@@ -15,7 +15,9 @@ import {
   destroyWallpaperSurface,
   placeWallpaperSurface,
   resizeWallpaperSurface,
+  resyncWallpaperSurface,
   resolveDisplays,
+  surfaceRefreshRate,
   surfaceMatchesDisplay,
   type WallpaperOcclusionEvent,
   type WallpaperSurface,
@@ -23,8 +25,10 @@ import {
 import { resolveWallpaperFrame, type WallpaperFramePolicy } from './policy';
 import {
   DEFAULT_WALLPAPER_SETTINGS,
-  getWallpaperFramePreset,
+  frameRateOf,
+  occludedFpsOf,
   normalizeWallpaperSettings,
+  reconcileFrameRates,
   pickDisplayIds,
   type WallpaperDisplay,
   type WallpaperLyricRect,
@@ -77,6 +81,33 @@ const invalidateDisplayCache = () => {
   displayCache = null;
 };
 
+/**
+ * 把每块屏的实时刷新率写回缓存。
+ *
+ * 缓存只在 display-* 事件里失效，但在系统设置里改刷新率并不一定触发事件（虚拟显示器尤其如此）：
+ * 这样设置页会一直显示改之前的 144Hz，滑杆上限也按 144 放行，而真正生效的帧率被实时值压到 60。
+ */
+const refreshDisplayRates = (): void => {
+  if (!displayCache) return;
+  for (const display of screen.getAllDisplays()) {
+    const entry = displayCache.find((item) => item.id === String(display.id));
+    const rate = Number.isFinite(display.displayFrequency) ? display.displayFrequency : 0;
+    if (entry && rate > 0 && entry.refreshRate !== rate) entry.refreshRate = rate;
+  }
+};
+
+/**
+ * 存下来的每屏帧率按「真实存在的屏 + 这块屏的实时刷新率」收敛一遍，变了就落盘。
+ * 返回是否改过设置（改过就要重播状态，设置页的滑杆跟着回落）。
+ */
+const reconcileFrameRatesInto = (): boolean => {
+  const { rates, changed } = reconcileFrameRates(settings.frameRates, listDisplays());
+  if (!changed) return false;
+  settings = { ...settings, frameRates: rates };
+  setMainAppSetting('wallpaper', settings);
+  return true;
+};
+
 const listDisplays = (): WallpaperDisplay[] => {
   if (displayCache) return displayCache;
   const primary = screen.getPrimaryDisplay();
@@ -86,6 +117,8 @@ const listDisplays = (): WallpaperDisplay[] => {
     width: display.size.width,
     height: display.size.height,
     scaleFactor: display.scaleFactor,
+    // 设置页按屏显示「档位高于屏幕刷新率」的提示，必须拿到真实刷新率。
+    refreshRate: Number.isFinite(display.displayFrequency) ? display.displayFrequency : 0,
     primary: display.id === primary.id,
   }));
   return displayCache;
@@ -114,6 +147,26 @@ const representative = (): WallpaperSurface | null => {
   return null;
 };
 
+/** 每块屏现在实际被限成多少帧：设置页按屏显示「当前」，别拿代表屏的数糊弄。 */
+const activeFrameRates = (): Record<string, number> => {
+  const rates: Record<string, number> = {};
+  for (const [id, surface] of surfaces) {
+    if (surface.win.isDestroyed()) continue;
+    rates[id] = surface.policy?.frameRate ?? 0;
+  }
+  return rates;
+};
+
+/** 0 帧到底是被窗口挡住、全屏还是暂停播放：只报「暂停」用户分不清，也修不了。 */
+const activeReasons = (): Record<string, string> => {
+  const reasons: Record<string, string> = {};
+  for (const [id, surface] of surfaces) {
+    if (surface.win.isDestroyed()) continue;
+    reasons[id] = surface.policy?.reason ?? '';
+  }
+  return reasons;
+};
+
 const state = (): WallpaperState => {
   const surface = representative();
   return {
@@ -124,6 +177,8 @@ const state = (): WallpaperState => {
     // 每块屏各算各的档位，这里报第一块屏的状态给设置页展示。
     coverage: surface?.coverage ?? 0,
     frameRate: surface?.policy?.frameRate ?? lastPolicy?.frameRate ?? 0,
+    activeFrameRates: activeFrameRates(),
+    activeReasons: activeReasons(),
     reason: surface?.policy?.reason ?? lastPolicy?.reason ?? 'disabled',
     displays: listDisplays(),
     settings,
@@ -170,11 +225,21 @@ const applyPolicy = () => {
     };
     return;
   }
-  // 性能档位同时决定「正常播放」与「被遮挡」两档帧率。
-  const preset = getWallpaperFramePreset(settings.frameProfile);
+  // 先把「实时刷新率」和「存下来的帧率」对齐：设定值不能长期高于这块屏真能给的上限。
+  refreshDisplayRates();
+  if (reconcileFrameRatesInto()) changed = true;
   const playing = isPlayingNow();
+  // 档位只是上限：超过这块屏的刷新率就是在白唤醒合成器（240 档配 144Hz 屏，
+  // 每帧都要先等一个 4ms 定时器再要帧），按屏幕刷新率再压一次。
+  const capByRefresh = (fps: number, surface: WallpaperSurface) => {
+    const frequency = surfaceRefreshRate(surface);
+    return frequency > 0 ? Math.min(fps, frequency) : fps;
+  };
   for (const surface of surfaces.values()) {
     if (surface.win.isDestroyed()) continue;
+    // 帧率按屏取：同一个数摆到刷新率不同的屏上，高出来的那部分就纯空烧。
+    // 省电档跟着设置值走（20%），不再单独配一档。
+    const playingFps = capByRefresh(frameRateOf(settings, surface.displayId), surface);
     // 一块屏被挡住、被全屏，不代表另一块屏也要跟着降帧：各用各的状态算。
     const policy = resolveWallpaperFrame({
       enabled,
@@ -184,8 +249,8 @@ const applyPolicy = () => {
       lyricCoverage: surface.lyricCoverage,
       lyricRegionKnown: surface.lyricRect !== null,
       pauseBehavior: settings.pauseBehavior,
-      playingFps: preset.playing,
-      occludedFps: preset.occluded,
+      playingFps,
+      occludedFps: capByRefresh(occludedFpsOf(playingFps), surface),
       // 带上上一轮的档位：冻结/降帧的退出阈值比进入阈值低（滞回），
       // 否则窗口压在阈值上动一下就会冻结→解冻→冻结地抖。
       previousReason: surface.policy?.reason,
@@ -221,7 +286,12 @@ const applyPolicy = () => {
       // 重新显示时 Chromium 会按屏幕坐标恢复 bounds，子窗口会偏一个宿主原点。
       placeWallpaperSurface(surface);
     }
-    if (!policy.visible && surface.win.isVisible()) surface.win.hide();
+    if (!policy.visible) {
+      // 隐藏之后 Chromium 认页面为 hidden，合成与 rAF 才会真停。
+      // 注意：隐藏期间不能再调 placeWallpaperSurface —— 原生摆放带 SWP_SHOWWINDOW，
+      // 会把窗口在 Win32 层偷偷显示回来，而 Chromium 仍当它隐藏，桌面上就留一块空壳。
+      if (surface.win.isVisible()) surface.win.hide();
+    }
   }
   // lastPolicy 只是「代表屏」那份：多屏时用它给设置页兜底展示，真正的每屏策略看 surface.policy。
   const nextLast = representative()?.policy ?? {
@@ -456,6 +526,41 @@ const rebuild = async () => {
   await createSurfacesFor(wanted);
   applyPolicy();
   broadcastState();
+  // 刚建出来的窗口是按「创建那一刻」的屏幕矩形挂的；插拔屏幕时那份矩形可能是旧的，
+  // 建完再按最新几何复摆一遍，避免窗口留在主屏上。
+  scheduleResync();
+};
+
+/**
+ * 按最新显示器几何把所有壁纸窗口重新校准一遍。
+ * 插拔屏幕、改缩放、任务栏显隐之后系统报的矩形常常滞后，只信创建那一刻就会摆错屏。
+ */
+const resyncSurfaces = () => {
+  if (!enabled || quitting) return;
+  let changed = false;
+  for (const surface of surfaces.values()) {
+    if (surface.win.isDestroyed()) continue;
+    try {
+      if (resyncWallpaperSurface(surface)) changed = true;
+    } catch (error) {
+      log.warn('[Wallpaper] 重新校准窗口位置失败:', error);
+    }
+  }
+  if (changed) broadcastState();
+};
+
+/**
+ * 排几次复摆：显示器事件本身会连着来（系统先报新屏、再报工作区变化），
+ * 只在事件当下摆一次仍可能拿到旧矩形，所以按 0 / 300 / 1000ms 各来一遍。
+ */
+const scheduleResync = () => {
+  for (const delay of [0, 300, 1000]) {
+    const timer = setTimeout(() => {
+      invalidateDisplayCache();
+      resyncSurfaces();
+    }, delay);
+    timer.unref?.();
+  }
 };
 
 // 与桌面歌词互斥：两套歌词同时占桌面没有意义，也会多一份渲染。
@@ -507,6 +612,8 @@ export const updateWallpaperSettings = (patch: Partial<WallpaperSettings>): Wall
     ...settings,
     ...patch,
     texture: { ...settings.texture, ...(patch.texture ?? {}) },
+    // 同理：只改一块屏的帧率时，整体替换会把其它屏的帧率抹掉。
+    frameRates: { ...settings.frameRates, ...(patch.frameRates ?? {}) },
   });
   // 界面传下来的名单里也可能夹着已拔掉的屏幕，落库前先收敛。
   const displayIds = pruneDisplayIds(next.displayIds);
@@ -631,6 +738,8 @@ export const registerWallpaperHandlers = (): void => {
       }
       if (!enabled) return;
       void runExclusive(rebuild).catch((error) => log.error('[Wallpaper] 重建失败:', error));
+      // 新屏刚插上时报的矩形常常还是旧值（先落成主屏原点），重建完再复摆几次。
+      scheduleResync();
     };
     screen.on('display-added', onChange);
     screen.on('display-removed', onChange);
@@ -642,6 +751,8 @@ export const registerWallpaperHandlers = (): void => {
       if (!surface || surfaceMatchesDisplay(surface, display)) return;
       resizeWallpaperSurface(surface, display);
       broadcastState();
+      // 顺带把其余屏也校准一次：系统在改一块屏的几何时可能同时改了别的屏的工作区。
+      scheduleResync();
     });
     // 睡眠时把桌面层销毁掉：挂着的窗口在睡眠期间没意义，也省一份渲染。
     // suspended 先置位，避免销毁触发 closed 回调时把窗口又建回来。

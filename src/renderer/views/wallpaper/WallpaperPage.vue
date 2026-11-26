@@ -5,6 +5,7 @@ import { connectWallpaperSync } from '@/wallpaper/sync';
 import { portraitLyricCollapsed } from '@/views/lyric/portraitCollapseState';
 import { setPageFrozen } from '@/utils/pageFreeze';
 import { setRenderFrameRate } from '@/utils/frameBudget';
+import { setWallpaperFrameMode } from '@/wallpaper/frameContract';
 import { pluginRuntimeState } from '@/plugins/runtime';
 import WallpaperDim from './WallpaperDim.vue';
 import { hexColor, mixColor, parseHexColor } from './hexColor';
@@ -65,6 +66,14 @@ watch(frozen, (value) => setPageFrozen(value), { immediate: true });
 watch(
   () => (frozen.value ? 0 : (state.value?.frameRate ?? 0)),
   (fps) => setRenderFrameRate(fps),
+  { immediate: true },
+);
+
+// 帧率契约：同一份设定也下发给插件（插件自绘循环走自己的 rAF，宿主碰不到）。
+// 冻结时仍然带上原来的帧率，让插件知道恢复后该按多少帧跑。
+watch(
+  () => [frozen.value, state.value?.frameRate ?? 0] as const,
+  ([isFrozen, fps]) => setWallpaperFrameMode(fps, isFrozen),
   { immediate: true },
 );
 
@@ -241,6 +250,7 @@ onUnmounted(() => {
         v-if="texture.particleEnabled"
         :density="texture.particleDensity"
         :size="texture.particleSize"
+        :speed="texture.particleSpeed"
         :color="palette.particle"
         :frozen="frozen"
       />
