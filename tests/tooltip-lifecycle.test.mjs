@@ -63,6 +63,8 @@ function fixture(t) {
       return [{}];
     }
     closest() {
+      // 沿 parentElement 向上遍历需从自身起步，this 别名是链表遍历的惯用写法
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
       let el = this;
       while (el) {
         if (

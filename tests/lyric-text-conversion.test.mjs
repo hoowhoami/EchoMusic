@@ -121,10 +121,13 @@ test('timed segments and ruby use the same contextual conversion as the whole li
     assert.equal(u.ruby, 'fa');
     assert.strictEqual(u.chars[0], output[0].characters[index]);
   });
-  assert.deepEqual(
-    output[0].characters.map(({ text, ...timing }) => timing),
-    chars.map(({ text, ...timing }) => timing),
-  );
+  // 剥离 text 只比对时序字段；rest 解构会触发 no-unused-vars 警告，改用 delete
+  const timingOf = (character) => {
+    const timing = { ...character };
+    delete timing.text;
+    return timing;
+  };
+  assert.deepEqual(output[0].characters.map(timingOf), chars.map(timingOf));
   assert.equal(lines[0].characters[1].text, '发');
 });
 

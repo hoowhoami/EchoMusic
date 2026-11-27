@@ -183,6 +183,10 @@ export const NON_PORTABLE_APP_SETTING_KEYS = new Set([
   // 开发者模式会开放本机 CDP 调试端口，必须在每台设备上经风险确认后单独开启
   'devToolsEnabled',
   'devToolsDebugPort',
+  // 快捷键默认值随平台求值（Windows 为裸 Space，其余平台为 ⌘Space），迁移到其他平台
+  // 会带入源平台默认值；由启动时的 ensureShortcutDefaults 按本机平台重新生成
+  'defaultShortcutLabels',
+  'defaultGlobalShortcutLabels',
 ]);
 
 const cloneJsonObject = (value: unknown): Record<string, unknown> => {

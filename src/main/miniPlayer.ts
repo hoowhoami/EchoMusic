@@ -286,16 +286,26 @@ const setMiniPlayerAlwaysOnTop = async (alwaysOnTop: boolean) => {
 
 const loadMiniPlayerWindow = async (win: BrowserWindow) => {
   const url = process.env.VITE_DEV_SERVER_URL;
-  if (url) {
-    const target = new URL(url);
-    target.hash = '/mini-player';
-    await win.loadURL(target.toString());
-    return;
-  }
+  try {
+    if (url) {
+      const target = new URL(url);
+      target.hash = '/mini-player';
+      await win.loadURL(target.toString());
+      return;
+    }
 
-  await win.loadFile(join(__dirname, '../../dist/index.html'), {
-    hash: '/mini-player',
-  });
+    await win.loadFile(join(__dirname, '../../dist/index.html'), {
+      hash: '/mini-player',
+    });
+  } catch (error) {
+    // 共享 index.html 的 hash 路由（vue-router 初始化 + /mini-player 的
+    // skipHistory 守卫重定向）会在本次 load 完成前发起同文档 replaceState，
+    // Electron 将被顶掉的 pending 导航以 ERR_ABORTED (-3) 拒绝；文档本身已
+    // 提交并继续由路由接管加载（electron#27574），视为正常完成。
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('ERR_ABORTED')) return;
+    throw error;
+  }
 };
 
 const resolveMiniPlayerBounds = () => {

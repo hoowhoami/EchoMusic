@@ -4,7 +4,11 @@ import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { useLyricStore } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
-import { isInEditableContext, isInMediaContext } from '@/utils/inputBehaviorGuard';
+import {
+  isInEditableContext,
+  isInInteractiveContext,
+  isInMediaContext,
+} from '@/utils/inputBehaviorGuard';
 import type {
   ShortcutCommand,
   ShortcutMap,
@@ -523,6 +527,15 @@ export const registerLocalShortcuts = () => {
     const hasModifier = event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
     if (!hasModifier && (isInEditableContext(event.target) || isInMediaContext(event.target)))
       return;
+    // 无修饰键 Space 同时是按钮类交互元素的激活键：原生控件依赖 keyup 激活，自定义控件
+    // （如一起听歌单的 role="button" 行）可能在 keydown 里同步消费空格。快捷键在此让位，
+    // 避免播放切换与选歌/点歌同时发生，或吞掉原生激活。
+    if (
+      !hasModifier &&
+      (event.key === ' ' || event.code === 'Space') &&
+      isInInteractiveContext(event.target)
+    )
+      return;
     const bindings = settingStore.shortcutBindings ?? {};
     const defaults = settingStore.defaultShortcutLabels ?? {};
     const signature = JSON.stringify([bindings, defaults]);
@@ -532,7 +545,11 @@ export const registerLocalShortcuts = () => {
     const pressed = buildShortcut(event);
     const matched = localShortcutMatchCache.combos.find(([, combos]) => combos.includes(pressed));
     if (!matched) return;
-    event.preventDefault();
+    // 「屏蔽浏览器默认按键行为」关闭时，无修饰键快捷键不再吞掉默认滚动/激活，与设置文案一致；
+    // 带修饰键的组合与浏览器默认行为无冲突，始终阻止
+    if (hasModifier || settingStore.suppressDefaultKeyBehaviors) {
+      event.preventDefault();
+    }
     executeShortcutCommand(matched[0]);
   };
 

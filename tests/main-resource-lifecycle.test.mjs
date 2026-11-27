@@ -36,6 +36,8 @@ function playerFixture(start, destroy = () => {}) {
         available = true;
         constructor() {
           super();
+          // mock 控制器须在构造时把实例交给测试驱动；类内捕获 this 是唯一时机
+          // eslint-disable-next-line @typescript-eslint/no-this-alias
           controller = this;
         }
         start() {

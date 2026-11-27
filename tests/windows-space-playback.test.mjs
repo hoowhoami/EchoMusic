@@ -33,7 +33,6 @@ class Element {
 
 function fixture(platform = 'win32', bindings = {}) {
   const listeners = [];
-  const calls = [];
   const window = {
     electron: { platform },
     addEventListener: (name, listener, capture) => listeners.push({ name, listener, capture }),
@@ -71,7 +70,9 @@ function fixture(platform = 'win32', bindings = {}) {
     '@/desktopLyric/store': { useDesktopLyricStore: () => ({}) },
     '@/utils/inputBehaviorGuard': guard,
   });
-  const removeGuard = guard.installInputBehaviorGuard();
+  const removeGuard = guard.installInputBehaviorGuard({
+    isEnabled: () => store.suppressDefaultKeyBehaviors,
+  });
   const removeShortcuts = shortcuts.registerLocalShortcuts();
   const press = (patch = {}) => {
     const event = {
@@ -84,15 +85,15 @@ function fixture(platform = 'win32', bindings = {}) {
       },
       ...patch,
     };
+    // 捕获阶段监听器先于冒泡阶段；capture 缺省视为 false
     for (const { listener } of listeners.toSorted(
-      (a, b) => Number(b.capture) - Number(a.capture),
+      (a, b) => (b.capture ? 1 : 0) - (a.capture ? 1 : 0),
     )) {
       listener(event);
     }
-    calls.push(player.isPlaying);
     return event;
   };
-  return { store, player, shortcuts, settings, press, removeGuard, removeShortcuts, calls };
+  return { store, player, shortcuts, settings, press, removeGuard, removeShortcuts };
 }
 
 test('Windows defaults Space to play/pause and each press toggles once despite the input guard', () => {
@@ -107,6 +108,13 @@ test('Windows defaults Space to play/pause and each press toggles once despite t
   f.removeShortcuts();
   f.press();
   assert.equal(f.player.isPlaying, false);
+});
+
+test('default shortcut labels resolve per platform', () => {
+  const f = fixture();
+  assert.equal(f.settings.resolveDefaultShortcutLabels('win32').togglePlayback, 'Space');
+  assert.equal(f.settings.resolveDefaultShortcutLabels('darwin').togglePlayback, '⌘Space');
+  assert.equal(f.settings.resolveDefaultShortcutLabels(undefined).togglePlayback, '⌘Space');
 });
 
 test('restored defaults and resets use Space without overwriting custom or disabled bindings', () => {
@@ -141,6 +149,50 @@ test('custom assignments, disabled shortcuts and changed bindings remain effecti
   f.store.shortcutEnabled = true;
   f.press();
   assert.equal(f.player.isPlaying, false);
+});
+
+test('Ctrl+Space still toggles playback on macOS and Linux', () => {
+  for (const platform of ['darwin', 'linux']) {
+    const f = fixture(platform);
+    const event = f.press({ ctrlKey: true });
+    assert.equal(event.defaultPrevented, true, platform);
+    assert.equal(f.player.isPlaying, true, platform);
+  }
+});
+
+test('Space over activatable elements is left to the element itself', () => {
+  const f = fixture();
+  f.removeGuard();
+  for (const target of [
+    new Element('button'),
+    new Element('a'),
+    new Element('div', { role: 'button', tabindex: '0' }),
+    new Element('div', { role: 'checkbox' }),
+    new Element('div', { role: 'switch' }),
+    new Element('span', {}, new Element('button')),
+  ]) {
+    const event = f.press({ target });
+    assert.equal(event.defaultPrevented, false, JSON.stringify(target.attributes));
+    assert.equal(f.player.isPlaying, false, JSON.stringify(target.attributes));
+  }
+});
+
+test('disabling default-behavior suppression keeps shortcuts working without preventDefault', () => {
+  const f = fixture();
+  f.store.suppressDefaultKeyBehaviors = false;
+  const event = f.press();
+  assert.equal(event.defaultPrevented, false);
+  assert.equal(f.player.isPlaying, true);
+  f.store.suppressDefaultKeyBehaviors = true;
+  assert.equal(f.press().defaultPrevented, true);
+  assert.equal(f.player.isPlaying, false);
+
+  // 带修饰键的组合与浏览器默认行为无冲突，屏蔽开关关闭时仍始终阻止
+  const modified = fixture('win32', { togglePlayback: 'Ctrl+P' });
+  modified.store.suppressDefaultKeyBehaviors = false;
+  const modifiedEvent = modified.press({ key: 'p', code: 'KeyP', ctrlKey: true });
+  assert.equal(modifiedEvent.defaultPrevented, true);
+  assert.equal(modified.player.isPlaying, true);
 });
 
 for (const platform of ['darwin', 'linux']) {

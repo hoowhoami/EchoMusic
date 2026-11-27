@@ -26,6 +26,27 @@ const EDITABLE_SELECTOR = [
 
 const MEDIA_SELECTOR = 'video,audio';
 
+// 空格激活型交互元素：原生控件依赖 keydown→keyup 激活，自定义控件（如 role="button" 列表行）
+// 可能在 keydown 里同步消费空格。全局快捷键需要避开它们，避免播放切换与元素激活双触发。
+const INTERACTIVE_SELECTOR = [
+  'button',
+  'a',
+  '[role="button"]',
+  '[role="checkbox"]',
+  '[role="switch"]',
+  '[role="radio"]',
+  '[role="menuitem"]',
+  '[role="menuitemcheckbox"]',
+  '[role="menuitemradio"]',
+  '[role="tab"]',
+  '[role="option"]',
+].join(',');
+
+export const isInInteractiveContext = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest(INTERACTIVE_SELECTOR));
+};
+
 export const isInEditableContext = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;

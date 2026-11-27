@@ -15,6 +15,8 @@ let pixels, latestImage, canvas, drawArgs;
 globalThis.window = { setTimeout, clearTimeout };
 globalThis.Image = class {
   constructor() {
+    // 测试需要拿到最新构造的 Image 实例来断言事件绑定
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     latestImage = this;
     this.naturalWidth = 200;
     this.naturalHeight = 100;

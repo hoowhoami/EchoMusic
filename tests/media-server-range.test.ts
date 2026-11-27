@@ -8,7 +8,6 @@ import { MediaServer, parseRange } from '../src/main/mediaTransport/mediaServer.
 
 function collect(
   res: http.IncomingMessage,
-  chunkSize = 0,
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
