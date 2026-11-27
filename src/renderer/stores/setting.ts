@@ -68,15 +68,14 @@ const COMMON_DEFAULT_SHORTCUT_LABELS: Record<string, string> = {
 
 /** 按平台解析本地快捷键默认值：Windows 用裸 Space 切换播放，其余平台维持 ⌘Space。
  *  抽成纯函数让模块求值、恢复动作与测试共用同一平台判定，避免分支漂移。 */
-export const resolveDefaultShortcutLabels = (
-  platform?: string | null,
-): Record<string, string> => ({
+export const resolveDefaultShortcutLabels = (platform?: string | null): Record<string, string> => ({
   ...COMMON_DEFAULT_SHORTCUT_LABELS,
   togglePlayback: platform === 'win32' ? 'Space' : '⌘Space',
 });
 
-export const DEFAULT_SHORTCUT_LABELS: Record<string, string> =
-  resolveDefaultShortcutLabels(typeof window !== 'undefined' ? window.electron?.platform : undefined);
+export const DEFAULT_SHORTCUT_LABELS: Record<string, string> = resolveDefaultShortcutLabels(
+  typeof window !== 'undefined' ? window.electron?.platform : undefined,
+);
 
 export const DEFAULT_GLOBAL_SHORTCUT_LABELS: Record<string, string> = {
   togglePlayback: '⌘⇧Space',
