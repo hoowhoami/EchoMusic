@@ -61,3 +61,14 @@ test('备份不携带开发者模式开关与调试端口', () => {
   assert.equal(Object.hasOwn(portable, 'devToolsDebugPort'), false);
   assert.equal(portable.keepAliveEnabled, true);
 });
+
+test('备份不携带平台相关的快捷键默认值', () => {
+  const portable = sanitizePortableAppSettings({
+    defaultShortcutLabels: { togglePlayback: 'Space' },
+    defaultGlobalShortcutLabels: { togglePlayback: '⌘⇧Space' },
+    shortcutBindings: { togglePlayback: 'Space' },
+  });
+  assert.equal(Object.hasOwn(portable, 'defaultShortcutLabels'), false);
+  assert.equal(Object.hasOwn(portable, 'defaultGlobalShortcutLabels'), false);
+  assert.deepEqual(portable.shortcutBindings, { togglePlayback: 'Space' });
+});
