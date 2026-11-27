@@ -50,7 +50,8 @@ import {
 } from '../../shared/dspProviderSettings';
 
 export const DEFAULT_SHORTCUT_LABELS: Record<string, string> = {
-  togglePlayback: '⌘Space',
+  togglePlayback:
+    typeof window !== 'undefined' && window.electron?.platform === 'win32' ? 'Space' : '⌘Space',
   previousTrack: '⌘←',
   nextTrack: '⌘→',
   seekBackward: '⌥⌘←',

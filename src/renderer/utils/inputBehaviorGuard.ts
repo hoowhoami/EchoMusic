@@ -32,7 +32,7 @@ export const isInEditableContext = (target: EventTarget | null): boolean => {
   return Boolean(target.closest(EDITABLE_SELECTOR));
 };
 
-const isInMediaContext = (target: EventTarget | null): boolean => {
+export const isInMediaContext = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) return false;
   return Boolean(target.closest(MEDIA_SELECTOR));
 };
