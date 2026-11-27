@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useRouteTabs } from '@/composables/useRouteTabs';
+import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'album-detail' });
 import { ref, shallowRef, onMounted, onActivated, onBeforeUnmount, computed, watch } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
-import { useRouter } from 'vue-router';
+
+import { useRoute, useRouter } from 'vue-router';
 import { useRouteId } from '@/composables/useRouteId';
 import {
   getAlbumDetail,
@@ -37,6 +39,14 @@ import { mapAlbumDetailMeta, mapAlbumSong } from '@/utils/mappers';
 import type { AlbumMeta } from '@/models/album';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import { usePlayerStore } from '@/stores/player';
+import { resumeRecordForScope } from '@/stores/player/resume';
+import {
+  dismissResumeHint,
+  PLAYING_HINT_LINGER_MS,
+  resumeHintRequest,
+  showPageResumeHint,
+  takeResumeHintRequest,
+} from '@/utils/resumeHint';
 import { useSettingStore } from '@/stores/setting';
 import { logger } from '@/utils/logger';
 import {
@@ -59,12 +69,22 @@ import { PagedSongLoader } from '@/utils/PagedSongLoader';
 import { captureUserSession, userSessionSources } from '@/utils/userSession';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
+const route = useRoute();
 const router = useRouter();
 const { id: currentId, onIdChange } = useRouteId();
 const getAlbumId = () => currentId.value;
 
 const loading = ref(true);
 const album = ref<AlbumMeta | null>(null);
+// 有声判定：接口返回的 category 最可靠，取不到时退回路由参数（搜索、收藏等入口会带 category=2）
+const albumCategory = ref('');
+const readAlbumCategory = (value: unknown) => {
+  if (!value || typeof value !== 'object') return '';
+  return String((value as Record<string, unknown>).category ?? '');
+};
+const isAudiobookAlbum = computed(
+  () => (albumCategory.value || String(route.query.category ?? '')) === '2',
+);
 
 // 使用 shallowRef 极大减少响应式开销
 const songs = shallowRef<Song[]>([]);
@@ -96,7 +116,11 @@ const toastStore = useToastStore();
 
 // 搜索和定位逻辑
 const searchQuery = ref('');
-const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
+const songListRef = ref<{
+  scrollToActive?: () => Promise<boolean> | void;
+  scrollToSong?: (songId: string) => Promise<boolean> | void;
+  flashSong?: (songId: string) => void;
+} | null>(null);
 const sliverHeaderRef = ref<{ currentHeight?: number } | null>(null);
 const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 
@@ -269,6 +293,9 @@ const loadingSongs = ref(true);
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
 let songsFullyLoaded = false;
+// 首屏到手时 loading 就已经是 false 了，剩下的页还在后台拉；
+// 只有全部加载完成，才能说「列表里确实没有这一首」。
+const songsAllLoaded = ref(false);
 
 const handleTabChange = (value: string | number) => selectTabs({ tab: String(value) });
 const loadActiveTabData = () => {
@@ -279,6 +306,10 @@ watch(activeTab, loadActiveTabData);
 
 // 滚动加载更多评论（使用 IntersectionObserver）
 const scrollContainerRef = useScrollContainer();
+
+// 双击 tab 回到顶部：本页是 PageScrollContainer 的父组件，useScrollContainer() 只能拿到 null
+const pageScrollRef = ref<PageScrollHandle | null>(null);
+const { onTabPointerDown, onTabDoubleClick } = useTabDoubleClickTop(() => pageScrollRef.value);
 const commentSentinelRef = ref<HTMLElement | null>(null);
 let commentObserver: IntersectionObserver | null = null;
 
@@ -323,6 +354,7 @@ const fetchData = async () => {
   const isCurrent = () => !disposed && generation === loadGeneration && albumId === getAlbumId();
   loading.value = true;
   loadingSongs.value = true;
+  albumCategory.value = '';
 
   // 1. 先获取专辑详情
   const detailTask = getAlbumDetail(albumId)
@@ -330,11 +362,18 @@ const fetchData = async () => {
       if (!isCurrent()) return;
 
       const detailRaw = extractFirstObject(detailRes);
+      albumCategory.value = readAlbumCategory(detailRaw);
       const meta = detailRaw && mapAlbumDetailMeta(detailRaw);
       // Empty detail is unavailable content, not an album with a fabricated zero ID.
       if (!meta?.id) return;
       album.value = meta;
       albumArtists.value = parseAlbumArtists(detailRaw);
+      // 进详情页就登记：有声入口打开的书进「有声」桶，其余进「专辑」桶
+      playerStore.registerResumeScope(
+        isAudiobookAlbum.value ? 'audiobook' : 'album',
+        String(meta.id),
+        { name: meta.name, cover: meta.pic },
+      );
     })
     .catch((e) => {
       if (!isCurrent()) return;
@@ -371,12 +410,14 @@ const fetchData = async () => {
       onPageLoaded(allItems) {
         if (!isCurrent() || hadCompleteSongs) return;
         songsFullyLoaded = false;
+        songsAllLoaded.value = false;
         songs.value = allItems.slice();
         loadedSongCount.value = allItems.length;
       },
       onComplete(allItems) {
         if (!isCurrent()) return;
         songsFullyLoaded = true;
+        songsAllLoaded.value = true;
         songs.value = allItems.slice();
         loadedSongCount.value = allItems.length;
       },
@@ -418,6 +459,7 @@ onActivated(() => {
 
 onBeforeUnmount(() => {
   disposed = true;
+  clearResumePlayTimer();
   loadGeneration++;
   songLoader?.abort();
   commentObserver?.disconnect();
@@ -426,7 +468,9 @@ onBeforeUnmount(() => {
 
 // id 变化时重置数据（仅同路由间切换，如专辑A→专辑B）
 onIdChange(() => {
+  clearResumePlayTimer();
   songsFullyLoaded = false;
+  songsAllLoaded.value = false;
   album.value = null;
   albumArtists.value = [];
   songs.value = [];
@@ -494,6 +538,10 @@ const handleSongDoubleTapPlay = async (song: Song) => {
     title: album.value?.name || '专辑',
     subtitle: album.value?.singerName || '',
     type: 'album',
+    resumeScope: {
+      kind: isAudiobookAlbum.value ? 'audiobook' : 'album',
+      id: String(album.value?.id ?? getAlbumId()),
+    } as const,
   });
 };
 
@@ -516,6 +564,10 @@ const handlePlayAll = async () => {
     title: album.value?.name || '专辑',
     subtitle: album.value?.singerName || '',
     type: 'album' as const,
+    resumeScope: {
+      kind: isAudiobookAlbum.value ? 'audiobook' : 'album',
+      id: String(album.value?.id ?? getAlbumId()),
+    } as const,
   };
   const playRequest = replaceQueueAndPlay(
     playlistStore,
@@ -557,13 +609,295 @@ const openBatchDrawer = () => {
   if (songs.value.length === 0) return;
   showBatchDrawer.value = true;
 };
-const handleLocate = () => songListRef.value?.scrollToActive?.();
+const resumeScopeRef = computed(() => {
+  const ids = new Set<string>();
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) ids.add(value.trim());
+  };
+  push(getAlbumId());
+  push(album.value?.id);
+  if (ids.size === 0) return null;
+  return (
+    playerStore.resumeScopes.find(
+      (entry) =>
+        entry.trackId &&
+        (entry.kind === 'audiobook' || entry.kind === 'album') &&
+        ids.has(entry.id),
+    ) ?? null
+  );
+});
+
+const resumeScopeTrackId = computed(() => resumeScopeRef.value?.trackId ?? '');
+
+const resumeTarget = computed(() => {
+  const trackId = resumeScopeTrackId.value;
+  if (!trackId) return null;
+  const record = resumeRecordForScope(playerStore.$state, resumeScopeRef.value);
+  if (!record || !(record.position > 0)) return null;
+  return { trackId, position: record.position };
+});
+
+// 只有「在本页点了这一页的曲目播放」才建卡（认领走 playTrack 的 resumeScope）。
+// 播放中进入详情页、或者回到这一页时，不再把正在播的歌自动认领进来。
+
+// 进这一页就把「这一页的续播卡」贴出来（常驻）：有个 position > 0 的记录才贴，
+// 退出页面、或者开始播记录里那一集（不管从哪儿点的）时才收。
+const pageResumeHintKey = computed(() => {
+  const scope = resumeScopeRef.value;
+  return scope && resumeTarget.value ? scope.kind + ':' + scope.id : '';
+});
+
+// 页面会被 RouteKeepAlive 缓存住，缓存的页面照样会收到播放状态变化：
+// 只有本页在前台时才允许收掉提示卡，否则会把别的页面刚弹出来的那些卡一起收掉。
+const dismissPageResumeHint = () => {
+  if (isActive.value) dismissResumeHint();
+};
+
+const showPageResumeHintNow = () => {
+  const scope = resumeScopeRef.value;
+  const target = resumeTarget.value;
+  if (!scope || !target) {
+    dismissPageResumeHint();
+    return;
+  }
+  // 正在接着播的就是记录里那一集：卡照样露一下（跳进来时能看到「上次听到这里」），
+  // 但只当过场，动画放完自己收，不当常驻卡
+  const playingThisOne =
+    playerStore.isPlaying && String(playerStore.currentTrackId ?? '') === String(target.trackId);
+  showPageResumeHint({
+    kind: scope.kind,
+    id: scope.id,
+    scopeName: scope.name,
+    cover: scope.cover,
+    recordTitle: resumeRecordForScope(playerStore.$state, scope)?.title ?? '',
+    recordPosition: target.position,
+    trackId: target.trackId,
+    sameTrack: String(playerStore.currentTrackId ?? '') === String(target.trackId),
+    lingerMs: playingThisOne ? PLAYING_HINT_LINGER_MS : 0,
+  });
+};
+
+watch(
+  pageResumeHintKey,
+  (key) => {
+    if (key) showPageResumeHintNow();
+    else dismissPageResumeHint();
+  },
+  { immediate: true },
+);
+
+// 离开这一页就收卡；回来时有记录会重新贴
+watch(isActive, (value) => {
+  if (!value) dismissResumeHint();
+});
+
+// 缓存页面重新激活时补一次：上面那个 watch 只在离开时收卡，回来 key 没变不会再贴
+onActivated(() => {
+  if (pageResumeHintKey.value) showPageResumeHintNow();
+});
+onBeforeUnmount(() => dismissPageResumeHint());
+
+// 这一页一开始播放就收卡：点卡续播、双击某一集、播放全部、自动连播都算
+watch(
+  () => [playerStore.currentTrackId, playerStore.isPlaying] as const,
+  () => {
+    if (playerStore.isPlaying) dismissPageResumeHint();
+  },
+);
+
+// 卡上点了「续播」：交给本页的定位 + 续播流程（滚到那一集、高亮、从记录位置播）
+watch(
+  () => resumeHintRequest.token,
+  () => {
+    if (!isActive.value) return;
+    if (takeResumeHintRequest(pageResumeHintKey.value)) void handleLocate(true);
+  },
+);
+
+// 与 SongList 的目标行高亮时长保持一致，高亮结束再续播
+const RESUME_PLAY_DELAY_MS = 1800;
+let resumePlayTimer: number | null = null;
+
+const clearResumePlayTimer = () => {
+  if (resumePlayTimer !== null) {
+    window.clearTimeout(resumePlayTimer);
+    resumePlayTimer = null;
+  }
+};
+
+// 缓存里的旧页面也会收到路由变化：只有「当前就是这一页」时才允许定位与续播
+const isCurrentRoute = () =>
+  String(route.name ?? '') === 'album-detail' &&
+  String(route.params.id ?? '') === String(getAlbumId());
+
+// 页面被切走就把还没到点的续播取消掉，免得它隔着页面把播放抢过去
+watch(isActive, (value) => {
+  if (!value) {
+    clearResumePlayTimer();
+    // 同时重置定位冷却状态：返回后再点进来要能重新滚过去
+    lastLocateAt = 0;
+  }
+});
+
+const playFromResumePoint = async (song: Song, resumeAt: number) => {
+  if (disposed || !isActive.value || !isCurrentRoute()) return;
+  if (playerStore.currentTrackId !== String(song.id)) {
+    await handleSongDoubleTapPlay(song);
+    // 等音源挂上、拿到时长再跳，早一步会被加载完的时间回报覆盖回 0
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (playerStore.currentTrackId === String(song.id) && playerStore.duration > 0) break;
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+    }
+  } else if (!playerStore.isPlaying) {
+    void playerStore.togglePlay();
+  }
+  if (resumeAt > 0 && Math.abs(playerStore.currentTime - resumeAt) > 5) {
+    playerStore.seek(resumeAt);
+  }
+};
+
+const scheduleResumePlay = (song: Song, resumeAt = 0) => {
+  clearResumePlayTimer();
+  resumePlayTimer = window.setTimeout(() => {
+    resumePlayTimer = null;
+    if (disposed || !isActive.value || !isCurrentRoute()) return;
+    void playFromResumePoint(song, resumeAt);
+  }, RESUME_PLAY_DELAY_MS);
+};
+
+// 同一个按钮 3 秒内只认第一下：不重复定位、不重复高亮
+const LOCATE_COOLDOWN_MS = 3000;
+let lastLocateAt = 0;
+
+// 列表是虚拟滚动的：数据刚到时会还没测量出行位置，多试几次才能真的滚到位。
+// 3 秒窗口只用来判定「不在列表里」；曲目确实在列表里、只是列表还没测量好时多等一会儿，
+// 否则刚打开页面那一下永远滚不过去。
+const LOCATE_RETRY_MS = 150;
+// 等列表加载和真去滚这一行共用一个窗口（取大的那个值），到点就不再耗着
+const LOCATE_WAIT_MS = 20000;
+
+/** 等列表停止加载；到窗口上限还没好就返回 false，别拿半截列表判「不在」。 */
+const waitSongsLoaded = async (): Promise<boolean> => {
+  const start = Date.now();
+  while (loadingSongs.value && Date.now() - start <= LOCATE_WAIT_MS) {
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, LOCATE_RETRY_MS);
+    });
+  }
+  return !loadingSongs.value;
+};
+
+const revealSongRow = async (trackId: string): Promise<boolean> => {
+  if (!trackId) return false;
+  const loaded = await waitSongsLoaded();
+  if (!loaded) return false;
+  const start = Date.now();
+  while (Date.now() - start <= LOCATE_WAIT_MS && !disposed) {
+    if (songs.value.some((song) => String(song.id) === trackId)) {
+      if (await songListRef.value?.scrollToSong?.(trackId)) return true;
+    } else if (songsAllLoaded.value) {
+      // 分页全加载完还是找不到：是真的不在这个列表里，不用再等
+      return false;
+    }
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, LOCATE_RETRY_MS);
+    });
+  }
+  return false;
+};
+
+// 记录指向的那一首已经不在本页了：把这条续播记录一起删掉。
+// 只删指向本页的那条 —— 同一首可能同时记在别的专辑/有声桶里，别顺手把别人的卡删了。
+const forgetResumeScopeOf = (trackId: string) => {
+  const ids = new Set<string>();
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) ids.add(value.trim());
+  };
+  push(getAlbumId());
+  push(album.value?.id);
+  const kind = isAudiobookAlbum.value ? 'audiobook' : 'album';
+  const scope = playerStore.resumeScopes.find(
+    (entry) => entry.trackId === trackId && entry.kind === kind && ids.has(entry.id),
+  );
+  if (!scope) return;
+  playerStore.forgetResumeScope(scope.kind, scope.id);
+};
+
+// fromResumeCard: true = 续播卡点名要那一首（带进度续播）；false = 页面上的「定位」按钮
+const handleLocate = async (fromResumeCard = false) => {
+  if (!isCurrentRoute()) return;
+  const now = Date.now();
+  if (now - lastLocateAt < LOCATE_COOLDOWN_MS) return;
+  lastLocateAt = now;
+  // 定位按钮只认当前播放；续播卡点进来时才用卡上记的那一首
+  const bucketEntry = fromResumeCard ? resumeTarget.value : null;
+  const targetId = bucketEntry?.trackId ?? String(playerStore.currentTrackId ?? '');
+  clearResumePlayTimer();
+  // 既没记录、也没在播：没有定位对象，页面停最上方
+  if (!targetId) return;
+  // 搜索词把它过滤掉了：先清空搜索，再滚
+  if (searchQuery.value && !displayedSongs.value.some((song) => String(song.id) === targetId)) {
+    searchQuery.value = '';
+  }
+  const reached = await revealSongRow(targetId);
+  if (!reached) {
+    // 列表加载完了、总数里真的没有这一首（下架/被删）：提示一句、删掉这条记录，页面停最上方
+    if (
+      bucketEntry &&
+      songsAllLoaded.value &&
+      !songs.value.some((song) => String(song.id) === targetId)
+    ) {
+      forgetResumeScopeOf(targetId);
+    }
+    return;
+  }
+  const isCurrentTrack = String(playerStore.currentTrackId ?? '') === targetId;
+  // 当前播放那一行本来就有高亮；滚过去的是别的行，就闪一下让人看见
+  if (!isCurrentTrack) songListRef.value?.flashSong?.(targetId);
+  const targetEntry = bucketEntry;
+  // 没有进度记录就只滚不播；正在播这一首也不用重来
+  if (!targetEntry) return;
+  if (isCurrentTrack && playerStore.isPlaying) return;
+  // 要不要真的播，听「定位后自动续播」开关
+  if (!settingStore.resumeAutoPlayOnLocate) return;
+  const targetSong = songs.value.find((song) => String(song.id) === targetId);
+  if (targetSong) scheduleResumePlay(targetSong, targetEntry.position);
+};
+
+// 点了续播卡过来时只会留下一条续播请求：列表就绪、这一页的卡认得出自己就认领一次
+const consumeLocateRequest = (): boolean => {
+  if (!isActive.value) return false;
+  if (loadingSongs.value || songs.value.length === 0) return false;
+  if (!takeResumeHintRequest(pageResumeHintKey.value)) return false;
+  void handleLocate(true);
+  return true;
+};
+
+// 等歌曲列表真正就绪（不被 loading 挡住）再定位，否则虚拟列表还没有行可以滚
+watch(
+  [() => songs.value.length, loadingSongs],
+  ([length, isLoading]) => {
+    if (length === 0 || isLoading) return;
+    consumeLocateRequest();
+  },
+  { immediate: true },
+);
+
+// 请求可能比这一页的续播桶晚到：key 一就绪再认领一次
+watch(pageResumeHintKey, () => {
+  consumeLocateRequest();
+});
+
+onActivated(() => {
+  if (disposed) return;
+  consumeLocateRequest();
+});
 
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 </script>
 
 <template>
-  <PageScrollContainer class="album-detail-page">
+  <PageScrollContainer ref="pageScrollRef" class="album-detail-page">
     <div class="album-detail-container bg-bg-main min-h-full">
       <DetailPageSkeleton v-if="loading && !album?.id" typeLabel="ALBUM" :expandedHeight="196" />
 
@@ -696,7 +1030,11 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">
                 <div class="flex items-center justify-between h-14">
-                  <TabsList class="bg-transparent border-none gap-8">
+                  <TabsList
+                    class="bg-transparent border-none gap-8"
+                    @pointerdown="onTabPointerDown"
+                    @dblclick="onTabDoubleClick"
+                  >
                     <TabsTrigger value="songs">
                       <span class="badge-label">歌曲 <Badge :count="loadedSongCount" /></span>
                     </TabsTrigger>
@@ -710,15 +1048,17 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
                   <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
                     <SongSearchInput v-model="searchQuery" />
-                    <Button
-                      variant="unstyled"
-                      size="icon"
-                      @click="handleLocate"
-                      class="action-icon song-locate-btn"
-                      tooltip="定位当前播放"
-                    >
-                      <Icon :icon="iconCurrentLocation" width="18" height="18" />
-                    </Button>
+                    <span class="inline-flex">
+                      <Button
+                        variant="unstyled"
+                        size="icon"
+                        @click="handleLocate()"
+                        class="action-icon song-locate-btn"
+                        tooltip="定位当前播放"
+                      >
+                        <Icon :icon="iconCurrentLocation" width="18" height="18" />
+                      </Button>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -751,6 +1091,10 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                   title: album?.albumname || '专辑',
                   subtitle: album?.singerName || '',
                   type: 'album',
+                  resumeScope: {
+                    kind: isAudiobookAlbum ? 'audiobook' : 'album',
+                    id: String(album?.id ?? getAlbumId()),
+                  },
                 }"
                 :enableDefaultDoubleTapPlay="true"
                 :onSongDoubleTapPlay="

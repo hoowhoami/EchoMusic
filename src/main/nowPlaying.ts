@@ -311,6 +311,17 @@ const sendSnapshot = () => {
 
 export const getNowPlayingSnapshot = () => snapshot;
 
+type NowPlayingChangeListener = () => void;
+const changeListeners = new Set<NowPlayingChangeListener>();
+
+/** 订阅播放快照变化（每次 syncNowPlayingSnapshot 之后触发），返回取消订阅函数。 */
+export const onNowPlayingChange = (listener: NowPlayingChangeListener): (() => void) => {
+  changeListeners.add(listener);
+  return () => {
+    changeListeners.delete(listener);
+  };
+};
+
 const DEFAULT_WINDOW_TITLE = 'EchoMusic';
 
 /** 根据当前播放信息更新主窗口标题（任务栏/后台任务窗口显示）：歌手-歌名，无有效信息时回退 EchoMusic */
@@ -341,6 +352,10 @@ const applyWindowTitle = (playback: NowPlayingPlaybackPayload | null | undefined
   }
 };
 
+/** 快照里没有的字段直接省掉，避免下游拿到一堆值为 undefined 的键。 */
+const omitUndefined = <T extends Record<string, unknown>>(value: T): T =>
+  Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
+
 export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
   if (!payload || typeof payload !== 'object') return snapshot;
   snapshot = {
@@ -350,12 +365,18 @@ export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
     appearance:
       payload.appearance === undefined
         ? snapshot.appearance
-        : {
+        : omitUndefined({
             isDark: Boolean(payload.appearance.isDark),
             accentColor: String(
               payload.appearance.accentColor || DEFAULT_NOW_PLAYING_APPEARANCE.accentColor,
             ),
             fontFamily: toOptionalString(payload.appearance.fontFamily),
+            lyricsPageProvider: toOptionalString(payload.appearance.lyricsPageProvider),
+            lyricViewMode: toOptionalString(payload.appearance.lyricViewMode),
+            // 没传就别占一个 false 键，否则主窗口快照会多出「用户没设置过」的字段。
+            ...(typeof payload.appearance.portraitLyricCollapsed === 'boolean'
+              ? { portraitLyricCollapsed: payload.appearance.portraitLyricCollapsed }
+              : {}),
             floatingSurfaceFrosted: payload.appearance.floatingSurfaceFrosted === true,
             colors: isPlainRecord(payload.appearance.colors)
               ? (Object.fromEntries(
@@ -369,12 +390,19 @@ export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
                   ),
                 ) as Record<string, string>)
               : undefined,
-          },
+          }),
     updatedAt: Date.now(),
   };
   sendSnapshot();
   applyWindowTitle(snapshot.playback);
   updateThumbarPlayback(snapshot.playback);
+  for (const listener of changeListeners) {
+    try {
+      listener();
+    } catch {
+      // ignore listener errors
+    }
+  }
   return snapshot;
 };
 

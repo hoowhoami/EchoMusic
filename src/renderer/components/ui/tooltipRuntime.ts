@@ -322,6 +322,22 @@ export function createTooltipRuntime(doc: Document) {
           entry.suspended = suspended;
           if (suspended && (active === entry || pending === entry)) close();
         },
+        /** Open without a pointer or focus event, e.g. an onboarding hint. */
+        show(delay = 0) {
+          if (!eligible(entry)) return false;
+          if (active === entry) return true;
+          close();
+          pending = entry;
+          observe(entry);
+          openTimer = setTimeout(() => {
+            openTimer = undefined;
+            if (pending === entry) show(entry);
+          }, delay);
+          return true;
+        },
+        hide() {
+          if (active === entry || pending === entry) close();
+        },
         dispose() {
           const entries = targets.get(element);
           const index = entries?.indexOf(entry) ?? -1;

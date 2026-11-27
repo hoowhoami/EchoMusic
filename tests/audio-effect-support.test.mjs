@@ -399,6 +399,15 @@ function plazaFixture(t, downloaded = []) {
       }),
     },
     '@/stores/player': { usePlayerStore: () => player },
+    // 广场同步与缓存状态：这组用例只关心本地效果，给空壳。
+    '@/utils/effectPlazaSync': {
+      ensureEffectPlazaSync: () => {},
+      plazaSyncState: vue.reactive({}),
+    },
+    '@/stores/audioEffectPlazaCache': {
+      effectPlazaCacheState: vue.reactive({}),
+      plazaCacheRevision: vue.ref(0),
+    },
     '@/stores/toast': {
       useToastStore: () => ({
         warning: (reason) => warnings.push(reason),

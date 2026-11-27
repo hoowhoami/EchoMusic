@@ -298,14 +298,14 @@ onBeforeUnmount(() => {
         >重新加载</Button
       >
       <div class="flex-1" />
-      <Button variant="secondary" size="default" :disabled="saving" @click="close(false)"
-        >取消</Button
-      >
       <Button
         size="default"
         :disabled="loading || saving || selectingCover || !dirty"
         @click="save"
         >{{ saving ? '正在保存…' : '保存' }}</Button
+      >
+      <Button variant="secondary" size="default" :disabled="saving" @click="close(false)"
+        >取消</Button
       >
     </template>
   </Dialog>

@@ -1,0 +1,33 @@
+# 统一按 LF 入库：Windows 上 clone 不再出现「整文件重写」的假 diff。
+* text=auto eol=lf
+
+# 脚本保持 CRLF，避免 cmd 解析失败
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.mp3 binary
+*.flac binary
+*.wav binary
+*.m4a binary
+*.ogg binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.7z binary
+*.gz binary
+*.node binary
+*.dll binary
+*.exe binary
+*.pdf binary
+*.db binary
+*.sqlite binary

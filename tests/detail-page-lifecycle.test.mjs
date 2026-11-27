@@ -67,7 +67,10 @@ new Function('require', 'module', 'exports', songCardCode)(
     if (name.endsWith('.vue')) return {};
     const dependencies = {
       vue,
-      'vue-router': { useRouter: () => ({ push() {} }) },
+      'vue-router': {
+        useRouter: () => ({ push() {} }),
+        useRoute: () => ({ params: {}, query: {} }),
+      },
       '@/stores/playlist': { usePlaylistStore: () => ({ isFavoriteSong: () => false }) },
       '@/stores/player': { usePlayerStore: () => ({}) },
       '@/stores/setting': { useSettingStore: () => ({}) },
@@ -182,7 +185,19 @@ function fixture(t, kind) {
   });
   const blacklistWrites = [];
   const queues = new Map();
-  const player = { currentTrackId: null };
+  const player = {
+    currentTrackId: null,
+    currentTime: 0,
+    duration: 0,
+    isPlaying: false,
+    isLyricViewOpen: false,
+    resumeScopes: [],
+    $state: { resumePositions: {}, resumeScopes: [] },
+    togglePlay() {},
+    seek() {},
+    registerResumeScope() {},
+    forgetResumeScope() {},
+  };
   const api = {
     getAlbumComments: async () => ({ status: 1, data: { list: [], total: 0 } }),
     getPlaylistComments: async () => ({ status: 1, data: { list: [], total: 0 } }),
@@ -236,7 +251,7 @@ function fixture(t, kind) {
       onBeforeUnmount: (fn) => unmounts.push(fn),
       onUnmounted: (fn) => unmounts.push(fn),
     },
-    'vue-router': { useRouter: () => ({ push() {} }) },
+    'vue-router': { useRouter: () => ({ push() {} }), useRoute: () => ({ params: {}, query: {} }) },
     '@/composables/useRouteId': {
       useRouteId: () => ({ id, onIdChange: (fn) => routeCallbacks.push(fn) }),
     },
@@ -246,6 +261,22 @@ function fixture(t, kind) {
     '@/composables/usePageScroll': { useScrollContainer: () => vue.ref(null) },
     '@/composables/useStickyTabsLayout': {
       useStickyTabsLayout: () => ({ tabsTop: vue.ref(0), tabsMinHeight: vue.ref(0) }),
+    },
+    '@/composables/useTabDoubleClickTop': {
+      useTabDoubleClickTop: () => ({ onTabPointerDown() {}, onTabDoubleClick() {} }),
+    },
+    '@/components/ui/tooltip': { showElementTooltip: () => false, hideElementTooltip() {} },
+    '@/utils/locateFeedback': { createLocateFeedback: () => ({ show() {} }) },
+    '@/stores/player/resume': {
+      resumeRecordForScope: () => null,
+      resumeRecordOfTrack: () => null,
+      resumeTrackRecords: () => [],
+    },
+    '@/utils/resumeHint': {
+      resumeHintRequest: vue.reactive({ token: 0 }),
+      dismissResumeHint() {},
+      showPageResumeHint() {},
+      takeResumeHintRequest: () => null,
     },
     '@/utils/extractors': extractors,
 

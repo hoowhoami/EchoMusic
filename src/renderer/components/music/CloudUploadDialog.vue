@@ -1074,10 +1074,10 @@ const statusLabel = (item: CloudUploadItem) => {
       </label>
     </div>
     <template #footer>
+      <Button variant="primary" size="default" @click="confirmBackgroundUpload">我知道了</Button>
       <Button variant="secondary" size="default" type="button" @click="cancelBackgroundUpload">
         留在本页
       </Button>
-      <Button variant="primary" size="default" @click="confirmBackgroundUpload">我知道了</Button>
     </template>
   </Dialog>
 </template>

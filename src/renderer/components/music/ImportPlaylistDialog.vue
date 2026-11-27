@@ -908,13 +908,6 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
     <template #footer>
       <template v-if="step === 'input'">
         <Button
-          variant="secondary"
-          size="default"
-          :disabled="isStarting"
-          @click="dialogOpen = false"
-          >取消</Button
-        >
-        <Button
           variant="primary"
           size="default"
           :loading="isStarting"
@@ -923,6 +916,13 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
         >
           开始导入
         </Button>
+        <Button
+          variant="secondary"
+          size="default"
+          :disabled="isStarting"
+          @click="dialogOpen = false"
+          >取消</Button
+        >
       </template>
       <template v-else>
         <div
@@ -976,9 +976,6 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
       </p>
     </div>
     <template #footer>
-      <Button variant="secondary" size="default" @click="finishDuplicateNameConfirm(false)"
-        >取消</Button
-      >
       <Button
         variant="primary"
         size="default"
@@ -987,6 +984,9 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
       >
         确定
       </Button>
+      <Button variant="secondary" size="default" @click="finishDuplicateNameConfirm(false)"
+        >取消</Button
+      >
     </template>
   </Dialog>
 
@@ -1011,10 +1011,10 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
       </label>
     </div>
     <template #footer>
+      <Button variant="primary" size="default" @click="confirmBackgroundImport">我知道了</Button>
       <Button variant="secondary" size="default" @click="showBackgroundConfirm = false"
         >留在本页</Button
       >
-      <Button variant="primary" size="default" @click="confirmBackgroundImport">我知道了</Button>
     </template>
   </Dialog>
 </template>

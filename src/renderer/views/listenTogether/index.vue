@@ -1717,7 +1717,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <template #footer>
-        <Button variant="secondary" size="default" @click="previewOpen = false">取消</Button>
         <Button
           v-if="previewRoom"
           variant="soft-secondary"
@@ -1727,6 +1726,7 @@ onBeforeUnmount(() => {
           <Icon :icon="iconShare" width="16" height="16" />
           分享
         </Button>
+        <Button variant="secondary" size="default" @click="previewOpen = false">取消</Button>
         <Button
           v-if="roomScope === 'mine' && previewRoom"
           variant="danger"
@@ -1748,20 +1748,20 @@ onBeforeUnmount(() => {
       </p>
       <template #footer>
         <Button
-          variant="secondary"
-          size="default"
-          :disabled="dismissingOwnedRoom"
-          @click="dismissOwnedOpen = false"
-        >
-          取消
-        </Button>
-        <Button
           variant="danger"
           size="default"
           :loading="dismissingOwnedRoom"
           @click="confirmDismissOwnedRoom"
         >
           确认解散
+        </Button>
+        <Button
+          variant="secondary"
+          size="default"
+          :disabled="dismissingOwnedRoom"
+          @click="dismissOwnedOpen = false"
+        >
+          取消
         </Button>
       </template>
     </Dialog>
@@ -1827,13 +1827,6 @@ onBeforeUnmount(() => {
       </div>
       <template #footer>
         <Button
-          variant="secondary"
-          size="default"
-          :disabled="phase === 'creating'"
-          @click="createOpen = false"
-          >取消</Button
-        >
-        <Button
           size="default"
           :disabled="!canCreate"
           :loading="phase === 'creating'"
@@ -1841,6 +1834,13 @@ onBeforeUnmount(() => {
         >
           创建{{ createRoomTypeName }}并进入
         </Button>
+        <Button
+          variant="secondary"
+          size="default"
+          :disabled="phase === 'creating'"
+          @click="createOpen = false"
+          >取消</Button
+        >
       </template>
     </Dialog>
 
@@ -1964,9 +1964,6 @@ onBeforeUnmount(() => {
         </Scrollbar>
       </div>
       <template v-if="isOwner" #footer>
-        <Button variant="secondary" size="default" @click="orderSongPickerOpen = false"
-          >取消</Button
-        >
         <Button
           variant="primary"
           size="default"
@@ -1976,6 +1973,9 @@ onBeforeUnmount(() => {
         >
           批量添加（{{ selectedOrderSongs.length }}）
         </Button>
+        <Button variant="secondary" size="default" @click="orderSongPickerOpen = false"
+          >取消</Button
+        >
       </template>
     </Dialog>
 
@@ -2039,13 +2039,6 @@ onBeforeUnmount(() => {
       </p>
       <template #footer>
         <Button
-          variant="secondary"
-          size="default"
-          :disabled="phase === 'leaving'"
-          @click="leaveOpen = false"
-          >取消</Button
-        >
-        <Button
           v-if="isOwner"
           variant="danger"
           size="default"
@@ -2056,6 +2049,13 @@ onBeforeUnmount(() => {
         <Button size="default" :loading="phase === 'leaving'" @click="confirmLeave(false)">{{
           isOwner ? '返回房间列表' : '离开房间'
         }}</Button>
+        <Button
+          variant="secondary"
+          size="default"
+          :disabled="phase === 'leaving'"
+          @click="leaveOpen = false"
+          >取消</Button
+        >
       </template>
     </Dialog>
   </section>

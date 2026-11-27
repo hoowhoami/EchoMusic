@@ -36,8 +36,8 @@ const confirm = () => {
       </span>
     </label>
     <template #footer>
-      <Button variant="outline" size="default" @click="open = false">取消</Button>
       <Button variant="danger" size="default" @click="confirm">确认退出</Button>
+      <Button variant="outline" size="default" @click="open = false">取消</Button>
     </template>
   </Dialog>
 </template>

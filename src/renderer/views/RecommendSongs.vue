@@ -28,12 +28,17 @@ import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
+import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 const themeStore = useThemeStore();
+
+// 双击 tab 回到顶部：本页是 PageScrollContainer 的父组件，useScrollContainer() 只能拿到 null
+const pageScrollRef = ref<PageScrollHandle | null>(null);
+const { onTabPointerDown, onTabDoubleClick } = useTabDoubleClickTop(() => pageScrollRef.value);
 
 const loading = ref(true);
 const songs = ref<Song[]>([]);
@@ -135,7 +140,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <PageScrollContainer class="recommend-songs-container">
+  <PageScrollContainer ref="pageScrollRef" class="recommend-songs-container">
     <div class="recommend-songs-view bg-bg-main min-h-full">
       <DetailPageSkeleton v-if="loading" typeLabel="RECOMMEND" :expandedHeight="176" />
 
@@ -201,7 +206,11 @@ onMounted(() => {
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">
                 <div class="flex items-center justify-between h-14">
-                  <TabsList class="bg-transparent border-none gap-8">
+                  <TabsList
+                    class="bg-transparent border-none gap-8"
+                    @pointerdown="onTabPointerDown"
+                    @dblclick="onTabDoubleClick"
+                  >
                     <TabsTrigger value="songs">
                       <span class="badge-label">歌曲 <Badge :count="songs.length" /></span>
                     </TabsTrigger>

@@ -18,6 +18,9 @@ const SettingsSectionLoading = defineComponent({
 });
 const loadSection = (loader: () => Promise<{ default: Component }>) =>
   defineAsyncComponent({ loader, loadingComponent: SettingsSectionLoading, delay: 0 });
+const WallpaperSettingsSection = loadSection(
+  () => import('./settings/components/WallpaperSettingsSection.vue'),
+);
 const WindowSettingsSection = loadSection(
   () => import('./settings/components/WindowSettingsSection.vue'),
 );
@@ -197,6 +200,24 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     ],
   },
   {
+    id: 'wallpaper',
+    label: sectionTitles.wallpaper.label,
+    order: 150,
+    component: WallpaperSettingsSection,
+    visible: () => currentPlatform === 'win32',
+    searchKeywords: [
+      '动态歌词壁纸',
+      '动态壁纸',
+      '桌面壁纸',
+      '桌面背景',
+      '壁纸歌词',
+      'Wallpaper',
+      '显示器',
+      '遮挡',
+      '降帧',
+    ],
+  },
+  {
     id: 'window',
     label: sectionTitles.window.label,
     order: 175,
@@ -238,6 +259,16 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '双击播放',
       '启动时自动播放',
       '自动播放',
+      '定位后自动续播',
+      '定位上次播放',
+      '自动续播',
+      '续播卡',
+      '续播卡总开关',
+      '搜索卡',
+      '详情卡',
+      '提示卡',
+      '提示卡停留时间',
+      '续播牌堆',
       '默认音质',
       '智能兼容模式',
       '云盘文件',
@@ -858,13 +889,6 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
         <template #footer>
           <Button
             class="settings-button"
-            variant="outline"
-            size="default"
-            @click="showConfirmClear = false"
-            >取消</Button
-          >
-          <Button
-            class="settings-button"
             variant="danger"
             size="default"
             @click="
@@ -872,6 +896,13 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
               showConfirmClear = false;
             "
             >确认清除</Button
+          >
+          <Button
+            class="settings-button"
+            variant="outline"
+            size="default"
+            @click="showConfirmClear = false"
+            >取消</Button
           >
         </template>
       </Dialog>

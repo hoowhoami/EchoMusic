@@ -1379,14 +1379,6 @@ watch(
     </div>
     <template #footer>
       <Button
-        variant="secondary"
-        size="default"
-        :disabled="isCreatingPlaylist"
-        @click="closeCreatePlaylistDialog"
-      >
-        取消
-      </Button>
-      <Button
         variant="primary"
         size="default"
         :loading="isCreatingPlaylist"
@@ -1394,6 +1386,14 @@ watch(
         @click="handleCreatePlaylist"
       >
         创建
+      </Button>
+      <Button
+        variant="secondary"
+        size="default"
+        :disabled="isCreatingPlaylist"
+        @click="closeCreatePlaylistDialog"
+      >
+        取消
       </Button>
     </template>
   </Dialog>
@@ -1408,20 +1408,20 @@ watch(
   >
     <template #footer>
       <Button
-        variant="secondary"
-        size="default"
-        :disabled="isRemovingPlaylist"
-        @click="closeRemovePlaylistDialog"
-      >
-        取消
-      </Button>
-      <Button
         variant="danger"
         size="default"
         :loading="isRemovingPlaylist"
         @click="handleRemovePlaylist"
       >
         {{ removeDialogConfirmText }}
+      </Button>
+      <Button
+        variant="secondary"
+        size="default"
+        :disabled="isRemovingPlaylist"
+        @click="closeRemovePlaylistDialog"
+      >
+        暂时保留
       </Button>
     </template>
   </Dialog>

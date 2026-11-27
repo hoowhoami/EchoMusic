@@ -12,6 +12,14 @@ const listCode = transformSync(readFileSync('src/renderer/composables/useVirtual
   loader: 'ts',
   format: 'cjs',
 }).code;
+// 右键菜单外壳在 feat/wallpaper 里被拆成了独立组件：全局事件、滚动锁与定位都搬到这里。
+const panelDescriptor = parse(
+  readFileSync('src/renderer/components/music/ContextMenuPanel.vue', 'utf8'),
+).descriptor;
+const panelCode = transformSync(
+  compileScript(panelDescriptor, { id: 'song-context-panel-test' }).content,
+  { loader: 'ts', format: 'cjs' },
+).code;
 async function fixture() {
   const hooks = { mount: [], unmount: [], activate: [], deactivate: [] };
   const timers = new Map();
@@ -70,7 +78,7 @@ async function fixture() {
     '@/stores/user': { useUserStore: () => ({}) },
     '@/composables/usePageScroll': { useScrollContainer: () => scrollRef },
   };
-  function load(code) {
+  function load(code, table = deps) {
     const mod = { exports: {} };
     new Function(
       'require',
@@ -83,7 +91,7 @@ async function fixture() {
       'clearTimeout',
       code,
     )(
-      (name) => deps[name] ?? {},
+      (name) => table[name] ?? {},
       mod,
       mod.exports,
       {
@@ -123,6 +131,31 @@ async function fixture() {
   const api = scope.run(() => component.setup(props, { expose() {} }));
   api.containerRef.value = root;
   hooks.mount.forEach((fn) => fn());
+  // 菜单外壳按模板里的绑定挂上来：:open / :x / :y / :scroll-lock-el + @close。
+  const panelHooks = { unmount: [] };
+  const panelVue = { ...vue, onBeforeUnmount: (fn) => panelHooks.unmount.push(fn) };
+  const panelProps = vue.shallowReactive({
+    open: false,
+    x: 0,
+    y: 0,
+    scrollLockEl: scrollRef.value,
+  });
+  const panelComponent = load(panelCode, { vue: panelVue }).default;
+  const panelScope = vue.effectScope();
+  const panelApi = panelScope.run(() =>
+    panelComponent.setup(panelProps, {
+      expose() {},
+      emit: (type) => {
+        if (type === 'close') api.closeContextMenu();
+      },
+    }),
+  );
+  const stopPanelSync = vue.watchEffect(() => {
+    panelProps.open = Boolean(api.contextMenuOpen.value && api.contextMenuTarget.value);
+    panelProps.x = api.contextMenuPoint.value?.x ?? 0;
+    panelProps.y = api.contextMenuPoint.value?.y ?? 0;
+    panelProps.scrollLockEl = scrollRef.value;
+  });
   const flush = async () => {
     for (let i = 0; i < 5; i++) await vue.nextTick();
   };
@@ -135,6 +168,7 @@ async function fixture() {
   frame();
   return {
     api,
+    panelApi,
     props,
     calls,
     scroll,
@@ -145,11 +179,11 @@ async function fixture() {
     player,
     listenerCount: () => [...listeners.values()].reduce((sum, values) => sum + values.size, 0),
     emit: (type, event = {}) => [...(listeners.get(type) ?? [])].forEach((fn) => fn(event)),
-    openMenu: () =>
+    openMenu: (x = 100, y = 200) =>
       api.handleContextMenu({
         target: { closest: () => ({ dataset: { songId: '50' } }) },
-        clientX: 100,
-        clientY: 200,
+        clientX: x,
+        clientY: y,
         preventDefault() {},
       }),
     flush,
@@ -163,6 +197,9 @@ async function fixture() {
     deactivate: () => hooks.deactivate.forEach((fn) => fn()),
     activate: () => hooks.activate.forEach((fn) => fn()),
     dispose: () => {
+      stopPanelSync();
+      panelHooks.unmount.forEach((fn) => fn());
+      panelScope.stop();
       hooks.unmount.forEach((fn) => fn());
       scope.stop();
     },
@@ -322,14 +359,16 @@ test('cache entry closes teleported overlays, releases the lock and cancels pend
   const s = await fixture();
   s.openMenu();
   await s.flush();
+  // 定位已搬到 ContextMenuPanel（position 由外壳持有，不再由 SongList 暴露）。
+  const position = { ...s.panelApi.position.value };
   s.api.showPlaylistDialog.value = true;
-  s.openMenu(); // queues another position update
-  const position = s.api.contextMenuPosition.value;
+  s.openMenu(1190, 790); // queues another position update（越界坐标，若生效就会跳位）
   s.deactivate();
   await s.flush();
   assert.equal(s.api.contextMenuOpen.value, false);
   assert.equal(s.api.showPlaylistDialog.value, false);
-  assert.equal(s.api.contextMenuPosition.value, position);
+  assert.deepEqual({ ...s.panelApi.position.value }, position);
+  assert.notDeepEqual(position, { x: 1190, y: 790 });
   assert.equal(s.scroll.style.overflow, 'auto');
   assert.equal(s.listenerCount(), 0);
   s.openMenu();
@@ -416,7 +455,12 @@ test('cached playback updates do not schedule timers and rapid menu toggles do n
 test('scrolling a long context menu preserves it, while page scroll and resize dismiss it', async () => {
   const s = await fixture();
   const menuChild = {};
-  s.api.contextMenuRef.value = { contains: (target) => target === menuChild };
+  // 菜单元素 ref 现在属于 ContextMenuPanel，用于判断“菜单内部滚动”。
+  s.panelApi.menuRef.value = {
+    contains: (target) => target === menuChild,
+    offsetWidth: 180,
+    offsetHeight: 0,
+  };
   s.openMenu();
   await s.flush();
   s.emit('window:scroll', { type: 'scroll', target: menuChild });

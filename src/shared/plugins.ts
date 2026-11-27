@@ -771,6 +771,12 @@ export type PluginSqliteRunResult =
       error: string;
     };
 
+// 插件数据库写入后由宿主广播的变更通知：插件据此在自己打开的多个窗口之间同步状态。
+export type PluginSqliteChangedEvent = {
+  pluginId: string;
+  databaseId: string;
+};
+
 export type PluginSqliteQueryResult =
   | {
       ok: true;

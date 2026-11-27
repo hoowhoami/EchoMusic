@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { transformSync } from 'esbuild';
 
 // 回归：Apple Music 皮肤暂停态没有常驻 rAF，而引擎的 ResizeObserver 只会把
 // 新布局写入弹簧目标，需要组件推帧（update）才能应用到 DOM。窗口 / 宿主
@@ -11,15 +12,14 @@ import { runInNewContext } from 'node:vm';
 const source = readFileSync('src/renderer/views/lyric/AmllMode.vue', 'utf8');
 
 const slice = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
-const script =
-  // 剥离切片中的 TS 注解，VM 里以纯 JS 执行。
-  slice('const rafLoop =', 'const handleVisibilityChange =').replace(
-    '(timestamp: number)',
-    '(timestamp)',
-  ) +
-  slice('const handleVisibilityChange =', 'const handleLineClick =') +
-  slice('const initializePlayer =', 'onMounted(() => {') +
-  '\ninitializePlayer();';
+const script = transformSync(
+  // 切片里的 TS 注解（含 pageFreeze 回调的 (frozen: boolean)）统一交给 esbuild 剥掉，VM 里以纯 JS 执行。
+  slice('const rafLoop =', 'const handleVisibilityChange =') +
+    slice('const handleVisibilityChange =', 'const handleLineClick =') +
+    slice('const initializePlayer =', 'onMounted(() => {') +
+    '\ninitializePlayer();',
+  { loader: 'ts' },
+).code;
 
 const FRAME_MS = 1000 / 60;
 
@@ -99,6 +99,14 @@ function harness() {
     cancelAnimationFrame() {
       pending = undefined;
     },
+    // 组件的推帧统一走 frameBudget，这里接到上面可编程的 rAF 上。
+    scheduleDrawFrame(_key, callback) {
+      pending = callback;
+      return 1;
+    },
+    cancelScheduledFrame() {
+      pending = undefined;
+    },
     playerRef,
     playerAreaRef: { value: host },
     // 本测试不覆盖行点击路径，提供桩避免引入其函数体内的 TS 断言语法。
@@ -109,6 +117,9 @@ function harness() {
     lyricStore: { currentTimeOffset: 0, showTranslation: true, showRomanization: true },
     lyricLines: { value: [] },
     settings: { value: { highRefreshRate: true } },
+    // 页面冻结（壁纸 / 最小化）与本用例无关，给桩即可：不冻结、订阅立刻可退订。
+    isPageFrozen: () => false,
+    onPageFreezeChange: () => () => {},
     SET_TIME_INTERVAL: 1000 / 30,
     FRAME_INTERVAL: 1000 / 60,
     OVERSCAN_PX: 200,

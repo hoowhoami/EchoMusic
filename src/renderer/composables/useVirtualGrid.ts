@@ -183,5 +183,6 @@ export function useVirtualGrid<T extends Record<string, any>>(options: UseVirtua
     visibleBlockStyle,
     visibleGridStyle,
     refresh,
+    scrollToIndex: virtualList.scrollToIndex,
   };
 }

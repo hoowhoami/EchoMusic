@@ -60,25 +60,23 @@ test('toast store deduplicates, resolves variants, and keeps a short queue', (t)
   assert.equal(timers.size, 1, 'a duplicate restarts rather than adds a timer');
 
   store.showAction('检测到分享链接', { label: '打开', handler() {} });
-  assert.equal(store.items[1].variant, 'standard');
+  // 新提示顶替正在显示的那条：不排队，旧提示立刻消失。
+  assert.equal(store.items.length, 1);
+  assert.equal(store.items[0].variant, 'standard');
+  assert.equal(timers.size, 1, 'replacing a toast leaves exactly one timer');
 
   store.warning('第二条不同提示');
   store.info('最新提示');
-  assert.equal(store.items.length, 3);
-  assert.deepEqual(
-    store.items.map((item) => item.message),
-    ['已添加到播放队列', '第二条不同提示', '最新提示'],
-  );
+  assert.equal(store.items.length, 1);
+  assert.equal(store.items[0].message, '最新提示');
 
   now += 600;
   store.pause(firstId);
-  assert.equal(timers.size, 1, 'passive notices expire even while hovered');
-  store.resume(firstId);
-  assert.equal([...timers.values()][0].duration, 2600);
-
+  assert.equal(timers.size, 1, '不是当前提示时暂停不动定时器');
   store.remove(firstId);
-  assert.equal(store.items[0].message, '第二条不同提示');
-  assert.equal(timers.size, 1, 'the next queued toast starts its timer when shown');
+  assert.equal(store.items.length, 1, '删掉的不是当前提示，最新提示留着');
+  store.remove(store.items[0].id);
+  assert.equal(store.items.length, 0, '删掉当前提示后列表清空');
 });
 
 test('action toasts resume remaining time without stale events extending the queue', (t) => {

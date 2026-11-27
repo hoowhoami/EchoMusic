@@ -27,12 +27,16 @@ export function formatDate(
 }
 
 /**
- * 格式化秒数为时长字符串 (mm:ss)
+ * 格式化秒数为时长字符串：不足一小时是 mm:ss，满一小时自动补小时位（h:mm:ss），
+ * 有声那种三小时的长度不会显示成 180:00。
  */
 export function formatDuration(seconds: number | undefined): string {
   if (!seconds) return '00:00';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
+  const total = Math.floor(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 

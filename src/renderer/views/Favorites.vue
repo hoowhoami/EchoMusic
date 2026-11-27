@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { watchUserSession } from '@/utils/watchUserSession';
 
+import { useRouter } from 'vue-router';
 import { useRouteTabs } from '@/composables/useRouteTabs';
+import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'favorites' });
 import {
@@ -22,7 +24,9 @@ import { useVideoCollectionStore } from '@/stores/videoCollection';
 import { usePlaylistCoversStore } from '@/stores/playlistCovers';
 import { useToastStore } from '@/stores/toast';
 import { useThemeStore } from '@/stores/theme';
-import { getUserFollow, getUserVideoCollect } from '@/api/user';
+import { getAlbumCategories } from '@/api/album';
+import { deleteUserFollow, getUserFollow, getUserVideoCollect } from '@/api/user';
+import { unfollowArtist } from '@/api/artist';
 import { mapArtistMeta } from '@/utils/mappers';
 import type { Song } from '@/models/song';
 import type { ArtistMeta } from '@/models/artist';
@@ -41,6 +45,8 @@ import SongListHeader, {
 import SongSearchInput from '@/components/music/SongSearchInput.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
+import CardBatchDrawer from '@/components/music/CardBatchDrawer.vue';
+import ContextMenuPanel from '@/components/music/ContextMenuPanel.vue';
 import PlaylistOrderDialog from '@/components/music/PlaylistOrderDialog.vue';
 import type { PlaylistOrderTarget } from '@/services/playlistOrdering';
 import VirtualGrid from '@/components/ui/VirtualGrid.vue';
@@ -53,6 +59,7 @@ import { useScrollContainer } from '@/composables/usePageScroll';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { iconCurrentLocation, iconHeart, iconList, iconPlay, iconArrowsSort } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
+import { requestResumeHintPlay } from '@/utils/resumeHint';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 const playlistStore = usePlaylistStore();
@@ -64,6 +71,7 @@ const playlistCoversStore = usePlaylistCoversStore();
 void playlistCoversStore.hydrate();
 const toastStore = useToastStore();
 const themeStore = useThemeStore();
+const router = useRouter();
 
 const isLoggedIn = computed(() => userStore.isLoggedIn);
 const currentUserKey = computed(() =>
@@ -73,7 +81,7 @@ const {
   state: { tab: activeTab },
   select: selectTabs,
   isActive,
-} = useRouteTabs({ tab: ['songs', 'singers', 'users', 'albums', 'videos'] });
+} = useRouteTabs({ tab: ['songs', 'singers', 'users', 'albums', 'audiobooks', 'videos'] });
 const sliverHeaderRef = ref<InstanceType<typeof SliverHeader> | null>(null);
 const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 
@@ -181,8 +189,131 @@ const openBatchDrawer = () => {
   showBatchDrawer.value = true;
 };
 
+/** 批量取消收藏：逐首从「我喜欢」云歌单移除，进度回传给批量抽屉 */
+const handleBatchUnfavorite = async (
+  songsToRemove: Song[],
+  onProgress?: (done: number, total: number) => void,
+) => {
+  const total = songsToRemove.length;
+  let done = 0;
+  let failed = 0;
+  for (const song of songsToRemove) {
+    const removed = await playlistStore.removeFavoriteSong(song);
+    if (removed) {
+      done += 1;
+    } else {
+      failed += 1;
+    }
+    onProgress?.(done + failed, total);
+  }
+  if (failed > 0) {
+    throw new Error(`已取消收藏 ${done} 首，${failed} 首失败`);
+  }
+  toastStore.actionCompleted(`已取消收藏 ${done} 首`);
+};
+
+// ========== 卡片 Tab 公共：排序 ==========
+type CardTab = 'singers' | 'users' | 'albums' | 'audiobooks' | 'videos';
+type CardSortField = 'default' | 'name' | 'time';
+
+const CARD_TABS: CardTab[] = ['singers', 'users', 'albums', 'audiobooks', 'videos'];
+const CARD_TAB_LABELS: Record<CardTab, string> = {
+  singers: '歌手',
+  users: '用户',
+  albums: '专辑',
+  audiobooks: '有声',
+  videos: '视频',
+};
+const CARD_TAB_ACTIONS: Record<CardTab, string> = {
+  singers: '取消关注',
+  users: '取消关注',
+  albums: '取消收藏',
+  audiobooks: '取消收藏',
+  videos: '取消收藏',
+};
+
+const cardSortField = ref<CardSortField>('default');
+const cardSortOrder = ref<'asc' | 'desc'>('asc');
+const sortMenuOpen = ref(false);
+const sortMenuPoint = ref({ x: 0, y: 0 });
+
+const activeCardTab = computed<CardTab | null>(() =>
+  CARD_TABS.includes(activeTab.value as CardTab) ? (activeTab.value as CardTab) : null,
+);
+
+// 歌手 / 用户 / 视频没有关注或收藏时间字段，收藏时间排序只对专辑与有声开放
+const cardTimeSortEnabled = computed(
+  () => activeTab.value === 'albums' || activeTab.value === 'audiobooks',
+);
+
+const applyCardSort = <T,>(
+  list: T[],
+  readName: (item: T) => string | undefined,
+  readTime?: (item: T) => number | undefined,
+): T[] => {
+  const field = cardSortField.value;
+  if (field === 'default') return list;
+  const direction = cardSortOrder.value === 'asc' ? 1 : -1;
+  const entries = list.map((item, index) => ({
+    item,
+    index,
+    name: (readName(item) ?? '').toLowerCase(),
+    time: readTime ? (readTime(item) ?? 0) : 0,
+  }));
+  entries.sort((left, right) => {
+    if (field === 'name') {
+      const compared = left.name.localeCompare(right.name, 'zh-Hans-CN');
+      if (compared !== 0) return compared * direction;
+    } else if (left.time !== right.time) {
+      return (left.time - right.time) * direction;
+    }
+    return left.index - right.index;
+  });
+  return entries.map((entry) => entry.item);
+};
+
+interface CardSortOption {
+  label: string;
+  field: CardSortField;
+  order: 'asc' | 'desc';
+}
+
+const cardSortOptions = computed<CardSortOption[]>(() => {
+  const options: CardSortOption[] = [
+    { label: '默认顺序', field: 'default', order: 'asc' },
+    { label: '名称正序', field: 'name', order: 'asc' },
+    { label: '名称倒序', field: 'name', order: 'desc' },
+  ];
+  if (cardTimeSortEnabled.value) {
+    options.push(
+      { label: '收藏时间正序', field: 'time', order: 'asc' },
+      { label: '收藏时间倒序', field: 'time', order: 'desc' },
+    );
+  }
+  return options;
+});
+
+const isCardSortOptionActive = (option: CardSortOption) =>
+  cardSortField.value === option.field &&
+  (option.field === 'default' || cardSortOrder.value === option.order);
+
+const applyCardSortOption = (option: CardSortOption) => {
+  cardSortField.value = option.field;
+  cardSortOrder.value = option.order;
+  sortMenuOpen.value = false;
+};
+
+const openSortMenu = (event: MouseEvent) => {
+  const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+  sortMenuPoint.value = rect
+    ? { x: rect.left, y: rect.bottom + 6 }
+    : { x: event.clientX, y: event.clientY };
+  sortMenuOpen.value = !sortMenuOpen.value;
+};
+
 // ========== 关注 Tab ==========
 const singerSearchQuery = ref('');
+const userSearchQuery = ref('');
 const followedSingers = shallowRef<ArtistMeta[]>([]);
 const followedUsers = shallowRef<ArtistMeta[]>([]);
 const followedLoading = ref(false);
@@ -201,8 +332,17 @@ const filteredSingers = computed(() => {
   });
 });
 
+const filteredUsers = computed(() => {
+  const query = userSearchQuery.value.trim().toLowerCase();
+  if (!query) return followedUsers.value;
+  return followedUsers.value.filter((artist) => {
+    const name = artist.name?.toLowerCase() || '';
+    return name.includes(query);
+  });
+});
+
 const singerCards = computed(() =>
-  filteredSingers.value.map((artist) => ({
+  applyCardSort(filteredSingers.value, (artist) => artist.name).map((artist) => ({
     id: artist.id,
     name: artist.name,
     coverUrl: artist.pic,
@@ -215,7 +355,7 @@ const singerCards = computed(() =>
 );
 
 const userCards = computed(() =>
-  followedUsers.value.map((artist) => ({
+  applyCardSort(filteredUsers.value, (artist) => artist.name).map((artist) => ({
     id: artist.id,
     name: artist.name,
     coverUrl: artist.pic,
@@ -284,6 +424,7 @@ const resetFollowed = () => {
   followedLoaded.value = false;
   followedLoading.value = false;
   singerSearchQuery.value = '';
+  userSearchQuery.value = '';
 };
 
 // ========== 专辑 Tab ==========
@@ -293,10 +434,63 @@ const favoritedAlbums = computed(() =>
   playlistStore.userPlaylists.filter((playlist) => playlist.source === 2),
 );
 
+// 收藏列表接口不返回专辑类别，只能按专辑 ID 回查：只有明确的 '2' 才算有声，
+// '1'、'0'（混合）和查不到的都按音乐专辑
+const albumCategories = ref<Record<string, '1' | '2'>>({});
+const albumCategoriesLoading = ref(false);
+let albumCategoriesGeneration = 0;
+
+type AlbumLike = { listCreateListid?: unknown; id?: unknown };
+
+const albumCategoryKey = (album: AlbumLike) => String(album.listCreateListid ?? album.id);
+
+// 只有明确的 '2' 才归有声：还没回查到、接口不可用、值为 '1' 或 '0'（混合）都按音乐专辑，
+// 宁可让有声留在专辑 tab，也不把普通专辑错塞进有声 tab
+const isAudiobookAlbum = (album: AlbumLike) =>
+  albumCategories.value[albumCategoryKey(album)] === '2';
+
+const fetchMissingAlbumCategories = async () => {
+  const generation = albumCategoriesGeneration;
+  const ids = Array.from(
+    new Set(
+      favoritedAlbums.value
+        .map((album) => albumCategoryKey(album))
+        .filter((id) => id.length > 0 && albumCategories.value[id] === undefined),
+    ),
+  );
+  if (!ids.length || albumCategoriesLoading.value) return;
+  albumCategoriesLoading.value = true;
+  try {
+    const categories = await getAlbumCategories(ids);
+    if (generation !== albumCategoriesGeneration) return;
+    const next = { ...albumCategories.value };
+    for (const id of ids) next[id] = categories.get(id) === '2' ? '2' : '1';
+    albumCategories.value = next;
+  } catch {
+    // 回查失败时类别保持未知，收藏页按音乐专辑展示，不阻塞列表
+  } finally {
+    if (generation === albumCategoriesGeneration) albumCategoriesLoading.value = false;
+  }
+};
+
+// 收藏列表变化（首次加载、刷新、切换账号）时补齐尚未回查的类别
+watch(
+  () => favoritedAlbums.value.map((album) => albumCategoryKey(album)).join(','),
+  () => {
+    void fetchMissingAlbumCategories();
+  },
+  { immediate: true },
+);
+
+const audiobookAlbums = computed(() => favoritedAlbums.value.filter(isAudiobookAlbum));
+const musicAlbums = computed(() =>
+  favoritedAlbums.value.filter((album) => !isAudiobookAlbum(album)),
+);
+
 const filteredAlbums = computed(() => {
   const query = albumSearchQuery.value.trim().toLowerCase();
-  if (!query) return favoritedAlbums.value;
-  return favoritedAlbums.value.filter((album) => {
+  if (!query) return musicAlbums.value;
+  return musicAlbums.value.filter((album) => {
     const name = album.name?.toLowerCase() || '';
     const artist = album.nickname?.toLowerCase() || album.list_create_username?.toLowerCase() || '';
     return name.includes(query) || artist.includes(query);
@@ -304,11 +498,42 @@ const filteredAlbums = computed(() => {
 });
 
 const albumCards = computed(() =>
-  filteredAlbums.value.map((album) => ({
-    id: String(album.listCreateListid ?? album.id),
+  applyCardSort(
+    filteredAlbums.value,
+    (album) => album.name,
+    (album) => album.createTime,
+  ).map((album) => ({
+    id: albumCategoryKey(album),
     name: album.name,
     coverUrl: album.pic,
     artist: album.nickname || album.list_create_username || '',
+  })),
+);
+
+// ========== 有声 Tab ==========
+const audiobookSearchQuery = ref('');
+
+const filteredAudiobookAlbums = computed(() => {
+  const query = audiobookSearchQuery.value.trim().toLowerCase();
+  if (!query) return audiobookAlbums.value;
+  return audiobookAlbums.value.filter((album) => {
+    const name = album.name?.toLowerCase() || '';
+    const artist = album.nickname?.toLowerCase() || album.list_create_username?.toLowerCase() || '';
+    return name.includes(query) || artist.includes(query);
+  });
+});
+
+const audiobookCards = computed(() =>
+  applyCardSort(
+    filteredAudiobookAlbums.value,
+    (album) => album.name,
+    (album) => album.createTime,
+  ).map((album) => ({
+    id: albumCategoryKey(album),
+    name: album.name,
+    coverUrl: album.pic,
+    artist: album.nickname || album.list_create_username || '',
+    query: { category: '2' },
   })),
 );
 
@@ -324,10 +549,13 @@ interface VideoItem {
 }
 
 const videos = shallowRef<VideoItem[]>([]);
+const videoSearchQuery = ref('');
 const videosLoading = ref(false);
 const videosLoaded = ref(false);
 const videosPage = ref(1);
 const videosHasMore = ref(true);
+// 收藏视频总数：只靠已加载条数算不准（一页 30 条），徽标用接口给的 ctotal
+const videosTotal = ref(0);
 const VIDEOS_PAGE_SIZE = 30;
 let videosGeneration = 0;
 
@@ -378,6 +606,10 @@ const fetchVideos = async (reset = false) => {
       } else {
         videos.value = [...videos.value, ...mapped];
       }
+      // ctotal 是收藏视频的总数，列表只拿一页，徽标要看总数
+      const ctotal = data?.ctotal;
+      videosTotal.value =
+        typeof ctotal === 'number' && Number.isFinite(ctotal) ? ctotal : videos.value.length;
       videosHasMore.value = mapped.length >= VIDEOS_PAGE_SIZE;
       videosPage.value = requestPage + 1;
       videosLoaded.value = true;
@@ -397,9 +629,19 @@ const resetVideos = () => {
   videos.value = [];
   videosLoading.value = false;
   videosLoaded.value = false;
+  videosTotal.value = 0;
   videosPage.value = 1;
   videosHasMore.value = true;
+  videoSearchQuery.value = '';
 };
+
+const filteredVideos = computed(() => {
+  const query = videoSearchQuery.value.trim().toLowerCase();
+  if (!query) return videos.value;
+  return videos.value.filter((video) => (video.title || '').toLowerCase().includes(query));
+});
+
+const videoCards = computed(() => applyCardSort(filteredVideos.value, (video) => video.title));
 
 watch(
   () => videoCollectionStore.revision,
@@ -411,8 +653,203 @@ watch(
   },
 );
 
+// ========== 卡片 Tab 公共：定位 / 批量 ==========
+type CardGridHandle = { scrollToIndex?: (index: number, behavior?: ScrollBehavior) => void };
+interface CardEntry {
+  id: string | number;
+  name: string;
+  coverUrl: string;
+  subtitle: string;
+}
+
+const singerGridRef = ref<CardGridHandle | null>(null);
+const userGridRef = ref<CardGridHandle | null>(null);
+const albumGridRef = ref<CardGridHandle | null>(null);
+const audiobookGridRef = ref<CardGridHandle | null>(null);
+const videoGridRef = ref<CardGridHandle | null>(null);
+
+const cardGridFor = (tab: CardTab): CardGridHandle | null =>
+  tab === 'singers'
+    ? singerGridRef.value
+    : tab === 'users'
+      ? userGridRef.value
+      : tab === 'albums'
+        ? albumGridRef.value
+        : tab === 'audiobooks'
+          ? audiobookGridRef.value
+          : videoGridRef.value;
+
+// 与卡片列表同序，供定位与批量共用
+const cardListFor = (tab: CardTab): CardEntry[] => {
+  if (tab === 'videos') {
+    return videoCards.value.map((video) => ({
+      id: video.id,
+      name: video.title,
+      coverUrl: video.coverUrl,
+      subtitle: video.artist,
+    }));
+  }
+  if (tab === 'singers' || tab === 'users') {
+    const cards = tab === 'singers' ? singerCards.value : userCards.value;
+    return cards.map((card) => ({
+      id: card.id,
+      name: card.name,
+      coverUrl: card.coverUrl,
+      subtitle: card.sourceDesc ?? '',
+    }));
+  }
+  const cards = tab === 'albums' ? albumCards.value : audiobookCards.value;
+  return cards.map((card) => ({
+    id: card.id,
+    name: card.name,
+    coverUrl: card.coverUrl,
+    subtitle: card.artist,
+  }));
+};
+
+const activeCardItems = computed(() => {
+  const tab = activeCardTab.value;
+  return tab ? cardListFor(tab) : [];
+});
+
+// 点卡片进详情页时顺手发一条续播请求：这张卡有续播记录就滚到上次那集，播不播听「定位后自动续播」。
+// 没有记录就不发，免得留下一条没人认领的请求
+const openCardWithResume = (kind: 'album' | 'audiobook' | 'artist', id: string | number) => {
+  const hasRecord = playerStore.resumeScopes.some(
+    (scope) => scope.kind === kind && String(scope.id) === String(id),
+  );
+  if (hasRecord) requestResumeHintPlay(`${kind}:${String(id)}`);
+};
+
+// 「用户」tab 里没有用户主页这个东西，ArtistCard 的 isSinger=false 分支自己不跳转：
+// 统一送进歌手详情（同一个 id 空间），和歌手卡一样顺带看一眼有没有续播记录
+const openUserCard = (id: string | number) => {
+  openCardWithResume('artist', id);
+  void router.push({ name: 'artist-detail', params: { id } });
+};
+
+const flashedCardKey = ref('');
+let flashCardTimer = 0;
+
+const clearCardFlash = () => {
+  if (flashCardTimer) {
+    window.clearTimeout(flashCardTimer);
+    flashCardTimer = 0;
+  }
+  flashedCardKey.value = '';
+};
+
+// 定位：滚到当前播放歌曲对应的歌手 / 专辑卡片，并短暂高亮
+const locateActiveCard = () => {
+  const tab = activeCardTab.value;
+  if (!tab) return;
+  const track = playerStore.currentTrackSnapshot as {
+    name?: string;
+    artist?: string;
+    album?: string;
+    albumName?: string;
+  } | null;
+  const names =
+    tab === 'albums' || tab === 'audiobooks'
+      ? [track?.albumName, track?.album]
+      : tab === 'videos'
+        ? [track?.artist, track?.name]
+        : [track?.artist];
+  const keywords = names
+    .map((name) => (name ?? '').trim().toLowerCase())
+    .filter((name) => name.length > 0);
+  const list = cardListFor(tab);
+  const exact =
+    keywords.length > 0
+      ? list.findIndex((card) => keywords.includes(card.name.trim().toLowerCase()))
+      : -1;
+  const index =
+    exact >= 0
+      ? exact
+      : list.findIndex((card) =>
+          keywords.some((keyword) => card.name.toLowerCase().includes(keyword)),
+        );
+  if (index < 0) {
+    toastStore.info('当前播放不在我最喜爱里');
+    return;
+  }
+  cardGridFor(tab)?.scrollToIndex?.(index, 'smooth');
+  clearCardFlash();
+  flashedCardKey.value = String(list[index].id);
+  flashCardTimer = window.setTimeout(() => {
+    flashCardTimer = 0;
+    flashedCardKey.value = '';
+  }, 1800);
+};
+
+const batchTarget = ref<CardTab | null>(null);
+const batchDrawerOpen = ref(false);
+
+const batchItems = computed(() => {
+  const tab = batchTarget.value;
+  if (!tab) return [];
+  return cardListFor(tab).map((card) => ({
+    key: String(card.id),
+    name: card.name,
+    subtitle: card.subtitle,
+    cover: card.coverUrl,
+  }));
+});
+
+const batchLabel = computed(() => (batchTarget.value ? CARD_TAB_LABELS[batchTarget.value] : ''));
+const batchActionLabel = computed(() =>
+  batchTarget.value ? CARD_TAB_ACTIONS[batchTarget.value] : '',
+);
+
+const openCardBatch = (tab: CardTab) => {
+  if (cardListFor(tab).length === 0) return;
+  batchTarget.value = tab;
+  batchDrawerOpen.value = true;
+};
+
+const isApiSuccess = (res: unknown) => {
+  if (!res || typeof res !== 'object') return true;
+  const status = (res as { status?: unknown }).status;
+  return status === undefined || status === 1;
+};
+
+// 批量取消关注 / 取消收藏，返回失败条数
+const confirmCardBatch = async (keys: string[]): Promise<number> => {
+  const tab = batchTarget.value;
+  if (!tab) return keys.length;
+  let failed = 0;
+  for (const key of keys) {
+    try {
+      if (tab === 'singers') {
+        if (!isApiSuccess(await unfollowArtist(key))) failed += 1;
+      } else if (tab === 'users') {
+        if (!isApiSuccess(await deleteUserFollow({ tuid: key }))) failed += 1;
+      } else if (tab === 'albums' || tab === 'audiobooks') {
+        if (!(await playlistStore.unfavoriteAlbum(key))) failed += 1;
+      } else {
+        // 收藏页里的卡片本该都已收藏，仍先确认一次：toggle 对未收藏的视频会反向收藏。
+        await videoCollectionStore.ensureLoaded();
+        if (videoCollectionStore.isCollected(key)) {
+          await videoCollectionStore.toggle(key);
+        }
+      }
+    } catch {
+      failed += 1;
+    }
+  }
+  if (tab === 'singers' || tab === 'users') {
+    followedLoaded.value = false;
+    await fetchFollowed();
+  }
+  return failed;
+};
+
 // ========== 滚动加载 ==========
 const scrollContainerRef = useScrollContainer();
+
+// 双击 tab 回到顶部：本页是 PageScrollContainer 的父组件，useScrollContainer() 只能拿到 null
+const pageScrollRef = ref<PageScrollHandle | null>(null);
+const { onTabPointerDown, onTabDoubleClick } = useTabDoubleClickTop(() => pageScrollRef.value);
 const loadMoreSentinelRef = ref<HTMLElement | null>(null);
 let loadMoreObserver: IntersectionObserver | null = null;
 
@@ -478,11 +915,11 @@ const loadActiveTabData = () => {
   if (!isActive.value) return;
   if (!isLoggedIn.value) return;
   if (!currentUserKey.value) return;
-  if ((activeTab.value === 'singers' || activeTab.value === 'users') && !followedLoaded.value) {
-    void fetchFollowed();
-  }
-  if (activeTab.value === 'videos' && !videosLoaded.value) {
-    void fetchVideos(true);
+  // 歌手/用户/视频的徽标要一进页面就有，所以不等点开 tab 就先静默拉一次
+  if (!followedLoaded.value) void fetchFollowed();
+  if (!videosLoaded.value) void fetchVideos(true);
+  if (activeTab.value === 'albums' || activeTab.value === 'audiobooks') {
+    void fetchMissingAlbumCategories();
   }
 };
 
@@ -509,6 +946,8 @@ onUnmounted(() => {
 
 watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
   accountGeneration += 1;
+  albumCategoriesGeneration += 1;
+  albumCategories.value = {};
   if (!loggedIn) {
     resetFollowed();
     resetVideos();
@@ -523,7 +962,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
 </script>
 
 <template>
-  <PageScrollContainer class="favorites-view">
+  <PageScrollContainer ref="pageScrollRef" class="favorites-view">
     <div class="bg-bg-main min-h-full pb-10">
       <!-- 未登录状态 -->
       <div
@@ -553,7 +992,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
           <template #details>
             <div class="contents">
               <div class="text-[13px] font-semibold text-text-secondary">
-                集中管理收藏的歌曲、歌手、用户、专辑与视频。
+                集中管理收藏的歌曲、歌手、用户、专辑、有声与视频。
               </div>
               <div
                 class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
@@ -563,8 +1002,10 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                   <span>{{ songs.length }} 首歌曲</span>
                 </div>
                 <span v-if="followedSingers.length > 0">{{ followedSingers.length }} 位歌手</span>
-                <span v-if="favoritedAlbums.length > 0">{{ favoritedAlbums.length }} 张专辑</span>
-                <span v-if="videos.length > 0">{{ videos.length }} 个视频</span>
+                <span v-if="userCards.length > 0">{{ userCards.length }} 位用户</span>
+                <span v-if="musicAlbums.length > 0">{{ musicAlbums.length }} 张专辑</span>
+                <span v-if="audiobookAlbums.length > 0"> {{ audiobookAlbums.length }} 张有声 </span>
+                <span v-if="videosTotal > 0">{{ videosTotal }} 个视频</span>
               </div>
             </div>
           </template>
@@ -572,9 +1013,21 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
           <template #actions>
             <ActionRow
               v-if="activeTab === 'songs'"
+              :play-disabled="songs.length === 0"
+              :batch-disabled="songs.length === 0"
               @play="handlePlayAll"
               @batch="openBatchDrawer"
             />
+            <Button
+              v-else-if="activeCardTab"
+              variant="soft-secondary"
+              size="default"
+              :disabled="activeCardItems.length === 0"
+              @click="openCardBatch(activeCardTab)"
+            >
+              <Icon :icon="iconList" width="16" height="16" />
+              <span>批量</span>
+            </Button>
           </template>
 
           <template #collapsed-actions>
@@ -582,6 +1035,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
               <Button
                 variant="unstyled"
                 size="icon"
+                :disabled="songs.length === 0"
                 @click="handlePlayAll"
                 class="action-icon hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
@@ -590,12 +1044,23 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
               <Button
                 variant="unstyled"
                 size="icon"
+                :disabled="songs.length === 0"
                 @click="openBatchDrawer"
                 class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
               >
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
             </template>
+            <Button
+              v-else-if="activeCardTab"
+              variant="unstyled"
+              size="icon"
+              :disabled="activeCardItems.length === 0"
+              @click="openCardBatch(activeCardTab)"
+              class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
+            >
+              <Icon :icon="iconList" width="18" height="18" />
+            </Button>
           </template>
         </SliverHeader>
 
@@ -613,7 +1078,11 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">
                 <div class="flex items-center justify-between h-14">
-                  <TabsList class="favorites-tab-list bg-transparent border-none gap-8">
+                  <TabsList
+                    class="favorites-tab-list bg-transparent border-none gap-8"
+                    @pointerdown="onTabPointerDown"
+                    @dblclick="onTabDoubleClick"
+                  >
                     <TabsTrigger value="songs">
                       <span class="badge-label">歌曲 <Badge :count="songs.length" /></span>
                     </TabsTrigger>
@@ -630,13 +1099,18 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                     </TabsTrigger>
                     <TabsTrigger value="albums">
                       <span class="badge-label"
-                        >专辑
-                        <Badge v-if="favoritedAlbums.length > 0" :count="favoritedAlbums.length"
+                        >专辑 <Badge v-if="musicAlbums.length > 0" :count="musicAlbums.length"
+                      /></span>
+                    </TabsTrigger>
+                    <TabsTrigger value="audiobooks">
+                      <span class="badge-label"
+                        >有声
+                        <Badge v-if="audiobookAlbums.length > 0" :count="audiobookAlbums.length"
                       /></span>
                     </TabsTrigger>
                     <TabsTrigger value="videos">
                       <span class="badge-label"
-                        >视频 <Badge v-if="videos.length > 0" :count="videos.length"
+                        >视频 <Badge v-if="videosTotal > 0" :count="videosTotal"
                       /></span>
                     </TabsTrigger>
                   </TabsList>
@@ -649,30 +1123,76 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                       variant="soft-secondary"
                       size="icon"
                       tooltip="调整歌曲顺序"
+                      :disabled="songs.length === 0"
                       @click="showPlaylistOrder = true"
                     >
                       <Icon :icon="iconArrowsSort" width="16" />
                     </Button>
-                    <SongSearchInput v-model="searchQuery" />
+                    <SongSearchInput v-model="searchQuery" :disabled="songs.length === 0" />
                     <Button
                       variant="unstyled"
                       size="icon"
                       @click="handleLocate"
                       class="action-icon song-locate-btn"
                       tooltip="定位当前播放"
+                      :disabled="songs.length === 0"
                     >
                       <Icon :icon="iconCurrentLocation" width="18" height="18" />
                     </Button>
                   </div>
 
-                  <!-- 歌手 tab 右侧搜索 -->
-                  <div v-if="activeTab === 'singers'" class="flex items-center gap-2">
-                    <SongSearchInput v-model="singerSearchQuery" placeholder="搜索歌手..." />
-                  </div>
-
-                  <!-- 专辑 tab 右侧搜索 -->
-                  <div v-if="activeTab === 'albums'" class="flex items-center gap-2">
-                    <SongSearchInput v-model="albumSearchQuery" placeholder="搜索专辑..." />
+                  <!-- 卡片 tab 右侧操作：排序 / 搜索 / 定位 -->
+                  <div v-if="activeCardTab" class="flex items-center gap-2">
+                    <Button
+                      class="action-icon card-sort-btn"
+                      variant="soft-secondary"
+                      size="icon"
+                      tooltip="排序"
+                      :disabled="activeCardItems.length === 0"
+                      @click="openSortMenu"
+                    >
+                      <Icon :icon="iconArrowsSort" width="16" />
+                    </Button>
+                    <SongSearchInput
+                      v-if="activeTab === 'singers'"
+                      v-model="singerSearchQuery"
+                      placeholder="搜索歌手..."
+                      :disabled="activeCardItems.length === 0"
+                    />
+                    <SongSearchInput
+                      v-else-if="activeTab === 'albums'"
+                      v-model="albumSearchQuery"
+                      placeholder="搜索专辑..."
+                      :disabled="activeCardItems.length === 0"
+                    />
+                    <SongSearchInput
+                      v-else-if="activeTab === 'audiobooks'"
+                      v-model="audiobookSearchQuery"
+                      placeholder="搜索有声..."
+                      :disabled="activeCardItems.length === 0"
+                    />
+                    <SongSearchInput
+                      v-else-if="activeTab === 'users'"
+                      v-model="userSearchQuery"
+                      placeholder="搜索用户..."
+                      :disabled="activeCardItems.length === 0"
+                    />
+                    <SongSearchInput
+                      v-else-if="activeTab === 'videos'"
+                      v-model="videoSearchQuery"
+                      placeholder="搜索视频..."
+                      :disabled="activeCardItems.length === 0"
+                    />
+                    <Button
+                      variant="unstyled"
+                      size="icon"
+                      @click="locateActiveCard"
+                      class="action-icon card-locate-btn"
+                      tooltip="定位当前播放"
+                      :disabled="activeCardItems.length === 0"
+                    >
+                      <Icon :icon="iconCurrentLocation" width="18" height="18" />
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -689,7 +1209,13 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
             />
           </PageStickyHeader>
 
-          <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="favorites" />
+          <BatchActionDrawer
+            v-model:open="showBatchDrawer"
+            :songs="songs"
+            source-id="favorites"
+            remove-context="favorites"
+            :on-batch-remove="handleBatchUnfavorite"
+          />
 
           <div class="pb-12">
             <!-- 歌曲 -->
@@ -721,6 +1247,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
             <!-- 歌手 -->
             <TabsContent value="singers" class="px-6 pt-4">
               <VirtualGrid
+                ref="singerGridRef"
                 :items="singerCards"
                 :loading="followedLoading"
                 :active="activeTab === 'singers'"
@@ -735,7 +1262,13 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                 keyField="id"
               >
                 <template #default="{ item }">
-                  <ArtistCard v-bind="item" />
+                  <div
+                    class="favorites-card"
+                    :class="{ 'is-flash': flashedCardKey === String(item.id) }"
+                    @click.capture="openCardWithResume('artist', item.id)"
+                  >
+                    <ArtistCard v-bind="item" />
+                  </div>
                 </template>
               </VirtualGrid>
             </TabsContent>
@@ -743,6 +1276,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
             <!-- 用户 -->
             <TabsContent value="users" class="px-6 pt-4">
               <VirtualGrid
+                ref="userGridRef"
                 :items="userCards"
                 :loading="followedLoading"
                 :active="activeTab === 'users'"
@@ -757,7 +1291,13 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                 keyField="id"
               >
                 <template #default="{ item }">
-                  <ArtistCard v-bind="item" />
+                  <div
+                    class="favorites-card"
+                    :class="{ 'is-flash': flashedCardKey === String(item.id) }"
+                    @click.capture="openUserCard(item.id)"
+                  >
+                    <ArtistCard v-bind="item" />
+                  </div>
                 </template>
               </VirtualGrid>
             </TabsContent>
@@ -765,6 +1305,7 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
             <!-- 专辑 -->
             <TabsContent value="albums" class="px-6 pt-4">
               <VirtualGrid
+                ref="albumGridRef"
                 :items="albumCards"
                 :loading="false"
                 :active="activeTab === 'albums'"
@@ -779,7 +1320,42 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                 keyField="id"
               >
                 <template #default="{ item }">
-                  <AlbumCard v-bind="item" />
+                  <div
+                    class="favorites-card"
+                    :class="{ 'is-flash': flashedCardKey === String(item.id) }"
+                    @click.capture="openCardWithResume('album', item.id)"
+                  >
+                    <AlbumCard v-bind="item" />
+                  </div>
+                </template>
+              </VirtualGrid>
+            </TabsContent>
+
+            <!-- 有声 -->
+            <TabsContent value="audiobooks" class="px-6 pt-4">
+              <VirtualGrid
+                ref="audiobookGridRef"
+                :items="audiobookCards"
+                :loading="albumCategoriesLoading && audiobookCards.length === 0"
+                :active="activeTab === 'audiobooks'"
+                :itemMinWidth="180"
+                :itemAspectRatio="1"
+                :itemChromeHeight="66"
+                :gap="20"
+                :overscan="3"
+                :paddingBottom="20"
+                :stateMinHeight="320"
+                emptyText="暂无收藏有声"
+                keyField="id"
+              >
+                <template #default="{ item }">
+                  <div
+                    class="favorites-card"
+                    :class="{ 'is-flash': flashedCardKey === String(item.id) }"
+                    @click.capture="openCardWithResume('audiobook', item.id)"
+                  >
+                    <AlbumCard v-bind="item" />
+                  </div>
                 </template>
               </VirtualGrid>
             </TabsContent>
@@ -787,7 +1363,8 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
             <!-- 视频 -->
             <TabsContent value="videos" class="px-6 pt-4">
               <VirtualGrid
-                :items="videos"
+                ref="videoGridRef"
+                :items="videoCards"
                 :loading="videosLoading && !videosLoaded"
                 :active="activeTab === 'videos'"
                 :itemMinWidth="240"
@@ -801,15 +1378,20 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
                 keyField="id"
               >
                 <template #default="{ item }">
-                  <MvCard
-                    :videoId="item.id"
-                    :hash="item.hash"
-                    :title="item.title"
-                    :coverUrl="item.coverUrl"
-                    :artist="item.artist"
-                    :duration="item.duration"
-                    :albumAudioId="item.albumAudioId"
-                  />
+                  <div
+                    class="favorites-card"
+                    :class="{ 'is-flash': flashedCardKey === String(item.id) }"
+                  >
+                    <MvCard
+                      :videoId="item.id"
+                      :hash="item.hash"
+                      :title="item.title"
+                      :coverUrl="item.coverUrl"
+                      :artist="item.artist"
+                      :duration="item.duration"
+                      :albumAudioId="item.albumAudioId"
+                    />
+                  </div>
                 </template>
               </VirtualGrid>
               <div
@@ -837,6 +1419,30 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
     :target="playlistOrderTarget"
     @saved="handlePlaylistOrderSaved"
   />
+  <ContextMenuPanel
+    :open="sortMenuOpen"
+    :x="sortMenuPoint.x"
+    :y="sortMenuPoint.y"
+    :scroll-lock-el="scrollContainerRef"
+    @close="sortMenuOpen = false"
+  >
+    <button
+      v-for="option in cardSortOptions"
+      :key="`${option.field}-${option.order}`"
+      type="button"
+      class="song-context-item"
+      @click="applyCardSortOption(option)"
+    >
+      {{ isCardSortOptionActive(option) ? '✓ ' : '' }}{{ option.label }}
+    </button>
+  </ContextMenuPanel>
+  <CardBatchDrawer
+    v-model:open="batchDrawerOpen"
+    :items="batchItems"
+    :label="batchLabel"
+    :action-label="batchActionLabel"
+    :on-confirm="confirmCardBatch"
+  />
 </template>
 
 <style scoped>
@@ -845,5 +1451,28 @@ watchUserSession(userStore, ({ isLoggedIn: loggedIn }) => {
 .favorites-tab-list :deep(.tab-trigger) {
   font-size: 14px;
   font-weight: 600;
+}
+
+/* 定位当前播放：命中卡片短暂高亮，时长与歌曲行一致 */
+.favorites-card {
+  border-radius: 12px;
+}
+
+.favorites-card.is-flash {
+  animation: favorites-card-flash 1.8s ease-out;
+}
+
+@keyframes favorites-card-flash {
+  0%,
+  55% {
+    box-shadow:
+      0 0 0 2px var(--color-primary),
+      0 0 18px 0 color-mix(in srgb, var(--color-primary) 45%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 2px transparent,
+      0 0 0 0 transparent;
+  }
 }
 </style>

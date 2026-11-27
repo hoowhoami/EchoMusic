@@ -45,6 +45,7 @@ import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
+import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 import { clearCloudAudioIndex, refreshCloudAudioIndex } from '@/services/cloudAudioIndex';
 import { completeSongMetadata } from '@/services/songMetadata';
@@ -58,6 +59,10 @@ const settingStore = useSettingStore();
 const userStore = useUserStore();
 const cloudUploadStore = useCloudUploadStore();
 const themeStore = useThemeStore();
+
+// 双击 tab 回到顶部：本页是 PageScrollContainer 的父组件，useScrollContainer() 只能拿到 null
+const pageScrollRef = ref<PageScrollHandle | null>(null);
+const { onTabPointerDown, onTabDoubleClick } = useTabDoubleClickTop(() => pageScrollRef.value);
 const toastStore = useToastStore();
 
 let disposed = false;
@@ -552,7 +557,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <PageScrollContainer class="cloud-view-container">
+  <PageScrollContainer ref="pageScrollRef" class="cloud-view-container">
     <div class="cloud-view bg-bg-main min-h-full">
       <div
         v-if="!isLoggedIn"
@@ -608,6 +613,8 @@ onBeforeUnmount(() => {
 
           <template #actions>
             <ActionRow
+              :play-disabled="songs.length === 0"
+              :batch-disabled="songs.length === 0"
               @play="handlePlayAll"
               @batch="openBatchDrawer"
               :secondaryActions="secondaryActions"
@@ -618,6 +625,7 @@ onBeforeUnmount(() => {
             <Button
               variant="unstyled"
               size="icon"
+              :disabled="songs.length === 0"
               @click="handlePlayAll"
               class="action-icon hover:bg-[var(--control-hover-bg)] text-primary-text"
             >
@@ -626,6 +634,7 @@ onBeforeUnmount(() => {
             <Button
               variant="unstyled"
               size="icon"
+              :disabled="songs.length === 0"
               @click="openBatchDrawer"
               class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
             >
@@ -653,17 +662,22 @@ onBeforeUnmount(() => {
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">
                 <div class="flex items-center justify-between h-14">
-                  <TabsList class="bg-transparent border-none gap-8">
+                  <TabsList
+                    class="bg-transparent border-none gap-8"
+                    @pointerdown="onTabPointerDown"
+                    @dblclick="onTabDoubleClick"
+                  >
                     <TabsTrigger value="songs">
                       <span class="badge-label">歌曲 <Badge :count="displaySongCount" /></span>
                     </TabsTrigger>
                   </TabsList>
 
                   <div class="flex items-center gap-2">
-                    <SongSearchInput v-model="searchQuery" />
+                    <SongSearchInput v-model="searchQuery" :disabled="songs.length === 0" />
                     <Button
                       variant="unstyled"
                       size="icon"
+                      :disabled="songs.length === 0"
                       @click="handleLocate"
                       class="action-icon song-locate-btn"
                       tooltip="定位当前播放"
@@ -758,20 +772,20 @@ onBeforeUnmount(() => {
         >
           <template #footer>
             <Button
-              variant="outline"
-              size="default"
-              :disabled="deletingCloudSong"
-              @click="closeDeleteCloudSongDialog"
-            >
-              取消
-            </Button>
-            <Button
               variant="danger"
               size="default"
               :loading="deletingCloudSong"
               @click="confirmDeleteCloudSong"
             >
               确认删除
+            </Button>
+            <Button
+              variant="outline"
+              size="default"
+              :disabled="deletingCloudSong"
+              @click="closeDeleteCloudSongDialog"
+            >
+              取消
             </Button>
           </template>
         </Dialog>

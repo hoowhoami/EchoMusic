@@ -331,8 +331,8 @@ watch(account, () => {
     description="你的选择还没有保存，关闭后将丢弃本次修改。"
   >
     <template #footer>
-      <Button variant="outline" size="default" @click="confirmDiscard = false">继续编辑</Button>
       <Button variant="danger" size="default" @click="discardAndClose">放弃修改</Button>
+      <Button variant="outline" size="default" @click="confirmDiscard = false">继续编辑</Button>
     </template>
   </Dialog>
 </template>

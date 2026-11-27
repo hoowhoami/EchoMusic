@@ -1,7 +1,7 @@
 import { BrowserWindow, Menu, nativeTheme, screen } from 'electron';
 import { join } from 'node:path';
 import { ipcRegistry } from './ipc/registry';
-import { getMainWindow, showMainWindow } from './window';
+import { getMainWindow, quitApplication, showMainWindow } from './window';
 import { getMainAppSettings, setMainAppSetting } from './storage/settings';
 import { getNativeTaskbarLyric, type NativeTaskbarLyricSession } from './native/platform';
 import {
@@ -9,6 +9,7 @@ import {
   normalizeTaskbarLyricSettings,
   resolveTaskbarLyricRegion,
   type NativeTaskbarLayout,
+  type TaskbarContentAlign,
   type TaskbarLyricSettings,
 } from '../shared/taskbar';
 import log from './logger';
@@ -23,6 +24,29 @@ let quitting = false;
 let layout: NativeTaskbarLayout | null = null;
 let region: ReturnType<typeof resolveTaskbarLyricRegion> = null;
 let contentWidth = 160;
+let contentAlign: TaskbarContentAlign = 'start';
+/**
+ * 可见区域相对窗口的横坐标（渲染层实测）。
+ *
+ * 播放↔暂停时内容块是滑过去的，窗口形状要跟着一起滑，不能只按 anchor
+ * 一步算到终点——那会让图案先被裁在旧区域里，再滑进新区域。
+ */
+let contentLeft: number | null = null;
+/**
+ * 渲染层报上来的「这块窗口里已经没有可显示的内容了」。
+ *
+ * 收起态下歌词整块让出位置，如果封面和歌名又都被关掉，内容块里只剩内边距 ——
+ * 窗口留着就是任务栏上一条 24px 的空窗。最终是否隐藏还要结合设置再判一次（见 blankNow），
+ * 免得用户刚打开封面，却因为上一次的标记一直藏着。
+ */
+let blanked = false;
+/**
+ * 可见区域的最小宽度。
+ *
+ * 歌词区可以整块收起，只剩封面（约 30 DIP）；原来的 160 是给两行歌词留的余量，
+ * 在这里会把收起态撑出一条空白。这里只挡测量中间态的 0 / 负值。
+ */
+const MIN_SHAPE_WIDTH = 24;
 let disposeSystem: (() => void) | null = null;
 let settings = { ...DEFAULT_TASKBAR_LYRIC_SETTINGS };
 let settingsLoaded = false;
@@ -34,6 +58,9 @@ function loadSettings(): void {
   settings = getMainAppSettings().taskbarLyric;
   settingsLoaded = true;
 }
+// 渲染层的 blanked 已经把「播放态关掉歌词又没封面」这类情形算进去了，
+// 这里再按设置判一次会和播放态的新规则打架，留下一条空窗。
+const blankNow = () => blanked;
 const usable = (value: BrowserWindow | null): value is BrowserWindow =>
   Boolean(value && !destroyedNativeWindows.has(value) && !value.isDestroyed());
 const state = () => ({
@@ -53,13 +80,29 @@ function broadcastState(): void {
 let appliedShape = '';
 function applyShape(): void {
   if (!usable(win) || !region) return;
-  const width = Math.min(region.bounds.width, Math.max(160, Math.ceil(contentWidth)));
+  const width = Math.min(region.bounds.width, Math.max(MIN_SHAPE_WIDTH, Math.ceil(contentWidth)));
   const next: { x: number; y: number; width: number; height: number }[] =
     width === region.bounds.width
       ? []
       : [
           {
-            x: region.anchor === 'right' ? region.bounds.width - width : 0,
+            // 形状偏移必须与渲染层的内容对齐一致：right 贴右、center 居中、left 贴左，
+            // 否则内容会被裁在这个可见区之外。渲染层给了实测横坐标时优先用它，
+            // 这样补间过程中形状是逐帧跟着内容块走的。
+            x:
+              contentLeft !== null && Number.isFinite(contentLeft)
+                ? Math.min(
+                    Math.max(0, Math.round(contentLeft)),
+                    Math.max(0, region.bounds.width - width),
+                  )
+                : region.anchor === 'right'
+                  ? region.bounds.width - width
+                  : region.anchor === 'center'
+                    ? // 居中档：播放态贴空闲区左端（宽度向右长，图标不动），暂停态那一小块居中。
+                      contentAlign === 'start'
+                      ? 0
+                      : Math.round((region.bounds.width - width) / 2)
+                    : 0,
             y: 0,
             width,
             height: region.bounds.height,
@@ -77,7 +120,7 @@ function applyShape(): void {
 function present(): void {
   if (!usable(win)) return;
   region = layout ? resolveTaskbarLyricRegion(layout, settings) : null;
-  if (!enabled || quitting || !region || getMainWindow()?.isFullScreen()) {
+  if (!enabled || quitting || !region || getMainWindow()?.isFullScreen() || blankNow()) {
     if (win.isVisible()) win.hide();
   } else {
     const before = win.getBounds();
@@ -92,6 +135,8 @@ function present(): void {
   broadcastState();
 }
 function release(): void {
+  // 窗口要重建，上一轮的「空窗」判断不能带过来，等渲染层重新上报。
+  blanked = false;
   stopHeartbeat();
   disposeSystem?.();
   disposeSystem = null;
@@ -226,6 +271,16 @@ async function createBar(): Promise<void> {
         label: '打开 EchoMusic',
         click: () => {
           void showMainWindow();
+        },
+      },
+      { type: 'separator' },
+      {
+        // 歌词窗口挂在任务栏上，没有关闭按钮，这里给一个出口。
+        // 走 quitApplication 而不是裸 app.quit()，让 isQuitting 先置位，
+        // 否则关闭主窗口的拦截逻辑会把退出当成「收进托盘」。
+        label: '关闭 EchoMusic',
+        click: () => {
+          quitApplication();
         },
       },
       { type: 'separator' },
@@ -403,16 +458,28 @@ export function registerTaskbarPlayerHandlers(): void {
       return state();
     },
   );
-  ipcRegistry.registerListener('taskbar-player:content-width', (event, width: number) => {
-    if (
-      !usable(win) ||
-      event.sender.id !== win.webContents.id ||
-      !Number.isFinite(width) ||
-      width <= 0
-    )
-      return;
-    contentWidth = Math.min(settings.maxWidth, width);
-    applyShape();
+  ipcRegistry.registerListener(
+    'taskbar-player:content-width',
+    (event, payload: number | { width?: number; align?: TaskbarContentAlign; left?: number }) => {
+      if (!usable(win) || event.sender.id !== win.webContents.id) return;
+      // 老版本只发一个数字，这里两边都认。
+      const width = typeof payload === 'number' ? payload : Number(payload?.width);
+      if (!Number.isFinite(width) || width <= 0) return;
+      const align = typeof payload === 'object' && payload?.align ? payload.align : 'start';
+      const left = typeof payload === 'object' ? Number(payload?.left) : Number.NaN;
+      contentWidth = Math.min(settings.maxWidth, width);
+      contentAlign = align === 'center' ? 'center' : 'start';
+      contentLeft = Number.isFinite(left) ? left : null;
+      applyShape();
+    },
+  );
+  ipcRegistry.registerListener('taskbar-player:content-blank', (event, payload: boolean) => {
+    if (!usable(win) || event.sender.id !== win.webContents.id) return;
+    const next = payload === true;
+    if (next === blanked) return;
+    blanked = next;
+    // 只在这一个开关翻转时重排窗口：宽度上报是逐帧的，每帧都 present 会白刷状态。
+    present();
   });
   ipcRegistry.registerListener('taskbar-player:show-main', (event) => {
     if (usable(win) && event.sender.id === win.webContents.id) showMainWindow();

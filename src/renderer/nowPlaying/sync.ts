@@ -18,6 +18,7 @@ import type {
 import { isNowPlayingCommand } from '../../shared/nowPlaying';
 import { getLyricLinesIdentity, normalizeLyricLinePayload } from '../../shared/lyrics';
 import type { ShortcutCommand } from '../../shared/shortcuts';
+import { portraitLyricCollapsed } from '@/views/lyric/portraitCollapseState';
 
 const NOW_PLAYING_PROGRESS_SYNC_INTERVAL_MS = 120;
 const LYRIC_OFFSET_STEP_MS = 500;
@@ -261,6 +262,9 @@ export const initNowPlayingSync = async () => {
       floatingSurfaceFrosted: themeStore.floatingSurfaceFrosted,
       accentColor: themeStore.accentColor,
       fontFamily: settingStore.buildGlobalFontFamily(),
+      lyricsPageProvider: settingStore.lyricsPageProvider,
+      lyricViewMode: settingStore.lyricViewMode,
+      portraitLyricCollapsed: portraitLyricCollapsed.value,
     };
     const nextKey = JSON.stringify(appearance);
     if (nextKey === lastSyncedAppearanceKey) return;
@@ -375,6 +379,9 @@ export const initNowPlayingSync = async () => {
         themeStore.cssTokens,
         themeStore.floatingSurfaceFrosted,
         settingStore.globalFont,
+        settingStore.lyricsPageProvider,
+        settingStore.lyricViewMode,
+        portraitLyricCollapsed.value,
       ],
       syncAppearanceSnapshot,
       { immediate: true },

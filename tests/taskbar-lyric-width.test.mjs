@@ -39,3 +39,26 @@ test('动画期间的收窄请求不会低于上限或最小宽度', () => {
   assert.equal(resolve({ ...base, natural: 20, rolling: true, current: 40 }), 160);
   assert.equal(resolve({ ...base, natural: 999, rolling: true, current: 100, maxWidth: 800 }), 800);
 });
+
+test('收起态只按封面算宽：最小宽度是 24 而不是 160', () => {
+  assert.equal(resolve({ ...base, idle: true, natural: 10 }), 24);
+  assert.equal(resolve({ ...base, idle: true, natural: 40 }), 40);
+  assert.equal(
+    resolve({ ...base, idle: true, natural: 900, maxWidth: 800 }),
+    800,
+    '仍然受上限约束',
+  );
+  assert.equal(
+    resolve({ ...base, idle: true, natural: 10, rolling: true, current: 520 }),
+    520,
+    '收起动画期间不收窄',
+  );
+});
+
+test('居中档播放时宽度照样跟着文字走，只受上限与最小宽度约束', () => {
+  assert.equal(resolve({ ...base, natural: 220 }), 220, '不再锁到展开上限');
+  assert.equal(resolve({ ...base, natural: 300, maxWidth: 500 }), 300);
+  assert.equal(resolve({ ...base, natural: 900, maxWidth: 500 }), 500, '不越过上限');
+  assert.equal(resolve({ ...base, natural: 40 }), 160, '仍受最小宽度约束');
+  assert.equal(resolve({ ...base, natural: 220, rolling: true, current: 300 }), 300);
+});

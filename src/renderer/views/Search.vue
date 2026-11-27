@@ -17,12 +17,23 @@ import { useRoute, useRouter } from 'vue-router';
 import { getSearchHot, search } from '@/api/search';
 import { useSettingStore } from '@/stores/setting';
 import { usePlaylistStore } from '@/stores/playlist';
+import { useUserStore } from '@/stores/user';
+import { useToastStore } from '@/stores/toast';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
 import type { AlbumMeta } from '@/models/album';
 import type { ArtistMeta } from '@/models/artist';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
+import { RESUME_SCOPE_LABEL, resumeRecordForScope } from '@/stores/player/resume';
+import {
+  RESUME_LOCATE_FAILED_TEXT,
+  navigateResumeTarget,
+  requestResumeHintPlay,
+} from '@/utils/resumeHint';
+import { formatDuration } from '@/utils/format';
+import { resolvePlaylistRoute } from '@/utils/playlistRoute';
+import type { ResumeCardKind, ResumeEntryCard } from './search/resumeCard';
 import PlaylistCard from '@/components/music/PlaylistCard.vue';
 import AlbumCard from '@/components/music/AlbumCard.vue';
 import ArtistCard from '@/components/music/ArtistCard.vue';
@@ -30,6 +41,7 @@ import MvCard from '@/components/music/MvCard.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
+import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 import {
@@ -40,8 +52,10 @@ import {
   extractSearchTotal,
   getAlbumCardProps,
   getArtistCardProps,
+  getLongAudioCardProps,
   getPlaylistCardProps,
   replaceResultsByType as applyResultsByType,
+  resolveSearchRequest,
   SEARCH_PAGE_SIZE,
   TAB_SEARCH_TYPES,
   type SearchTabType,
@@ -56,7 +70,9 @@ import SearchSongResultsPanel from './search/components/SearchSongResultsPanel.v
 
 const settingStore = useSettingStore();
 const playlistStore = usePlaylistStore();
+const userStore = useUserStore();
 const playerStore = usePlayerStore();
+const toastStore = useToastStore();
 const route = useRoute();
 const router = useRouter();
 
@@ -77,6 +93,7 @@ const hotSearchCategories = ref<SearchHotCategory[]>([]);
 const songResults = ref<Song[]>([]);
 const playlistResults = ref<PlaylistMeta[]>([]);
 const albumResults = ref<AlbumMeta[]>([]);
+const longaudioResults = ref<AlbumMeta[]>([]);
 const artistResults = ref<ArtistMeta[]>([]);
 const lyricResults = ref<Song[]>([]);
 const mvResults = ref<SearchMvCardProps[]>([]);
@@ -84,6 +101,7 @@ const resultRefs = {
   songResults,
   playlistResults,
   albumResults,
+  longaudioResults,
   artistResults,
   lyricResults,
   mvResults,
@@ -93,6 +111,7 @@ const paginationState = reactive<Record<SearchTabType, SearchPaginationState>>({
   song: createSearchPaginationState(),
   special: createSearchPaginationState(),
   album: createSearchPaginationState(),
+  longaudio: createSearchPaginationState(),
   author: createSearchPaginationState(),
   lyric: createSearchPaginationState(),
   mv: createSearchPaginationState(),
@@ -102,18 +121,20 @@ const searchErrors = reactive<Partial<Record<SearchTabType, string>>>({});
 const songSearchQuery = ref('');
 const songSortField = ref<SortField | null>(null);
 const songSortOrder = ref<SortOrder>(null);
-const songResultsPanelRef = ref<{ scrollToActive?: () => void } | null>(null);
+const songResultsPanelRef = ref<{ scrollToActive?: () => Promise<boolean> } | null>(null);
 
 const lyricSortField = ref<SortField | null>(null);
 const lyricSortOrder = ref<SortOrder>(null);
 const lyricSearchQuery = ref('');
-const lyricResultsPanelRef = ref<{ scrollToActive?: () => void } | null>(null);
+const lyricResultsPanelRef = ref<{ scrollToActive?: () => Promise<boolean> } | null>(null);
 
 const pinnedTabHeight = 50;
 const songToolbarOffset = computed(() => (showPinnedTabs.value ? pinnedTabHeight : 0));
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
 const scrollContainerRef = useScrollContainer();
+const pageScrollRef = ref<PageScrollHandle | null>(null);
+const { onTabPointerDown, onTabDoubleClick } = useTabDoubleClickTop(() => pageScrollRef.value);
 let scrollTarget: HTMLElement | null = null;
 
 const searchHistory = computed(() => settingStore.searchHistory ?? []);
@@ -304,8 +325,15 @@ const setLoadMoreSentinelRef = (el: Element | ComponentPublicInstance | null) =>
   loadMoreSentinelRef.value = el instanceof HTMLElement ? el : null;
 };
 
-const handleSongLocate = () => songResultsPanelRef.value?.scrollToActive?.();
-const handleLyricLocate = () => lyricResultsPanelRef.value?.scrollToActive?.();
+// 定位当前播放：滚不到就提示，别让人以为按钮点了没反应
+const locateInPanel = async (panel: { scrollToActive?: () => Promise<boolean> } | null) => {
+  if (!String(playerStore.currentTrackId ?? '')) return;
+  const reached = (await panel?.scrollToActive?.()) ?? false;
+  if (!reached) toastStore.info('当前播放不在搜索结果里');
+};
+
+const handleSongLocate = () => void locateInPanel(songResultsPanelRef.value);
+const handleLyricLocate = () => void locateInPanel(lyricResultsPanelRef.value);
 
 const resetPaginationState = () => {
   TAB_SEARCH_TYPES.forEach((type) => {
@@ -335,7 +363,8 @@ const applyPaginationState = (
 };
 
 const fetchSearchPage = async (keywords: string, type: SearchTabType, page = 1) => {
-  const response = await search(keywords, type, page, SEARCH_PAGE_SIZE);
+  const request = resolveSearchRequest(type);
+  const response = await search(keywords, request.type, page, SEARCH_PAGE_SIZE, request.category);
   const lists = extractSearchLists(response);
   const total = extractSearchTotal(response);
   return { lists, total };
@@ -347,6 +376,7 @@ const clearSearchResults = () => {
   songResults.value = [];
   playlistResults.value = [];
   albumResults.value = [];
+  longaudioResults.value = [];
   artistResults.value = [];
   lyricResults.value = [];
   mvResults.value = [];
@@ -477,6 +507,9 @@ const playlistCards = computed(() =>
   playlistResults.value.map((entry) => getPlaylistCardProps(entry)),
 );
 const albumCards = computed(() => albumResults.value.map((entry) => getAlbumCardProps(entry)));
+const longaudioCards = computed(() =>
+  longaudioResults.value.map((entry) => getLongAudioCardProps(entry)),
+);
 const artistCards = computed(() => artistResults.value.map((entry) => getArtistCardProps(entry)));
 const mvCards = computed(() => mvResults.value);
 
@@ -543,18 +576,137 @@ onBeforeUnmount(() => {
   });
   detachScrollTarget();
 });
+
+// 搜索页右上角「上次播放」：只查本地续播桶，按 有声 > 歌单 > 歌手 > 专辑 排
+const RESUME_CARD_ORDER: ResumeCardKind[] = ['audiobook', 'playlist', 'artist', 'album'];
+
+// 只比文字，忽略标点与空白：「夜的·命名术」也算命中「夜的命名术」
+const normalizeName = (value: string) =>
+  value.toLowerCase().replace(/[^0-9a-z\u4e00-\u9fff\u3040-\u30ff]+/g, '');
+
+type ResumeScopeItem = (typeof playerStore.resumeScopes)[number];
+
+// 参与匹配的文字：桶名（有声/专辑/歌单/歌手名）＋ 桶里记的那一首的标题
+// （有声的章节名＝专辑/歌单里的歌曲名，所以同样参与匹配）
+const resumeTexts = (scope: ResumeScopeItem): string[] => {
+  const record = resumeRecordForScope(playerStore.$state, scope);
+  return [scope.name ?? '', record?.title ?? ''].map((text) => text.trim()).filter(Boolean);
+};
+
+const resumeEntries = computed<ResumeEntryCard[]>(() => {
+  // 设置里关掉了续播卡或搜索页续播牌堆，就一张都不摆
+  if (!settingStore.resumeHintEnabled || !settingStore.resumeHintDeckEnabled) return [];
+  const keyword = normalizeName(currentSearchKeyword.value.trim());
+  if (!hasSearched.value || !keyword) return [];
+  // 双向包含：关键词含文字（关键词更长）或文字含关键词（带后缀/前后缀）都算命中；桶名与章节名同等对待
+  const matched = playerStore.resumeScopes.filter((scope) => {
+    // 没播放过的桶不建卡：卡片代表「上次听到这里」，只有真正写进进度（position > 0）的才算
+    const record = resumeRecordForScope(playerStore.$state, scope);
+    if (!record || !(record.position > 0)) return false;
+    return resumeTexts(scope).some((text) => {
+      const normalized = normalizeName(text);
+      return !!normalized && (normalized.includes(keyword) || keyword.includes(normalized));
+    });
+  });
+  const cards = matched.map<ResumeEntryCard>((scope) => {
+    const record = resumeRecordForScope(playerStore.$state, scope);
+    const where = formatDuration(record?.position ?? 0);
+    const hint = record?.title ? `${record.title} · ${where}` : `上次听到 ${where}`;
+    return {
+      key: `${scope.kind}:${scope.id}`,
+      kind: scope.kind,
+      id: scope.id,
+      kindLabel: RESUME_SCOPE_LABEL[scope.kind],
+      name: scope.name,
+      cover: scope.cover,
+      updatedAt: scope.updatedAt ?? 0,
+      hint,
+      routeId: scope.routeId,
+      routeType: scope.routeType,
+    };
+  });
+  // 展示顺序三档：完全命中(0) > 归一化包含(1) > 靠双向包含才命中(2)；桶名与章节名任一对上即算
+  const rawKeyword = currentSearchKeyword.value.trim().toLowerCase();
+  const tierOf = (scope: ResumeScopeItem): number => {
+    const texts = resumeTexts(scope);
+    if (!texts.length) return 2;
+    if (texts.some((text) => text.toLowerCase() === rawKeyword)) return 0;
+    if (texts.some((text) => normalizeName(text).includes(keyword))) return 1;
+    return 2;
+  };
+  const tierMap = new Map(matched.map((scope) => [`${scope.kind}:${scope.id}`, tierOf(scope)]));
+  const tier = (key: string): number => tierMap.get(key) ?? 2;
+  // 同档内：时间越新越靠前（最上面），同一时刻再按 有声 > 歌单 > 歌手 > 专辑 兜底
+  const rank = (kind: ResumeCardKind): number => RESUME_CARD_ORDER.indexOf(kind);
+  return cards.sort(
+    (a, b) => tier(a.key) - tier(b.key) || b.updatedAt - a.updatedAt || rank(a.kind) - rank(b.kind),
+  );
+});
+
+const openResumeEntry = async (entry: ResumeEntryCard) => {
+  // 统一走「续播请求」：落地页收到就自己滚到那一集、高亮、按设置起播
+  requestResumeHintPlay(entry.key);
+  const id = String(entry.id);
+  let reached = false;
+  if (entry.kind === 'audiobook' || entry.kind === 'album') {
+    reached = await navigateResumeTarget(
+      router,
+      {
+        name: 'album-detail',
+        params: { id },
+        query: entry.kind === 'audiobook' ? { category: '2' } : {},
+      },
+      'album-detail',
+      id,
+    );
+  } else if (entry.kind === 'playlist') {
+    // 桶里记的是歌单自己的 id，路由要的是 collection 串：桶上存过就直接用，没存过再按用户歌单列表反查
+    const target = entry.routeId
+      ? { id: entry.routeId, type: entry.routeType ?? null }
+      : resolvePlaylistRoute(entry.id, playlistStore.userPlaylists, userStore.info?.userid);
+    reached = await navigateResumeTarget(
+      router,
+      {
+        name: 'playlist-detail',
+        params: { id: target.id },
+        query: target.type ? { type: target.type } : {},
+      },
+      'playlist-detail',
+      String(target.id),
+    );
+  } else {
+    reached = await navigateResumeTarget(
+      router,
+      { name: 'artist-detail', params: { id } },
+      'artist-detail',
+      id,
+    );
+  }
+  if (!reached) toastStore.warning(RESUME_LOCATE_FAILED_TEXT);
+};
+
+// 续播卡右键删除：把这条记录从续播桶里摘掉（下一次写盘就没了）
+const removeResumeEntry = (entry: ResumeEntryCard) => {
+  playerStore.forgetResumeScope(entry.kind, entry.id);
+  toastStore.actionCompleted('已移除续播记录');
+};
 </script>
 
 <template>
-  <PageScrollContainer class="search-view-container">
+  <PageScrollContainer ref="pageScrollRef" class="search-view-container">
     <div class="search-view relative pb-10">
       <SearchHeader
         :active-tab-index="activeTabIndex"
         :has-searched="hasSearched"
         :keyword="currentSearchKeyword"
         :show-pinned-tabs="showPinnedTabs"
-        :tabs="['单曲', '歌单', '专辑', '歌手', '歌词', 'MV']"
+        :tabs="['单曲', '歌单', '专辑', '有声', '歌手', '歌词', 'MV']"
+        :resume-entries="resumeEntries"
         @update:active-tab-index="selectSearchTab"
+        @open-resume="openResumeEntry"
+        @delete-resume="removeResumeEntry"
+        @tab-pointer-down="onTabPointerDown"
+        @tab-dblclick="onTabDoubleClick"
       />
 
       <SearchDiscovery
@@ -672,9 +824,39 @@ onBeforeUnmount(() => {
 
         <div v-else-if="activeTabIndex === 3" class="motion-content-enter">
           <SearchGridResultsPanel
+            :items="longaudioCards"
+            :loading="paginationState.longaudio.loading && !paginationState.longaudio.loaded"
+            :active="activeTabIndex === 3"
+            :item-min-width="180"
+            :item-aspect-ratio="1"
+            :item-chrome-height="66"
+            :gap="20"
+            key-field="id"
+          >
+            <template #default="{ item }">
+              <AlbumCard
+                :query="{ category: '2' }"
+                :id="item.id"
+                :name="item.name"
+                :cover-url="item.coverUrl"
+                :artist="item.artist"
+                :subtitle="item.subtitle"
+              />
+            </template>
+          </SearchGridResultsPanel>
+          <SearchLoadMoreStatus
+            :active-pagination="activePagination"
+            :has-items="longaudioResults.length > 0"
+            :set-sentinel-ref="setLoadMoreSentinelRef"
+            @retry="loadMoreActiveResults"
+          />
+        </div>
+
+        <div v-else-if="activeTabIndex === 4" class="motion-content-enter">
+          <SearchGridResultsPanel
             :items="artistCards"
             :loading="paginationState.author.loading && !paginationState.author.loaded"
-            :active="activeTabIndex === 3"
+            :active="activeTabIndex === 4"
             :item-min-width="180"
             :item-aspect-ratio="1"
             :item-chrome-height="68"
@@ -699,7 +881,7 @@ onBeforeUnmount(() => {
           />
         </div>
 
-        <div v-else-if="activeTabIndex === 4" class="motion-content-enter">
+        <div v-else-if="activeTabIndex === 5" class="motion-content-enter">
           <SearchSongResultsPanel
             ref="lyricResultsPanelRef"
             :active-song-id="activeSongId"
@@ -731,7 +913,7 @@ onBeforeUnmount(() => {
           <SearchGridResultsPanel
             :items="mvCards"
             :loading="paginationState.mv.loading && !paginationState.mv.loaded"
-            :active="activeTabIndex === 5"
+            :active="activeTabIndex === 6"
             :item-min-width="220"
             :item-aspect-ratio="1.78"
             :item-chrome-height="66"

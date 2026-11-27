@@ -64,7 +64,8 @@ function harness() {
       if (name === '../../shared/taskbar')
         return {
           DEFAULT_TASKBAR_LYRIC_SETTINGS: {
-            showCover: true,
+            playingDisplay: 'both',
+            pausedDisplay: 'both',
             showTranslation: false,
             wordByWord: false,
             fontSize: 14,
@@ -76,6 +77,7 @@ function harness() {
           neutralThemePalette: () => ({ text: '#000', secondary: '#555', main: '#fff' }),
           DEFAULT_THEME_ACCENT: '#000',
         };
+      if (name === '../../shared/font') return { buildFontFamily: () => 'sans-serif' };
       if (name === '../../shared/accentPalette')
         return { createAccentPaletteFromPrimary: () => ({ primaryText: '#000' }) };
       if (name === '@/icons')
@@ -96,6 +98,19 @@ function harness() {
       throw new Error(`Unexpected dependency: ${name}`);
     },
     getComputedStyle: () => ({ paddingLeft: '0px', paddingRight: '0px', columnGap: '0px' }),
+    // 形状同步是「逐帧把内容块的实测矩形喂给主进程」。这里同步跑一帧就够了：
+    // step 会再排下一帧，rafBusy 直接掐掉，于是每次 reportWidth 恰好上报一条。
+    requestAnimationFrame: (callback) => {
+      if (rafBusy) return 0;
+      rafBusy = true;
+      try {
+        callback();
+      } finally {
+        rafBusy = false;
+      }
+      return 0;
+    },
+    cancelAnimationFrame: () => {},
     window: {
       electron: {
         taskbarLyric: { setContentWidth: (value) => widths.push(value), showMain() {} },
@@ -105,11 +120,18 @@ function harness() {
     setTimeout,
     clearTimeout,
   });
+  let rafBusy = false;
   const state = module.exports.default.setup({}, { expose() {} });
-  // 关掉封面，天然宽度就只取决于文本（natural = ceil(text + 8)）。
-  state.settings.value.showCover = false;
+  // 播放态只留歌词（不带封面），天然宽度就只取决于文本（natural = ceil(text + 8)）。
+  state.settings.value.playingDisplay = 'lyrics';
+  // 这三个用例只验换行动画的宽度冻结，不验「暂停收起」；保持播放态免得落进 idle。
+  state.playback.value = { isPlaying: true };
   state.maxWidth.value = 800;
-  state.root.value = { querySelector: () => null };
+  // 上报的形状取内容块的实测矩形：这里让它返回当前算出来的宽度。
+  state.root.value = {
+    querySelector: () => null,
+    getBoundingClientRect: () => ({ x: 0, width: state.width.value }),
+  };
   return { state, widths };
 }
 
@@ -127,13 +149,17 @@ test('长行切短行：动画期间不收窄，after-enter 复位后才收窄',
   h.state.primaryWidth.value = 212;
   await h.state.reportWidth();
   assert.equal(h.state.width.value, 520, '动画期间保持旧宽度，旧行尾巴不被裁');
-  assert.deepEqual(h.widths, [520], '没收窄就不该通知主进程');
+  // 形状是逐帧贴的：动画期间上报的必须全是旧宽度，绝不能先把窗口收窄。
+  assert.ok(
+    h.widths.every((value) => value === 520),
+    '动画期间不能把更小的形状报给主进程，否则旧行尾巴会被裁掉',
+  );
 
   // after-enter → finishRoll：旧行已滑出，此时才收窄。
   h.state.finishRoll();
   await flush();
   assert.equal(h.state.width.value, 220, '动画结束后收窄到新行尺寸');
-  assert.deepEqual(h.widths, [520, 220]);
+  assert.equal(h.widths.at(-1), 220, '动画结束后才把收窄后的形状报下去');
 });
 
 test('短行切长行：动画期间照常放行变宽，新行升入时不被裁', async () => {

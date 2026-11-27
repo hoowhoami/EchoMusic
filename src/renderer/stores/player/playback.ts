@@ -16,6 +16,16 @@ import { consumePlayedQueuedNextTrack } from '../../../shared/playbackQueueExecu
 import type { PluginAudioSourceTransformStage } from '@/plugins/audioSource';
 import { isPlayableSong } from '@/utils/song';
 import type { PlayerState } from './state';
+import type { ResumeScopeKind } from './resume';
+import {
+  resolveResumeEntry,
+  resolveResumePosition,
+  resumeClaimFromQueues,
+  resumeOwnership,
+  resumeRecordForScope,
+} from './resume';
+import { maybeShowResumeHint, resumeHintState } from '@/utils/resumeHint';
+import router from '@/router';
 import { normalizePlayerErrorPayload, type PlayerEngine } from '@/utils/player';
 import type { usePlaylistStore } from '../playlist';
 import type { useSettingStore } from '../setting';
@@ -1454,6 +1464,14 @@ export const createPlaybackManager = (
     }, delayMs);
   };
 
+  /** 队列自己带出来的详情页归属：只有这次播放确实来自该队列才认，避免上一次的归属残留到别处。 */
+  const queueResumeClaim = (queueId: string | null | undefined) => {
+    const id = queueId == null ? '' : String(queueId);
+    if (!id) return null;
+    const queue = playlistStore.playbackQueues.find((item) => item.id === id);
+    return queue?.resumeScope ?? null;
+  };
+
   const playTrack = async (
     id: string,
     playlist?: Song[],
@@ -1468,9 +1486,14 @@ export const createPlaybackManager = (
       fallbackOnPreResolvedFailure?: boolean;
       onPreResolvedFailure?: (reason: string) => void;
       fmCandidate?: PersonalFmCandidate;
+      /** 详情页点播带的续播认领；不带就说明这次播放不属于任何桶。 */
+      resumeClaim?: { kind: 'audiobook' | 'album' | 'artist' | 'playlist'; id: string } | null;
     },
   ) => {
     const requestSeq = ++state.playbackRequestSeq;
+    // 认领只在这次起播有效：详情页点播会带；队列上记着归属的（详情页起播那次写下的），
+    // 在同一队列里点别的歌、上一首下一首也接着认，否则整张连播会掉回单曲线。
+    state.resumeClaim = options?.resumeClaim ?? queueResumeClaim(options?.sourceQueueId ?? null);
     state.mvAudioFallbackFailureReason = '';
     deferredPreResolvedFallback = null;
     fmAdvanceId++;
@@ -1549,7 +1572,26 @@ export const createPlaybackManager = (
     state.currentResolvedAudioEffect = 'none';
     state.currentResolvedAudioLoudness = null;
     state.currentResolvedSourceKind = track.source === 'cloud' ? 'cloud' : 'catalog';
-    state.currentTime = 0;
+    // 记录线归属：只有「这次播放的列表就是这个队列」时才算该队列对应的详情页，
+    // 否则一律按单曲播放。以前从 activeQueue 兜底推断，导致在搜索里播一首歌会沿用
+    // 上次打开过的有声/专辑页队列，把这单曲顶到那条记录线上。
+    // 有记录线就接着上次的位置播：≥30 秒的内容都会记（长内容记在桶线上，普通歌曲记在 single 上），
+    // 记录不足 30 秒、或者已经播到开头 3 秒内的没有可续播的位置。
+    const resumeEntry = resolveResumeEntry(state, {
+      playMode: state.playMode,
+      albumId: track.albumId ?? null,
+      ...resumeOwnership(track, state.currentSourceQueueId),
+      // 认领优先用这次起播带的；没有就退回队列上记着的归属（重启恢复的队列没有起播认领）
+      claim:
+        state.resumeClaim ??
+        resumeClaimFromQueues(playlistStore.playbackQueues, state.currentSourceQueueId),
+    });
+    state.currentTime = resolveResumePosition(
+      state,
+      resolvedId,
+      Number(track.duration) || 0,
+      resumeEntry,
+    );
     state.currentTimeUpdatedAt = Date.now();
     state.duration = 0;
     beginPlaybackIntent(state, {
@@ -1693,6 +1735,13 @@ export const createPlaybackManager = (
     try {
       await engine.setSource(state.currentPlaybackSource ?? resolved.url, { force: true });
       if (requestSeq !== state.playbackRequestSeq) return;
+      if (state.currentTime > 0.5) {
+        try {
+          await engine.seek(state.currentTime);
+        } catch (error) {
+          logger.warn('PlayerPlayback', 'Resume position seek failed', error);
+        }
+      }
       if (
         options?.fmCandidate &&
         options.fmCandidate.sessionEpoch !== playlistStore.personalFmSessionEpoch
@@ -1769,6 +1818,35 @@ export const createPlaybackManager = (
     }
   };
 
+  // 按播放键接着播这一首要能把续播卡亮一下（播放条、任务栏歌词、媒体键最终都走这里）：
+  // 播放中暂停再点、冷启动第一次点、播完之后再点，三条路都算。
+  // 详情页有自己的常驻卡，那边不弹，也不打断它；普通卡再触发一次就顶替（内容和 10 秒重新算）。
+  const showResumeCard = () => {
+    if (resumeHintState.persistent) return;
+    const routeName = String(router.currentRoute.value.name ?? '');
+    if (['album-detail', 'artist-detail', 'playlist-detail', 'song-detail'].includes(routeName)) {
+      return;
+    }
+    // 歌单桶只认「当前队列就是这个歌单」：歌本身查不出所属歌单，不猜
+    const queueId = String(
+      state.currentSourceQueueId ??
+        playlistStore.activeQueue?.id ??
+        playlistStore.activeQueueId ??
+        '',
+    );
+    maybeShowResumeHint(
+      state.currentTrackSnapshot,
+      state.resumeScopes ?? [],
+      (scope) =>
+        resumeRecordForScope(state, {
+          kind: (scope.kind ?? 'audiobook') as ResumeScopeKind,
+          id: String(scope.id ?? ''),
+          trackId: String(scope.trackId ?? ''),
+        }),
+      { queueId },
+    );
+  };
+
   const togglePlay = async () => {
     if (state.isResuming) return;
 
@@ -1804,10 +1882,12 @@ export const createPlaybackManager = (
         await playPersonalFmTrack(state.currentTrackSnapshot ?? undefined);
         return;
       }
+      showResumeCard();
       await playTrack(state.currentTrackId, list, { sourceQueueId });
       return;
     }
 
+    showResumeCard();
     state.isResuming = true;
     setPlaybackIntentPlayback(state, true);
     settingStore.syncPreventSleep(true);

@@ -5,8 +5,12 @@ import { createRequire } from 'node:module';
 import { transformSync } from 'esbuild';
 const require = createRequire(import.meta.url);
 const { ref, watch, nextTick, effectScope } = require('vue');
+// 工作区按 .gitattributes 存成 CRLF 时，下面按 \n 写的切片正则一个都匹配不上，先统一成 LF。
 const read = (name) =>
-  readFileSync(new URL(`../src/renderer/views/${name}`, import.meta.url), 'utf8');
+  readFileSync(new URL(`../src/renderer/views/${name}`, import.meta.url), 'utf8').replace(
+    /\r\n/g,
+    '\n',
+  );
 const run = (source, bindings) => {
   const code = transformSync(source, { loader: 'ts' }).code;
   new Function(...Object.keys(bindings), code)(...Object.values(bindings));
@@ -42,6 +46,10 @@ for (const [page, tab, count, fetch] of [
       refreshFavorites: () => {},
       setupLoadMoreObserver: () => {},
       setupCommentObserver: () => {},
+      // Favorites 现在一进页面就预拉歌手与视频两个 tab 的徽标数据，
+      // 两者都必须有桩；被计数的那个仍放在最后，覆盖上面的默认桩。
+      fetchFollowed: () => {},
+      fetchVideos: () => {},
       [fetch]: () => {
         calls++;
       },
@@ -117,6 +125,8 @@ for (const tab of ['classify', 'hotword']) {
       },
       onMounted: (fn) => mounts.push(fn),
       setupCommentLoadMoreObserver: () => {},
+      // 有声进详情页会先尝试回桶定位，这里不涉及，直接假。
+      jumpToResumeBucket: () => false,
       loadCurrentResource: async () => {
         baseLoaded = true;
       },
@@ -152,6 +162,9 @@ test('favorites revisions invalidate inactive data without fetching, then reload
     videosLoaded,
     videosPage: ref(2),
     videosHasMore: ref(false),
+    // resetVideos 现在会同时清空总数徽标，桩表必须提供这个 ref。
+    videosTotal: ref(0),
+    videoSearchQuery: ref(''),
     isActive,
     isLoggedIn: ref(true),
     currentUserKey: ref('1'),

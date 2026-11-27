@@ -27,6 +27,21 @@ new Function(
     { loader: 'ts', format: 'cjs' },
   ).code,
 )(sessionModule, sessionModule.exports);
+// 会话变化的 watcher：用真实现（只依赖 vue 和 userSession），假实现会让页面永远等不到刷新回调。
+const watchSessionModule = { exports: {} };
+new Function(
+  'require',
+  'module',
+  'exports',
+  transformSync(
+    readFileSync(new URL('../src/renderer/utils/watchUserSession.ts', import.meta.url), 'utf8'),
+    { loader: 'ts', format: 'cjs' },
+  ).code,
+)(
+  (id) => (id === 'vue' ? vue : id === './userSession' ? sessionModule.exports : undefined),
+  watchSessionModule,
+  watchSessionModule.exports,
+);
 const vipModule = { exports: {} };
 new Function(
   'module',
@@ -91,6 +106,11 @@ function fixture() {
     '@/utils/userIdentity': userIdentity,
     '@/utils/watchUserSession': userSessionWatch,
     'vue-router': { useRouter: () => ({}) },
+    // 页面在会话变化时会重新拉关系列表，这里接真 watcher。
+    '@/utils/watchUserSession': watchSessionModule.exports,
+    // PR 让这几个组件用上了 tooltip 指令，测试里给个空实现。
+    '@/components/ui/tooltip': { vTooltip: {} },
+
     '@/stores/user': { useUserStore: () => user },
     '@/stores/loginDevices': { useLoginDeviceStore: () => ({}) },
     '@/stores/toast': {

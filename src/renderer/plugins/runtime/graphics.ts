@@ -1,5 +1,7 @@
 /// <reference types="@webgpu/types" />
 
+import { onWallpaperFrameModeChange, readWallpaperFrameMode } from '../../wallpaper/frameContract';
+
 export interface PluginGraphicsCapabilities {
   webgpu: boolean;
   /** The GPU canvas accepted rgba16float + extended tone mapping. */
@@ -348,7 +350,10 @@ export function createPluginGraphicsApi(deps: GraphicsDeps): PluginGraphicsApi {
       };
       const listeners = new Set<(state: PluginGraphicsCanvasState) => void>();
       let animation: number | null = null;
+      let animationTimer: ReturnType<typeof setTimeout> | null = null;
+      let animationUnsubscribe: (() => void) | null = null;
       let animationGeneration = 0;
+      let lastFrameAt = 0;
       let redraw: (() => void) | null = null;
       const emit = () => {
         for (const callback of listeners)
@@ -358,6 +363,10 @@ export function createPluginGraphicsApi(deps: GraphicsDeps): PluginGraphicsApi {
         animationGeneration++;
         if (animation !== null) window.cancelAnimationFrame(animation);
         animation = null;
+        if (animationTimer !== null) clearTimeout(animationTimer);
+        animationTimer = null;
+        animationUnsubscribe?.();
+        animationUnsubscribe = null;
       };
       const resize = (
         width = canvas.clientWidth,
@@ -544,17 +553,43 @@ export function createPluginGraphicsApi(deps: GraphicsDeps): PluginGraphicsApi {
           if (!device || state.status !== 'ready') throw new Error('当前画布不能启动 WebGPU 动画');
           stop();
           const generation = animationGeneration;
+          const alive = () => generation === animationGeneration && state.status === 'ready';
+          // 壁纸帧率契约：插件自绘循环按宿主下发的目标帧率出帧，冻结时停住并等解除。
+          // 主窗口没有帧率预算（fps 0、frozen false），走这里与原来的每帧 rAF 完全一致。
+          const schedule = () => {
+            const mode = readWallpaperFrameMode();
+            if (mode.frozen) {
+              animationUnsubscribe ??= onWallpaperFrameModeChange(() => {
+                animationUnsubscribe?.();
+                animationUnsubscribe = null;
+                if (alive()) schedule();
+              });
+              return;
+            }
+            if (mode.fps <= 0) {
+              animation = window.requestAnimationFrame(tick);
+              return;
+            }
+            if (animationTimer !== null) clearTimeout(animationTimer);
+            const wait = Math.max(0, lastFrameAt + 1000 / mode.fps - performance.now());
+            animationTimer = setTimeout(() => {
+              animationTimer = null;
+              if (!alive()) return;
+              animation = window.requestAnimationFrame(tick);
+            }, wait);
+          };
           const tick = () => {
-            if (generation !== animationGeneration || state.status !== 'ready') return;
+            if (!alive()) return;
+            lastFrameAt = performance.now();
             let completed = false;
             deps.runCallback('图形动画', () => {
               surface.render(draw);
               completed = true;
             });
             if (!completed) stop();
-            if (generation !== animationGeneration || state.status !== 'ready') return;
+            if (!alive()) return;
             // Hidden/detached canvases skip GPU work; browser RAF also pauses in the background.
-            animation = window.requestAnimationFrame(tick);
+            schedule();
           };
           animation = window.requestAnimationFrame(tick);
           return () => {

@@ -16,6 +16,8 @@ import type { PlayMode } from '../shared/playback';
 import type { PlayerRuntimeSession, PlayerSessionRestore } from '../shared/playerSession';
 import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
 import type { TaskbarLyricSettings, TaskbarLyricState } from '../shared/taskbar';
+import type { WallpaperSettings, WallpaperState } from '../shared/wallpaper';
+import type { BootInfo } from '../shared/system';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
@@ -127,6 +129,7 @@ import type {
   PluginSetSafeModeResult,
   PluginSqliteCloseResult,
   PluginSqliteDeleteResult,
+  PluginSqliteChangedEvent,
   PluginSqliteExecResult,
   PluginSqliteListResult,
   PluginSqliteOpenOptions,
@@ -424,11 +427,28 @@ export interface IElectronAPI {
     invokeCommand: (command: NowPlayingCommand) => Promise<boolean>;
     onCommand: (func: (command: NowPlayingCommand) => void) => () => void;
   };
+  system: {
+    getBootInfo: () => Promise<BootInfo>;
+  };
+  wallpaper: {
+    getState: () => Promise<WallpaperState>;
+    setEnabled: (enabled: boolean) => Promise<WallpaperState>;
+    setSettings: (settings: Partial<WallpaperSettings>) => Promise<WallpaperState>;
+    setLyricRect: (rect: {
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+      dpr: number;
+    }) => Promise<null>;
+    onStateChange: (callback: (state: WallpaperState) => void) => () => void;
+  };
   taskbarLyric: {
     getState: () => Promise<TaskbarLyricState>;
     setEnabled: (enabled: boolean) => Promise<TaskbarLyricState>;
     setSettings: (settings: Partial<TaskbarLyricSettings>) => Promise<TaskbarLyricState>;
-    setContentWidth: (width: number) => void;
+    setContentWidth: (width: number, align?: 'start' | 'center', left?: number) => void;
+    setBlank: (blank: boolean) => void;
     showMain: () => void;
     onStateChange: (callback: (state: TaskbarLyricState) => void) => () => void;
   };
@@ -746,6 +766,8 @@ export interface IElectronAPI {
       close: (pluginId: string, databaseId: string) => Promise<PluginSqliteCloseResult>;
       list: (pluginId: string) => Promise<PluginSqliteListResult>;
       delete: (pluginId: string, name?: string) => Promise<PluginSqliteDeleteResult>;
+      // 订阅任意窗口里本插件数据库的写入；返回退订函数。
+      onChanged: (listener: (event: PluginSqliteChangedEvent) => void) => () => void;
     };
     storage: {
       get: <T = unknown>(pluginId: string, key: string) => Promise<T | null>;

@@ -7,6 +7,7 @@ import { withoutEmbeddedMetadata } from '../../shared/embeddedMetadata';
 import logger from '@/utils/logger';
 import { completeSongMetadata } from '@/services/songMetadata';
 import { needsSongMetadata } from '@/utils/mappers/songMetadata';
+import { HISTORY_MAX_ENTRIES } from '@/utils/historyLimits';
 
 export interface LocalHistoryEntry {
   /** 歌曲完整信息（可独立渲染，不依赖远端 API） */
@@ -21,8 +22,6 @@ export interface LocalHistoryEntry {
   historyKey: string;
 }
 
-// 与 EchoMusicNext 对齐：历史读取/保留上限 1000 条（原生存储层 clamp 上限 5000）
-const DEFAULT_MAX_ENTRIES = 1000;
 /** 退场动画时长（ms），需与 CSS animation-duration 一致 */
 const EXIT_ANIM_MS = 250;
 
@@ -39,6 +38,8 @@ const toLocalEntry = (entry: StorageHistoryEntry): LocalHistoryEntry => ({
   historyKey: entry.historyKey,
 });
 
+export const resolveSongHistoryId = (song: Song) =>
+  String(song.mixSongId || song.fileId || song.id || '0');
 // 歌曲唯一 ID 的解析统一走 shared/historyStats 的 resolveSongId（与统计口径一致）
 
 /**
@@ -71,7 +72,7 @@ const upsertEntryAtTop = (
 
 export const useHistoryStore = defineStore('history', () => {
   const entries = ref<LocalHistoryEntry[]>([]);
-  const maxEntries = ref(DEFAULT_MAX_ENTRIES);
+  const maxEntries = ref(HISTORY_MAX_ENTRIES);
   const hydrated = ref(false);
   /** 终身累计实听毫秒（独立聚合，不受历史裁剪/删除/清空影响）；null 表示尚未取到 */
   const listenedTotalMs = ref<number | null>(null);
@@ -127,7 +128,8 @@ export const useHistoryStore = defineStore('history', () => {
     if (hydratePromise) return hydratePromise;
     const storage = window.electron?.storage;
     if (!storage) {
-      hydrated.value = true;
+      // 不能把「读不到历史」当成「历史是空的」：上层续播裁剪会据此把进度与续播桶全删。
+      logger.warn('HistoryStore', 'Storage unavailable, history stays unloaded');
       return;
     }
     const requestGeneration = generation;

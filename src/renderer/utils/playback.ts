@@ -1,8 +1,9 @@
 import type { Song } from '@/models/song';
-import type { SetPlaybackQueueOptions } from '@/stores/playlist';
+import type { PlaybackResumeScope, SetPlaybackQueueOptions } from '@/stores/playlist';
 import { MANUAL_PLAYBACK_QUEUE_ID } from '@/stores/playlist';
 import { toRawSongList } from '@/stores/playlist/helpers';
 import { isPlayableSong, isSameSong, splitValidSongs } from '@/utils/song';
+import { maybeShowResumeHint } from '@/utils/resumeHint';
 import type { PlayMode } from '../types';
 
 export interface PlaybackQueueStoreLike {
@@ -28,7 +29,12 @@ export interface PlaybackPlayerLike {
   playTrack: (
     id: string,
     playlist?: Song[],
-    options?: { autoPlay?: boolean; sourceQueueId?: string | null },
+    options?: {
+      autoPlay?: boolean;
+      sourceQueueId?: string | null;
+      /** 详情页点播带的续播认领；其它入口不带。 */
+      resumeClaim?: PlaybackResumeScope | null;
+    },
   ) => Promise<void> | void;
   currentTrackId?: string | null;
   currentSourceQueueId?: string | null;
@@ -36,6 +42,17 @@ export interface PlaybackPlayerLike {
   isPlaying?: boolean;
   togglePlay?: () => void;
   playMode?: PlayMode;
+  resumeScopes?: ReadonlyArray<{
+    kind?: string;
+    id?: string | number | null;
+    trackId?: string | number | null;
+  }>;
+  /** 读出某个续播桶记下的最后一条进度（有声续播卡用）。 */
+  resumeRecordForScope?: (scope: {
+    kind?: string;
+    id?: string | number | null;
+    trackId?: string | number | null;
+  }) => { position?: number; title?: string } | undefined;
 }
 
 export interface ResolvedPlayableQueue {
@@ -124,6 +141,16 @@ export const replaceQueueAndPlay = async (
   const firstPlayable = resolved.firstPlayable;
   if (!firstPlayable) return false;
 
+  // 有声：这一首有播放记录时弹一张 10 秒续播卡（不拦播放）。
+  // 详情页点播（带 resumeScope）不弹：用户已经在这一页里了，提示没有意义。
+  if (!options?.resumeScope) {
+    maybeShowResumeHint(
+      requestedSong ?? firstPlayable,
+      playerStore.resumeScopes ?? [],
+      playerStore.resumeRecordForScope,
+    );
+  }
+
   const requestKey = buildReplaceQueueRequestKey(
     resolved,
     requestedSong,
@@ -152,6 +179,7 @@ export const replaceQueueAndPlay = async (
 
     await playerStore.playTrack(String(songToPlay.id), resolved.queue, {
       sourceQueueId: options?.queueId ? String(options.queueId) : null,
+      resumeClaim: options?.resumeScope ?? null,
     });
     return true;
   })();
@@ -196,11 +224,22 @@ export const queueAndPlaySong = async (
 ): Promise<boolean> => {
   const manualQueueOptions = playlistStore.getPreferredManualQueueOptions?.(options) ?? options;
   const queueId = manualQueueOptions?.queueId;
+  const resolvedSong = resolvePlayableSongForRequest(song, [song]);
+  if (!resolvedSong) return false;
+
+  // 同一个续播卡：命中就在搜索框右下角提示 10 秒，点不点都不影响这次播放。
+  // 详情页点播（带 resumeScope）不弹。
+  if (!options?.resumeScope) {
+    maybeShowResumeHint(
+      resolvedSong,
+      playerStore.resumeScopes ?? [],
+      playerStore.resumeRecordForScope,
+    );
+  }
+
   if (queueId) await playlistStore.ensurePlaybackQueueSongsLoaded?.(queueId);
   const preferredList = queueId ? (playlistStore.getPlaybackQueueSongs?.(queueId) ?? []) : [];
   const activeList = queueId ? preferredList : (playlistStore.defaultList ?? []);
-  const resolvedSong = resolvePlayableSongForRequest(song, [song]);
-  if (!resolvedSong) return false;
   const nextList = activeList.slice();
   const exists = nextList.some((item) => isSameSong(item, resolvedSong));
   const sourceList = toRawSongList(exists ? activeList : [...nextList, resolvedSong]);
@@ -238,6 +277,7 @@ export const queueAndPlaySong = async (
 
   await playerStore.playTrack(String(resolvedSong.id), sourceList, {
     sourceQueueId: queueId ? String(queueId) : null,
+    resumeClaim: options?.resumeScope ?? null,
   });
   return true;
 };

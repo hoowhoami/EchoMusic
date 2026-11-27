@@ -507,6 +507,18 @@ export const createPluginSqliteApi = (
         close: () => closeDatabase(databaseId),
       };
     },
+    // 订阅本插件数据库的写入广播（例如插件在主窗口改了设置，另一个窗口里的同一插件据此重读）。
+    onChange: (listener: (event: { pluginId: string; databaseId: string }) => void) => {
+      // 没声明 SQLite 能力的插件拿不到这条通知，但也不该因此报错。
+      if (descriptor.manifest.capabilities?.sqlite !== true) return () => undefined;
+      const api = getSqliteApi();
+      if (!api || typeof api.onChanged !== 'function') return () => undefined;
+      const stop = api.onChanged((event) => {
+        if (event.pluginId && event.pluginId !== descriptor.id) return;
+        listener(event);
+      });
+      return typeof stop === 'function' ? addDisposable(stop) : () => undefined;
+    },
     listDatabases: () => {
       requireSqliteCapability();
       return (

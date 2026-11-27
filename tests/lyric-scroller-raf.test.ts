@@ -40,8 +40,12 @@ const globalValue = (name: string, value: unknown) => {
 };
 
 const listeners = new Map<string, Set<() => void>>();
+const windowListeners = new Map<string, Set<() => void>>();
 const documentStub = {
   visibilityState: 'visible' as 'visible' | 'hidden',
+  // 逐字歌词循环会订阅页面冻结（src/renderer/utils/pageFreeze.ts），
+  // 它读 <html> 上的类名，所以要给 documentElement.classList 一份最小实现。
+  documentElement: { classList: { contains: () => false, toggle() {} } },
   addEventListener(type: string, cb: () => void) {
     if (!listeners.has(type)) listeners.set(type, new Set());
     listeners.get(type)!.add(cb);
@@ -63,6 +67,15 @@ globalValue('window', {
   requestAnimationFrame: rafStub.requestAnimationFrame,
   cancelAnimationFrame: rafStub.cancelAnimationFrame,
   matchMedia: () => null,
+  // pageFreeze 用 window 事件通知冻结状态变化，这里只记录订阅、不派发。
+  addEventListener(type: string, cb: () => void) {
+    if (!windowListeners.has(type)) windowListeners.set(type, new Set());
+    windowListeners.get(type)!.add(cb);
+  },
+  removeEventListener(type: string, cb: () => void) {
+    windowListeners.get(type)?.delete(cb);
+  },
+  dispatchEvent() {},
 });
 
 const fixture = {

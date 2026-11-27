@@ -7,6 +7,8 @@ import type { PlayMode } from '../shared/playback';
 import type { PlayerRuntimeSession, PlayerSessionRestore } from '../shared/playerSession';
 import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
 import type { TaskbarLyricSettings, TaskbarLyricState } from '../shared/taskbar';
+import type { WallpaperLyricRect, WallpaperSettings, WallpaperState } from '../shared/wallpaper';
+import type { BootInfo } from '../shared/system';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
@@ -132,6 +134,7 @@ import type {
   PluginSetSafeModeResult,
   PluginSqliteCloseResult,
   PluginSqliteDeleteResult,
+  PluginSqliteChangedEvent,
   PluginSqliteExecResult,
   PluginSqliteListResult,
   PluginSqliteOpenOptions,
@@ -382,6 +385,9 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('app:open-settings', listener);
       return () => ipcRenderer.removeListener('app:open-settings', listener);
     },
+  },
+  system: {
+    getBootInfo: () => ipcRenderer.invoke('system:get-boot-info') as Promise<BootInfo>,
   },
   share: {
     copy: (text: string) => ipcRenderer.invoke('share:copy', text) as Promise<boolean>,
@@ -719,13 +725,30 @@ contextBridge.exposeInMainWorld('electron', {
       return () => ipcRenderer.removeListener('now-playing:command', listener);
     },
   },
+  wallpaper: {
+    getState: () => invokeWithPlainPayload<WallpaperState>('wallpaper:get-state'),
+    setEnabled: (enabled: boolean) =>
+      invokeWithPlainPayload<WallpaperState>('wallpaper:set-enabled', enabled),
+    setSettings: (settings: Partial<WallpaperSettings>) =>
+      invokeWithPlainPayload<WallpaperState>('wallpaper:set-settings', settings),
+    setLyricRect: (rect: WallpaperLyricRect) =>
+      invokeWithPlainPayload<null>('wallpaper:set-lyric-rect', rect),
+    onStateChange: (callback: (state: WallpaperState) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: WallpaperState) =>
+        callback(state);
+      ipcRenderer.on('wallpaper:state', listener);
+      return () => ipcRenderer.removeListener('wallpaper:state', listener);
+    },
+  },
   taskbarLyric: {
     getState: () => invokeWithPlainPayload<TaskbarLyricState>('taskbar-player:get-state'),
     setEnabled: (enabled: boolean) =>
       invokeWithPlainPayload<TaskbarLyricState>('taskbar-player:set-enabled', enabled),
     setSettings: (settings: Partial<TaskbarLyricSettings>) =>
       invokeWithPlainPayload<TaskbarLyricState>('taskbar-player:set-settings', settings),
-    setContentWidth: (width: number) => ipcRenderer.send('taskbar-player:content-width', width),
+    setContentWidth: (width: number, align?: 'start' | 'center', left?: number) =>
+      ipcRenderer.send('taskbar-player:content-width', { width, align, left }),
+    setBlank: (blank: boolean) => ipcRenderer.send('taskbar-player:content-blank', blank),
     showMain: () => ipcRenderer.send('taskbar-player:show-main'),
     onStateChange: (callback: (state: TaskbarLyricState) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: TaskbarLyricState) =>
@@ -1700,6 +1723,18 @@ contextBridge.exposeInMainWorld('electron', {
           pluginId,
           name,
         ) as Promise<PluginSqliteDeleteResult>,
+      // 监听任意窗口里本插件数据库的写入：插件可据此在自己的多个窗口之间同步状态。
+      onChanged: (listener: (event: PluginSqliteChangedEvent) => void) => {
+        const wrapped = (_event: Electron.IpcRendererEvent, payload: PluginSqliteChangedEvent) => {
+          if (!payload || typeof payload !== 'object') return;
+          listener({
+            pluginId: String(payload.pluginId || ''),
+            databaseId: String(payload.databaseId || ''),
+          });
+        };
+        ipcRenderer.on('plugins:sqlite:changed', wrapped);
+        return () => ipcRenderer.removeListener('plugins:sqlite:changed', wrapped);
+      },
     },
     storage: {
       get: <T = unknown>(pluginId: string, key: string) =>

@@ -4,13 +4,18 @@ import { useSettingStore } from '@/stores/setting';
 import { useOutputStore } from '@/stores/output';
 import { useUpdateStore } from '@/stores/update';
 import { usePlaylistStore } from '@/stores/playlist';
-import { useHistoryStore } from '@/stores/historyStore';
+import { resolveSongHistoryId, useHistoryStore } from '@/stores/historyStore';
 import { useUserStore } from '@/stores/user';
 import { waitForSqlitePersistHydration } from '@/stores/sqlitePersist';
 import { normalizeQuality } from '@/stores/player/utils';
 import { setupStartupPluginUpdateCheck } from '@/stores/pluginUpdates';
 import { registerContentBlacklistIntegration } from '@/services/contentBlacklistIntegration';
 import { installWindowFrame } from '@/utils/windowFrame';
+import {
+  RESUME_HINT_MAX_SECS,
+  RESUME_HINT_MIN_SECS,
+  setResumeHintConfig,
+} from '@/utils/resumeHint';
 import { setOpenThemesHandler } from '@/theme/registry';
 import { settingsDialogOpen } from '@/composables/useSettingsDialog';
 import { createAppLifetime } from './lifetime';
@@ -22,7 +27,10 @@ export type AppPlayer = ReturnType<(typeof import('@/stores/player'))['usePlayer
 type SyncGlobalShortcuts = (typeof import('@/utils/shortcuts'))['syncGlobalShortcuts'];
 
 /** Startup ordering and bridges owned by the main renderer, including Mini and taskbar sync. */
-export function useAppRuntime(isMiniPlayerRoute: Readonly<Ref<boolean>>) {
+export function useAppRuntime(
+  isMiniPlayerRoute: Readonly<Ref<boolean>>,
+  isWallpaperRoute?: Readonly<Ref<boolean>>,
+) {
   const router = useRouter();
   const settings = useSettingStore();
   const updateStore = useUpdateStore();
@@ -80,6 +88,15 @@ export function useAppRuntime(isMiniPlayerRoute: Readonly<Ref<boolean>>) {
       void refreshPlugins({ miniPlayer: true });
       return;
     }
+    if (isWallpaperRoute?.value) {
+      // 壁纸窗口只是桌面层上的一张画面：不初始化播放引擎、不抢播放状态、
+      // 不发布歌词与进度、不碰托盘/更新检查/剪贴板分享。
+      // 只保留主题变量与插件运行时 —— 插件歌词页要按主窗口的皮肤渲染。
+      appearance.start();
+      appearance.apply();
+      void refreshPlugins();
+      return;
+    }
 
     // Listen before restoring the persisted system color mode.
     appearance.start();
@@ -121,6 +138,54 @@ export function useAppRuntime(isMiniPlayerRoute: Readonly<Ref<boolean>>) {
     const recoveredLiveSession = await activePlayer.init();
     if (!lifetime.active) return;
 
+    // 续播记录跟播放历史共用一份容量：历史里已经没有的曲目，续播进度与桶一并清掉。
+    // 两个前提：历史必须真的读成功了（读失败/未读完时 entries 是空的，据此裁剪会把数据全删），
+    // 且当前窗口要拥有播放引擎（壁纸窗口只做镜像，不该改动这份数据）。
+    const canPruneResume = () => historyStore.hydrated && !isWallpaperRoute?.value;
+    const pruneResumeWithHistory = () => {
+      if (!canPruneResume()) return;
+      const trackIds = historyStore.entries.map((entry) => resolveSongHistoryId(entry.song));
+      // 空列表不能当作「历史里一首都不剩」的证据：只要有一次读到空快照，裁剪就会把
+      // 续播记录和全部桶一起删光，之后任何页面都再没有续播卡可显示。
+      if (trackIds.length === 0) return;
+      activePlayer.pruneResumeAgainstHistory(trackIds);
+    };
+    pruneResumeWithHistory();
+    if (canPruneResume()) activePlayer.dedupeAlbumAudiobookScopes();
+
+    // 续播卡的三个开关与停留时长跟着设置走：设置页一改，下一次弹卡立即生效
+    const syncResumeHintConfig = () => {
+      const secs = Math.max(
+        RESUME_HINT_MIN_SECS,
+        Math.min(Number(settings.resumeHintVisibleSecs) || 10, RESUME_HINT_MAX_SECS),
+      );
+      const enabled = settings.resumeHintEnabled !== false;
+      setResumeHintConfig({
+        enabled,
+        popup: enabled && settings.resumeHintPopupEnabled !== false,
+        page: enabled && settings.resumeHintPageEnabled !== false,
+        visibleMs: secs * 1000,
+      });
+    };
+    syncResumeHintConfig();
+    lifetime.add(
+      watch(
+        [
+          () => settings.resumeHintEnabled,
+          () => settings.resumeHintPopupEnabled,
+          () => settings.resumeHintPageEnabled,
+          () => settings.resumeHintVisibleSecs,
+        ],
+        syncResumeHintConfig,
+      ),
+    );
+    lifetime.add(
+      watch(
+        [() => historyStore.entries.length, () => historyStore.playRecordVersion],
+        pruneResumeWithHistory,
+      ),
+    );
+
     if (
       !recoveredLiveSession &&
       settings.autoPlayOnLaunch &&
@@ -139,9 +204,12 @@ export function useAppRuntime(isMiniPlayerRoute: Readonly<Ref<boolean>>) {
     });
     lifetime.add(() => setOpenThemesHandler(null));
     appearance.apply();
-    void initDesktopLyricSync().then(lifetime.add);
-    // Taskbar lyrics consume this shared now-playing channel; no separate publisher is needed.
-    void initNowPlayingSync().then(lifetime.add);
+    // 壁纸窗口是纯消费者：它没有播放引擎，不该往主进程推歌词和播放状态。
+    if (!isWallpaperRoute?.value) {
+      void initDesktopLyricSync().then(lifetime.add);
+      // Taskbar lyrics consume this shared now-playing channel; no separate publisher is needed.
+      void initNowPlayingSync().then(lifetime.add);
+    }
     void initMiniPlayerSync().then(lifetime.add);
     await appearance.initWindowBackground();
     if (!lifetime.active) return;

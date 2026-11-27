@@ -530,8 +530,8 @@ const confirmResetDeviceIdentity = async () => {
         </p>
       </div>
       <template #footer>
-        <Button variant="outline" size="default" @click="showImportUserInfo = false">取消</Button>
         <Button variant="primary" size="default" @click="submitImportUserInfo">导入</Button>
+        <Button variant="outline" size="default" @click="showImportUserInfo = false">取消</Button>
       </template>
     </Dialog>
 
@@ -541,8 +541,8 @@ const confirmResetDeviceIdentity = async () => {
       :description="`${overwriteAccountLabel} 已在账号列表中，是否使用导入的信息覆盖？`"
     >
       <template #footer>
-        <Button variant="outline" size="default" @click="cancelOverwriteConfirm">取消</Button>
         <Button variant="danger" size="default" @click="applyImportedAccount(true)">覆盖</Button>
+        <Button variant="outline" size="default" @click="cancelOverwriteConfirm">取消</Button>
       </template>
     </Dialog>
 
@@ -552,11 +552,11 @@ const confirmResetDeviceIdentity = async () => {
       description="这会清除本机设备标识并退出当前账号。重启后会生成新的设备身份，酷狗可能会把它视为一台新设备。"
     >
       <template #footer>
-        <Button variant="outline" size="default" @click="showResetDeviceIdentityConfirm = false">
-          取消
-        </Button>
         <Button variant="danger" size="default" @click="confirmResetDeviceIdentity">
           确认重置
+        </Button>
+        <Button variant="outline" size="default" @click="showResetDeviceIdentityConfirm = false">
+          取消
         </Button>
       </template>
     </Dialog>
@@ -574,10 +574,10 @@ const confirmResetDeviceIdentity = async () => {
         </p>
       </div>
       <template #footer>
+        <Button variant="danger" size="default" @click="confirmEnableDevTools">仍要开启</Button>
         <Button variant="outline" size="default" @click="showDevToolsRiskConfirm = false">
           取消
         </Button>
-        <Button variant="danger" size="default" @click="confirmEnableDevTools">仍要开启</Button>
       </template>
     </Dialog>
   </SettingsSectionShell>

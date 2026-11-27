@@ -40,6 +40,17 @@ function track(owner: ComponentInternalInstance | null | undefined, binding: Bin
   return () => bindings!.delete(binding);
 }
 const elements = new WeakMap<HTMLElement, { binding: Binding; untrack: () => void }>();
+// Lets an owner surface a hint on an element whose tooltip it does not own (Button, Icon).
+const liveBindings = new WeakMap<HTMLElement, Binding>();
+
+export function showElementTooltip(element: HTMLElement | null | undefined, delay = 0): boolean {
+  const binding = element ? liveBindings.get(element) : undefined;
+  return binding ? binding.show(delay) : false;
+}
+
+export function hideElementTooltip(element: HTMLElement | null | undefined): void {
+  if (element) liveBindings.get(element)?.hide();
+}
 /**
  * Tooltip, Button and the native-element directive share the same automatic policy:
  * complete repeated text stays quiet; clipped text, icon labels and explanations show.
@@ -51,6 +62,7 @@ export const vTooltip: ObjectDirective<HTMLElement, TooltipValue> = {
     const owner = instance?.$;
     const binding = bindTooltip(element, value, contextFor(owner));
     elements.set(element, { binding, untrack: track(owner, binding) });
+    liveBindings.set(element, binding);
   },
   updated(element, { value }) {
     elements.get(element)?.binding.update(value);
@@ -60,6 +72,7 @@ export const vTooltip: ObjectDirective<HTMLElement, TooltipValue> = {
     record?.binding.dispose();
     record?.untrack();
     elements.delete(element);
+    liveBindings.delete(element);
   },
 };
 
@@ -70,8 +83,11 @@ export function useElementTooltip(
 ) {
   const owner = getCurrentInstance();
   let binding: Binding | undefined;
+  let boundNode: HTMLElement | undefined;
   let untrack = () => {};
   const dispose = () => {
+    if (boundNode && liveBindings.get(boundNode) === binding) liveBindings.delete(boundNode);
+    boundNode = undefined;
     binding?.dispose();
     binding = undefined;
     untrack();
@@ -91,6 +107,8 @@ export function useElementTooltip(
         dispose();
         if (node) {
           binding = bindTooltip(node, options, contextFor(owner));
+          liveBindings.set(node, binding);
+          boundNode = node;
           untrack = track(owner, binding);
         }
       } else binding.update(options);

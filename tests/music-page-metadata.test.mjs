@@ -48,6 +48,9 @@ const fixture = (t, name, api) => {
     '@/utils/cover': { createThemedIconCoverUrl: () => '' },
     '@/utils/themedCover': { createThemedDateCoverUrl: (_, day) => String(day) },
     '@/composables/useStickyTabsLayout': { useStickyTabsLayout: () => ({}) },
+    '@/composables/useTabDoubleClickTop': {
+      useTabDoubleClickTop: () => ({ onTabPointerDown: () => {}, onTabDoubleClick: () => {} }),
+    },
     '@/utils/songList': { filterSongsByQuery: (rows) => rows, sortSongs: (rows) => rows },
     '@/utils/playback': {},
     '@/icons': {},

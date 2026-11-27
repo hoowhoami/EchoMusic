@@ -17,6 +17,8 @@ import { useLyricScroll } from './composables/useLyricScroll';
 import { useYrcAnimation } from './composables/useYrcAnimation';
 import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
 import { formatDuration } from '@/utils/format';
+import { isPageFrozen, onPageFreezeChange } from '@/utils/pageFreeze';
+import { cancelScheduledFrame, scheduleDrawFrame, type FrameHandle } from '@/utils/frameBudget';
 import { buildFilteredLyricEntries, resolveVisibleLyricIndex } from '@/utils/lyricFilter';
 import { iconPlay } from '@/icons';
 import {
@@ -360,29 +362,30 @@ const refreshLyricIndexes = (options?: { resetStable?: boolean }) => {
 };
 
 // 逐字歌词 RAF 更新
-let rafId: number | null = null;
+let rafId: FrameHandle | null = null;
 let lastRafTime = 0;
 
-const rafLoop = () => {
-  rafId = requestAnimationFrame((timestamp) => {
-    if (timestamp - lastRafTime >= 33) {
-      lastRafTime = timestamp;
-      refreshLyricIndexes();
-      updateYrcDom();
-    }
-    rafLoop();
-  });
+// 逐字刷新交给预算调度器排帧：壁纸降帧档下出帧数真的降到目标值，
+// 而不是每个刷新周期都把合成器叫醒只为了跳过一次绘制。
+const rafLoop = (timestamp: number) => {
+  rafId = null;
+  if (timestamp - lastRafTime >= 33) {
+    lastRafTime = timestamp;
+    refreshLyricIndexes();
+    updateYrcDom();
+  }
+  rafId = scheduleDrawFrame('lyric', rafLoop);
 };
 
 const startRaf = () => {
   if (rafId !== null) return;
   lastRafTime = performance.now();
-  rafLoop();
+  rafId = scheduleDrawFrame('lyric', rafLoop);
 };
 
 const stopRaf = () => {
   if (rafId !== null) {
-    cancelAnimationFrame(rafId);
+    cancelScheduledFrame(rafId);
     rafId = null;
   }
 };
@@ -393,7 +396,7 @@ const stopRaf = () => {
  * 继续跑 rAF 只会白烧主线程并挤占插件与频谱的帧预算。
  * 重新可见时立即补一次全量刷新，避免回到前台看到错位的歌词。
  */
-const isPageVisible = () => document.visibilityState !== 'hidden';
+const isPageVisible = () => document.visibilityState !== 'hidden' && !isPageFrozen();
 
 const syncRaf = () => {
   if (playerStore.isPlaying && isPageVisible()) startRaf();
@@ -406,6 +409,18 @@ const handleVisibilityChange = () => {
     return;
   }
   // 回到前台：先用当前播放位置纠正索引，再决定是否继续逐帧刷新。
+  refreshLyricIndexes();
+  updateYrcDom();
+  syncRaf();
+};
+
+// 壁纸窗口冻结时同样停表：桌面被盖住或暂停且不显示壁纸，屏幕上没有观众，
+// 逐帧刷新只是白烧 CPU。解冻后补一次全量刷新，避免停在冻结那一刻的错位歌词。
+const handlePageFreeze = (frozen: boolean) => {
+  if (frozen) {
+    stopRaf();
+    return;
+  }
   refreshLyricIndexes();
   updateYrcDom();
   syncRaf();
@@ -427,11 +442,14 @@ watch(
   },
 );
 
+let disposePageFreeze: (() => void) | null = null;
+
 onMounted(() => {
   reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
   updateReducedMotion();
   reducedMotionQuery?.addEventListener?.('change', updateReducedMotion);
   document.addEventListener('visibilitychange', handleVisibilityChange);
+  disposePageFreeze = onPageFreezeChange(handlePageFreeze);
   syncSeekAnchor();
   refreshLyricIndexes({ resetStable: true });
   updateYrcDom();
@@ -450,6 +468,8 @@ onUnmounted(() => {
   reducedMotionQuery?.removeEventListener?.('change', updateReducedMotion);
   reducedMotionQuery = null;
   document.removeEventListener('visibilitychange', handleVisibilityChange);
+  disposePageFreeze?.();
+  disposePageFreeze = null;
 });
 
 // 收起/展开时重新定位（瞬间跳转，不用动画）

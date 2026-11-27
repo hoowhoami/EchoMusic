@@ -152,7 +152,15 @@ function fixture(t, name = 'Search', overrides = {}) {
 
     '@/stores/setting': { useSettingStore: () => setting },
     '@/stores/playlist': { usePlaylistStore: () => ({}) },
-    '@/stores/player': { usePlayerStore: () => ({}) },
+    '@/stores/player': {
+      usePlayerStore: () => ({
+        $state: {},
+        resumeScopes: [],
+        resumeRecordForScope: () => undefined,
+        // 定位按钮要求有当前播放曲目，否则直接返回
+        currentTrackId: '2',
+      }),
+    },
     '@/composables/usePageScroll': { useScrollContainer: () => scroll },
     '@/composables/useRouteTabs': {
       useRouteTabs: () => ({
@@ -167,6 +175,33 @@ function fixture(t, name = 'Search', overrides = {}) {
     '@/utils/songList': { sortSongs: (songs) => songs, filterSongsByQuery: (songs) => songs },
     './search/searchHelpers': helpers,
     '@/views/search/searchHelpers': helpers,
+    '@/stores/user': { useUserStore: () => ({ info: { userid: '' } }) },
+    '@/stores/toast': {
+      useToastStore: () => ({ info() {}, success() {}, warning() {}, error() {} }),
+    },
+    '@/stores/player/resume': {
+      RESUME_SCOPE_LABEL: {
+        audiobook: '有声',
+        album: '专辑',
+        artist: '歌手',
+        playlist: '歌单',
+      },
+      resumeRecordForScope: () => undefined,
+    },
+    '@/utils/resumeHint': {
+      requestResumeHintPlay: () => {},
+      takeResumeHintRequest: () => false,
+      navigateResumeTarget: async () => true,
+      RESUME_LOCATE_FAILED_TEXT: '定位续播记录失败，请稍后重试',
+      resumeHintRequest: { key: '', token: 0, consumed: 0 },
+      resumeHintState: { open: false },
+      dismissResumeHint: () => {},
+    },
+    '@/utils/format': { formatDuration: () => '00:00' },
+    '@/utils/playlistRoute': { resolvePlaylistRoute: () => ({ id: '', type: null }) },
+    '@/composables/useTabDoubleClickTop': {
+      useTabDoubleClickTop: () => ({ onTabPointerDown() {}, onTabDoubleClick() {} }),
+    },
     '@/utils/logger': { logger: { info() {} } },
     './useTitlebarSort': { useTitlebarSort() {} },
     '@vueuse/core': { useResizeObserver() {} },
@@ -201,6 +236,7 @@ function fixture(t, name = 'Search', overrides = {}) {
         song: 'songResults',
         special: 'playlistResults',
         album: 'albumResults',
+        longaudio: 'longaudioResults',
         author: 'artistResults',
         lyric: 'lyricResults',
         mv: 'mvResults',
@@ -796,6 +832,7 @@ test('lyric result filtering shares song controls while preserving counts, sorti
   let located = 0;
   f.view.lyricResultsPanelRef.value = { scrollToActive: () => located++ };
   f.view.handleLyricLocate();
+  await flush();
   assert.equal(located, 1);
   f.view.lyricSearchQuery.value = '晚风';
   f.respond(() => page([], 0));

@@ -656,6 +656,8 @@ test('Favorites refreshes account-bound tabs after same-user relogin', async () 
     'userStore',
     'resetFollowed',
     'resetVideos',
+    'albumCategoriesGeneration',
+    'albumCategories',
     'refreshFavorites',
     'loadActiveTabData',
     code,
@@ -666,6 +668,8 @@ test('Favorites refreshes account-bound tabs after same-user relogin', async () 
     userStore,
     () => events.push('followed'),
     () => events.push('videos'),
+    0,
+    { value: {} },
     () => events.push('favorites'),
     () => events.push('active'),
   );

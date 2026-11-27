@@ -1806,19 +1806,19 @@ onUnmounted(() => {
       </div>
       <template #footer>
         <Button
-          variant="outline"
-          size="default"
-          :disabled="isSavingProfile"
-          @click="showProfileEditor = false"
-          >取消</Button
-        >
-        <Button
           variant="primary"
           size="default"
           :loading="isSavingProfile"
           :disabled="profileSignatureOverLimit"
           @click="saveProfile"
           >保存修改</Button
+        >
+        <Button
+          variant="outline"
+          size="default"
+          :disabled="isSavingProfile"
+          @click="showProfileEditor = false"
+          >取消</Button
         >
       </template>
     </Dialog>
@@ -2209,7 +2209,6 @@ onUnmounted(() => {
       :description="`移除“${pendingKickDevice?.title || '该设备'}”后，该设备需要重新登录。`"
     >
       <template #footer>
-        <Button variant="outline" size="default" @click="showKickConfirm = false">取消</Button>
         <Button
           variant="danger"
           size="default"
@@ -2220,6 +2219,7 @@ onUnmounted(() => {
         >
           确认移除
         </Button>
+        <Button variant="outline" size="default" @click="showKickConfirm = false">取消</Button>
       </template>
     </Dialog>
   </PageScrollContainer>

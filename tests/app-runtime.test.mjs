@@ -66,6 +66,9 @@ function setup(t, { mini = false, hydration, desktopSync, autoPlay = false } = {
     currentTrackId: 'song',
     isPlaying: false,
     playMode: 'list',
+    // 启动时会按历史裁剪续播记录，这里只验证调用发生。
+    pruneResumeAgainstHistory: (ids) => events.push('resume.prune'),
+    dedupeAlbumAudiobookScopes: () => {},
     volume: 50,
     init: async () => {
       events.push('player.init');
@@ -85,6 +88,12 @@ function setup(t, { mini = false, hydration, desktopSync, autoPlay = false } = {
     },
     'vue-router': { useRouter: () => ({ isReady: async () => {}, push() {} }) },
     '@/stores/setting': { useSettingStore: () => settings },
+    // 续播提示的配置写入口，本测试只验证启动流程，给最小桩。
+    '@/utils/resumeHint': {
+      RESUME_HINT_MAX_SECS: 60,
+      RESUME_HINT_MIN_SECS: 3,
+      setResumeHintConfig: () => {},
+    },
     '@/stores/output': { useOutputStore: () => ({ bind: record('output.bind') }) },
     '@/stores/update': {
       useUpdateStore: () => ({
@@ -99,7 +108,14 @@ function setup(t, { mini = false, hydration, desktopSync, autoPlay = false } = {
         hydratePersonalFmPreferences: record('fm.hydrate'),
       }),
     },
-    '@/stores/historyStore': { useHistoryStore: () => ({ hydrate: record('history.hydrate') }) },
+    '@/stores/historyStore': {
+      useHistoryStore: () => ({
+        hydrate: record('history.hydrate'),
+        // 启动时要按历史裁剪续播记录，这里给空历史。
+        entries: [],
+        playRecordVersion: 0,
+      }),
+    },
     '@/stores/user': {
       useUserStore: () => ({ isLoggedIn: true, fetchUserInfoOnce: record('user.fetch') }),
     },

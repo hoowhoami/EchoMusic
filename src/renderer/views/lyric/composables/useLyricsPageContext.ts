@@ -5,6 +5,7 @@ import { useLyricStore } from '@/stores/lyric';
 import type { AudioQualityValue, AudioEffectValue, PlayMode } from '@/types';
 import { createLyricTimeline } from '@/composables/useLyricTimeline';
 import { useLyricPageIsDark } from './useLyricAppearance';
+import { wallpaperFrameMode } from '@/wallpaper/frameContract';
 
 export type LyricsPagePanel =
   | 'queue'
@@ -24,6 +25,12 @@ export function useLyricsPageContext(
     enabled: WritableComputedRef<boolean>;
     send: (content: string) => void;
   },
+  // 壁纸窗口里的歌词页：插件皮肤自绘背景，需要知道现在是不是壁纸、是不是「仅歌词」，
+  // 否则会铺一层不透明底色把系统桌面壁纸盖住。
+  view: {
+    wallpaper: ComputedRef<boolean>;
+    clearBackground: ComputedRef<boolean>;
+  } = { wallpaper: computed(() => false), clearBackground: computed(() => false) },
 ) {
   const { player, playlist, currentTrack, currentPlaybackQueue } = controls;
   const lyric = useLyricStore();
@@ -84,6 +91,15 @@ export function useLyricsPageContext(
       isCloudSource: controls.isResolvedCloudSource.value,
       hasCloudSource: controls.hasCloudAudioSourceOption.value,
       titlebar: titlebar.value,
+      view: {
+        wallpaper: view.wallpaper.value,
+        clearBackground: view.clearBackground.value,
+        // 壁纸帧率契约：插件自绘循环按这个节奏出帧，宿主不再另开一套限制。
+        frame: {
+          fps: wallpaperFrameMode.value.fps,
+          frozen: wallpaperFrameMode.value.frozen,
+        },
+      },
       /** 歌词页当前是否深色（外观模式设置 + 主程序主题共同决定）。 */
       isDark: lyricIsDark.value,
       lyrics: {

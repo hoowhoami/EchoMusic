@@ -156,9 +156,15 @@ test('application shutdown waits for output resources and plugin processes befor
       './diagnostics/memory',
       './share',
       './networkSettings',
+      './wallpaper',
     ].map((key) => [key, empty]),
   );
   Object.assign(mocks, {
+    // 启动时要恢复壁纸，退出时清理；这里只记一笔，不碰真实窗口。
+    './wallpaper': {
+      restoreWallpaper: async () => {},
+      cleanupWallpaper: async () => {},
+    },
     './outputs/outputRuntime': {
       shutdownOutputRuntime: () => {
         events.push('output cleanup');

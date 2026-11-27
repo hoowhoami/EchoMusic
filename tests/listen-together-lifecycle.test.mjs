@@ -845,6 +845,8 @@ function pageFixture(t) {
       ),
     },
     pinia,
+    // PR 让这几个组件用上了 tooltip 指令，测试里给个空实现。
+    '@/components/ui/tooltip': { vTooltip: {} },
     'vue-router': {
       useRoute: () => vue.reactive({ name: 'listen-together', query: {} }),
       useRouter: () => ({ push() {}, replace() {} }),

@@ -639,6 +639,17 @@ export const destroyDesktopLyricWindow = () => {
   win.destroy();
 };
 
+/**
+ * 动态壁纸与桌面歌词互斥：桌面歌词要打开之前，先让壁纸让位。
+ * 用注入而不是直接 import，避免 desktopLyric 与 wallpaper 互相依赖。
+ */
+type DesktopLyricExclusionHook = () => Promise<void>;
+let desktopLyricExclusionHook: DesktopLyricExclusionHook | null = null;
+
+export const setDesktopLyricExclusionHook = (hook: DesktopLyricExclusionHook | null) => {
+  desktopLyricExclusionHook = hook;
+};
+
 export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSettings>) => {
   const current = snapshot.settings;
   const nextSettings = sanitizeDesktopLyricSettings(partial, current);
@@ -661,6 +672,15 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
   }
 
   persistDesktopLyricSettings(nextSettings);
+
+  // 与动态壁纸互斥：先把壁纸关掉，再继续建桌面歌词窗口。
+  if (nextSettings.enabled && !current.enabled) {
+    try {
+      await desktopLyricExclusionHook?.();
+    } catch (error) {
+      log.warn('[DesktopLyric] 关闭动态壁纸失败:', error);
+    }
+  }
 
   const win = getDesktopLyricWindow();
   let nextWindowState = getDesktopLyricWindowState();
@@ -820,8 +840,12 @@ export const registerDesktopLyricHandlers = () => {
 
   ipcRegistry.registerListener(
     'desktop-lyric:sync-snapshot',
-    (_event, payload: DesktopLyricSnapshotPatch) => {
+    (event, payload: DesktopLyricSnapshotPatch) => {
       if (!payload) return;
+      // 歌词只能由主窗口发布：壁纸/桌面歌词窗口的 store 是镜像来的空壳，
+      // 放它们回推会把空歌词覆盖到正在显示的内容上。
+      const mainWin = getMainWindow();
+      if (!mainWin || mainWin.isDestroyed() || event.sender.id !== mainWin.webContents.id) return;
       let shouldRefreshMenus = false;
       let desktopPatch: DesktopLyricSnapshotPatch = {};
       if (

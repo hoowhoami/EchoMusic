@@ -13,6 +13,39 @@ import type {
 import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
 import { createSleepTimerState } from './sleepTimer';
 
+/** 续播进度：一条记录线上一首曲目的进度。entry 说明它属于哪条线（audiobook:1 / album:1 / single）。 */
+export interface ResumePosition {
+  position: number;
+  duration: number;
+  updatedAt: number;
+  entry: string;
+  /** 这首歌 / 这一章的标题，给搜索页卡片显示「上次听到哪一章」。 */
+  title?: string;
+}
+
+/** 详情页续播条目：kind 决定它属于哪个桶（有声 / 专辑 / 歌手 / 歌单）。 */
+export interface ResumeScopeRef {
+  kind: 'audiobook' | 'album' | 'artist' | 'playlist';
+  id: string;
+  /** 详情页名称，给搜索页卡片显示。 */
+  name: string;
+  /** 封面地址，给搜索页卡片显示。 */
+  cover: string;
+  /** 上次听到哪一首（或哪一章）；空串表示只登记过、还没听过。 */
+  trackId: string;
+  updatedAt: number;
+  /** 歌单桶专用：路由里的 collection 串（详情接口只认它，桶 id 是歌单自己的数字 id）。 */
+  routeId?: string;
+  /** 歌单桶专用：路由上的 type（user / special / album）。 */
+  routeType?: string;
+}
+
+/** 这次起播由哪个详情页认领；null 表示不是详情页点播，进度只记单曲线。 */
+export interface ResumeClaim {
+  kind: ResumeScopeRef['kind'];
+  id: string;
+}
+
 const createPlaybackIntent = (): PlaybackIntent => ({
   seq: 0,
   trackId: null,
@@ -42,6 +75,12 @@ export const createPlayerState = () => ({
   volume: DEFAULT_PLAYER_VOLUME,
   lastNonZeroVolume: DEFAULT_PLAYER_VOLUME,
   currentTime: 0,
+  /** 续播进度：曲目 id → 记录线（entry）→ 进度；同一首在不同卡上各记各的。 */
+  resumePositions: {} as Record<string, Record<string, ResumePosition>>,
+  /** 详情页续播桶：有声 / 专辑 / 歌单 / 歌手各 20 条，顺序即 LRU。 */
+  resumeScopes: [] as ResumeScopeRef[],
+  /** 当前这次起播的认领来源；不持久化，换队列/换入口时会重设。 */
+  resumeClaim: null as ResumeClaim | null,
   // EOF survives pause events; resuming an exhausted source must reload it.
   playbackEnded: false,
   currentTimeUpdatedAt: 0,

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import Select from '@/components/ui/Select.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import SettingsSectionShell from './SettingsSectionShell.vue';
+import type { TaskbarLyricState } from '../../../../shared/taskbar';
 import { sectionTitles } from '../constants';
 
 const settingStore = useSettingStore();
@@ -23,6 +24,22 @@ const lyricFontOptions = computed(() => [
 ]);
 
 const desktopLyricFontName = computed(() => desktopLyricStore.settings.fontFamily || 'follow');
+const isWindows = computed(() => window.electron?.platform === 'win32');
+const taskbarFontName = ref('follow');
+let disposeTaskbarState: (() => void) | undefined;
+const syncTaskbarFont = (state: TaskbarLyricState) => {
+  taskbarFontName.value = state.settings?.fontFamily || 'follow';
+};
+const applyTaskbarFont = async (fontName: string) => {
+  const name = fontName || 'follow';
+  taskbarFontName.value = name;
+  try {
+    const state = await window.electron.taskbarLyric.setSettings({ fontFamily: name });
+    taskbarFontName.value = state.settings?.fontFamily || name;
+  } catch {
+    taskbarFontName.value = name;
+  }
+};
 
 const fetchSystemFonts = async () => {
   const fonts = await settingStore.fetchSystemFonts();
@@ -39,8 +56,19 @@ const applyDesktopLyricFont = async (fontName: string) => {
   await desktopLyricStore.syncSettings({ fontFamily: fontName || 'follow' });
 };
 
-onMounted(() => {
+onMounted(async () => {
   void fetchSystemFonts();
+  if (!isWindows.value) return;
+  try {
+    disposeTaskbarState = window.electron.taskbarLyric.onStateChange(syncTaskbarFont);
+    syncTaskbarFont(await window.electron.taskbarLyric.getState());
+  } catch {
+    // 读取失败时保持默认值，用户仍可重新选择
+  }
+});
+onUnmounted(() => {
+  disposeTaskbarState?.();
+  disposeTaskbarState = undefined;
 });
 </script>
 
@@ -118,6 +146,30 @@ onMounted(() => {
           :model-value="desktopLyricFontName"
           :options="lyricFontOptions"
           @update:model-value="applyDesktopLyricFont(String($event))"
+        />
+      </div>
+    </div>
+    <div class="settings-divider"></div>
+    <div v-if="isWindows" class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">任务栏歌词字体</h3>
+        <p class="text-sm text-text-secondary">任务栏歌词使用的字体，跟随全局或单独指定</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          class="settings-action echo-button-sized echo-button-standard"
+          v-if="taskbarFontName !== 'follow'"
+          type="button"
+          @click="applyTaskbarFont('follow')"
+        >
+          重置
+        </button>
+        <Select
+          filterable
+          class="w-45 shrink-0"
+          :model-value="taskbarFontName"
+          :options="lyricFontOptions"
+          @update:model-value="applyTaskbarFont(String($event))"
         />
       </div>
     </div>

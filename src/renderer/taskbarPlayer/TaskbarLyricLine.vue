@@ -9,7 +9,7 @@ const props = defineProps<{
   timeMs: number;
   endTimeMs?: number;
   wordByWord?: boolean;
-  anchor?: 'left' | 'right';
+  anchor?: 'left' | 'center' | 'right';
 }>();
 const emit = defineEmits<{ width: [number] }>();
 const viewport = ref<HTMLElement>();
@@ -92,7 +92,11 @@ onUnmounted(() => {
   <div
     ref="viewport"
     class="lyric-line"
-    :class="{ overflow: overflow > 0, right: anchor === 'right' }"
+    :class="{
+      overflow: overflow > 0,
+      right: anchor === 'right',
+      center: anchor === 'center' && !overflow,
+    }"
     :style="fade"
     :title="text"
   >
@@ -135,6 +139,12 @@ onUnmounted(() => {
 .lyric-line.right {
   justify-content: flex-end;
   text-align: right;
+}
+/* 居中档：短行在条子中间居中，两排歌词共用同一中心。
+   只有没溢出时才居中——溢出要跑马灯，起点必须是行首。 */
+.lyric-line.center {
+  justify-content: center;
+  text-align: center;
 }
 .line-content {
   display: inline-block;

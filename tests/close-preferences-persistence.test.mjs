@@ -59,6 +59,11 @@ function setup({ saved, imported = {}, platform = 'darwin' } = {}) {
       parseDevToolsDebugPort: () => null,
     },
     '../../shared/windowBackground': { DEFAULT_WINDOW_BACKGROUND: {} },
+    // 壁纸设置与关闭偏好无关，测试只需字段存在，给最小默认值桩。
+    '../../shared/wallpaper': {
+      DEFAULT_WALLPAPER_SETTINGS: {},
+      normalizeWallpaperSettings: (value) => value ?? {},
+    },
     // taskbar 歌词设置与关闭偏好无关，测试只需字段存在，给空默认值桩
     '../../shared/taskbar': {
       DEFAULT_TASKBAR_LYRIC_SETTINGS: {},

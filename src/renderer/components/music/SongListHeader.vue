@@ -56,7 +56,10 @@ const gridTemplate = computed(() =>
     >
       <div
         v-if="showIndex"
-        class="pl-2 cursor-pointer hover:text-text-main transition-colors flex items-center gap-1"
+        :class="[
+          'pl-2 cursor-pointer hover:text-text-main transition-colors flex items-center gap-1',
+          { 'is-active': sortField === 'index' },
+        ]"
         @click="handleSort('index')"
       >
         <span>#</span>
@@ -121,7 +124,10 @@ const gridTemplate = computed(() =>
 
       <div
         v-if="showAlbum"
-        class="min-w-0 hidden md:flex pr-3 cursor-pointer hover:text-text-main transition-colors items-center gap-1 whitespace-nowrap"
+        :class="[
+          'min-w-0 hidden md:flex pr-3 cursor-pointer hover:text-text-main transition-colors items-center gap-1 whitespace-nowrap',
+          { 'is-active': sortField === 'album' },
+        ]"
         @click="handleSort('album')"
       >
         <span>{{ albumLabel }}</span>
@@ -140,7 +146,10 @@ const gridTemplate = computed(() =>
       </div>
 
       <div
-        class="pl-2 cursor-pointer hover:text-text-main transition-colors flex items-center justify-start gap-1 whitespace-nowrap"
+        :class="[
+          'pl-2 cursor-pointer hover:text-text-main transition-colors flex items-center justify-start gap-1 whitespace-nowrap',
+          { 'is-active': sortField === 'duration' },
+        ]"
         @click="handleSort('duration')"
       >
         <span>时长</span>
@@ -181,7 +190,8 @@ const gridTemplate = computed(() =>
 }
 
 .song-sort-choice:hover,
-.song-sort-choice.is-active {
+.song-sort-choice.is-active,
+.is-active {
   color: var(--color-primary-text);
 }
 

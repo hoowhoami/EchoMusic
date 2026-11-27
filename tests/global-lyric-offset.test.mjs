@@ -248,6 +248,7 @@ test('paused global calibration reaches now-playing/taskbar, Mini and desktop sn
     './store': { useDesktopLyricStore: () => desktop },
     '@/utils/shortcuts': {},
     '@/utils/lruMap': lruMap,
+    '@/views/lyric/portraitCollapseState': { portraitLyricCollapsed: { value: false } },
     '@/utils/playbackQueuePresentation': { getPlaybackQueuePresentation: () => ({ title: '' }) },
     '@/stores/playlist/helpers': { resolveFavoriteSongKey: () => 'a' },
     '../../shared/nowPlaying': nowPlaying,

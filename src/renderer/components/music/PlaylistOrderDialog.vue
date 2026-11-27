@@ -505,6 +505,9 @@ watch(account, () => {
       >
       <div class="flex-1"></div>
       <span v-if="dirty" class="order-save-hint">有未保存的调整</span>
+      <Button size="compact" class="order-action-button" :disabled="busy || !dirty" @click="save">{{
+        saving ? '正在保存…' : '保存顺序'
+      }}</Button>
       <Button
         variant="secondary"
         size="compact"
@@ -513,9 +516,6 @@ watch(account, () => {
         @click="updateOpen(false)"
         >取消</Button
       >
-      <Button size="compact" class="order-action-button" :disabled="busy || !dirty" @click="save">{{
-        saving ? '正在保存…' : '保存顺序'
-      }}</Button>
     </template>
   </Dialog>
 </template>

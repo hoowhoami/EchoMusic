@@ -575,6 +575,9 @@ export const setRuntimePluginEnabled = async (pluginId: string, enabled: boolean
     throw new Error(result?.error || '插件启停失败');
   }
   await refreshPlugins();
+  // 开关只改了本窗口的运行时，壁纸、mini 播放器、桌面歌词这些独立窗口还挂着旧状态，
+  // 必须让它们各自重建一次插件运行时（与「刷新插件列表」按钮走同一条广播）。
+  await reloadOtherPluginRuntimes();
   return result.plugin;
 };
 
@@ -584,6 +587,7 @@ export const setRuntimePluginSafeMode = async (enabled: boolean) => {
     throw new Error(result?.error || '插件安全模式切换失败');
   }
   await refreshPlugins();
+  await reloadOtherPluginRuntimes();
   return result.safeMode;
 };
 

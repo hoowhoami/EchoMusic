@@ -97,8 +97,15 @@ const {
   resolvedItemHeight,
 } = virtualGrid;
 
+// 定位：扁平卡片下标按列数换算成虚拟列表的行下标
+const scrollToIndex = (index: number, behavior: ScrollBehavior = 'smooth') => {
+  const columns = Math.max(1, virtualGrid.columnCount.value);
+  virtualGrid.scrollToIndex(Math.floor(Math.max(0, index) / columns), behavior);
+};
+
 defineExpose({
   refresh: virtualGrid.refresh,
+  scrollToIndex,
 });
 </script>
 

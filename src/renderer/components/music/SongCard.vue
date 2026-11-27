@@ -240,6 +240,12 @@ const handleDoubleClick = async () => {
   if (!isPlayable.value) return;
   const payload = songPayload.value;
 
+  // 双击当前正在播放的这首歌 = 暂停，不再重新排队或弹续播窗。
+  if (isCurrentCoverSong.value && playerStore.isPlaying) {
+    await playerStore.togglePlay();
+    return;
+  }
+
   if (props.onDoubleTapPlay) {
     await props.onDoubleTapPlay(payload);
     return;

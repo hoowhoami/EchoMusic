@@ -120,6 +120,9 @@ function fixture(t, query = {}, id = '123') {
     '@/utils/share': { isSongHashId: (id) => /^[a-f\d]{32}$/i.test(id) },
     '@/icons': {},
     '@/composables/usePageScroll': { useScrollContainer: () => vue.ref(null) },
+    '@/composables/useTabDoubleClickTop': {
+      useTabDoubleClickTop: () => ({ onTabPointerDown() {}, onTabDoubleClick() {} }),
+    },
     '@/composables/useStickyTabsLayout': {
       useStickyTabsLayout: () => ({ tabsTop: vue.ref(0), tabsMinHeight: vue.ref(0) }),
     },

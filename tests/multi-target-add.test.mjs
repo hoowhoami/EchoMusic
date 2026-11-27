@@ -92,6 +92,8 @@ function fixture(t, overrides = {}) {
         actionCompleted: (message) => notifications.push(['success', message]),
       }),
     },
+    // PR 让这几个组件用上了 tooltip 指令，测试里给个空实现。
+    '@/components/ui/tooltip': { vTooltip: {} },
     '@/utils/watchUserSession': userSessionWatch,
     '@/utils/userSession': sessionModule.exports,
   };

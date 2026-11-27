@@ -10,6 +10,7 @@ import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverDisplayUrl } from '@/utils/cover';
 import Cover from '@/components/ui/Cover.vue';
 import LyricScroller from './LyricScroller.vue';
+import { portraitLyricCollapsed } from './portraitCollapseState';
 import { useLyricStore } from '@/stores/lyric';
 import { useLyricSkin } from './composables/useLyricSkin';
 import {
@@ -17,6 +18,7 @@ import {
   LYRIC_SKIN_PORTRAIT_DEFAULTS,
   resolveLyricSkinColor,
 } from './skins/config';
+import { resolvePlayedColor, resolveUnplayedColor } from './skins/colorOverride';
 
 const { currentTrack } = usePlayerControls();
 const settingStore = useSettingStore();
@@ -152,8 +154,30 @@ const clearBlurLayers = () => {
   visibleBlurLayer.value = 0;
 };
 
+const props = defineProps<{
+  /** 动态壁纸窗口使用：收起状态由播放页广播过来，本地不再自己计时收起。 */
+  forcedCollapsed?: boolean;
+  /** 动态壁纸配色自带的歌词颜色；空值表示跟随皮肤设置。 */
+  colorOverride?: string;
+}>();
+// 壁纸配色命中时覆盖已播/未播字色，未播字用同色半透明保留层次。
+const playedColor = computed(() =>
+  resolvePlayedColor(
+    props.colorOverride,
+    resolveLyricSkinColor(settings.value.playedColor, lyricStore.effectivePlayedColor),
+  ),
+);
+const unplayedColor = computed(() =>
+  resolveUnplayedColor(
+    props.colorOverride,
+    resolveLyricSkinColor(settings.value.unplayedColor, lyricStore.effectiveUnplayedColor),
+  ),
+);
+
 // ── 收起逻辑 ──
 const isLyricCollapsed = ref(false);
+// 手动展开后不再自动收起，直到再次点击收起。
+const manualExpanded = ref(false);
 let collapseTimer: number | null = null;
 
 const clearCollapseTimer = () => {
@@ -165,6 +189,8 @@ const clearCollapseTimer = () => {
 
 const scheduleCollapse = () => {
   clearCollapseTimer();
+  if (props.forcedCollapsed !== undefined) return;
+  if (manualExpanded.value) return;
   if (!settings.value.autoCollapseEnabled) return;
   const delay = Math.max(settings.value.autoCollapseDelay || 5, 5) * 1000;
   collapseTimer = window.setTimeout(() => {
@@ -174,11 +200,40 @@ const scheduleCollapse = () => {
 };
 
 const handleCollapseClick = () => {
-  isLyricCollapsed.value = !isLyricCollapsed.value;
   if (!isLyricCollapsed.value) {
-    scheduleCollapse();
+    manualExpanded.value = false;
+    clearCollapseTimer();
+    isLyricCollapsed.value = true;
+    return;
   }
+  // 点开就保持展开，不再按定时器自己缩回去。
+  manualExpanded.value = true;
+  clearCollapseTimer();
+  isLyricCollapsed.value = false;
 };
+
+// 播放页把收起状态共享出去（壁纸窗口据此渲染）；壁纸窗口自己是被动方，不回写。
+if (props.forcedCollapsed === undefined) {
+  watch(
+    isLyricCollapsed,
+    (collapsed) => {
+      portraitLyricCollapsed.value = collapsed;
+    },
+    // 挂载时也要同步一次：重新打开播放页默认是展开的，
+    // 不同步的话壁纸端会停留在上一次的收起状态。
+    { immediate: true },
+  );
+}
+watch(
+  () => props.forcedCollapsed,
+  (collapsed) => {
+    if (collapsed === undefined) return;
+    clearCollapseTimer();
+    manualExpanded.value = !collapsed;
+    isLyricCollapsed.value = collapsed;
+  },
+  { immediate: true },
+);
 
 // 鼠标活动
 const isMouseActive = ref(false);
@@ -387,15 +442,10 @@ defineExpose({
         :collapsed="isLyricCollapsed"
         :font-scale="settings.fontScale"
         :font-weight-index="settings.fontWeightIndex"
-        :played-color="resolveLyricSkinColor(settings.playedColor, lyricStore.effectivePlayedColor)"
-        :unplayed-color="
-          resolveLyricSkinColor(settings.unplayedColor, lyricStore.effectiveUnplayedColor)
-        "
+        :played-color="playedColor"
+        :unplayed-color="unplayedColor"
       />
     </div>
-
-    <!-- 收起时点击展开的遮罩 -->
-    <div v-if="isLyricCollapsed" class="portrait-expand-overlay" @click="handleCollapseClick"></div>
   </div>
 </template>
 
@@ -489,12 +539,5 @@ defineExpose({
   top: 0;
   bottom: 0;
   z-index: 10;
-}
-
-.portrait-expand-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 9;
-  cursor: pointer;
 }
 </style>

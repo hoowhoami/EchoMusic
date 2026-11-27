@@ -67,6 +67,23 @@ function fixture(t) {
       ),
     },
     'vue-router': { useRoute: () => route },
+    // 列表页多了「双击 tab 回顶」，测试里不需要真实的滚动容器。
+    '@/composables/useTabDoubleClickTop': {
+      useTabDoubleClickTop: () => ({ onTabPointerDown() {}, onTabDoubleClick() {} }),
+    },
+    // 历史页读续播记录，这里只给一个空记录源。
+    '@/stores/player/resume': {
+      RESUME_SCOPE_LABEL: {
+        audiobook: '有声',
+        album: '专辑',
+        artist: '歌手',
+        playlist: '歌单',
+      },
+      resumeRecordForScope: () => undefined,
+      resumeRecordOfTrack: () => undefined,
+      resumeTrackRecords: () => [],
+    },
+
     '@/stores/historyStore': { useHistoryStore: () => history },
     '@/stores/user': { useUserStore: () => user },
     ...Object.fromEntries(

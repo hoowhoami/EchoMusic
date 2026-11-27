@@ -9,6 +9,7 @@ import {
   onUnmounted,
   onActivated,
   onDeactivated,
+  reactive,
   ref,
   watch,
 } from 'vue';
@@ -16,6 +17,7 @@ import { useRoute } from 'vue-router';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
+import { resumeRecordForScope } from '@/stores/player/resume';
 import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
 import { createThemedIconCoverUrl } from '@/utils/cover';
@@ -28,6 +30,7 @@ import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
 import SongSearchInput from '@/components/music/SongSearchInput.vue';
+import ResumeScopeTable from '@/components/music/ResumeScopeTable.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import {
@@ -54,6 +57,7 @@ import TabsContent from '@/components/ui/TabsContent.vue';
 import HistoryStatsContent from '@/components/history/stats/HistoryStatsContent.vue';
 import { buildHistoryStats, resolveSongId } from '../../shared/historyStats';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
+import { useTabDoubleClickTop, type PageScrollHandle } from '@/composables/useTabDoubleClickTop';
 
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
@@ -121,7 +125,7 @@ const confirmClear = () => {
   toastStore.success('播放历史已清空');
 };
 
-const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
+const songListRef = ref<{ scrollToActive?: () => Promise<boolean> } | null>(null);
 const sliverHeaderRef = ref<{ currentHeight?: number } | null>(null);
 const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 const sortField = ref<SortField | null>(null);
@@ -129,8 +133,7 @@ const sortOrder = ref<SortOrder>(null);
 const {
   state: { tab: activeTab },
   select: selectTabs,
-} = useRouteTabs({ tab: ['songs', 'stats'] });
-// 统计内容组件实例；分享导出时经 $el 取根 DOM 克隆
+} = useRouteTabs({ tab: ['songs', 'album', 'audiobook', 'artist', 'playlist', 'stats'] });
 const historyStatsRef = ref<{ $el: HTMLElement } | null>(null);
 const sharingStats = ref(false);
 
@@ -138,6 +141,131 @@ const handleTabChange = (value: string | number) => {
   const next = String(value);
   void selectTabs({ tab: next });
 };
+
+// 双击 tab 回到顶部：本页是 PageScrollContainer 的父组件，useScrollContainer() 只能拿到 null
+const pageScrollRef = ref<PageScrollHandle | null>(null);
+const { onTabPointerDown, onTabDoubleClick } = useTabDoubleClickTop(() => pageScrollRef.value);
+
+/** 四张续播表各自的行数，用来渲染 tab 角标。 */
+const resumeCounts = computed(() => {
+  const counts: Record<'album' | 'audiobook' | 'artist' | 'playlist', number> = {
+    album: 0,
+    audiobook: 0,
+    artist: 0,
+    playlist: 0,
+  };
+  playerStore.resumeScopes.forEach((scope) => {
+    const record = resumeRecordForScope(playerStore.$state, scope);
+    if (!record || record.position <= 0) return;
+    counts[scope.kind] += 1;
+  });
+  return counts;
+});
+
+type ResumeKind = 'album' | 'audiobook' | 'artist' | 'playlist';
+
+const RESUME_KINDS: ResumeKind[] = ['album', 'audiobook', 'artist', 'playlist'];
+
+/** 四个续播 tab 的称呼、hero 描述与计数单位。 */
+const RESUME_TAB_META: Record<ResumeKind, { label: string; description: string; unit: string }> = {
+  album: {
+    label: '专辑',
+    description: '记录专辑页的播放进度，一点即回。',
+    unit: '张专辑',
+  },
+  audiobook: {
+    label: '有声',
+    description: '记录有声页的播放进度，一点即回。',
+    unit: '张有声',
+  },
+  artist: {
+    label: '歌手',
+    description: '记录歌手页的播放进度，一点即回。',
+    unit: '位歌手',
+  },
+  playlist: {
+    label: '歌单',
+    description: '记录歌单页的播放进度，一点即回。',
+    unit: '个歌单',
+  },
+};
+
+const resumeKind = computed<ResumeKind | null>(() =>
+  RESUME_KINDS.includes(activeTab.value as ResumeKind) ? (activeTab.value as ResumeKind) : null,
+);
+
+/** 每个续播 tab 各记一份搜索词，切 tab 不会互相冲掉。 */
+const resumeQueries = reactive<Record<ResumeKind, string>>({
+  album: '',
+  audiobook: '',
+  artist: '',
+  playlist: '',
+});
+
+const resumeQuery = computed({
+  get: () => (resumeKind.value ? resumeQueries[resumeKind.value] : ''),
+  set: (value: string) => {
+    if (resumeKind.value) resumeQueries[resumeKind.value] = value;
+  },
+});
+
+const albumTableRef = ref<InstanceType<typeof ResumeScopeTable> | null>(null);
+const audiobookTableRef = ref<InstanceType<typeof ResumeScopeTable> | null>(null);
+const artistTableRef = ref<InstanceType<typeof ResumeScopeTable> | null>(null);
+const playlistTableRef = ref<InstanceType<typeof ResumeScopeTable> | null>(null);
+
+const activeResumeTable = computed(() => {
+  if (resumeKind.value === 'album') return albumTableRef.value;
+  if (resumeKind.value === 'audiobook') return audiobookTableRef.value;
+  if (resumeKind.value === 'artist') return artistTableRef.value;
+  if (resumeKind.value === 'playlist') return playlistTableRef.value;
+  return null;
+});
+
+const resumeHero = computed(() => {
+  const kind = resumeKind.value;
+  if (!kind) return null;
+  return {
+    description: RESUME_TAB_META[kind].description,
+    unit: RESUME_TAB_META[kind].unit,
+    count: resumeCounts.value[kind],
+  };
+});
+
+const resumeEmpty = computed(
+  () => resumeKind.value !== null && resumeCounts.value[resumeKind.value] === 0,
+);
+
+const openResumeBatch = () => {
+  activeResumeTable.value?.openBatch();
+};
+
+const openResumeClearDialog = () => {
+  activeResumeTable.value?.openClearDialog();
+};
+
+const locateResumeCurrent = () => {
+  activeResumeTable.value?.locateCurrent();
+};
+
+const resumeSecondaryActions = computed(() => [
+  {
+    icon: iconList,
+    label: '批量',
+    onTap: openResumeBatch,
+    disabled: resumeEmpty.value,
+  },
+  {
+    icon: iconTrash,
+    label: '清空历史',
+    onTap: openResumeClearDialog,
+    disabled: resumeEmpty.value,
+  },
+]);
+
+const resumeSearchPlaceholder = computed(() =>
+  resumeKind.value ? `搜索${RESUME_TAB_META[resumeKind.value].label}...` : '搜索...',
+);
 
 const mapLocalEntryToSong = (entry: LocalHistoryEntry): Song => ({
   ...entry.song,
@@ -261,7 +389,21 @@ const handleBatchRemove = (selected: Song[]) => {
   toastStore.actionCompleted(`已从播放历史移除 ${selected.length} 首`);
 };
 
-const handleLocate = () => songListRef.value?.scrollToActive?.();
+// 定位当前播放：被搜索词过滤掉时先清空搜索词再滚；真的不在历史里才提示一句
+const handleLocate = async () => {
+  const currentId = String(playerStore.currentTrackId ?? '');
+  if (!currentId) return;
+  if (!songs.value.some((song) => String(song.id) === currentId)) {
+    toastStore.info('当前播放不在播放历史里');
+    return;
+  }
+  if (searchQuery.value && !displayedSongs.value.some((song) => String(song.id) === currentId)) {
+    searchQuery.value = '';
+    await nextTick();
+  }
+  const reached = await songListRef.value?.scrollToActive?.();
+  if (!reached) toastStore.info('当前播放不在播放历史里');
+};
 
 const waitForAnimationFrame = () =>
   new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -454,7 +596,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <PageScrollContainer class="history-view-container">
+  <PageScrollContainer ref="pageScrollRef" class="history-view-container">
     <div class="history-view bg-bg-main min-h-full">
       <SliverHeader
         ref="sliverHeaderRef"
@@ -469,14 +611,24 @@ onUnmounted(() => {
         <template #details>
           <div class="contents">
             <div class="text-[13px] font-semibold text-text-secondary">
-              记录过往播放轨迹，快速回溯曾听过的歌曲与内容。
+              {{
+                resumeHero
+                  ? resumeHero.description
+                  : '记录过往播放轨迹，快速回溯曾听过的歌曲与内容。'
+              }}
             </div>
             <div
               class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary"
             >
               <div class="inline-flex items-center gap-1.5">
-                <Icon :icon="iconPlay" width="12" height="12" />
-                <span>{{ displayedCountLabel }} 首歌曲</span>
+                <Icon :icon="resumeHero ? iconClock : iconPlay" width="12" height="12" />
+                <span>
+                  {{
+                    resumeHero
+                      ? `${resumeHero.count} ${resumeHero.unit}`
+                      : `${displayedCountLabel} 首歌曲`
+                  }}
+                </span>
               </div>
             </div>
           </div>
@@ -490,6 +642,11 @@ onUnmounted(() => {
             :secondaryActions="historySecondaryActions"
             @play="handlePlayAll"
             @batch="openBatchDrawer"
+          />
+          <ActionRow
+            v-else-if="resumeKind"
+            :showPlaybackActions="false"
+            :secondaryActions="resumeSecondaryActions"
           />
           <ActionRow
             v-else
@@ -526,6 +683,31 @@ onUnmounted(() => {
               class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
               tooltip="清空播放历史"
               aria-label="清空播放历史"
+            >
+              <Icon :icon="iconTrash" width="18" height="18" />
+            </Button>
+          </template>
+
+          <template v-else-if="resumeKind">
+            <Button
+              variant="unstyled"
+              size="icon"
+              :disabled="resumeEmpty"
+              @click="openResumeBatch"
+              class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
+              tooltip="批量操作"
+              aria-label="批量操作"
+            >
+              <Icon :icon="iconList" width="18" height="18" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="icon"
+              :disabled="resumeEmpty"
+              @click="openResumeClearDialog"
+              class="action-icon hover:bg-[var(--control-hover-bg)] icon-action"
+              tooltip="清空历史"
+              aria-label="清空历史"
             >
               <Icon :icon="iconTrash" width="18" height="18" />
             </Button>
@@ -568,21 +750,50 @@ onUnmounted(() => {
           <div class="px-6">
             <div class="border-b border-[var(--border-subtle)]">
               <div class="flex items-center justify-between h-14">
-                <TabsList class="bg-transparent border-none gap-8">
+                <TabsList
+                  class="bg-transparent border-none gap-8"
+                  @pointerdown="onTabPointerDown"
+                  @dblclick="onTabDoubleClick"
+                >
                   <TabsTrigger value="songs">
                     <span class="badge-label">歌曲 <Badge :count="displayedCountLabel" /></span>
+                  </TabsTrigger>
+                  <TabsTrigger value="album">
+                    <span class="badge-label"> 专辑 <Badge :count="resumeCounts.album" /> </span>
+                  </TabsTrigger>
+                  <TabsTrigger value="audiobook">
+                    <span class="badge-label">
+                      有声 <Badge :count="resumeCounts.audiobook" />
+                    </span>
+                  </TabsTrigger>
+                  <TabsTrigger value="artist">
+                    <span class="badge-label"> 歌手 <Badge :count="resumeCounts.artist" /> </span>
+                  </TabsTrigger>
+                  <TabsTrigger value="playlist">
+                    <span class="badge-label"> 歌单 <Badge :count="resumeCounts.playlist" /> </span>
                   </TabsTrigger>
                   <TabsTrigger value="stats">
                     <span class="relative">统计</span>
                   </TabsTrigger>
                 </TabsList>
 
-                <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
-                  <SongSearchInput v-model="searchQuery" />
+                <div v-if="activeTab === 'songs' || resumeKind" class="flex items-center gap-2">
+                  <SongSearchInput
+                    v-if="!resumeKind"
+                    v-model="searchQuery"
+                    :disabled="songCount === 0"
+                  />
+                  <SongSearchInput
+                    v-else
+                    v-model="resumeQuery"
+                    :placeholder="resumeSearchPlaceholder"
+                    :disabled="resumeEmpty"
+                  />
                   <Button
                     variant="unstyled"
                     size="icon"
-                    @click="handleLocate"
+                    :disabled="resumeKind ? resumeEmpty : songCount === 0"
+                    @click="resumeKind ? locateResumeCurrent() : handleLocate()"
                     class="action-icon song-locate-btn"
                     tooltip="定位当前播放"
                   >
@@ -590,7 +801,7 @@ onUnmounted(() => {
                   </Button>
                 </div>
                 <div
-                  v-else
+                  v-else-if="activeTab === 'stats'"
                   class="hidden sm:flex items-center gap-1.5 text-[12px] font-semibold text-text-secondary"
                 >
                   <Icon :icon="iconClock" width="14" height="14" />
@@ -669,6 +880,38 @@ onUnmounted(() => {
             </div>
           </TabsContent>
 
+          <TabsContent value="album" class="px-6">
+            <ResumeScopeTable
+              ref="albumTableRef"
+              kind="album"
+              :search-query="resumeQueries.album"
+            />
+          </TabsContent>
+
+          <TabsContent value="audiobook" class="px-6">
+            <ResumeScopeTable
+              ref="audiobookTableRef"
+              kind="audiobook"
+              :search-query="resumeQueries.audiobook"
+            />
+          </TabsContent>
+
+          <TabsContent value="artist" class="px-6">
+            <ResumeScopeTable
+              ref="artistTableRef"
+              kind="artist"
+              :search-query="resumeQueries.artist"
+            />
+          </TabsContent>
+
+          <TabsContent value="playlist" class="px-6">
+            <ResumeScopeTable
+              ref="playlistTableRef"
+              kind="playlist"
+              :search-query="resumeQueries.playlist"
+            />
+          </TabsContent>
+
           <TabsContent value="stats" class="px-6 pt-5">
             <HistoryStatsContent
               ref="historyStatsRef"
@@ -691,10 +934,10 @@ onUnmounted(() => {
   >
     <template #footer>
       <div class="flex justify-end gap-3">
-        <Button variant="outline" size="default" @click="showClearDialog = false"> 取消 </Button>
         <Button variant="danger" size="default" :disabled="songCount === 0" @click="confirmClear">
           确认清空
         </Button>
+        <Button variant="outline" size="default" @click="showClearDialog = false"> 取消 </Button>
       </div>
     </template>
   </Dialog>

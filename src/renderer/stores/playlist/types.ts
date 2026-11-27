@@ -56,6 +56,17 @@ export interface PlaybackQueueState {
   updatedAt: number;
   dynamic: boolean;
   meta: PlaybackQueueMetaValueMap;
+  /**
+   * 队列带出来的详情页归属：从详情页起播时记在这个队列上，之后在同一队列里点别的歌、
+   * 上一首下一首都还认这一页；换个入口起播就是另一个队列，没有归属。
+   */
+  resumeScope?: PlaybackResumeScope | null;
+}
+
+/** 详情页点播时带的续播认领：只有从专辑/歌手/歌单/有声页发起的播放才带。 */
+export interface PlaybackResumeScope {
+  kind: 'audiobook' | 'album' | 'artist' | 'playlist';
+  id: string;
 }
 
 export interface SetPlaybackQueueOptions {
@@ -71,4 +82,9 @@ export interface SetPlaybackQueueOptions {
   activate?: boolean;
   /** Keep the explicit play-next group while its songs are being repositioned in this queue. */
   preserveQueuedNext?: boolean;
+  /**
+   * 续播认领：带上就说明这次播放来自详情页，进度记到该桶上；
+   * 其余入口（搜索、收藏、歌词搜索、歌词行双击、推荐、历史）不传，一律记单曲线。
+   */
+  resumeScope?: PlaybackResumeScope | null;
 }

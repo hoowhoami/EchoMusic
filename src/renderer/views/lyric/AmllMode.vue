@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
+import { isPageFrozen, onPageFreezeChange } from '@/utils/pageFreeze';
+import { cancelScheduledFrame, scheduleDrawFrame, type FrameHandle } from '@/utils/frameBudget';
 import { OpeningLyricPlayer } from './amll/OpeningLyricPlayer';
 import type { LyricLineMouseEvent } from '@applemusic-like-lyrics/core';
 import '@applemusic-like-lyrics/core/style.css';
@@ -69,7 +71,8 @@ const FRAME_INTERVAL = 1000 / 60;
 const SET_TIME_INTERVAL = 1000 / 30; // setCurrentTime 节流到 ~30fps
 const OVERSCAN_PX = 200; // 视口上下预渲染距离，默认 300 偏大
 
-let rafId: number | null = null;
+let rafId: FrameHandle | null = null;
+let disposePageFreeze: (() => void) | null = null;
 let lastFrameTime: number | null = null;
 let nextFrameTime: number | null = null;
 let lastSetTimeAt = 0;
@@ -83,7 +86,7 @@ let cancelInitialization: (() => void) | undefined;
 
 const rafLoop = (timestamp: number) => {
   rafId = null;
-  if (document.hidden) {
+  if (document.hidden || isPageFrozen()) {
     lastFrameTime = null;
     nextFrameTime = null;
     return;
@@ -91,7 +94,7 @@ const rafLoop = (timestamp: number) => {
 
   const highRefreshRate = settings.value.highRefreshRate === true;
   if (!highRefreshRate && nextFrameTime !== null && timestamp + 0.001 < nextFrameTime) {
-    rafId = requestAnimationFrame(rafLoop);
+    rafId = scheduleDrawFrame('amll', rafLoop);
     return;
   }
   if (highRefreshRate) {
@@ -143,7 +146,7 @@ const rafLoop = (timestamp: number) => {
   }
   // 暂停后留出有限时间让布局弹簧收敛，随后停止更新。
   if (playerStore.isPlaying || timestamp < settleUntil) {
-    rafId = requestAnimationFrame(rafLoop);
+    rafId = scheduleDrawFrame('amll', rafLoop);
   } else {
     lastFrameTime = null;
     nextFrameTime = null;
@@ -151,17 +154,32 @@ const rafLoop = (timestamp: number) => {
 };
 
 const requestFrame = () => {
-  if (!playerRef.value || document.hidden) return;
+  if (!playerRef.value || document.hidden || isPageFrozen()) return;
   settleUntil = performance.now() + 1000;
   if (rafId !== null) return;
   lastFrameTime = null;
   nextFrameTime = null;
-  rafId = requestAnimationFrame(rafLoop);
+  rafId = scheduleDrawFrame('amll', rafLoop);
 };
 
 const handleVisibilityChange = () => {
   if (document.hidden) {
-    if (rafId !== null) cancelAnimationFrame(rafId);
+    cancelScheduledFrame(rafId);
+    rafId = null;
+    lastFrameTime = null;
+    nextFrameTime = null;
+    playerRef.value?.pause();
+  } else {
+    if (playerStore.isPlaying) playerRef.value?.resume();
+    requestFrame();
+  }
+};
+
+// 壁纸窗口冻结（桌面被盖住 / 暂停且不显示壁纸）时同样停表，理由同 visibilitychange：
+// 没有画面可看时不必再算动画。解冻后按播放状态恢复。
+const handlePageFreezeChange = (frozen: boolean) => {
+  if (frozen) {
+    cancelScheduledFrame(rafId);
     rafId = null;
     lastFrameTime = null;
     nextFrameTime = null;
@@ -233,6 +251,8 @@ const initializePlayer = () => {
   else player.pause();
   playerRef.value = player;
   document.addEventListener('visibilitychange', handleVisibilityChange);
+  disposePageFreeze = onPageFreezeChange(handlePageFreezeChange);
+  lastFrameTime = performance.now();
   // 暂停时没有常驻 rAF，而引擎内部的 ResizeObserver 只会把新布局写入弹簧目标，
   // 不推帧就不会应用到 DOM，导致暂停状态调整窗口后歌词间距 / 缩放停留在旧值。
   // 这里监听宿主尺寸变化唤醒一帧收敛窗口，弹簧到位后循环自行停止。
@@ -256,10 +276,12 @@ onMounted(() => {
 onUnmounted(() => {
   cancelInitialization?.();
   document.removeEventListener('visibilitychange', handleVisibilityChange);
+  disposePageFreeze?.();
+  disposePageFreeze = null;
+  cancelScheduledFrame(rafId);
   window.removeEventListener('resize', handleWindowResize);
   hostResizeObserver?.disconnect();
   hostResizeObserver = null;
-  if (rafId !== null) cancelAnimationFrame(rafId);
   rafId = null;
   const player = playerRef.value;
   if (player) {
@@ -332,12 +354,21 @@ watch(
   },
 );
 
+const props = defineProps<{
+  /** 动态壁纸配色自带的歌词颜色；空值表示跟随皮肤设置。 */
+  colorOverride?: string;
+}>();
+
 const lyricIsDark = useLyricPageIsDark();
-const resolvedTextColor = computed(() =>
-  resolveLyricSkinColor(
-    settings.value.textColor,
-    lyricIsDark.value ? AMLL_TEXT_COLOR_FALLBACK : AMLL_TEXT_COLOR_FALLBACK_LIGHT,
-  ),
+// 壁纸配色命中时用它当歌词文字色，否则沿用皮肤设置。
+const textColorOverride = computed(() => props.colorOverride?.trim() ?? '');
+const resolvedTextColor = computed(
+  () =>
+    textColorOverride.value ||
+    resolveLyricSkinColor(
+      settings.value.textColor,
+      lyricIsDark.value ? AMLL_TEXT_COLOR_FALLBACK : AMLL_TEXT_COLOR_FALLBACK_LIGHT,
+    ),
 );
 // 歌词字体继承与颜色 CSS 变量的组装规则见 amll/hostStyle.ts。
 // 深色档保持 core 白字默认（未配置时不下发变量）；浅色档必须显式下发深色文字，

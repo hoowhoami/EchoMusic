@@ -99,15 +99,6 @@ const handleConfirm = () => {
       </div>
       <div class="popconfirm-actions">
         <Button
-          variant="secondary"
-          size="default"
-          type="button"
-          class="popconfirm-action popconfirm-cancel app-focus-ring-soft"
-          @click.stop="handleCancel"
-        >
-          {{ cancelText }}
-        </Button>
-        <Button
           :variant="tone === 'danger' ? 'danger' : 'primary'"
           size="default"
           type="button"
@@ -120,6 +111,15 @@ const handleConfirm = () => {
           @click.stop="handleConfirm"
         >
           {{ confirmText }}
+        </Button>
+        <Button
+          variant="secondary"
+          size="default"
+          type="button"
+          class="popconfirm-action popconfirm-cancel app-focus-ring-soft"
+          @click.stop="handleCancel"
+        >
+          {{ cancelText }}
         </Button>
       </div>
     </div>

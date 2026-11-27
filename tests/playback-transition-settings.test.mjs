@@ -227,6 +227,18 @@ function setup({
     './queueAdvancePolicy': queuePolicy,
     './stateMachine': stateMachine,
     './embeddedMetadata': embeddedMetadata,
+    './resume': {
+      resolveResumeEntry: () => 'single',
+      resolveResumePosition: () => 0,
+      resumeClaimFromQueues: () => null,
+      resumeOwnership: () => ({ artistIds: [], queueId: null }),
+      resumeRecordForScope: () => undefined,
+    },
+    '@/utils/resumeHint': {
+      maybeShowResumeHint: () => false,
+      resumeHintState: { open: false },
+    },
+    '@/router': { default: { currentRoute: { value: { name: '' } } } },
     './mvAudio': {
       ...loadMvAudio(),
       captureMvAudioSession: captureMvSession,

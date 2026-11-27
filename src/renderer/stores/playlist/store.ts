@@ -18,6 +18,7 @@ import {
   getPlaylistIdentityValues,
   normalizePlaybackQueueRuntime,
   normalizePlaybackQueuesRuntime,
+  withResumeScopeMeta,
   resolveFavoriteSongKeys,
   toRawSongList,
 } from './helpers';
@@ -44,7 +45,11 @@ const toPlain = <T>(value: T): T => {
 const PERSONAL_FM_PREFERENCES_STORAGE_KEY = 'personal-fm:preferences';
 
 const toStorageQueue = (queue: PlaybackQueueState) => {
-  const storageQueue = { ...queue, songs: toRawSongList(queue.songs) };
+  const storageQueue = {
+    ...queue,
+    songs: toRawSongList(queue.songs),
+    meta: withResumeScopeMeta(queue),
+  };
   delete storageQueue.playbackRevision;
   return storageQueue;
 };
@@ -62,7 +67,7 @@ const toStorageQueueMeta = (queue: PlaybackQueueState): Omit<PlaybackQueueState,
   createdAt: queue.createdAt,
   updatedAt: queue.updatedAt,
   dynamic: queue.dynamic,
-  meta: queue.meta,
+  meta: withResumeScopeMeta(queue),
 });
 
 export type { Song, SongRelateGood, SongArtist } from '@/models/song';

@@ -246,8 +246,8 @@ const removeAccount = () => {
       </div>
     </div>
     <template #footer>
-      <Button variant="outline" size="default" @click="removal = null">取消</Button>
       <Button variant="danger" size="default" @click="removeAccount">确认移除</Button>
+      <Button variant="outline" size="default" @click="removal = null">取消</Button>
     </template>
   </Dialog>
 </template>
