@@ -170,7 +170,13 @@ jobs:
             if [[ "$dir" == "echo-airplay" && "${{ runner.os }}" == "Windows" && "${{ runner.arch }}" == "ARM64" ]]; then
               export CFLAGS_aarch64_pc_windows_msvc="-D__aarch64__ -FI$(cygpath -m "$PWD")/patches/fdk-aac-msvc-arm64.h"
             fi
-            npm install
+            # 8 个 addon 并行 npm install 会共享全局 npm cache（Windows 下是
+            # C:\npm\cache\_cacache），并发写同一个 cache 条目会撞
+            # EBUSY: resource busy or locked（v2.3.3-beta.5 发版实测挂掉，
+            # 且失败在后台子进程里，日志只看到最终 exit 1 看不到编译错误）。
+            # 每个 addon 用 RUNNER_TEMP 下的独立 cache 目录隔离；并行场景下
+            # 各进程本来都要下载自己的依赖，独立 cache 无性能损失。
+            npm install --cache "$RUNNER_TEMP/npm-cache-$dir"
             if [ -n "${{ matrix.rust_target }}" ]; then
               npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
             else
