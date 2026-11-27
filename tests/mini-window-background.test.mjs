@@ -348,3 +348,26 @@ test('a mini page finishing after a newer main request stays hidden', async () =
   assert.equal(e.main.isVisible(), true);
   assert.equal(mini.isVisible(), false);
 });
+
+test('a hash-router ERR_ABORTED during the first mini load is benign', async () => {
+  const e = await setup({
+    loadMiniPage: async () => {
+      // vue-router 在 loadFile 完成前做首次 replaceState 时 Electron 的表现
+      throw new Error("Error: ERR_ABORTED (-3) loading 'file:///app/dist/index.html#/mini-player'");
+    },
+  });
+  await e.miniApi.showMiniPlayerWindow();
+  const mini = e.miniApi.getMiniPlayerWindow();
+  assert.ok(mini);
+  assert.equal(mini.isVisible(), true);
+  assert.equal(e.mode.getActiveWindowMode(), 'mini');
+});
+
+test('a real mini load failure still rejects the show request', async () => {
+  const e = await setup({
+    loadMiniPage: async () => {
+      throw new Error("Error: ERR_FILE_NOT_FOUND (-6) loading 'file:///app/dist/index.html'");
+    },
+  });
+  await assert.rejects(() => e.miniApi.showMiniPlayerWindow(), /ERR_FILE_NOT_FOUND/);
+});
