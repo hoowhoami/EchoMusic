@@ -7,7 +7,7 @@ import { transformSync } from 'esbuild';
 import * as pinia from 'pinia';
 import * as offset from '../src/shared/lyricOffset.ts';
 import * as opencc from '../src/shared/opencc.ts';
-import { hasWordByWordTiming, normalizeLyricLinePayload } from '../src/shared/lyrics.ts';
+import { hasWordByWordTiming } from '../src/shared/lyrics.ts';
 
 function compile(file, mocks, window = {}) {
   const module = { exports: {} };

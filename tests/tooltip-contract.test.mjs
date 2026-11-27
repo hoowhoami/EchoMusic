@@ -16,7 +16,7 @@ function vueFiles(directory) {
 
 test('tooltips preserve the rendered control, accessible label and disabled semantics', async () => {
   const { build } = await import('esbuild');
-  const { createSSRApp, defineComponent, h } = await import('vue');
+  const { createSSRApp, h } = await import('vue');
   const { renderToString } = await import('@vue/server-renderer');
   const result = await build({
     stdin: {

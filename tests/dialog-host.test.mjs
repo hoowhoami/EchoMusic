@@ -192,7 +192,8 @@ test('置前永久挂起时超时放行，不把「弹窗卡死」换个形式�
 });
 
 test('返回值原样透传给调用方', async () => {
-  const h = harness();
+  // harness() 负责初始化 globalThis.__dh，本用例自行覆写 open，无需记录调用
+  harness();
   globalThis.__dh.open = async () => ({ canceled: true, filePaths: [] });
   const result = await showOpenDialogSafely({ properties: ['openFile'] });
 

@@ -30,7 +30,6 @@ const {
   FileGrants,
   safePath,
   commitFile,
-  ResourceError,
   createInstallTransaction,
   recoverInstallTransactions,
 } = module.exports;
