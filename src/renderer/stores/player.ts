@@ -835,12 +835,6 @@ export const usePlayerStore = defineStore(
     // handlePlaybackEnded 在上一次切歌尚未完成时被再次触发，导致连续多次切换。
     let handlingPlaybackEnd = false;
     let resumeSaveTimer: ReturnType<typeof setInterval> | null = null;
-    // 定时器由 init() 起，回收注册必须在 setup 里做：init() 是在 Vue 活动 effect scope 之外被 await 的，
-    // 那时再调 onScopeDispose 会静默失效（只留一条 warn），定时器就再没人收。
-    onScopeDispose(() => {
-      if (resumeSaveTimer) clearInterval(resumeSaveTimer);
-      resumeSaveTimer = null;
-    });
     // 记录线归属由起播时的认领决定（详情页点播 vs 其它入口），这里不再按队列前缀猜。
     const currentResumeEntry = () =>
       resolveResumeEntry(state, {
@@ -1226,7 +1220,8 @@ export const usePlayerStore = defineStore(
     const init = async () => {
       const initialRequestSeq = state.playbackRequestSeq;
       // 长内容续播：播放中每秒记录一次进度，暂停时补记一次。
-      // 定时器的回收注册在 setup 里（见 resumeSaveTimer 声明处），这里只负责起表。
+      // 必须放在第一个 await 之前注册：await 之后 Vue 已经没有活动 effect scope，
+      // 那时再调 onScopeDispose 会静默失效，定时器与 watch 都收不回来。
       if (!resumeSaveTimer) {
         resumeSaveTimer = setInterval(() => {
           if (!getPlaybackIsPlaying(state)) return;
@@ -1237,6 +1232,10 @@ export const usePlayerStore = defineStore(
             title: state.currentTrackSnapshot?.title ?? state.currentTrackSnapshot?.name,
           });
         }, 1000);
+        onScopeDispose(() => {
+          if (resumeSaveTimer) clearInterval(resumeSaveTimer);
+          resumeSaveTimer = null;
+        });
         watch(
           () => getPlaybackIsPlaying(state),
           (playing) => {
