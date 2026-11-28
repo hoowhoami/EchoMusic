@@ -1450,6 +1450,8 @@ export const usePlayerStore = defineStore(
           }
           // 新文件真正加载完成，解除切歌加载护栏，放行后续进度回报
           if (!bindNativeTrackLoad(state, payloadSeq)) return;
+          // 直播流时间轴（HLS live）：无时长、不可 seek，恢复播放需重新解析
+          state.isLiveStream = payload?.capabilities?.timelineKind === 'live';
           void playbackManager.completeEmbeddedMetadata();
           state.playbackEnded = false;
           setEnginePlaybackStatus(state, 'loading');

@@ -29,6 +29,8 @@ export default [
       '.DS_Store',
       // 本地调试/实验产物，不属于仓库源码
       '.zcode/**',
+      // native 测试的二进制音频 fixtures（HLS 的 .ts 是 MPEG-TS 段，不是 TypeScript）
+      'native/**/tests/fixtures/**',
     ],
   },
   ...pluginVue.configs['flat/essential'],

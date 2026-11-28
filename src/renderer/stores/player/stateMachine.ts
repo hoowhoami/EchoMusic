@@ -33,6 +33,8 @@ export const beginNativeTrackLoad = (state: PlayerState) => {
   }
   state.nativeTrackSeq = null;
   state.awaitingTrackLoad = true;
+  // 新源尚未上报能力，先按非直播处理，待 file-loaded 的 capabilities 落定
+  state.isLiveStream = false;
 };
 
 export const bindNativeTrackLoad = (state: PlayerState, trackSeq?: number): boolean => {

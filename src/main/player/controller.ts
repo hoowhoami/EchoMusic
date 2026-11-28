@@ -8,6 +8,7 @@ import { refreshNetworkSettingsFromStorage } from '../networkSettings';
 import { getPersistedRendererSettings } from '../storage/persistedStores';
 import type { NetworkSettings } from '../../shared/network';
 import type { TrackTransitionPlaybackInfo } from '../../shared/trackTransition';
+import type { MediaCapabilitiesInfo } from '../../shared/mediaCapabilities';
 import { resolveNativeProxyUrls } from '../networkPolicy';
 import type { AudioEffectPlaybackOptions } from '../../shared/audio';
 import { normalizeConvolutionMix } from '../../shared/audioEffectSupport';
@@ -236,6 +237,7 @@ interface PlayerAddonEvent {
   transition?: TrackTransitionPlaybackInfo;
   duration?: number;
   state?: PlayerState;
+  capabilities?: MediaCapabilitiesInfo;
   reason?: string;
   message?: string;
   errorCode?: PlayerErrorCode;
@@ -1093,6 +1095,7 @@ export class PlayerController extends EventEmitter {
           generation: event.generation,
           // Song transitions start the incoming track at its cue point.
           transition: event.transition,
+          capabilities: event.capabilities,
           startTime:
             typeof event.time === 'number' && Number.isFinite(event.time) ? event.time : undefined,
         });

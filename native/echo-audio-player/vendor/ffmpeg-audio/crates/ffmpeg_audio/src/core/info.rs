@@ -11,6 +11,13 @@ pub struct AudioStreamInfo {
     pub stream_index: usize,
     pub selected: bool,
     pub codec_name: Option<String>,
+    /// Audio-stream parameters only. Unknown values never borrow container bitrate.
+    pub bit_rate: Option<u64>,
+    pub sample_rate: Option<u32>,
+    pub channels: Option<u32>,
+    pub bits_per_sample: Option<u32>,
+    pub profile: Option<i32>,
+    pub lossless: bool,
     pub title: Option<String>,
     pub lang: Option<String>,
 }

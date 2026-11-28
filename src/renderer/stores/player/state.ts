@@ -110,6 +110,9 @@ export const createPlayerState = () => ({
   // 期间 timeUpdate/durationChange 收到的多为上一首在 loadFile 替换前后的残留回报，一律丢弃，
   // 避免进度条切歌时先跳到旧值再归零。
   awaitingTrackLoad: false,
+  // 直播流时间轴（HLS live 等）：引擎 file-loaded 上报 capabilities.timelineKind==='live' 时置 true。
+  // 直播不可 seek、无时长；暂停恢复按"重新加入直播"语义重走解析加载。
+  isLiveStream: false,
   // 卡死恢复：恢复期间 UI 停在断点位置，忽略 reload 过程中 player 回报的归零/回跳值，避免进度条跳动
   stallRecovering: false,
   stallRecoverTarget: 0,

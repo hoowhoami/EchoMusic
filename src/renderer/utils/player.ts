@@ -15,6 +15,7 @@ export type { TrackLoudness } from '../../shared/loudness';
 import { DEFAULT_PLAYER_VOLUME, matchesPendingSeekTarget } from '../../shared/playback';
 import type { PlaybackSource } from '@/stores/player/types';
 import type { TrackTransitionPlaybackInfo } from '../../shared/trackTransition';
+import type { MediaCapabilitiesInfo } from '../../shared/mediaCapabilities';
 import type { EmbeddedTrackMetadata } from '../../shared/embeddedMetadata';
 
 export interface PlayerEngineEvents {
@@ -30,6 +31,7 @@ export interface PlayerEngineEvents {
       seq?: number;
       startTime?: number;
       transition?: TrackTransitionPlaybackInfo;
+      capabilities?: MediaCapabilitiesInfo;
     } & PlayerPlaybackContext,
   ) => void;
   ended?: (payload?: PlayerPlaybackContext) => void;
@@ -203,6 +205,8 @@ export class PlayerEngine {
   private playbackRateValue = 1;
   private durationValue = 0;
   private lastTimeValue = -1;
+  /** 当前源的时间轴能力（live/finite/unknown），由 file-loaded 事件更新 */
+  private capabilitiesValue?: MediaCapabilitiesInfo;
   private normalizationEnabled = false;
   private normalizationGain = 1.0;
   private referenceLufs = DEFAULT_REFERENCE_LUFS;
@@ -302,6 +306,7 @@ export class PlayerEngine {
           seq?: number;
           startTime?: number;
           transition?: TrackTransitionPlaybackInfo;
+          capabilities?: MediaCapabilitiesInfo;
         } & PlayerPlaybackContext,
       ) => {
         // Explicit loads are bound by their command acknowledgement, never a late event
@@ -310,6 +315,7 @@ export class PlayerEngine {
         this.clearSeekPending();
         this.lastTimeValue = -1;
         this.lastTimeUpdateMs = 0;
+        this.capabilitiesValue = payload?.capabilities;
         if (typeof payload?.startTime === 'number' && Number.isFinite(payload.startTime)) {
           this.lastTimeValue = payload.startTime;
           this.lastTimeUpdateMs = Date.now();
@@ -436,6 +442,7 @@ export class PlayerEngine {
     this.clearSeekPending();
     this.lastTimeValue = -1;
     this.lastTimeUpdateMs = 0;
+    this.capabilitiesValue = undefined;
     this.sourceRequest =
       player?.beginSourceChange() ?? Promise.reject(new Error('player API not available'));
     // Resolution can fail before setSource consumes this promise.
@@ -624,6 +631,8 @@ export class PlayerEngine {
 
   async seek(time: number): Promise<void> {
     if (!Number.isFinite(time)) return;
+    // 直播流时间轴不可 seek（引擎会直接报错），静默忽略避免噪声告警。
+    if (this.isLive) return;
     const request = { target: Math.max(0, time) };
     this.pendingSeek = request;
     this.lastTimeValue = -1;
@@ -947,6 +956,14 @@ export class PlayerEngine {
   }
   get duration(): number {
     return this.durationValue;
+  }
+  /** 当前源的时间轴能力；未上报前视为 unknown（保持既有行为） */
+  get mediaCapabilities(): MediaCapabilitiesInfo | undefined {
+    return this.capabilitiesValue;
+  }
+  /** 当前源是否为直播流（时长未知、不可 seek） */
+  get isLive(): boolean {
+    return this.capabilitiesValue?.timelineKind === 'live';
   }
   get volume(): number {
     return this.volumeValue;

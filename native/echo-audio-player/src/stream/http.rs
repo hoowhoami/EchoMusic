@@ -13,6 +13,16 @@ pub fn open(
     interrupt: Arc<AtomicBool>,
     options: &StreamOptions,
 ) -> Result<Box<dyn ReadSeek>, String> {
+    open_with_route(url, interrupt, options).map(|(source, _)| source)
+}
+
+/// 打开网络源并返回实际选中的代理路由，供嵌套资源（如 HLS 分片）沿用，
+/// 避免回退到已失败的代理或直连。
+pub(super) fn open_with_route(
+    url: &str,
+    interrupt: Arc<AtomicBool>,
+    options: &StreamOptions,
+) -> Result<(Box<dyn ReadSeek>, Option<String>), String> {
     let candidates = if options.http_proxies.is_empty() {
         vec![None]
     } else {
@@ -25,12 +35,12 @@ pub fn open(
             HttpAudioSourceOptions {
                 connect_timeout: connect_timeout(options.network_timeout),
                 recv_timeout: options.network_timeout,
-                proxy_url,
+                proxy_url: proxy_url.clone(),
                 user_agent: options.user_agent.clone(),
             },
             interrupt.clone(),
         ) {
-            Ok(source) => return Ok(Box::new(source) as Box<dyn ReadSeek>),
+            Ok(source) => return Ok((Box::new(source) as Box<dyn ReadSeek>, proxy_url)),
             Err(error) => {
                 let can_fallback = can_fallback_proxy_candidate(&error);
                 last_error = Some(error);

@@ -6,3 +6,6 @@ pub(crate) mod timeline;
 
 #[cfg(feature = "http")]
 pub mod http;
+
+#[cfg(feature = "http")]
+pub mod http_resource;

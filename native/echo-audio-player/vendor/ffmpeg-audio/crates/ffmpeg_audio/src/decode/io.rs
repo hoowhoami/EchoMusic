@@ -18,7 +18,10 @@ pub struct IoContext {
     interrupt: Arc<AtomicBool>,
 }
 
+#[repr(C)]
 struct IoOpaque {
+    av_class: *const sys::AVClass,
+    location: *mut std::ffi::c_char,
     source: Box<dyn ReadSeek>,
     interrupt: Arc<AtomicBool>,
 }
@@ -39,6 +42,8 @@ impl IoContext {
     {
         let boxed_source: Box<dyn ReadSeek> = Box::new(source);
         let opaque_ptr = Box::into_raw(Box::new(IoOpaque {
+            av_class: std::ptr::null(),
+            location: std::ptr::null_mut(),
             source: boxed_source,
             interrupt: interrupt.clone(),
         }));
@@ -72,6 +77,18 @@ impl IoContext {
                 interrupt,
             })
         }
+    }
+
+    pub(crate) fn with_location(self, location: &str) -> Result<Self> {
+        let location = std::ffi::CString::new(location)
+            .map_err(|_| AudioError::InvalidParameter("URL contains NUL".into()))?;
+        let class = location_class();
+        unsafe {
+            (*self.opaque_ptr).av_class = class;
+            (*self.opaque_ptr).location = location.into_raw();
+            (*self.ctx).av_class = io_class();
+        }
+        Ok(self)
     }
 
     pub(crate) fn interrupt_flag(&self) -> Arc<AtomicBool> {
@@ -110,7 +127,12 @@ impl IoContext {
             Ok(0) => sys::AVERROR_EOF,
             Ok(n) => n as c_int,
             Err(err) if err.kind() == ErrorKind::Interrupted => sys::AVERROR_EXIT,
-            Err(_) => sys::averror(libc::EIO),
+            Err(error) => {
+                if let Ok(message) = std::ffi::CString::new(format!("media input read failed: {error}\n")) {
+                    unsafe { sys::av_log(std::ptr::null_mut(), sys::AV_LOG_WARNING as i32, c"%s".as_ptr(), message.as_ptr()); }
+                }
+                sys::averror(libc::EIO)
+            },
         }
     }
 
@@ -151,6 +173,65 @@ impl IoContext {
         source
             .seek(seek_from)
             .map_or_else(|_| i64::from(sys::averror(libc::EIO)), u64::cast_signed)
+    }
+}
+
+struct SharedClass(sys::AVClass);
+unsafe impl Send for SharedClass {}
+unsafe impl Sync for SharedClass {}
+struct SharedOptions([sys::AVOption; 2]);
+unsafe impl Send for SharedOptions {}
+unsafe impl Sync for SharedOptions {}
+
+fn location_class() -> *const sys::AVClass {
+    static OPTIONS: std::sync::OnceLock<SharedOptions> = std::sync::OnceLock::new();
+    static CLASS: std::sync::OnceLock<SharedClass> = std::sync::OnceLock::new();
+    let options = OPTIONS.get_or_init(|| unsafe {
+        let mut values: [sys::AVOption; 2] = std::mem::zeroed();
+        values[0].name = c"location".as_ptr();
+        values[0].offset = std::mem::offset_of!(IoOpaque, location) as i32;
+        values[0].type_ = sys::AVOptionType_AV_OPT_TYPE_STRING;
+        SharedOptions(values)
+    });
+    &CLASS
+        .get_or_init(|| unsafe {
+            let mut class: sys::AVClass = std::mem::zeroed();
+            class.item_name = Some(sys::av_default_item_name);
+            class.class_name = c"EchoResource".as_ptr();
+            class.version = sys::avutil_version() as i32;
+            class.option = options.0.as_ptr();
+            SharedClass(class)
+        })
+        .0
+}
+
+unsafe extern "C" fn io_child(obj: *mut c_void, previous: *mut c_void) -> *mut c_void {
+    if !previous.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe { (*obj.cast::<sys::AVIOContext>()).opaque }
+}
+fn io_class() -> *const sys::AVClass {
+    static CLASS: std::sync::OnceLock<SharedClass> = std::sync::OnceLock::new();
+    &CLASS
+        .get_or_init(|| unsafe {
+            let mut class: sys::AVClass = std::mem::zeroed();
+            class.item_name = Some(sys::av_default_item_name);
+            class.class_name = c"EchoIO".as_ptr();
+            class.version = sys::avutil_version() as i32;
+            class.child_next = Some(io_child);
+            SharedClass(class)
+        })
+        .0
+}
+
+impl Drop for IoOpaque {
+    fn drop(&mut self) {
+        if !self.location.is_null() {
+            unsafe {
+                drop(std::ffi::CString::from_raw(self.location));
+            }
+        }
     }
 }
 

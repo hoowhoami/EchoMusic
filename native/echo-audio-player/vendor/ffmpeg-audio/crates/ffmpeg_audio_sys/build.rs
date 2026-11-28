@@ -1,19 +1,10 @@
-use std::{
-    env,
-    path::PathBuf,
-};
+use std::{env, path::PathBuf};
 
 mod utils {
     use std::{
-        env,
-        fs,
-        hash::{
-            DefaultHasher,
-            Hasher,
-        },
-        io::{
-            self,
-        },
+        env, fs,
+        hash::{DefaultHasher, Hasher},
+        io::{self},
         path::Path,
     };
 
@@ -167,6 +158,8 @@ mod utils {
             .allowlist_type("AV.*")
             .allowlist_type("Swr.*")
             .allowlist_var("AV_.*")
+            .allowlist_var("AVIO_.*")
+            .allowlist_function("avutil_version")
             .allowlist_var("AVERROR_.*")
             .allowlist_var("AVFMT_.*")
             .allowlist_var("AVSEEK.*")
@@ -176,12 +169,8 @@ mod utils {
 mod bundled {
     use std::{
         collections::BTreeSet,
-        env,
-        fs,
-        path::{
-            Path,
-            PathBuf,
-        },
+        env, fs,
+        path::{Path, PathBuf},
     };
 
     use crate::utils;
@@ -343,6 +332,11 @@ mod bundled {
             build.flag("-fPIC");
             build.flag("-msimd128");
         }
+        if os == "macos" {
+            // ff_table_4_3_exp is a 32 KiB tentative definition. Mach-O common
+            // symbols infer alignment from size; BSS preserves its C alignment.
+            build.flag("-fno-common");
+        }
         build.warnings(false);
         build.compile("ffmpeg_audio");
 
@@ -429,10 +423,7 @@ mod bundled {
 }
 
 mod system {
-    use std::path::{
-        Path,
-        PathBuf,
-    };
+    use std::path::{Path, PathBuf};
 
     use crate::utils;
 

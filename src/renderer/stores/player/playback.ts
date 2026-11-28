@@ -1808,6 +1808,14 @@ export const createPlaybackManager = (
       return;
     }
 
+    // 直播流暂停恢复 = 重新加入直播：直播源的分片窗口已随时间前移，旧连接内容过期，
+    // 重走解析加载拿到新鲜 URL（对齐 next 版"恢复即重新加入"语义）。
+    if (state.isLiveStream) {
+      const { sourceQueueId, list } = getPlaybackSourceContext();
+      await playTrack(state.currentTrackId, list, { sourceQueueId });
+      return;
+    }
+
     state.isResuming = true;
     setPlaybackIntentPlayback(state, true);
     settingStore.syncPreventSleep(true);
@@ -1846,6 +1854,8 @@ export const createPlaybackManager = (
 
   const seek = (time: number): Promise<void> => {
     if (!Number.isFinite(time)) return Promise.resolve();
+    // 直播流时间轴不可 seek，直接忽略（引擎层同样有门禁）
+    if (state.isLiveStream) return Promise.resolve();
     fmAdvanceId++;
     const effectiveDuration = engine.duration > 0 ? engine.duration : state.duration;
     const targetTime = Math.max(0, Math.min(effectiveDuration, time));

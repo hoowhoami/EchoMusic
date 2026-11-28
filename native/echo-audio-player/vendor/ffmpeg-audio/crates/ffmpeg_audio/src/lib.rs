@@ -44,12 +44,24 @@ pub struct AudioReader {
     audio_streams: Vec<AudioStreamInfo>,
     duration: Option<Duration>,
     cover: Option<AudioCover>,
+    live: bool,
 }
 
 #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for AudioReader {}
 
 impl AudioReader {
+    pub fn probe_audio_streams<T>(
+        source: T,
+        interrupt: Arc<AtomicBool>,
+    ) -> Result<Vec<AudioStreamInfo>>
+    where
+        T: Read + Seek + Send + 'static,
+    {
+        init_ffmpeg_logging();
+        Demuxer::probe_audio_streams(IoContext::new_with_interrupt(source, interrupt)?)
+    }
+
     pub fn new<T>(source: T) -> Result<Self>
     where
         T: Read + Seek + Send + 'static,
@@ -97,6 +109,33 @@ impl AudioReader {
 
         let io_ctx = IoContext::new_with_interrupt(source, interrupt)?;
         let demuxer = Demuxer::new_with_audio_stream(io_ctx, audio_stream_ordinal)?;
+        Self::from_demuxer(demuxer, packet_cache_options)
+    }
+
+    pub fn new_resource(
+        opener: Arc<dyn decode::resource::ResourceOpener>,
+        url: &str,
+        audio_stream_ordinal: Option<usize>,
+        packet_cache_options: PacketCacheOptions,
+        interrupt: Arc<AtomicBool>,
+    ) -> Result<Self> {
+        init_ffmpeg_logging();
+        let demuxer = Demuxer::new_resource(opener, url, audio_stream_ordinal, interrupt)?;
+        Self::from_demuxer(demuxer, packet_cache_options)
+    }
+
+    fn from_demuxer(
+        demuxer: Demuxer,
+        mut packet_cache_options: PacketCacheOptions,
+    ) -> Result<Self> {
+        let live = demuxer.is_live();
+        if live {
+            packet_cache_options.disk_cache = false;
+            packet_cache_options.max_bytes = packet_cache_options.max_bytes.min(8 * 1024 * 1024);
+            packet_cache_options.max_back_bytes = 0;
+            packet_cache_options.max_duration = Duration::from_secs(12);
+            packet_cache_options.donate_forward_budget = false;
+        }
         let codec_params = demuxer.stream_codec_params();
         let decoder = Decoder::new(codec_params)?;
         let timeline = Timeline::new(demuxer.time_base()?, demuxer.start_time())?;
@@ -115,6 +154,7 @@ impl AudioReader {
             audio_streams,
             duration,
             cover,
+            live,
         })
     }
 
@@ -129,6 +169,10 @@ impl AudioReader {
     /// - `Ok(Some(AudioFrame))` if a frame was successfully decoded and is ready for use.
     /// - `Ok(None)` if the end of the audio stream (EOF) has been reached.
     /// - `Err(AudioError)` if an underlying I/O or FFmpeg decoding error occurs.
+    pub fn is_live(&self) -> bool {
+        self.live
+    }
+
     pub fn receive_frame(&mut self) -> Result<Option<AudioFrame<'_>>> {
         self.engine.receive_frame()
     }
@@ -145,6 +189,11 @@ impl AudioReader {
     /// * `mode` - The strategy ([`SeekMode`]) to employ for resolving the exact position. Read the
     ///   timestamp of the next frame to learn where the seek actually landed.
     pub fn seek(&mut self, target: Duration, mode: SeekMode) -> Result<()> {
+        if self.live {
+            return Err(AudioError::InvalidParameter(
+                "Live input is not seekable".into(),
+            ));
+        }
         self.engine.seek(target, mode)
     }
 
