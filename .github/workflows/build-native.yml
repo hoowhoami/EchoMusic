@@ -166,6 +166,7 @@ jobs:
             native/echo-media-controls
             native/echo-platform-adaptor
             native/echo-audio-player
+            native/echo-audio-player/vendor/ffmpeg-audio
             native/echo-sqlite-store
             native/echo-opencc
             native/echo-upnp
@@ -268,6 +269,17 @@ jobs:
           # 这是缩略测试集：跳过依赖本地 HTTP 服务的 transition 用例（CI 上偶发
           # loopback transport error）；本地/夜间仍需跑一次无 --skip 的全量测试。
           cargo test --lib --release -- --test-threads=1 --skip http_
+
+      - name: Run vendored ffmpeg_audio tests
+        if: matrix.platform == 'windows' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # vendored 库自带磁盘包缓存/UA/断线重连等测试，宿主 crate 的测试步骤
+          # 不覆盖它们；http feature 默认关闭，需显式开启才能编译进网络相关用例。
+          # 上游需真实网络的 http_test 已带 #[ignore]，此处自动跳过。
+          cd native/echo-audio-player/vendor/ffmpeg-audio
+          cargo test --release -p ffmpeg_audio --features http --tests -- --test-threads=1
 
       - name: Stage and verify native addons
         shell: bash

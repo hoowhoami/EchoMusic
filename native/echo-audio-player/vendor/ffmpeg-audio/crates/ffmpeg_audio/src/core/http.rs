@@ -1116,6 +1116,9 @@ mod tests {
                         Err(error) => panic!("accept: {error}"),
                     }
                 };
+                // Windows 上 accept 的 socket 继承监听 socket 的非阻塞属性；
+                // 恢复阻塞模式让 read_timeout 真正生效，read 才不会偶发 WouldBlock。
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(2)))
                     .unwrap();

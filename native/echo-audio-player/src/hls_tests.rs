@@ -39,6 +39,9 @@ impl Server {
                     thread::sleep(Duration::from_millis(5));
                     continue;
                 };
+                // Windows 上 accept 的 socket 继承监听 socket 的非阻塞属性；
+                // 恢复阻塞模式，避免半截请求头破坏路径解析。
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(1)))
                     .unwrap();
