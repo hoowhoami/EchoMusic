@@ -155,6 +155,7 @@ test('application shutdown waits for output resources and plugin processes befor
       './taskbarProgress',
       './taskbarMediaBar',
       './applicationMenu',
+      './editContextMenu',
       './diagnostics/memory',
       './share',
       './networkSettings',

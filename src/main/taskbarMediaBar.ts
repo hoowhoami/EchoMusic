@@ -220,7 +220,9 @@ async function createBar(): Promise<void> {
     if (win === candidate) session?.stop();
     if (usable(candidate)) candidate.destroy();
   });
-  candidate.webContents.on('context-menu', () => {
+  candidate.webContents.on('context-menu', (_event, params) => {
+    // 可编辑目标交给全局输入框编辑菜单（editContextMenu.ts），避免双弹
+    if (params.isEditable) return;
     Menu.buildFromTemplate([
       {
         label: '打开 EchoMusic',

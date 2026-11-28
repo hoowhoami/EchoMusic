@@ -33,6 +33,7 @@ import { setupTaskbarThumbnail, destroyTaskbarThumbnail } from './taskbarThumbna
 import { refreshTaskbarProgress } from './taskbarProgress';
 import { restoreTaskbarPlayer, cleanupTaskbarPlayer } from './taskbarMediaBar';
 import { configureApplicationMenu, configureWebContentsShortcuts } from './applicationMenu';
+import { configureEditContextMenu } from './editContextMenu';
 import { logMainMemory } from './diagnostics/memory';
 import {
   flushPendingShareTargets,
@@ -136,6 +137,8 @@ if (!gotTheLock) {
       openSettings: openSettingsFromNativeShell,
       closeWindow: closeWindowFromShortcut,
     });
+    // 输入框右键编辑菜单（剪切/复制/粘贴/全选），对所有窗口与 iframe 生效
+    configureEditContextMenu(contents);
   });
 
   app.whenReady().then(async () => {
