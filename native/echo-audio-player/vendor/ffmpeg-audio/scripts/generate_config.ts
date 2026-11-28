@@ -49,6 +49,8 @@ const demuxers = [
   'dtshd',
   'eac3',
   'flac',
+  'hls',
+  'mpegts',
   'iff',
   'm4v',
   'matroska',

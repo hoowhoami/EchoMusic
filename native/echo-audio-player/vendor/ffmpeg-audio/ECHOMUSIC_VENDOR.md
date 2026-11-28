@@ -14,6 +14,11 @@ This directory vendors `ffmpeg-audio` as ordinary source files, not as a Git sub
 
 - Keep EchoMusic's packet-cache/multi-audio-stream/raw-frame API surface used by the native player.
 - Keep `HttpAudioSourceOptions` for player network timeout and HTTP proxy settings.
+- Accept an optional per-reader `user_agent` in `HttpAudioSourceOptions`. Configure
+  the immutable reqwest client default header so initial probes, range seeks and
+  reconnects all use the same caller-supplied value. The host owns persistence
+  and explicit regeneration; the vendor never changes it automatically. An explicit
+  empty string omits the header; None retains the library default for other callers.
 - Bridge EchoMusic's `Arc<AtomicBool>` decode interrupt flag to upstream's `HttpCancelHandle`.
 - Keep packet-cache pause-wait support, seek timeout, interrupt lifetime, and retained-range recovery.
 - Use upstream `Timeline` for cache timestamps and seeks; restore scan cursors with raw ticks through the cache worker. Capture pending frames before scans and restore their exact trim so cached and physical seeks keep their frame boundaries.
@@ -24,6 +29,13 @@ This directory vendors `ffmpeg-audio` as ordinary source files, not as a Git sub
 - Allow upstream `scripts/release` in the vendor ignore rules so the host's release-artifact rule does not hide source files.
 - Keep `crates/soundtouch` pointed at the local vendored `soundtouch-rs` path.
 - Keep the `futures-util` constraint at `0.3.32` to stay compatible with the current native player lockfile.
+
+- HLS custom resource IO uses a caller-owned opener/session, effective-URL AVOptions,
+  cancellation and read deadlines. The pinned FFmpeg HLS patch publishes timeline
+  facts and permits HTTP(S) with custom IO while FFmpeg networking stays disabled.
+  `scripts/enable_hls_bundle.py` deterministically adds the configure-verified HLS
+  source/component delta to all existing configurations without changing platform
+  flags. The upstream bundle workflow applies `scripts/hls-custom-io.patch` too.
 
 ## Local Usage
 
@@ -62,3 +74,12 @@ pnpm --dir native/echo-audio-player build:debug
 ```
 
 The native player's global runtime tests require serial execution. HTTP tests bind loopback listeners and need a runner that permits local sockets. The three upstream tests requiring `tests/server.go` remain opt-in. Build/load checks do not replace Electron playback or Windows/Linux runtime validation.
+
+## 2026-11-02 macOS common-symbol alignment
+
+`ffmpeg_audio_sys/build.rs` passes `-fno-common` only when compiling the bundled
+FFmpeg C sources for macOS. The tentative `ff_table_4_3_exp` byte array (0x803c
+bytes) otherwise becomes a Mach-O common symbol with size-derived alignment,
+causing Apple's linker to reduce `__DATA,__common` alignment from 0x8000 to
+0x4000. BSS definitions retain the C type's actual alignment; explicitly aligned
+SIMD data and other platforms keep their existing requirements.

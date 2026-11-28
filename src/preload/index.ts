@@ -6,6 +6,7 @@ import type { AppInfoResult, UpdateDownloadResult, UpdateState } from '../shared
 import type { PlayMode } from '../shared/playback';
 import type { PlayerRuntimeSession, PlayerSessionRestore } from '../shared/playerSession';
 import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
+import type { MediaCapabilitiesInfo } from '../shared/mediaCapabilities';
 import type { TaskbarLyricSettings, TaskbarLyricState } from '../shared/taskbar';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
@@ -953,6 +954,7 @@ contextBridge.exposeInMainWorld('electron', {
         generation?: number;
         startTime?: number;
         transition?: TrackTransitionPlaybackInfo;
+        capabilities?: MediaCapabilitiesInfo;
       }) => void,
     ) => {
       const listener = (
@@ -964,6 +966,7 @@ contextBridge.exposeInMainWorld('electron', {
           generation?: number;
           startTime?: number;
           transition?: TrackTransitionPlaybackInfo;
+          capabilities?: MediaCapabilitiesInfo;
         },
       ) => func(payload);
       ipcRenderer.on('player:file-loaded', listener);

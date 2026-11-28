@@ -3,11 +3,16 @@ use crate::shared::{
     AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat,
     PacketCacheSeekableRange, PacketCacheStats, SharedAudio,
 };
-use crate::stream::{open_stream, ReadSeek, StreamOptions};
+use crate::stream::{
+    is_network_url, open_decoder_input, open_stream, ReadSeek, StreamOptions,
+};
 use crate::transition_runner::{
     split_chunk_at, AbortedTransition, ArmedTransition, RunnerStep, TransitionRunner,
 };
-use ffmpeg_audio::{sys, AudioError, AudioReader, PacketCacheOptions, RawAudioData, SeekMode};
+use ffmpeg_audio::{
+    sys, AudioError, AudioReader, HttpAudioSourceOptions, PacketCacheOptions, RawAudioData,
+    SeekMode,
+};
 use std::collections::VecDeque;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -84,6 +89,8 @@ pub struct DecoderData {
     source_channels: usize,
     source_sample_format: AudioSampleFormat,
     discard_before_secs: Option<f64>,
+    /// 直播流的单调连续时间轴基点（上一 chunk 结束秒数）；仅 live 时使用。
+    live_chunk_end: Option<f64>,
 }
 
 impl DecoderData {
@@ -95,7 +102,44 @@ impl DecoderData {
         packet_cache: PacketCacheOptions,
         stream_options: &StreamOptions,
     ) -> Result<Self, String> {
-        let source = open_stream(&url, interrupt.clone(), stream_options)?;
+        let (source, stream_options) =
+            open_decoder_input(&url, interrupt.clone(), stream_options)?;
+        if !is_network_url(&url) {
+            return Self::from_source(
+                url,
+                audio_stream_ordinal,
+                mix_sample_rate,
+                interrupt,
+                source,
+                packet_cache,
+            );
+        }
+        // 网络流先嗅探 HLS 签名：m3u8 交给 FFmpeg 自带 HLS demuxer（分片经
+        // HttpResourceSession 定制 IO 拉取），普通顺序流走原路径。
+        let (hls, source) = crate::stream::sniff::sniff(source).map_err(|e| e.to_string())?;
+        if hls {
+            let options = HttpAudioSourceOptions {
+                connect_timeout: stream_options.network_timeout.min(Duration::from_secs(10)),
+                recv_timeout: stream_options.network_timeout,
+                proxy_url: stream_options.http_proxies.first().cloned().flatten(),
+                user_agent: stream_options.user_agent.clone(),
+            };
+            drop(source);
+            let session = ffmpeg_audio::core::http_resource::HttpResourceSession::new(
+                options,
+                interrupt.clone(),
+            )
+            .map_err(|e| e.to_string())?;
+            let reader = AudioReader::new_resource(
+                Arc::new(session),
+                &url,
+                audio_stream_ordinal,
+                packet_cache,
+                interrupt.clone(),
+            )
+            .map_err(|e| format!("failed to create HLS decoder: {e}"))?;
+            return Self::from_reader(reader, interrupt, mix_sample_rate);
+        }
         Self::from_source(
             url,
             audio_stream_ordinal,
@@ -114,13 +158,21 @@ impl DecoderData {
         source: Box<dyn ReadSeek>,
         packet_cache: PacketCacheOptions,
     ) -> Result<Self, String> {
-        let mut reader = AudioReader::new_with_audio_stream_packet_cache_and_interrupt(
+        let reader = AudioReader::new_with_audio_stream_packet_cache_and_interrupt(
             source,
             audio_stream_ordinal,
             packet_cache,
             interrupt.clone(),
         )
         .map_err(|err| format!("failed to create audio decoder: {err}"))?;
+        Self::from_reader(reader, interrupt, mix_sample_rate)
+    }
+
+    fn from_reader(
+        mut reader: AudioReader,
+        interrupt: Arc<AtomicBool>,
+        mix_sample_rate: Option<u32>,
+    ) -> Result<Self, String> {
         let embedded_metadata =
             crate::embedded_metadata::EmbeddedMetadata::from_reader(&mut reader);
         let duration = reader.duration();
@@ -139,6 +191,7 @@ impl DecoderData {
             source_channels,
             source_sample_format,
             discard_before_secs: None,
+            live_chunk_end: None,
         })
     }
 
@@ -150,6 +203,36 @@ impl DecoderData {
         self.duration
             .map(|duration| duration.as_secs_f64())
             .unwrap_or_default()
+    }
+
+    /// 是否为直播流（HLS live 等）。直播流时长未知且不可 seek。
+    pub fn is_live(&self) -> bool {
+        self.reader.is_live()
+    }
+
+    /// 媒体时间轴能力，独立于未知/零时长：live/finite/unknown + 是否可 seek。
+    pub fn capabilities(&self) -> crate::events::MediaCapabilities {
+        crate::events::MediaCapabilities {
+            timeline_kind: if self.is_live() {
+                "live".to_string()
+            } else if self.duration.is_some() {
+                "finite".to_string()
+            } else {
+                "unknown".to_string()
+            },
+            seekable: !self.is_live(),
+        }
+    }
+
+    /// 直播流分片间 PTS 可能跳变（每段各自起算），统一重写为单调连续时间轴，
+    /// 与 next 版语义一致：pts 取上一 chunk 的结束位置并顺延。
+    fn apply_live_pts(&mut self, chunk: &mut DecodedAudioChunk) {
+        if !self.is_live() {
+            return;
+        }
+        let base = self.live_chunk_end.unwrap_or(0.0);
+        chunk.pts_secs = Some(base);
+        self.live_chunk_end = Some(decoded_chunk_end_secs(chunk, base));
     }
 
     pub fn interrupt_handle(&self) -> Arc<AtomicBool> {
@@ -253,6 +336,7 @@ impl DecoderData {
             let Some(mut chunk) = chunk else {
                 return Ok(None);
             };
+            self.apply_live_pts(&mut chunk);
             // Honour a pending sample-accurate alignment (seek landed on an earlier frame).
             if !align_switched_chunk(&mut chunk, &mut self.discard_before_secs) {
                 continue;
@@ -985,6 +1069,7 @@ fn decode_worker_loop(
         match decode_result {
             Ok(Some(frame)) => match decoded_chunk_from_frame(&frame) {
                 Ok(mut chunk) => {
+                    data.apply_live_pts(&mut chunk);
                     if !align_switched_chunk(&mut chunk, &mut data.discard_before_secs) {
                         continue;
                     }

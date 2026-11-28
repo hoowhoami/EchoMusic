@@ -59,6 +59,8 @@ pub struct TrackSwitchInfo {
     pub normalization_gain_db: Option<f32>,
     /// Incoming track's own gain, distinct from the temporary overlap reference.
     pub track_normalization_gain_db: Option<f32>,
+    /// Incoming track's timeline capabilities (live/finite/unknown + seekable)。
+    pub capabilities: Option<crate::events::MediaCapabilities>,
 }
 
 impl TrackSwitchInfo {
@@ -73,6 +75,7 @@ impl TrackSwitchInfo {
             transition: None,
             normalization_gain_db: None,
             track_normalization_gain_db: None,
+            capabilities: None,
         }
     }
 }

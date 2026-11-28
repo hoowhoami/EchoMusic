@@ -1,15 +1,6 @@
-use std::{
-    io::Cursor,
-    time::Duration,
-};
+use std::{io::Cursor, time::Duration};
 
-use ffmpeg_audio::{
-    AudioReader,
-    RawAudioData,
-    ResampleOptions,
-    ScanMode,
-    SeekMode,
-};
+use ffmpeg_audio::{AudioReader, RawAudioData, ResampleOptions, ScanMode, SeekMode};
 
 fn generate_sine_wav(duration_secs: f32) -> Vec<u8> {
     let sample_rate: u32 = 44100;
@@ -148,10 +139,16 @@ impl ReadState {
             // the same cached seek window; otherwise one can seek physically while
             // the other replays cached packets, producing different frame boundaries.
             let deadline = std::time::Instant::now() + Duration::from_secs(2);
-            while !reader.packet_cache_stats().seekable_ranges.iter().any(|range| {
-                range.start <= middle && range.end >= Duration::from_millis(750)
-            }) {
-                assert!(std::time::Instant::now() < deadline, "seek window did not fill");
+            while !reader
+                .packet_cache_stats()
+                .seekable_ranges
+                .iter()
+                .any(|range| range.start <= middle && range.end >= Duration::from_millis(750))
+            {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "seek window did not fill"
+                );
                 std::thread::sleep(Duration::from_millis(1));
             }
         }
@@ -373,7 +370,8 @@ fn test_scan_preserves_frame_boundaries_after_an_uncached_seek() {
                     None,
                     ffmpeg_audio::PacketCacheOptions::new(1, 0, Duration::from_secs(1))
                         .with_donate_forward_budget(false),
-                ).unwrap()
+                )
+                .unwrap()
             };
             // One prefetched packet cannot reach 500 ms, so these are physical seeks.
             let mut scanned = open();
@@ -383,8 +381,11 @@ fn test_scan_preserves_frame_boundaries_after_an_uncached_seek() {
             }
             scanned.scan_exact_duration(scan_mode).unwrap();
             assert_eq!(scanned.stream_position(), untouched.stream_position());
-            assert_eq!(drain_frames(&mut scanned), drain_frames(&mut untouched),
-                "{seek_mode:?} with {scan_mode:?}");
+            assert_eq!(
+                drain_frames(&mut scanned),
+                drain_frames(&mut untouched),
+                "{seek_mode:?} with {scan_mode:?}"
+            );
         }
     }
 }

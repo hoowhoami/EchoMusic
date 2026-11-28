@@ -16,6 +16,7 @@ pub struct Demuxer {
     // This keeps the callback lifetime explicit instead of relying on a clone
     // stored inside IoContext and its current field/drop order.
     interrupt: Arc<AtomicBool>,
+    resources: Option<Box<super::resource::ResourceIo>>,
 }
 
 unsafe impl Send for Demuxer {}
@@ -24,6 +25,42 @@ impl Demuxer {
     pub fn new_with_audio_stream(
         io_ctx: IoContext,
         audio_stream_ordinal: Option<usize>,
+    ) -> Result<Self> {
+        Self::open(io_ctx, audio_stream_ordinal, true, None, None)
+    }
+
+    /// Parse container headers without decoding audio/video packets or allocating
+    /// a playback cache. Missing header facts remain unknown to the caller.
+    pub fn probe_audio_streams(io_ctx: IoContext) -> Result<Vec<AudioStreamInfo>> {
+        Self::open(io_ctx, None, false, None, None).map(|demuxer| demuxer.audio_streams())
+    }
+
+    pub fn new_resource(
+        opener: Arc<dyn super::resource::ResourceOpener>,
+        url: &str,
+        audio_stream_ordinal: Option<usize>,
+        interrupt: Arc<AtomicBool>,
+    ) -> Result<Self> {
+        let resource = opener.open(url, 0, None)?;
+        let io = IoContext::new_with_interrupt(resource.source, interrupt.clone())?
+            .with_location(&resource.effective_url)?;
+        Self::open(
+            io,
+            audio_stream_ordinal,
+            true,
+            Some(resource.effective_url),
+            Some(Box::new(super::resource::ResourceIo::new(
+                opener, interrupt,
+            ))),
+        )
+    }
+
+    fn open(
+        io_ctx: IoContext,
+        audio_stream_ordinal: Option<usize>,
+        find_stream_info: bool,
+        url: Option<String>,
+        mut resources: Option<Box<super::resource::ResourceIo>>,
     ) -> Result<Self> {
         unsafe {
             let mut ctx = sys::avformat_alloc_context();
@@ -40,9 +77,17 @@ impl Demuxer {
 
             (*ctx).flags |= sys::AVFMT_FLAG_CUSTOM_IO.cast_signed();
 
+            if let Some(io) = resources.as_mut() {
+                (*ctx).opaque = (&mut **io as *mut super::resource::ResourceIo).cast();
+                (*ctx).interrupt_callback.callback = Some(super::resource::ResourceIo::interrupted);
+                (*ctx).interrupt_callback.opaque = (*ctx).opaque;
+                (*ctx).io_open = Some(super::resource::ResourceIo::open);
+                (*ctx).io_close2 = Some(super::resource::ResourceIo::close);
+            }
+            let url = url.as_deref().map(super::resource::input_url).transpose()?;
             let ret = sys::avformat_open_input(
                 &raw mut ctx,
-                ptr::null(),
+                url.as_ref().map_or(ptr::null(), |url| url.as_ptr()),
                 ptr::null_mut(),
                 ptr::null_mut(),
             );
@@ -50,10 +95,12 @@ impl Demuxer {
                 return Err(AudioError::from_ffmpeg(ret));
             }
 
-            let ret = sys::avformat_find_stream_info(ctx, ptr::null_mut());
-            if ret < 0 {
-                sys::avformat_close_input(&raw mut ctx);
-                return Err(AudioError::from_ffmpeg(ret));
+            if find_stream_info {
+                let ret = sys::avformat_find_stream_info(ctx, ptr::null_mut());
+                if ret < 0 {
+                    sys::avformat_close_input(&raw mut ctx);
+                    return Err(AudioError::from_ffmpeg(ret));
+                }
             }
 
             let stream_idx = if let Some(audio_stream_ordinal) = audio_stream_ordinal {
@@ -108,6 +155,7 @@ impl Demuxer {
                 audio_stream_idx: stream_idx as usize,
                 io_ctx,
                 interrupt,
+                resources,
             })
         }
     }
@@ -128,6 +176,9 @@ impl Demuxer {
     }
 
     pub fn read_packet(&mut self) -> Result<Option<*mut sys::AVPacket>> {
+        if let Some(io) = self.resources.as_mut() {
+            io.begin_read();
+        }
         loop {
             unsafe {
                 sys::av_packet_unref(self.packet);
@@ -195,6 +246,12 @@ impl Demuxer {
         }
     }
 
+    pub fn is_live(&self) -> bool {
+        self.metadata()
+            .get("echo.timeline")
+            .is_some_and(|value| value == "live")
+    }
+
     pub fn metadata(&self) -> HashMap<String, String> {
         let mut map = HashMap::new();
         unsafe {
@@ -244,6 +301,28 @@ impl Demuxer {
                     stream_index: i as usize,
                     selected: i as usize == self.audio_stream_idx,
                     codec_name,
+                    bit_rate: u64::try_from((*codec_params).bit_rate)
+                        .ok()
+                        .filter(|v| *v > 0),
+                    sample_rate: u32::try_from((*codec_params).sample_rate)
+                        .ok()
+                        .filter(|v| *v > 0),
+                    channels: u32::try_from((*codec_params).ch_layout.nb_channels)
+                        .ok()
+                        .filter(|v| *v > 0),
+                    bits_per_sample: u32::try_from(
+                        (*codec_params)
+                            .bits_per_raw_sample
+                            .max((*codec_params).bits_per_coded_sample),
+                    )
+                    .ok()
+                    .filter(|v| *v > 0),
+                    profile: ((*codec_params).profile >= 0).then_some((*codec_params).profile),
+                    lossless: {
+                        let descriptor = sys::avcodec_descriptor_get((*codec_params).codec_id);
+                        !descriptor.is_null()
+                            && ((*descriptor).props & sys::AV_CODEC_PROP_LOSSLESS as i32) != 0
+                    },
                     title,
                     lang,
                 });

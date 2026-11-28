@@ -59,6 +59,24 @@ pub struct SpectrumOptions {
     pub include_waveform: Option<bool>,
 }
 
+/// 采纳的媒体输入的时间轴事实，独立于未知/零时长。
+#[napi(object)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MediaCapabilities {
+    /// live：直播流（时长未知、不可 seek）；finite：有限时长；unknown：无法判定。
+    pub timeline_kind: String,
+    pub seekable: bool,
+}
+
+impl Default for MediaCapabilities {
+    fn default() -> Self {
+        Self {
+            timeline_kind: "unknown".to_string(),
+            seekable: true,
+        }
+    }
+}
+
 #[napi(object)]
 #[derive(Clone, Debug)]
 pub struct PlayerEvent {
@@ -72,6 +90,7 @@ pub struct PlayerEvent {
     pub transition: Option<TrackTransitionInfo>,
     pub duration: Option<f64>,
     pub state: Option<PlayerState>,
+    pub capabilities: Option<MediaCapabilities>,
     pub reason: Option<String>,
     pub message: Option<String>,
     pub error_code: Option<String>,
@@ -321,6 +340,7 @@ impl PlayerEvent {
             transition: None,
             duration: None,
             state: None,
+            capabilities: None,
             reason: None,
             message: None,
             error_code: None,
@@ -352,6 +372,11 @@ impl PlayerEvent {
             self.track_seq = Some(track_seq as f64);
         }
         self.generation = Some(generation as f64);
+        self
+    }
+
+    pub fn with_capabilities(mut self, capabilities: MediaCapabilities) -> Self {
+        self.capabilities = Some(capabilities);
         self
     }
 

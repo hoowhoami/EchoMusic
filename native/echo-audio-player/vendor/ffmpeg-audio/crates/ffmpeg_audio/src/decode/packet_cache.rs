@@ -1,5 +1,6 @@
 use std::{
     collections::VecDeque,
+    path::{Path, PathBuf},
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -9,10 +10,15 @@ use std::{
 };
 
 use super::demuxer::Demuxer;
+use super::packet_file::{FileRecord, PacketFile};
 use crate::{AudioError, Result, core::timeline::Timeline, sys};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct PacketCacheOptions {
+    pub disk_cache: bool,
+    /// Invoked once for a file failure, on an I/O worker, outside the queue lock.
+    pub disk_cache_error_handler: Option<fn(&str)>,
+    pub cache_directory: Option<Arc<Path>>,
     pub max_bytes: usize,
     pub max_back_bytes: usize,
     pub max_duration: Duration,
@@ -25,6 +31,9 @@ impl PacketCacheOptions {
     pub fn new(max_bytes: usize, max_back_bytes: usize, max_duration: Duration) -> Self {
         let max_bytes = max_bytes.max(1);
         Self {
+            disk_cache: false,
+            disk_cache_error_handler: None,
+            cache_directory: None,
             max_bytes,
             max_back_bytes,
             max_duration,
@@ -48,6 +57,17 @@ impl PacketCacheOptions {
         self.seek_timeout = seek_timeout.max(Duration::from_millis(1));
         self
     }
+
+    pub fn with_disk_cache(mut self, enabled: bool, directory: Option<PathBuf>) -> Self {
+        self.disk_cache = enabled;
+        self.cache_directory = directory.map(Arc::from);
+        self
+    }
+
+    pub fn with_disk_cache_error_handler(mut self, handler: fn(&str)) -> Self {
+        self.disk_cache_error_handler = Some(handler);
+        self
+    }
 }
 
 impl Default for PacketCacheOptions {
@@ -58,6 +78,10 @@ impl Default for PacketCacheOptions {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PacketCacheStats {
+    /// Append-only file length, including records whose indexes were pruned.
+    pub file_cache_bytes: Option<u64>,
+    /// A failed file creation/write falls back to memory without losing audio.
+    pub disk_cache_error: Option<String>,
     pub forward_bytes: usize,
     pub back_bytes: usize,
     pub total_bytes: usize,
@@ -76,6 +100,7 @@ pub struct PacketCacheSeekableRange {
 
 pub(crate) struct CachedPacket {
     packet: *mut sys::AVPacket,
+    disk: Option<(Arc<PacketFile>, FileRecord)>,
     pts: Option<Duration>,
     end: Option<Duration>,
     size: usize,
@@ -96,11 +121,44 @@ impl CachedPacket {
             }
             Ok(Self {
                 packet,
+                disk: self.disk.clone(),
                 pts: self.pts,
                 end: self.end,
                 size: self.size,
             })
         }
+    }
+
+    fn offload(&mut self, file: &Arc<PacketFile>) {
+        let Some(record) = (unsafe { file.append(self.packet) }) else {
+            return;
+        };
+        unsafe {
+            // Keep every AVPacket property (including opaque_ref) in the index,
+            // but release payload and side data only after the complete write.
+            sys::av_buffer_unref(&mut (*self.packet).buf);
+            (*self.packet).data = std::ptr::null_mut();
+            (*self.packet).size = 0;
+            sys::av_packet_free_side_data(self.packet);
+        }
+        self.disk = Some((file.clone(), record));
+        self.size = std::mem::size_of::<Self>() + std::mem::size_of::<sys::AVPacket>();
+        unsafe {
+            if !(*self.packet).opaque_ref.is_null() {
+                self.size = self.size.saturating_add((*(*self.packet).opaque_ref).size);
+            }
+        }
+    }
+
+    fn materialize(mut self) -> Result<Self> {
+        if let Some((file, record)) = self.disk.take() {
+            let packet = unsafe { file.read(record, self.packet)? };
+            unsafe {
+                sys::av_packet_free(&mut self.packet);
+            }
+            self.packet = packet;
+        }
+        Ok(self)
     }
 }
 
@@ -164,6 +222,8 @@ struct PacketCacheState {
 struct SharedPacketCache {
     state: Mutex<PacketCacheState>,
     changed: Condvar,
+    disk_cache: Option<Arc<PacketFile>>,
+    disk_cache_error: Option<String>,
 }
 
 pub(crate) struct PacketCache {
@@ -178,7 +238,26 @@ pub(crate) struct PacketCache {
 impl PacketCache {
     pub(crate) fn new(demuxer: Demuxer, timeline: Timeline, options: PacketCacheOptions) -> Self {
         let interrupt = demuxer.interrupt_flag();
+        let (disk_cache, disk_cache_error) = if options.disk_cache {
+            match PacketFile::new(
+                options.cache_directory.as_deref(),
+                options.disk_cache_error_handler,
+            ) {
+                Ok(file) => (Some(Arc::new(file)), None),
+                Err(error) => {
+                    let message = format!("packet cache file creation failed: {error}");
+                    if let Some(handler) = options.disk_cache_error_handler {
+                        handler(&message);
+                    }
+                    (None, Some(message))
+                }
+            }
+        } else {
+            (None, None)
+        };
         let shared = Arc::new(SharedPacketCache {
+            disk_cache,
+            disk_cache_error,
             state: Mutex::new(PacketCacheState {
                 ranges: vec![PacketCacheRange::new(0, 0)],
                 current_range: 0,
@@ -198,9 +277,12 @@ impl PacketCache {
             changed: Condvar::new(),
         });
         let worker_shared = shared.clone();
+        let worker_options = options.clone();
         let worker = thread::Builder::new()
             .name("ffmpeg-audio-packet-cache".to_string())
-            .spawn(move || run_packet_cache_worker(demuxer, timeline, options, worker_shared))
+            .spawn(move || {
+                run_packet_cache_worker(demuxer, timeline, worker_options, worker_shared)
+            })
             .expect("failed to spawn packet cache thread");
 
         Self {
@@ -234,16 +316,43 @@ impl PacketCache {
             let range = &state.ranges[current_range];
             let offset = (range.read_index - range.base_index) as usize;
             if offset < range.packets.len() {
-                if buffering && !packet_cache_pause_ready(&state, current_range, self.options) {
+                if buffering && !packet_cache_pause_ready(&state, current_range, &self.options) {
                     state = self.shared.changed.wait(state).map_err(|_| {
                         AudioError::InvalidData("packet cache lock poisoned".to_string())
                     })?;
                     continue;
                 }
-                let range = &mut state.ranges[current_range];
+                let epoch = state.epoch;
+                let range = &state.ranges[current_range];
+                let read_index = range.read_index;
                 let packet = &range.packets[offset];
                 let cloned = packet.clone_packet()?;
                 let packet_size = packet.size;
+                // File I/O must not hold the queue lock: the demux worker,
+                // statistics and cancellation/seek control remain responsive.
+                let cloned = if cloned.disk.is_some() {
+                    drop(state);
+                    let cloned = cloned.materialize()?;
+                    state = self.shared.state.lock().map_err(|_| {
+                        AudioError::InvalidData("packet cache lock poisoned".to_string())
+                    })?;
+                    if state.stop {
+                        return Ok(None);
+                    }
+                    if state.epoch != epoch
+                        || state.current_range != current_range
+                        || state.ranges[current_range].read_index != read_index
+                    {
+                        continue;
+                    }
+                    cloned
+                } else {
+                    cloned
+                };
+                let range = &mut state.ranges[current_range];
+                // The producer may have pruned already-read packets while file
+                // I/O released the queue lock. Rebase the offset on that new window.
+                let offset = (range.read_index - range.base_index) as usize;
                 range.read_index = range.read_index.saturating_add(1);
                 range.read_bytes = range.read_bytes.saturating_add(packet_size);
                 range.forward_start_time = range
@@ -251,7 +360,7 @@ impl PacketCache {
                     .get(offset + 1)
                     .and_then(|packet| packet.pts.or(packet.end));
                 touch_current_range(&mut state);
-                prune_packet_cache(&mut state, self.options);
+                prune_packet_cache(&mut state, &self.options);
                 self.shared.changed.notify_all();
                 self.has_returned_packet = true;
                 return Ok(Some(cloned));
@@ -315,7 +424,7 @@ impl PacketCache {
         state.epoch = state.epoch.wrapping_add(1);
         let epoch = state.epoch;
         state.read_hysteresis = false;
-        prune_packet_cache(&mut state, self.options);
+        prune_packet_cache(&mut state, &self.options);
         self.shared.changed.notify_all();
 
         let deadline = Instant::now() + self.options.seek_timeout;
@@ -363,6 +472,13 @@ impl PacketCache {
         let range = &state.ranges[state.current_range];
         let seekable_ranges = packet_cache_seekable_ranges(&state);
         PacketCacheStats {
+            file_cache_bytes: self.shared.disk_cache.as_ref().map(|file| file.bytes()),
+            disk_cache_error: self.shared.disk_cache_error.clone().or_else(|| {
+                self.shared
+                    .disk_cache
+                    .as_ref()
+                    .and_then(|file| file.error())
+            }),
             forward_bytes: packet_cache_forward_bytes(range),
             back_bytes: packet_cache_back_bytes(range),
             total_bytes: state.total_bytes,
@@ -408,7 +524,7 @@ fn apply_cached_seek(state: &mut PacketCacheState, target: Duration) -> bool {
 fn packet_cache_pause_ready(
     state: &PacketCacheState,
     range_index: usize,
-    options: PacketCacheOptions,
+    options: &PacketCacheOptions,
 ) -> bool {
     let Some(pause_wait) = options.pause_wait else {
         return true;
@@ -468,6 +584,7 @@ impl Demuxer {
             let size = (*packet).size.max(0) as usize;
             Ok(Some(CachedPacket {
                 packet: cloned,
+                disk: None,
                 pts,
                 end,
                 size,
@@ -509,12 +626,12 @@ fn run_packet_cache_worker(
                     break PacketCacheAction::Resume;
                 }
 
-                prune_packet_cache(&mut state, options);
+                prune_packet_cache(&mut state, &options);
                 let range = &state.ranges[state.current_range];
                 let forward_bytes = packet_cache_forward_bytes(range);
                 let forward_duration = packet_cache_forward_duration(range);
-                update_read_hysteresis(&mut state, options, forward_bytes, forward_duration);
-                if packet_cache_worker_can_read(&state, options) {
+                update_read_hysteresis(&mut state, &options, forward_bytes, forward_duration);
+                if packet_cache_worker_can_read(&state, &options) {
                     break PacketCacheAction::Read { epoch: state.epoch };
                 }
 
@@ -532,7 +649,10 @@ fn run_packet_cache_worker(
                 complete_packet_cache_seek(&shared, epoch, result);
             }
             PacketCacheAction::Read { epoch } => match demuxer.read_cached_packet(timeline) {
-                Ok(Some(packet)) => {
+                Ok(Some(mut packet)) => {
+                    if let Some(file) = &shared.disk_cache {
+                        packet.offload(file);
+                    }
                     if let Ok(mut state) = shared.state.lock() {
                         if state.epoch != epoch {
                             continue;
@@ -542,7 +662,7 @@ fn run_packet_cache_worker(
                         state.next_packet_index = state.next_packet_index.saturating_add(1);
                         push_packet_cache_packet(&mut state.ranges[current_range], packet);
                         touch_current_range(&mut state);
-                        prune_packet_cache(&mut state, options);
+                        prune_packet_cache(&mut state, &options);
                         shared.changed.notify_all();
                     }
                 }
@@ -561,7 +681,7 @@ fn run_packet_cache_worker(
                         }
                         let current_range = state.current_range;
                         state.ranges[current_range].eof = true;
-                        prune_packet_cache(&mut state, options);
+                        prune_packet_cache(&mut state, &options);
                         shared.changed.notify_all();
                     }
                 }
@@ -620,7 +740,7 @@ fn abort_timed_out_packet_cache_seek(
     shared.changed.notify_all();
 }
 
-fn packet_cache_worker_can_read(state: &PacketCacheState, options: PacketCacheOptions) -> bool {
+fn packet_cache_worker_can_read(state: &PacketCacheState, options: &PacketCacheOptions) -> bool {
     let range = &state.ranges[state.current_range];
     let forward_bytes = packet_cache_forward_bytes(range);
     let has_duration_budget = packet_cache_forward_duration(range)
@@ -651,7 +771,7 @@ fn touch_current_range(state: &mut PacketCacheState) {
 
 fn update_read_hysteresis(
     state: &mut PacketCacheState,
-    options: PacketCacheOptions,
+    options: &PacketCacheOptions,
     forward_bytes: usize,
     forward_duration: Option<Duration>,
 ) {
@@ -694,7 +814,7 @@ const fn packet_cache_back_bytes(range: &PacketCacheRange) -> usize {
 
 fn packet_cache_effective_back_bytes(
     range: &PacketCacheRange,
-    options: PacketCacheOptions,
+    options: &PacketCacheOptions,
 ) -> usize {
     if options.max_back_bytes == 0 {
         return 0;
@@ -763,7 +883,7 @@ fn packet_cache_seek_offset(state: &PacketCacheState, target: Duration) -> Optio
         .map(|(offset, _)| (range_index, offset))
 }
 
-fn prune_packet_cache(state: &mut PacketCacheState, options: PacketCacheOptions) {
+fn prune_packet_cache(state: &mut PacketCacheState, options: &PacketCacheOptions) {
     if state.ranges.is_empty() {
         state
             .ranges
@@ -772,7 +892,7 @@ fn prune_packet_cache(state: &mut PacketCacheState, options: PacketCacheOptions)
     }
 
     let current_range = state.current_range;
-    let back_bytes = packet_cache_effective_back_bytes(&state.ranges[current_range], options);
+    let back_bytes = packet_cache_effective_back_bytes(&state.ranges[current_range], &options);
     prune_packet_cache_range_back(state, current_range, back_bytes);
     prune_empty_non_current_ranges(state);
 
@@ -962,6 +1082,7 @@ mod tests {
     fn packet_with_time(pts: u64, end: u64, size: usize) -> CachedPacket {
         CachedPacket {
             packet: ptr::null_mut(),
+            disk: None,
             pts: Some(Duration::from_secs(pts)),
             end: Some(Duration::from_secs(end)),
             size,
@@ -971,13 +1092,14 @@ mod tests {
     fn packet_without_time(size: usize) -> CachedPacket {
         CachedPacket {
             packet: ptr::null_mut(),
+            disk: None,
             pts: None,
             end: None,
             size,
         }
     }
 
-    fn single_range_state(
+    pub(super) fn single_range_state(
         packets: Vec<CachedPacket>,
         base_index: u64,
         read_index: u64,
@@ -1056,9 +1178,9 @@ mod tests {
         let options = PacketCacheOptions::new(1_000, 0, Duration::from_secs(10))
             .with_pause_wait(Some(Duration::from_secs(2)));
 
-        assert!(!packet_cache_pause_ready(&state, 0, options));
+        assert!(!packet_cache_pause_ready(&state, 0, &options));
         push_packet_cache_packet(&mut state.ranges[0], packet_with_time(1, 2, 100));
-        assert!(packet_cache_pause_ready(&state, 0, options));
+        assert!(packet_cache_pause_ready(&state, 0, &options));
     }
 
     #[test]
@@ -1068,7 +1190,7 @@ mod tests {
         let options = PacketCacheOptions::new(1_000, 0, Duration::from_secs(10))
             .with_pause_wait(Some(Duration::from_secs(2)));
 
-        assert!(packet_cache_pause_ready(&state, 0, options));
+        assert!(packet_cache_pause_ready(&state, 0, &options));
     }
 
     #[test]
@@ -1078,7 +1200,7 @@ mod tests {
         let options = PacketCacheOptions::new(1_000, 0, Duration::from_secs(10))
             .with_pause_wait(Some(Duration::from_secs(2)));
 
-        assert!(packet_cache_pause_ready(&state, 0, options));
+        assert!(packet_cache_pause_ready(&state, 0, &options));
     }
 
     #[test]
@@ -1087,7 +1209,7 @@ mod tests {
         let options = PacketCacheOptions::new(150 * 1024 * 1024, 0, Duration::from_secs(10))
             .with_pause_wait(Some(Duration::from_secs(2)));
 
-        assert!(packet_cache_pause_ready(&state, 0, options));
+        assert!(packet_cache_pause_ready(&state, 0, &options));
     }
 
     #[test]
@@ -1100,7 +1222,7 @@ mod tests {
         let options = PacketCacheOptions::new(150 * 1024 * 1024, 0, Duration::from_secs(10))
             .with_pause_wait(Some(Duration::from_secs(2)));
 
-        assert!(packet_cache_pause_ready(&state, 0, options));
+        assert!(packet_cache_pause_ready(&state, 0, &options));
     }
 
     #[test]
@@ -1117,20 +1239,20 @@ mod tests {
         let options = PacketCacheOptions::new(1_000, 200, Duration::from_secs(1));
 
         assert_eq!(
-            packet_cache_effective_back_bytes(&state.ranges[0], options),
+            packet_cache_effective_back_bytes(&state.ranges[0], &options),
             1_040
         );
 
         let no_donation = PacketCacheOptions::new(1_000, 200, Duration::from_secs(1))
             .with_donate_forward_budget(false);
         assert_eq!(
-            packet_cache_effective_back_bytes(&state.ranges[0], no_donation),
+            packet_cache_effective_back_bytes(&state.ranges[0], &no_donation),
             200
         );
 
         let disabled = PacketCacheOptions::new(1_000, 0, Duration::from_secs(1));
         assert_eq!(
-            packet_cache_effective_back_bytes(&state.ranges[0], disabled),
+            packet_cache_effective_back_bytes(&state.ranges[0], &disabled),
             0
         );
     }
@@ -1258,7 +1380,7 @@ mod tests {
 
         prune_packet_cache(
             &mut state,
-            PacketCacheOptions::new(150, 50, Duration::from_secs(10)),
+            &PacketCacheOptions::new(150, 50, Duration::from_secs(10)),
         );
 
         assert_eq!(state.ranges.len(), 1);
@@ -1338,11 +1460,11 @@ mod tests {
         );
         let options = PacketCacheOptions::new(100, 0, Duration::from_secs(10));
 
-        update_read_hysteresis(&mut state, options, 110, Some(Duration::from_secs(2)));
+        update_read_hysteresis(&mut state, &options, 110, Some(Duration::from_secs(2)));
         assert!(state.read_hysteresis);
-        update_read_hysteresis(&mut state, options, 90, Some(Duration::from_secs(2)));
+        update_read_hysteresis(&mut state, &options, 90, Some(Duration::from_secs(2)));
         assert!(state.read_hysteresis);
-        update_read_hysteresis(&mut state, options, 70, Some(Duration::from_secs(2)));
+        update_read_hysteresis(&mut state, &options, 70, Some(Duration::from_secs(2)));
         assert!(!state.read_hysteresis);
     }
 
@@ -1351,6 +1473,8 @@ mod tests {
         let mut state = single_range_state(Vec::new(), 0, 0);
         state.epoch = 7;
         let shared = SharedPacketCache {
+            disk_cache: None,
+            disk_cache_error: None,
             state: Mutex::new(state),
             changed: Condvar::new(),
         };
@@ -1369,6 +1493,8 @@ mod tests {
         let mut state = single_range_state(Vec::new(), 0, 0);
         state.epoch = 3;
         let shared = SharedPacketCache {
+            disk_cache: None,
+            disk_cache_error: None,
             state: Mutex::new(state),
             changed: Condvar::new(),
         };
@@ -1395,14 +1521,14 @@ mod tests {
         state.read_failed = true;
         let options = PacketCacheOptions::new(1_000, 0, Duration::from_secs(10));
 
-        assert!(!packet_cache_worker_can_read(&state, options));
+        assert!(!packet_cache_worker_can_read(&state, &options));
         assert_eq!(
             packet_cache_seek_offset(&state, Duration::from_millis(10_500)),
             None
         );
 
         let _ = state.error.take();
-        assert!(!packet_cache_worker_can_read(&state, options));
+        assert!(!packet_cache_worker_can_read(&state, &options));
     }
 
     #[test]
@@ -1413,6 +1539,8 @@ mod tests {
             0,
         );
         let shared = SharedPacketCache {
+            disk_cache: None,
+            disk_cache_error: None,
             state: Mutex::new(state),
             changed: Condvar::new(),
         };
@@ -1425,7 +1553,7 @@ mod tests {
         assert!(state.error.is_none());
         assert!(!packet_cache_worker_can_read(
             &state,
-            PacketCacheOptions::new(1_000, 0, Duration::from_secs(10))
+            &PacketCacheOptions::new(1_000, 0, Duration::from_secs(10))
         ));
         assert_eq!(
             packet_cache_seek_offset(&state, Duration::from_millis(10_500)),
@@ -1442,6 +1570,8 @@ mod tests {
         let mut state = single_range_state(Vec::new(), 0, 0);
         state.epoch = 3;
         let shared = SharedPacketCache {
+            disk_cache: None,
+            disk_cache_error: None,
             state: Mutex::new(state),
             changed: Condvar::new(),
         };
@@ -1461,6 +1591,8 @@ mod tests {
         state.epoch = 4;
         state.pending_seek = Some(30);
         let shared = SharedPacketCache {
+            disk_cache: None,
+            disk_cache_error: None,
             state: Mutex::new(state),
             changed: Condvar::new(),
         };
@@ -1485,9 +1617,141 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic(expected = "current packet-cache range must not be removed")]
     fn removing_current_packet_cache_range_is_a_debug_invariant_violation() {
         let mut state = single_range_state(Vec::new(), 0, 0);
         remove_range(&mut state, 0);
+    }
+
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn removing_current_packet_cache_range_preserves_it_in_release() {
+        let mut state = single_range_state(Vec::new(), 0, 0);
+        let bytes = state.total_bytes;
+        remove_range(&mut state, 0);
+        assert_eq!(state.current_range, 0);
+        assert_eq!(state.ranges.len(), 1);
+        assert_eq!(state.total_bytes, bytes);
+    }
+}
+
+#[cfg(test)]
+mod disk_tests {
+    use super::*;
+
+    #[test]
+    fn pruning_back_packets_during_disk_read_preserves_the_forward_time() {
+        let file = Arc::new(PacketFile::new(None, None).unwrap());
+        let packets = (1..=3)
+            .map(|seconds| {
+                let raw = unsafe { sys::av_packet_alloc() };
+                assert!(!raw.is_null());
+                unsafe {
+                    assert_eq!(sys::av_new_packet(raw, 16), 0);
+                    std::ptr::write_bytes((*raw).data, seconds as u8, 16);
+                }
+                let mut packet = CachedPacket {
+                    packet: raw,
+                    disk: None,
+                    size: 16,
+                    pts: Some(Duration::from_secs(seconds)),
+                    end: Some(Duration::from_secs(seconds + 1)),
+                };
+                packet.offload(&file);
+                packet
+            })
+            .collect();
+        let shared = Arc::new(SharedPacketCache {
+            state: Mutex::new(super::tests::single_range_state(packets, 0, 1)),
+            changed: Condvar::new(),
+            disk_cache: Some(file.clone()),
+            disk_cache_error: None,
+        });
+        let mut cache = PacketCache {
+            shared: shared.clone(),
+            options: PacketCacheOptions::new(1024 * 1024, 0, Duration::from_secs(60)),
+            timeline: Timeline::new(sys::AVRational { num: 1, den: 1 }, 0).unwrap(),
+            has_returned_packet: false,
+            interrupt: Arc::new(AtomicBool::new(false)),
+            worker: None,
+        };
+        let io_lock = file.hold_io_for_test();
+        let references = Arc::strong_count(&file);
+        let reader = thread::spawn(move || {
+            let packet = cache.read_packet().unwrap().unwrap();
+            (packet, cache.stats().forward_duration)
+        });
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Arc::strong_count(&file) == references {
+            assert!(
+                Instant::now() < deadline,
+                "decoder did not reach the file read"
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
+        {
+            let mut state = shared
+                .state
+                .try_lock()
+                .expect("file read held the packet queue lock");
+            prune_packet_cache_range_back(&mut state, 0, 0);
+            assert_eq!(state.ranges[0].base_index, 1);
+        }
+        drop(io_lock);
+        let (_, duration) = reader.join().unwrap();
+        assert_eq!(duration, Some(Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn offloading_releases_payload_and_side_data_but_restores_them_before_decode() {
+        let file = Arc::new(PacketFile::new(None, None).unwrap());
+        let raw = unsafe { sys::av_packet_alloc() };
+        assert!(!raw.is_null());
+        unsafe {
+            assert_eq!(sys::av_new_packet(raw, 1024 * 1024), 0);
+            std::ptr::write_bytes((*raw).data, 37, (*raw).size as usize);
+            let side = sys::av_packet_new_side_data(
+                raw,
+                sys::AVPacketSideDataType_AV_PKT_DATA_SKIP_SAMPLES,
+                10,
+            );
+            assert!(!side.is_null());
+            std::ptr::write_bytes(side, 0, 10);
+            *side = 3;
+            (*raw).pts = 44100;
+            (*raw).duration = 4096;
+        }
+        let mut packet = CachedPacket {
+            packet: raw,
+            disk: None,
+            pts: Some(Duration::from_secs(1)),
+            end: Some(Duration::from_secs(2)),
+            size: 1024 * 1024,
+        };
+        packet.offload(&file);
+        assert!(packet.disk.is_some());
+        assert!(packet.size < 1024);
+        assert!(unsafe {
+            (*raw).buf.is_null() && (*raw).data.is_null() && (*raw).side_data.is_null()
+        });
+        let disk_bytes = file.bytes();
+        for _ in 0..3 {
+            let restored = packet.clone_packet().unwrap().materialize().unwrap();
+            unsafe {
+                assert_eq!((*restored.packet).size, 1024 * 1024);
+                assert_eq!(*(*restored.packet).data, 37);
+                assert_eq!((*restored.packet).pts, 44100);
+                assert_eq!((*restored.packet).duration, 4096);
+                assert_eq!(*(*(*restored.packet).side_data).data, 3);
+            }
+        }
+        assert_eq!(file.bytes(), disk_bytes);
+        drop(packet);
+        assert_eq!(
+            file.bytes(),
+            disk_bytes,
+            "pruning metadata must not shrink the append-only file"
+        );
     }
 }

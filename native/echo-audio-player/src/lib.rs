@@ -13,6 +13,8 @@ mod output;
 mod platform_qos;
 mod shared;
 #[cfg(test)]
+mod hls_tests;
+#[cfg(test)]
 mod source_change_tests;
 mod spectrum;
 mod stream;
@@ -220,6 +222,7 @@ struct PreparedSource {
     seq: u64,
     duration: f64,
     start_position: f64,
+    capabilities: crate::events::MediaCapabilities,
 }
 
 struct PreparedNextSource {
@@ -769,6 +772,7 @@ fn prepare_source(
     }
     let embedded_metadata = decoder.embedded_metadata();
     let duration = decoder.duration_secs();
+    let source_capabilities = decoder.capabilities();
     let source_sample_rate = decoder.mix_sample_rate();
     let output_sample_rate =
         device::preferred_output_sample_rate(&config.audio_device, config.exclusive_output);
@@ -1099,6 +1103,7 @@ fn prepare_source(
         seq,
         duration,
         start_position: start_position.max(0.0),
+        capabilities: source_capabilities,
     })
 }
 
@@ -1133,6 +1138,7 @@ fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) 
         seq,
         duration,
         start_position,
+        capabilities,
     } = prepared;
     runtime.cancel_idle_output_release();
     runtime.cancel_pending_gapless_prepare();
@@ -1160,7 +1166,7 @@ fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) 
         runtime,
         vec![
             PlayerEvent::duration_change(duration),
-            PlayerEvent::file_loaded(url, seq),
+            PlayerEvent::file_loaded(url, seq).with_capabilities(capabilities),
             PlayerEvent::state_change(runtime.state.clone()),
         ],
     );
@@ -1199,12 +1205,16 @@ fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
                 runtime.dsp_settings.normalization_gain_db = gain_db;
             }
             set_runtime_core_state(runtime, PlaybackCoreState::Playing, "gapless-track-switch");
+            let mut file_loaded = PlayerEvent::file_loaded_at(info.url, info.seq, start_position)
+                .with_transition(info.transition);
+            if let Some(capabilities) = info.capabilities {
+                file_loaded = file_loaded.with_capabilities(capabilities);
+            }
             emit_runtime_events(
                 runtime,
                 vec![
                     PlayerEvent::duration_change(info.duration),
-                    PlayerEvent::file_loaded_at(info.url, info.seq, start_position)
-                        .with_transition(info.transition),
+                    file_loaded,
                     PlayerEvent::state_change(runtime.state.clone()),
                     PlayerEvent::playback_restart(start_position, "gapless-track-switch"),
                     PlayerEvent::time_update(start_position),
@@ -1378,6 +1388,7 @@ pub(crate) fn activate_gapless_next_decoder(
     let mut info =
         TrackSwitchInfo::new(next.url, next.audio_stream_ordinal, next.seq, next.duration);
     info.embedded_metadata = Some(next.decoder.embedded_metadata());
+    info.capabilities = Some(next.decoder.capabilities());
     info.transition = Some(events::TrackTransitionInfo {
         mode: "gapless".to_string(),
         overlap_secs: 0.0,
@@ -1970,6 +1981,7 @@ impl Task for LoadFileTask {
                         let embedded_metadata = decoder.embedded_metadata();
                         let duration = decoder.duration_secs();
                         let source_sample_format = decoder.source_sample_format();
+                        let source_capabilities = decoder.capabilities();
                         let preferred_output_sample_format = plan
                             .config
                             .resolve_output_sample_format(source_sample_format);
@@ -2095,7 +2107,8 @@ impl Task for LoadFileTask {
                                 runtime,
                                 vec![
                                     PlayerEvent::duration_change(duration),
-                                    PlayerEvent::file_loaded(url.clone(), seq),
+                                    PlayerEvent::file_loaded(url.clone(), seq)
+                                        .with_capabilities(source_capabilities),
                                     PlayerEvent::state_change(runtime.state.clone()),
                                 ],
                             );
@@ -2467,6 +2480,7 @@ fn arm_prepared_transition(runtime: &mut PlayerRuntime, prepared: PreparedNextSo
         prepared.duration,
     );
     info.embedded_metadata = Some(prepared.decoder.embedded_metadata());
+    info.capabilities = Some(prepared.decoder.capabilities());
     let armed = armed_transition_from_prepared(
         plan,
         prepared.decoder,
@@ -2677,6 +2691,7 @@ impl Task for CommitPreparedNextSourceTask {
         let mut info =
             TrackSwitchInfo::new(next.url, next.audio_stream_ordinal, next.seq, next.duration);
         info.embedded_metadata = Some(next.decoder.embedded_metadata());
+        info.capabilities = Some(next.decoder.capabilities());
         // A manual skip should not wait for the old decoder/output queues to drain. Fade the
         // currently audible tail first; SwitchTrack then resets those queues and starts the
         // already-open decoder in the same output session.

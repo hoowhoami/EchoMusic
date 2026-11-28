@@ -38,14 +38,6 @@ const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(120);
 const MAX_RECONNECT_TOTAL_DELAY: Duration = Duration::from_secs(256);
 
 const USER_AGENT: &str = "Lavf/62.12.101";
-
-/// EchoMusic: 未配置或配置为空白时回退上游默认 UA。
-fn resolve_user_agent(user_agent: Option<&str>) -> &str {
-    user_agent
-        .filter(|ua| !ua.trim().is_empty())
-        .unwrap_or(USER_AGENT)
-}
-
 const CANCEL_BRIDGE_POLL: Duration = Duration::from_millis(25);
 const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(200);
 
@@ -78,7 +70,8 @@ pub struct HttpAudioSourceOptions {
     pub connect_timeout: Duration,
     pub recv_timeout: Duration,
     pub proxy_url: Option<String>,
-    /// EchoMusic: 可配置的 User-Agent；`None` 回退到上游默认的 `USER_AGENT`。
+    /// Header shared by probe, range requests and reconnects. Some("") omits it;
+    /// None retains this library's default for callers without an explicit policy.
     pub user_agent: Option<String>,
 }
 
@@ -292,10 +285,10 @@ impl HttpAudioSource {
             .map_err(|e| HttpError::Transport(e.to_string()))?;
 
         let mut client_builder = Client::builder().connect_timeout(options.connect_timeout);
-        // EchoMusic: Client 级默认 User-Agent 覆盖全部请求（探测 / 读取 / seek / 重连），
-        // 未配置时保持上游默认值不变。
-        client_builder =
-            client_builder.user_agent(resolve_user_agent(options.user_agent.as_deref()));
+        let user_agent = options.user_agent.as_deref().unwrap_or(USER_AGENT);
+        if !user_agent.is_empty() {
+            client_builder = client_builder.user_agent(user_agent);
+        }
         if let Some(proxy_url) = options.proxy_url.as_deref() {
             let proxy = Proxy::all(proxy_url)
                 .map_err(|err| HttpError::Transport(format!("invalid proxy url: {err}")))?;
@@ -1060,14 +1053,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn user_agent_falls_back_to_lavf_when_unset_or_blank() {
-        assert_eq!(resolve_user_agent(None), USER_AGENT);
-        assert_eq!(resolve_user_agent(Some("")), USER_AGENT);
-        assert_eq!(resolve_user_agent(Some("   ")), USER_AGENT);
-        assert_eq!(resolve_user_agent(Some("EchoTest/1.0")), "EchoTest/1.0");
-    }
-
     fn test_source(
         content_length: Option<u64>,
         range_supported: bool,
@@ -1111,6 +1096,87 @@ mod tests {
                 stream.write_all(response).unwrap();
             }
         })
+    }
+
+    fn check_user_agent_requests(value: Option<&str>, expected: Option<&str>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/audio", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let mut requests = Vec::new();
+            for offset in [0, 4, 4] {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                let mut socket = loop {
+                    match listener.accept() {
+                        Ok((socket, _)) => break socket,
+                        Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline, "missing HTTP request");
+                            thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept: {error}"),
+                    }
+                };
+                // Windows 上 accept 的 socket 继承监听 socket 的非阻塞属性；
+                // 恢复阻塞模式让 read_timeout 真正生效，read 才不会偶发 WouldBlock。
+                socket.set_nonblocking(false).unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut header = Vec::new();
+                while !header.windows(4).any(|value| value == b"\r\n\r\n") {
+                    let mut bytes = [0; 1024];
+                    let count = socket.read(&mut bytes).unwrap();
+                    assert!(count > 0 && header.len() < 8192);
+                    header.extend_from_slice(&bytes[..count]);
+                }
+                requests.push(String::from_utf8(header).unwrap());
+                let body = &b"0123456789"[offset..];
+                write!(socket, "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {offset}-9/10\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
+                socket.write_all(body).unwrap();
+            }
+            requests
+        });
+        let mut options = local_options(Duration::from_secs(2));
+        options.user_agent = value.map(str::to_string);
+        let source = HttpAudioSource::new_with_options(&url, options).unwrap();
+        let runtime = source.rt.as_ref().unwrap();
+        assert!(matches!(
+            runtime.block_on(source.execute_seek_request(4)),
+            FetchAction::Success(..)
+        ));
+        runtime
+            .block_on(source.execute_reconnect_request(4))
+            .unwrap();
+        for request in server.join().unwrap() {
+            let agents: Vec<_> = request
+                .lines()
+                .filter(|line| line.to_ascii_lowercase().starts_with("user-agent:"))
+                .collect();
+            if let Some(expected) = expected {
+                assert_eq!(agents.len(), 1);
+                assert_eq!(agents[0].split_once(':').unwrap().1.trim(), expected);
+            } else {
+                assert!(
+                    agents.is_empty(),
+                    "empty configuration must omit User-Agent"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn custom_user_agent_is_retained_for_probe_seek_and_reconnect() {
+        check_user_agent_requests(Some("customRandomToken123"), Some("customRandomToken123"));
+    }
+
+    #[test]
+    fn empty_user_agent_is_omitted_for_probe_seek_and_reconnect() {
+        check_user_agent_requests(Some(""), None);
+    }
+
+    #[test]
+    fn unspecified_user_agent_retains_vendor_default() {
+        check_user_agent_requests(None, Some(USER_AGENT));
     }
 
     #[test]
